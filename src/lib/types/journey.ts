@@ -19,6 +19,17 @@ export interface JourneyCard {
   custom_fields: Record<string, any>
   created_at: string
   updated_at: string
+  position_x?: number
+  position_y?: number
+}
+
+export interface JourneyConnection {
+  id: string
+  org_id: string
+  source_card_id: string
+  target_card_id: string
+  label?: string
+  connection_type: 'flow' | 'convergence' | 'branch'
 }
 
 export interface JourneyCardAsset {
@@ -37,3 +48,12 @@ export const STATUS_CONFIG = {
   in_progress: { label: 'In Progress', color: '#F59E0B', bg: '#FEF3C7' },
   done: { label: 'Done', color: '#10B981', bg: '#D1FAE5' },
 } as const
+
+export const PHASE_COLORS: Record<string, string> = {
+  awareness: '#8B5CF6',
+  consideration: '#3B82F6',
+  decision: '#10B981',
+  onboarding: '#F59E0B',
+  program: '#EF4444',
+  outcomes: '#386797',
+}
