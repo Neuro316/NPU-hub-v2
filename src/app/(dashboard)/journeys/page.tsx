@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useMemo, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import ReactFlow, {
   Node,
   Edge,
@@ -13,6 +13,11 @@ import ReactFlow, {
   Connection,
   MarkerType,
   Panel,
+  EdgeProps,
+  getBezierPath,
+  BaseEdge,
+  EdgeLabelRenderer,
+  useReactFlow,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 
@@ -20,24 +25,49 @@ import { useJourneyData } from '@/lib/hooks/use-journey-data'
 import { useWorkspace } from '@/lib/workspace-context'
 import { CardDetailPanel } from '@/components/journey/card-detail-panel'
 import JourneyNode from '@/components/journey/journey-node'
-import ConvergenceNode from '@/components/journey/convergence-node'
-import PhaseLabelNode from '@/components/journey/phase-label-node'
 import type { JourneyCard } from '@/lib/types/journey'
 import { STATUS_CONFIG, PHASE_COLORS } from '@/lib/types/journey'
-import { Plus, Wand2, ZoomIn, ZoomOut } from 'lucide-react'
+import { Plus, Wand2, Trash2, X, Pencil } from 'lucide-react'
 
-const nodeTypes = {
-  journeyCard: JourneyNode,
-  convergence: ConvergenceNode,
-  phaseLabel: PhaseLabelNode,
+// Custom edge with delete button
+function DeletableEdge({
+  id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, style, markerEnd, data, selected,
+}: EdgeProps) {
+  const [edgePath, labelX, labelY] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition })
+
+  return (
+    <>
+      <BaseEdge path={edgePath} markerEnd={markerEnd} style={style} />
+      {selected && (
+        <EdgeLabelRenderer>
+          <div
+            style={{ position: 'absolute', transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`, pointerEvents: 'all' }}
+            className="flex gap-1"
+          >
+            <button
+              onClick={() => data?.onDelete(id)}
+              className="bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center hover:bg-red-600 shadow-md"
+              title="Delete connection"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        </EdgeLabelRenderer>
+      )}
+    </>
+  )
 }
 
-const CARD_WIDTH = 220
-const CARD_HEIGHT = 140
-const H_GAP = 60
-const V_GAP = 40
-const PHASE_LABEL_WIDTH = 50
-const PHASE_START_X = 80
+const nodeTypes = { journeyCard: JourneyNode }
+const edgeTypes = { deletable: DeletableEdge }
+
+const CARD_W = 190
+const CARD_H = 80
+const COL_GAP = 60
+const ROW_GAP = 50
+const TOP_HEADER = 70
+const LEFT_LABELS = 160
+const COL_WIDTH = CARD_W + COL_GAP
 
 export default function JourneysPage() {
   const { currentOrg, loading: orgLoading } = useWorkspace()
@@ -52,131 +82,157 @@ export default function JourneysPage() {
   const [selectedCard, setSelectedCard] = useState<JourneyCard | null>(null)
   const [addingPhase, setAddingPhase] = useState(false)
   const [newPhaseLabel, setNewPhaseLabel] = useState('')
+  const [addingRow, setAddingRow] = useState(false)
+  const [newRowLabel, setNewRowLabel] = useState('')
+  const [rowLabels, setRowLabels] = useState<string[]>([])
+  const [editingRow, setEditingRow] = useState<number | null>(null)
+  const [editRowLabel, setEditRowLabel] = useState('')
 
-  // Build nodes and edges from data
+  // Derive row labels from card data
+  useEffect(() => {
+    if (cards.length === 0) return
+    const maxRow = Math.max(...cards.map(c => c.row_index || 0), 0)
+    const existing = [...rowLabels]
+    while (existing.length <= maxRow) {
+      existing.push(`Route ${existing.length + 1}`)
+    }
+    if (existing.length !== rowLabels.length) {
+      setRowLabels(existing)
+    }
+  }, [cards])
+
+  const handleDeleteEdge = useCallback((edgeId: string) => {
+    setEdges(eds => eds.filter(e => e.id !== edgeId))
+  }, [setEdges])
+
+  // Build nodes from phases/cards in grid layout
   useEffect(() => {
     if (phases.length === 0) return
 
     const newNodes: Node[] = []
-    const newEdges: Edge[] = []
-    let currentY = 0
+    const sortedPhases = [...phases].sort((a, b) => a.sort_order - b.sort_order)
 
-    phases.forEach((phase, phaseIdx) => {
-      const phaseCards = cards.filter(c => c.phase_id === phase.id)
+    // Determine rows
+    const maxRow = cards.length > 0 ? Math.max(...cards.map(c => c.row_index || 0)) : 0
+    const rowCount = Math.max(maxRow + 1, rowLabels.length, 1)
+
+    // Phase header nodes
+    sortedPhases.forEach((phase, colIdx) => {
       const phaseColor = phase.color || PHASE_COLORS[phase.phase_key] || '#386797'
+      const x = LEFT_LABELS + colIdx * COL_WIDTH
 
-      // Group by row
-      const rowGroups: Record<number, JourneyCard[]> = {}
-      phaseCards.forEach(card => {
-        const row = card.row_index || 0
-        if (!rowGroups[row]) rowGroups[row] = []
-        rowGroups[row].push(card)
-      })
-
-      const rowNumbers = Object.keys(rowGroups).map(Number).sort((a, b) => a - b)
-      if (rowNumbers.length === 0) rowNumbers.push(0)
-
-      const phaseHeight = rowNumbers.length * (CARD_HEIGHT + V_GAP)
-
-      // Phase label node (vertical text on the left)
       newNodes.push({
-        id: `phase-${phase.id}`,
-        type: 'phaseLabel',
-        position: { x: 0, y: currentY + 10 },
-        data: {
-          label: phase.label,
-          color: phaseColor,
-          cardCount: phaseCards.length,
-        },
+        id: `header-${phase.id}`,
+        type: 'default',
+        position: { x, y: 0 },
+        data: { label: phase.label },
         draggable: false,
         selectable: false,
+        style: {
+          background: `${phaseColor}15`,
+          border: `2px solid ${phaseColor}`,
+          borderRadius: '10px',
+          padding: '6px 16px',
+          fontSize: '12px',
+          fontWeight: 700,
+          color: phaseColor,
+          width: CARD_W,
+          textAlign: 'center' as const,
+        },
       })
+    })
 
-      // Cards per row
-      rowNumbers.forEach((rowNum, rowIdx) => {
-        const rowCards = (rowGroups[rowNum] || []).sort((a, b) => a.sort_order - b.sort_order)
+    // Row label nodes
+    for (let rowIdx = 0; rowIdx < rowCount; rowIdx++) {
+      const y = TOP_HEADER + rowIdx * (CARD_H + ROW_GAP)
+      newNodes.push({
+        id: `rowlabel-${rowIdx}`,
+        type: 'default',
+        position: { x: 0, y: y + 10 },
+        data: { label: rowLabels[rowIdx] || `Route ${rowIdx + 1}` },
+        draggable: false,
+        selectable: false,
+        style: {
+          background: '#F9FAFB',
+          border: '1px solid #E5E7EB',
+          borderRadius: '8px',
+          padding: '6px 12px',
+          fontSize: '11px',
+          fontWeight: 600,
+          color: '#6B7280',
+          width: LEFT_LABELS - 20,
+          textAlign: 'right' as const,
+        },
+      })
+    }
 
-        rowCards.forEach((card, cardIdx) => {
-          const x = PHASE_START_X + cardIdx * (CARD_WIDTH + H_GAP)
-          const y = currentY + rowIdx * (CARD_HEIGHT + V_GAP)
+    // Card nodes in grid positions
+    sortedPhases.forEach((phase, colIdx) => {
+      const phaseColor = phase.color || PHASE_COLORS[phase.phase_key] || '#386797'
+      const phaseCards = cards.filter(c => c.phase_id === phase.id)
 
-          newNodes.push({
-            id: card.id,
-            type: 'journeyCard',
-            position: { x, y },
-            data: {
-              title: card.title,
-              description: card.description,
-              status: card.status,
-              phaseLabel: phase.label,
-              phaseColor: phaseColor,
-              cardId: card.id,
-              onStatusChange: handleStatusCycle,
-              onEdit: handleCardEdit,
-            },
-          })
+      phaseCards.forEach(card => {
+        const rowIdx = card.row_index || 0
+        const x = LEFT_LABELS + colIdx * COL_WIDTH
+        const y = TOP_HEADER + rowIdx * (CARD_H + ROW_GAP)
 
-          // Connect cards in same row with arrows
-          if (cardIdx > 0) {
-            const prevCard = rowCards[cardIdx - 1]
-            newEdges.push({
-              id: `e-${prevCard.id}-${card.id}`,
-              source: prevCard.id,
-              target: card.id,
-              type: 'smoothstep',
-              animated: false,
-              style: { stroke: phaseColor, strokeWidth: 2 },
-              markerEnd: {
-                type: MarkerType.ArrowClosed,
-                color: phaseColor,
-                width: 16,
-                height: 16,
-              },
-            })
-          }
+        newNodes.push({
+          id: card.id,
+          type: 'journeyCard',
+          position: { x, y },
+          data: {
+            title: card.title,
+            description: card.description,
+            status: card.status,
+            phaseColor,
+            cardId: card.id,
+            onStatusChange: handleStatusCycle,
+            onEdit: handleCardEdit,
+          },
         })
       })
-
-      // Connect last card of each row to first card of next phase (convergence)
-      if (phaseIdx < phases.length - 1) {
-        const nextPhase = phases[phaseIdx + 1]
-        const nextPhaseCards = cards.filter(c => c.phase_id === nextPhase.id)
-        const nextFirstRow = nextPhaseCards.filter(c => (c.row_index || 0) === 0).sort((a, b) => a.sort_order - b.sort_order)
-
-        if (nextFirstRow.length > 0) {
-          rowNumbers.forEach(rowNum => {
-            const rowCards = (rowGroups[rowNum] || []).sort((a, b) => a.sort_order - b.sort_order)
-            if (rowCards.length > 0) {
-              const lastCard = rowCards[rowCards.length - 1]
-              newEdges.push({
-                id: `e-phase-${lastCard.id}-${nextFirstRow[0].id}`,
-                source: lastCard.id,
-                target: nextFirstRow[0].id,
-                type: 'smoothstep',
-                animated: true,
-                style: {
-                  stroke: '#9CA3AF',
-                  strokeWidth: 1.5,
-                  strokeDasharray: '8 4',
-                },
-                markerEnd: {
-                  type: MarkerType.ArrowClosed,
-                  color: '#9CA3AF',
-                  width: 14,
-                  height: 14,
-                },
-                label: rowNumbers.length > 1 ? '▼' : undefined,
-              })
-            }
-          })
-        }
-      }
-
-      currentY += phaseHeight + 60
     })
 
     setNodes(newNodes)
-    setEdges(newEdges)
+  }, [phases, cards, rowLabels])
+
+  // Auto-generate default edges (cards in same row, adjacent phases)
+  useEffect(() => {
+    if (phases.length === 0 || cards.length === 0) return
+
+    const sortedPhases = [...phases].sort((a, b) => a.sort_order - b.sort_order)
+    const newEdges: Edge[] = []
+
+    sortedPhases.forEach((phase, colIdx) => {
+      if (colIdx === 0) return
+      const prevPhase = sortedPhases[colIdx - 1]
+      const prevPhaseColor = prevPhase.color || PHASE_COLORS[prevPhase.phase_key] || '#386797'
+
+      const prevCards = cards.filter(c => c.phase_id === prevPhase.id)
+      const currCards = cards.filter(c => c.phase_id === phase.id)
+
+      // Connect cards in same row between adjacent phases
+      prevCards.forEach(prevCard => {
+        const matchingCard = currCards.find(c => (c.row_index || 0) === (prevCard.row_index || 0))
+        if (matchingCard) {
+          newEdges.push({
+            id: `auto-${prevCard.id}-${matchingCard.id}`,
+            source: prevCard.id,
+            target: matchingCard.id,
+            type: 'deletable',
+            data: { onDelete: handleDeleteEdge },
+            style: { stroke: prevPhaseColor, strokeWidth: 2 },
+            markerEnd: { type: MarkerType.ArrowClosed, color: prevPhaseColor, width: 14, height: 14 },
+          })
+        }
+      })
+    })
+
+    setEdges(prev => {
+      // Keep user-drawn edges, replace auto edges
+      const userEdges = prev.filter(e => !e.id.startsWith('auto-'))
+      return [...userEdges, ...newEdges]
+    })
   }, [phases, cards])
 
   const handleStatusCycle = useCallback((cardId: string) => {
@@ -193,26 +249,18 @@ export default function JourneysPage() {
     if (card) setSelectedCard(card)
   }, [cards])
 
-  // Allow user-drawn connections
   const onConnect = useCallback((params: Connection) => {
     setEdges(eds =>
-      addEdge(
-        {
-          ...params,
-          type: 'smoothstep',
-          animated: true,
-          style: { stroke: '#386797', strokeWidth: 2 },
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            color: '#386797',
-            width: 16,
-            height: 16,
-          },
-        },
-        eds
-      )
+      addEdge({
+        ...params,
+        type: 'deletable',
+        data: { onDelete: handleDeleteEdge },
+        animated: true,
+        style: { stroke: '#386797', strokeWidth: 2 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: '#386797', width: 14, height: 14 },
+      }, eds)
     )
-  }, [setEdges])
+  }, [setEdges, handleDeleteEdge])
 
   const handleAddPhase = async () => {
     if (!newPhaseLabel.trim()) return
@@ -222,6 +270,33 @@ export default function JourneysPage() {
     await addPhase(newPhaseLabel.trim(), key, color)
     setNewPhaseLabel('')
     setAddingPhase(false)
+  }
+
+  const handleAddRow = () => {
+    if (!newRowLabel.trim()) return
+    setRowLabels(prev => [...prev, newRowLabel.trim()])
+    setNewRowLabel('')
+    setAddingRow(false)
+  }
+
+  const handleEditRow = (idx: number) => {
+    setEditingRow(idx)
+    setEditRowLabel(rowLabels[idx] || `Route ${idx + 1}`)
+  }
+
+  const handleSaveRowEdit = () => {
+    if (editingRow === null) return
+    setRowLabels(prev => {
+      const next = [...prev]
+      next[editingRow] = editRowLabel.trim() || `Route ${editingRow + 1}`
+      return next
+    })
+    setEditingRow(null)
+  }
+
+  const handleDeleteRow = (idx: number) => {
+    setRowLabels(prev => prev.filter((_, i) => i !== idx))
+    // TODO: reassign cards in this row
   }
 
   if (orgLoading || loading) {
@@ -241,12 +316,9 @@ export default function JourneysPage() {
           </div>
           <h2 className="text-xl font-semibold text-np-dark mb-2">Build Your Journey</h2>
           <p className="text-sm text-gray-500 mb-6">
-            Create a visual map of your customer journey with phases, cards, and connections showing how people flow through your pipeline.
+            Map your customer journey with phases across the top and parallel routes down the side. Draw arrows to show how paths converge.
           </p>
-          <button
-            onClick={() => setAddingPhase(true)}
-            className="btn-primary"
-          >
+          <button onClick={() => setAddingPhase(true)} className="btn-primary">
             Create First Phase
           </button>
           {addingPhase && (
@@ -254,10 +326,7 @@ export default function JourneysPage() {
               <input
                 value={newPhaseLabel}
                 onChange={e => setNewPhaseLabel(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') handleAddPhase()
-                  if (e.key === 'Escape') setAddingPhase(false)
-                }}
+                onKeyDown={e => { if (e.key === 'Enter') handleAddPhase(); if (e.key === 'Escape') setAddingPhase(false) }}
                 placeholder="Phase name..."
                 className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-np-blue/20 mb-2"
                 autoFocus
@@ -282,74 +351,85 @@ export default function JourneysPage() {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         fitView
-        fitViewOptions={{ padding: 0.2 }}
-        minZoom={0.2}
-        maxZoom={2}
-        defaultEdgeOptions={{
-          type: 'smoothstep',
-        }}
+        fitViewOptions={{ padding: 0.15 }}
+        minZoom={0.15}
+        maxZoom={2.5}
+        defaultEdgeOptions={{ type: 'deletable' }}
         connectionLineStyle={{ stroke: '#386797', strokeWidth: 2 }}
         proOptions={{ hideAttribution: true }}
+        deleteKeyCode="Delete"
+        selectionOnDrag
       >
-        <Background
-          variant={BackgroundVariant.Dots}
-          gap={24}
-          size={1}
-          color="#E5E7EB"
-        />
-        <Controls
-          showInteractive={false}
-          className="!bg-white !border-gray-200 !rounded-xl !shadow-sm"
-        />
+        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#E5E7EB" />
+        <Controls showInteractive={false} className="!bg-white !border-gray-200 !rounded-xl !shadow-sm" />
 
         {/* Top toolbar */}
         <Panel position="top-left" className="flex gap-2">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-4 py-2.5 flex items-center gap-4">
-            <h1 className="text-base font-semibold text-np-dark">
-              Journey Builder
-            </h1>
-            <span className="text-xs text-gray-400">
-              {currentOrg?.name}
-            </span>
+          <div className="bg-white/95 backdrop-blur rounded-xl shadow-sm border border-gray-100 px-4 py-2.5 flex items-center gap-4">
+            <h1 className="text-sm font-semibold text-np-dark">Journey Builder</h1>
+            <span className="text-xs text-gray-400">{currentOrg?.name}</span>
           </div>
         </Panel>
 
         <Panel position="top-right" className="flex gap-2">
           <button
-            onClick={() => setAddingPhase(true)}
-            className="bg-white rounded-xl shadow-sm border border-gray-100 px-3 py-2 flex items-center gap-2 text-sm font-medium text-np-dark hover:bg-gray-50 transition-colors"
+            onClick={() => setAddingRow(true)}
+            className="bg-white rounded-xl shadow-sm border border-gray-100 px-3 py-2 flex items-center gap-1.5 text-xs font-medium text-np-dark hover:bg-gray-50 transition-colors"
           >
-            <Plus className="w-4 h-4" />
-            Add Phase
+            <Plus className="w-3.5 h-3.5" /> Add Row
           </button>
           <button
-            className="bg-np-blue text-white rounded-xl shadow-sm px-3 py-2 flex items-center gap-2 text-sm font-medium hover:bg-np-blue/90 transition-colors"
+            onClick={() => setAddingPhase(true)}
+            className="bg-white rounded-xl shadow-sm border border-gray-100 px-3 py-2 flex items-center gap-1.5 text-xs font-medium text-np-dark hover:bg-gray-50 transition-colors"
           >
-            <Wand2 className="w-4 h-4" />
-            AI Journey Creator
+            <Plus className="w-3.5 h-3.5" /> Add Phase
+          </button>
+          <button
+            className="bg-np-blue text-white rounded-xl shadow-sm px-3 py-2 flex items-center gap-1.5 text-xs font-medium hover:bg-np-blue/90 transition-colors"
+          >
+            <Wand2 className="w-3.5 h-3.5" /> AI Journey Creator
           </button>
         </Panel>
 
         {/* Add Phase Modal */}
         {addingPhase && (
           <Panel position="top-center">
-            <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-4 w-72 mt-16">
-              <h3 className="text-sm font-semibold text-np-dark mb-3">New Phase</h3>
+            <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-4 w-64 mt-14">
+              <h3 className="text-xs font-semibold text-np-dark mb-2">New Phase</h3>
               <input
                 value={newPhaseLabel}
                 onChange={e => setNewPhaseLabel(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') handleAddPhase()
-                  if (e.key === 'Escape') { setAddingPhase(false); setNewPhaseLabel('') }
-                }}
-                placeholder="Phase name (e.g., Awareness)..."
-                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-np-blue/20 mb-3"
+                onKeyDown={e => { if (e.key === 'Enter') handleAddPhase(); if (e.key === 'Escape') { setAddingPhase(false); setNewPhaseLabel('') } }}
+                placeholder="Phase name..."
+                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-np-blue/20 mb-2"
                 autoFocus
               />
               <div className="flex gap-2">
-                <button onClick={handleAddPhase} className="btn-primary text-xs py-1.5 px-4 flex-1">Add Phase</button>
-                <button onClick={() => { setAddingPhase(false); setNewPhaseLabel('') }} className="btn-secondary text-xs py-1.5 px-4">Cancel</button>
+                <button onClick={handleAddPhase} className="btn-primary text-xs py-1 px-3 flex-1">Add</button>
+                <button onClick={() => { setAddingPhase(false); setNewPhaseLabel('') }} className="btn-secondary text-xs py-1 px-3">Cancel</button>
+              </div>
+            </div>
+          </Panel>
+        )}
+
+        {/* Add Row Modal */}
+        {addingRow && (
+          <Panel position="top-center">
+            <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-4 w-64 mt-14">
+              <h3 className="text-xs font-semibold text-np-dark mb-2">New Row</h3>
+              <input
+                value={newRowLabel}
+                onChange={e => setNewRowLabel(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleAddRow(); if (e.key === 'Escape') { setAddingRow(false); setNewRowLabel('') } }}
+                placeholder="Row label (e.g., Meta Ads Path)..."
+                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-np-blue/20 mb-2"
+                autoFocus
+              />
+              <div className="flex gap-2">
+                <button onClick={handleAddRow} className="btn-primary text-xs py-1 px-3 flex-1">Add</button>
+                <button onClick={() => { setAddingRow(false); setNewRowLabel('') }} className="btn-secondary text-xs py-1 px-3">Cancel</button>
               </div>
             </div>
           </Panel>
@@ -357,11 +437,9 @@ export default function JourneysPage() {
 
         {/* Legend */}
         <Panel position="bottom-left">
-          <div className="bg-white/90 backdrop-blur rounded-xl shadow-sm border border-gray-100 px-4 py-3">
-            <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">How to connect</p>
-            <p className="text-[11px] text-gray-400">
-              Drag from a card's right handle to another card's left handle to create a connection arrow.
-              Double-click any card to edit. Click the status dot to cycle status.
+          <div className="bg-white/90 backdrop-blur rounded-xl shadow-sm border border-gray-100 px-3 py-2">
+            <p className="text-[10px] text-gray-500 leading-relaxed">
+              <strong>Drag</strong> handle → handle to connect · <strong>Click arrow</strong> then ✕ to delete · <strong>Double-click</strong> card to edit · <strong>Delete key</strong> removes selected
             </p>
           </div>
         </Panel>

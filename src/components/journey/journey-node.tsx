@@ -8,91 +8,63 @@ interface JourneyNodeData {
   title: string
   description: string
   status: 'not_started' | 'in_progress' | 'done'
-  phaseLabel: string
   phaseColor: string
+  cardId: string
   onStatusChange: (id: string) => void
   onEdit: (id: string) => void
-  cardId: string
 }
 
-function JourneyNode({ data }: { data: JourneyNodeData }) {
+function JourneyNode({ data, selected }: { data: JourneyNodeData; selected: boolean }) {
   const status = STATUS_CONFIG[data.status]
 
   return (
-    <div
-      className="group relative"
-      onDoubleClick={() => data.onEdit(data.cardId)}
-    >
+    <div onDoubleClick={() => data.onEdit(data.cardId)}>
       <Handle
         type="target"
         position={Position.Left}
-        className="!w-2.5 !h-2.5 !bg-gray-300 !border-2 !border-white hover:!bg-np-blue !transition-colors"
+        className="!w-2 !h-2 !bg-gray-300 !border-2 !border-white hover:!bg-np-blue !transition-colors"
+      />
+      <Handle
+        type="target"
+        position={Position.Top}
+        id="top"
+        className="!w-2 !h-2 !bg-gray-300 !border-2 !border-white hover:!bg-np-blue !transition-colors"
       />
 
       <div
-        className="bg-white rounded-xl border-2 shadow-sm hover:shadow-md transition-all w-[200px] cursor-pointer"
-        style={{ borderColor: `${data.phaseColor}40` }}
+        className={`bg-white rounded-lg border-2 shadow-sm hover:shadow-md transition-all w-[180px] cursor-pointer ${selected ? 'ring-2 ring-np-blue ring-offset-2' : ''}`}
+        style={{ borderColor: `${data.phaseColor}50` }}
       >
-        {/* Phase color bar */}
-        <div
-          className="h-1.5 rounded-t-[10px]"
-          style={{ backgroundColor: data.phaseColor }}
-        />
-
-        <div className="p-3">
-          {/* Phase label */}
-          <div className="flex items-center justify-between mb-1.5">
-            <span
-              className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
-              style={{
-                backgroundColor: `${data.phaseColor}15`,
-                color: data.phaseColor,
-              }}
-            >
-              {data.phaseLabel}
-            </span>
+        <div className="h-1 rounded-t-[6px]" style={{ backgroundColor: data.phaseColor }} />
+        <div className="p-2.5">
+          <div className="flex items-center gap-1.5 mb-1">
             <button
-              onClick={(e) => {
-                e.stopPropagation()
-                data.onStatusChange(data.cardId)
-              }}
-              className="w-3 h-3 rounded-full border-2 transition-colors flex-shrink-0"
+              onClick={(e) => { e.stopPropagation(); data.onStatusChange(data.cardId) }}
+              className="w-2.5 h-2.5 rounded-full border-[1.5px] transition-colors flex-shrink-0"
               style={{
                 borderColor: status.color,
                 backgroundColor: data.status === 'done' ? status.color : 'transparent',
               }}
               title={status.label}
             />
+            <h3 className="text-xs font-semibold text-np-dark leading-tight truncate">{data.title}</h3>
           </div>
-
-          {/* Title */}
-          <h3 className="text-sm font-semibold text-np-dark leading-tight mb-1">
-            {data.title}
-          </h3>
-
-          {/* Description */}
           {data.description && (
-            <p className="text-[10px] text-gray-400 leading-relaxed line-clamp-2">
-              {data.description}
-            </p>
+            <p className="text-[9px] text-gray-400 leading-snug line-clamp-2 ml-4">{data.description}</p>
           )}
-
-          {/* Status */}
-          <div className="mt-2">
-            <span
-              className="text-[9px] font-medium px-1.5 py-0.5 rounded"
-              style={{ backgroundColor: status.bg, color: status.color }}
-            >
-              {status.label}
-            </span>
-          </div>
         </div>
       </div>
 
       <Handle
         type="source"
         position={Position.Right}
-        className="!w-2.5 !h-2.5 !bg-gray-300 !border-2 !border-white hover:!bg-np-blue !transition-colors"
+        className="!w-2 !h-2 !bg-gray-300 !border-2 !border-white hover:!bg-np-blue !transition-colors"
+      />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        id="bottom"
+        className="!w-2 !h-2 !bg-gray-300 !border-2 !border-white hover:!bg-np-blue !transition-colors"
       />
     </div>
   )
