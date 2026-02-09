@@ -1,4 +1,4 @@
-﻿import { createServerClient } from '@supabase/ssr'
+import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function updateSession(request: NextRequest) {
@@ -12,8 +12,8 @@ export async function updateSession(request: NextRequest) {
         getAll() {
           return request.cookies.getAll()
         },
-        setAll(cookiesToSet: { name: string; value: string; options?: any }[]) {
-          cookiesToSet.forEach(({ name, value }) =>
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) =>
             request.cookies.set(name, value)
           )
           supabaseResponse = NextResponse.next({ request })
@@ -25,8 +25,10 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
+  // Refresh session - important for Server Components
   const { data: { user } } = await supabase.auth.getUser()
 
+  // Redirect unauthenticated users to login (except for login page and auth callback)
   if (
     !user &&
     !request.nextUrl.pathname.startsWith('/login') &&
@@ -37,6 +39,7 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
+  // Redirect authenticated users away from login
   if (user && request.nextUrl.pathname.startsWith('/login')) {
     const url = request.nextUrl.clone()
     url.pathname = '/'
