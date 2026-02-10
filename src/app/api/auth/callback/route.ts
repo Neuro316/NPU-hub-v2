@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server'
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
-  const next = searchParams.get('next') ?? '/'
+  const next = searchParams.get('next') || '/'
 
   if (code) {
     const supabase = createServerClient(
@@ -13,13 +13,14 @@ export async function GET(request: Request) {
       {
         cookies: {
           getAll() {
-            return request.headers.get('cookie')?.split('; ').map(c => {
+            const cookieHeader = request.headers.get('cookie') || ''
+            return cookieHeader.split('; ').filter(Boolean).map(c => {
               const [name, ...rest] = c.split('=')
               return { name, value: rest.join('=') }
-            }) ?? []
+            })
           },
           setAll(cookiesToSet: { name: string; value: string; options?: any }[]) {
-            // Cookies set in response below
+            // handled in response
           },
         },
       }
@@ -27,12 +28,9 @@ export async function GET(request: Request) {
 
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     if (!error) {
-      const forwardedHost = request.headers.get('x-forwarded-host')
-      const hub = forwardedHost ? https:// : origin
-      const response = NextResponse.redirect(${hub})
-      return response
+      return NextResponse.redirect(origin + next)
     }
   }
 
-  return NextResponse.redirect(${origin}/login?error=auth)
+  return NextResponse.redirect(origin + '/login?error=auth')
 }
