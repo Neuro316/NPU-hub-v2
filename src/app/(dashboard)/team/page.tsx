@@ -8,7 +8,7 @@ import { MemberDetail } from '@/components/team/member-detail'
 import { Plus, Users, Shield, MessageSquare, Search, Mail, Phone } from 'lucide-react'
 
 export default function TeamPage() {
-  const { currentOrg, organizations, loading: orgLoading } = useWorkspace()
+  const { currentOrg, organizations, user, loading: orgLoading } = useWorkspace()
   const {
     members, loading, isSuperAdmin, isAdmin,
     addMember, updateMember, deleteMember,
@@ -296,3 +296,4 @@ export default function TeamPage() {
     </div>
   )
 }
+
