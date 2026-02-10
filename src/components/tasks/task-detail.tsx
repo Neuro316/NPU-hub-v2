@@ -14,13 +14,14 @@ interface TaskDetailProps {
   fetchComments: (taskId: string) => Promise<TaskComment[]>
   addComment: (taskId: string, author: string, content: string) => Promise<any>
   currentUser: string
+  teamMembers: string[]
 }
 
-const TEAM_MEMBERS = ['Cameron', 'Shane', 'AI Assistant']
+// Team members passed as prop
 
 export function TaskDetail({
   task, columns, onClose, onUpdate, onDelete,
-  fetchComments, addComment, currentUser,
+  fetchComments, addComment, currentUser, teamMembers,
 }: TaskDetailProps) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -155,7 +156,7 @@ export function TaskDetail({
                   onChange={e => { setAssignee(e.target.value); save('assignee', e.target.value) }}
                   className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30">
                   <option value="">Unassigned</option>
-                  {TEAM_MEMBERS.map(m => <option key={m} value={m}>{m}</option>)}
+                  {teamMembers.map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
               </div>
             </div>
@@ -206,7 +207,7 @@ export function TaskDetail({
                       onChange={e => saveFields({ [`raci_${role}`]: e.target.value })}
                       className="w-full text-[10px] border border-gray-200 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-np-blue/30">
                       <option value="">--</option>
-                      {TEAM_MEMBERS.map(m => <option key={m} value={m}>{m}</option>)}
+                      {teamMembers.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
                   </div>
                 ))}

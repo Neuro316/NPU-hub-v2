@@ -3,15 +3,15 @@
 import { useState, useCallback } from 'react'
 import { useTaskData } from '@/lib/hooks/use-task-data'
 import { useWorkspace } from '@/lib/workspace-context'
+import { useTeamData } from '@/lib/hooks/use-team-data'
 import { KanbanColumnView } from '@/components/tasks/kanban-column'
 import { TaskDetail } from '@/components/tasks/task-detail'
 import type { KanbanTask } from '@/lib/types/tasks'
 import { Plus, Filter, Bot, CheckSquare } from 'lucide-react'
 
-const TEAM_MEMBERS = ['Cameron', 'Shane', 'AI Assistant']
-
 export default function TasksPage() {
   const { currentOrg, user, loading: orgLoading } = useWorkspace()
+  const { members } = useTeamData()
   const {
     columns, tasks, loading,
     addColumn, updateColumn, deleteColumn,
@@ -24,6 +24,8 @@ export default function TasksPage() {
   const [addingColumn, setAddingColumn] = useState(false)
   const [newColTitle, setNewColTitle] = useState('')
   const [filterMember, setFilterMember] = useState<string | null>(null)
+
+  const teamMemberNames = members.map(m => m.display_name)
 
   const handleDrop = useCallback(async (targetColumnId: string) => {
     if (!draggedTaskId) return
@@ -106,7 +108,7 @@ export default function TasksPage() {
           className={`text-[10px] px-2.5 py-1 rounded-full font-medium transition-colors ${!filterMember ? 'bg-np-blue text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
           All
         </button>
-        {TEAM_MEMBERS.map(m => (
+        {teamMemberNames.map(m => (
           <button key={m}
             onClick={() => setFilterMember(filterMember === m ? null : m)}
             className={`text-[10px] px-2.5 py-1 rounded-full font-medium transition-colors ${filterMember === m ? 'bg-np-blue text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
@@ -164,6 +166,7 @@ export default function TasksPage() {
         fetchComments={fetchComments}
         addComment={addComment}
         currentUser={currentUser}
+        teamMembers={teamMemberNames}
       />
     </div>
   )
