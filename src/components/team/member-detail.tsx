@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import type { TeamMember } from '@/lib/hooks/use-team-data'
 import { ROLE_CONFIG } from '@/lib/hooks/use-team-data'
-import { X, Trash2, Shield, Mail, Phone, MessageSquare, Building2 } from 'lucide-react'
+import { X, Trash2, Shield, Mail, Phone, MessageSquare, Building2, User } from 'lucide-react'
 
 interface Organization {
   id: string
@@ -18,10 +18,11 @@ interface MemberDetailProps {
   onDelete: (id: string) => Promise<any>
   isSuperAdmin: boolean
   isAdmin: boolean
+  isOwnProfile: boolean
   allOrgs: Organization[]
 }
 
-export function MemberDetail({ member, onClose, onUpdate, onDelete, isSuperAdmin, isAdmin, allOrgs }: MemberDetailProps) {
+export function MemberDetail({ member, onClose, onUpdate, onDelete, isSuperAdmin, isAdmin, isOwnProfile, allOrgs }: MemberDetailProps) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [jobTitle, setJobTitle] = useState('')
@@ -70,9 +71,15 @@ export function MemberDetail({ member, onClose, onUpdate, onDelete, isSuperAdmin
   }
 
   const roleConfig = ROLE_CONFIG[role]
+
+  // Permission logic:
+  // - Own profile: can edit profile fields + slack ID
+  // - Admin: can edit any member's profile fields
+  // - Super Admin: can also edit roles, permissions, workspace access, delete
+  const canEditProfile = isOwnProfile || isAdmin
+  const canEditSlack = isOwnProfile || isAdmin
   const canEditRole = isSuperAdmin
-  const canEditProfile = isAdmin
-  const canDelete = isSuperAdmin && member.role !== 'super_admin'
+  const canDelete = isSuperAdmin && member.role !== 'super_admin' && !isOwnProfile
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -87,7 +94,12 @@ export function MemberDetail({ member, onClose, onUpdate, onDelete, isSuperAdmin
               {name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
             </div>
             <div>
-              <h3 className="text-sm font-bold text-np-dark">{name}</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-np-dark">{name}</h3>
+                {isOwnProfile && (
+                  <span className="text-[8px] bg-np-blue/10 text-np-blue px-1.5 py-0.5 rounded font-bold">YOU</span>
+                )}
+              </div>
               <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
                 style={{ backgroundColor: roleConfig.bg, color: roleConfig.color }}>
                 {roleConfig.label}
@@ -109,9 +121,12 @@ export function MemberDetail({ member, onClose, onUpdate, onDelete, isSuperAdmin
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
 
-          {/* Basic Info */}
+          {/* Profile Section - editable by self or admin+ */}
           <div className="space-y-3">
-            <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Profile</h4>
+            <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+              <User className="w-3 h-3" /> Profile
+              {isOwnProfile && <span className="text-np-blue">(Your Profile)</span>}
+            </h4>
 
             <div>
               <label className="text-[10px] text-gray-500 block mb-0.5">Display Name</label>
@@ -120,7 +135,7 @@ export function MemberDetail({ member, onClose, onUpdate, onDelete, isSuperAdmin
                   onBlur={() => name !== member.display_name && save('display_name', name)}
                   className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
               ) : (
-                <p className="text-sm text-np-dark">{name}</p>
+                <p className="text-sm text-np-dark py-2">{name}</p>
               )}
             </div>
 
@@ -131,7 +146,7 @@ export function MemberDetail({ member, onClose, onUpdate, onDelete, isSuperAdmin
                   onBlur={() => email !== (member.email || '') && save('email', email)}
                   className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
               ) : (
-                <p className="text-sm text-np-dark">{email || 'Not set'}</p>
+                <p className="text-sm text-np-dark py-2">{email || 'Not set'}</p>
               )}
             </div>
 
@@ -143,7 +158,7 @@ export function MemberDetail({ member, onClose, onUpdate, onDelete, isSuperAdmin
                   placeholder="(555) 123-4567"
                   className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300" />
               ) : (
-                <p className="text-sm text-np-dark">{phone || 'Not set'}</p>
+                <p className="text-sm text-np-dark py-2">{phone || 'Not set'}</p>
               )}
             </div>
 
@@ -155,33 +170,40 @@ export function MemberDetail({ member, onClose, onUpdate, onDelete, isSuperAdmin
                   placeholder="Role / Title"
                   className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300" />
               ) : (
-                <p className="text-sm text-np-dark">{jobTitle || 'Not set'}</p>
+                <p className="text-sm text-np-dark py-2">{jobTitle || 'Not set'}</p>
               )}
             </div>
           </div>
 
-          {/* Slack Integration - Admin+ */}
-          {isAdmin && (
-            <div className="space-y-3">
-              <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
-                <MessageSquare className="w-3 h-3" /> Slack Integration
-              </h4>
-              <div>
-                <label className="text-[10px] text-gray-500 block mb-0.5">Slack User ID</label>
+          {/* Slack - editable by self or admin+ */}
+          <div className="space-y-3">
+            <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+              <MessageSquare className="w-3 h-3" /> Slack Integration
+            </h4>
+            <p className="text-[9px] text-gray-400">Your Slack ID is used for task notifications and @mentions</p>
+            <div>
+              <label className="text-[10px] text-gray-500 block mb-0.5">Slack User ID</label>
+              {canEditSlack ? (
                 <input value={slackId} onChange={e => setSlackId(e.target.value)}
                   onBlur={() => slackId !== (member.slack_user_id || '') && save('slack_user_id', slackId || null)}
                   placeholder="U01ABCDEF"
                   className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 font-mono" />
-              </div>
-              <div>
-                <label className="text-[10px] text-gray-500 block mb-0.5">Slack Display Name</label>
+              ) : (
+                <p className="text-xs text-np-dark py-2 font-mono">{slackId || 'Not set'}</p>
+              )}
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-500 block mb-0.5">Slack Display Name</label>
+              {canEditSlack ? (
                 <input value={slackName} onChange={e => setSlackName(e.target.value)}
                   onBlur={() => slackName !== (member.slack_display_name || '') && save('slack_display_name', slackName || null)}
-                  placeholder="@cameron"
+                  placeholder="@yourname"
                   className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300" />
-              </div>
+              ) : (
+                <p className="text-xs text-np-dark py-2">{slackName || 'Not set'}</p>
+              )}
             </div>
-          )}
+          </div>
 
           {/* Role & Permissions - Super Admin only */}
           {isSuperAdmin && (

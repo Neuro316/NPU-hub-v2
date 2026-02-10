@@ -64,6 +64,28 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
             : null
           const savedOrg = orgs.find(o => o.id === lastOrgId)
           setCurrentOrg(savedOrg || orgs[0])
+
+          // Auto-create team profile if missing
+          const targetOrg = savedOrg || orgs[0]
+          if (targetOrg) {
+            const { data: existingProfile } = await supabase
+              .from('team_profiles')
+              .select('id')
+              .eq('org_id', targetOrg.id)
+              .eq('user_id', user.id)
+              .maybeSingle()
+            
+            if (!existingProfile) {
+              await supabase.from('team_profiles').insert({
+                org_id: targetOrg.id,
+                user_id: user.id,
+                display_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'New Member',
+                email: user.email,
+                role: 'team_member',
+                status: 'active',
+              })
+            }
+          }
         }
       }
 

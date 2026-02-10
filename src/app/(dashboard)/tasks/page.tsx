@@ -8,6 +8,7 @@ import { KanbanColumnView } from '@/components/tasks/kanban-column'
 import { TaskDetail } from '@/components/tasks/task-detail'
 import type { KanbanTask } from '@/lib/types/tasks'
 import { Plus, Filter, Bot, CheckSquare } from 'lucide-react'
+import { notifyTaskMoved } from '@/lib/slack-notifications'
 
 export default function TasksPage() {
   const { currentOrg, user, loading: orgLoading } = useWorkspace()
@@ -35,11 +36,24 @@ export default function TasksPage() {
       return
     }
 
+    const fromCol = columns.find(c => c.id === task.column_id)?.title || ''
+    const toCol = columns.find(c => c.id === targetColumnId)?.title || ''
     const colTasks = tasks.filter(t => t.column_id === targetColumnId)
     const maxOrder = colTasks.length > 0 ? Math.max(...colTasks.map(t => t.sort_order)) + 1 : 0
     await moveTask(draggedTaskId, targetColumnId, maxOrder)
     setDraggedTaskId(null)
-  }, [draggedTaskId, tasks, moveTask])
+
+    // Slack notify
+    if (currentOrg?.id) {
+      const raciRoles = {
+        responsible: task.custom_fields?.raci_responsible || '',
+        accountable: task.custom_fields?.raci_accountable || '',
+        consulted: task.custom_fields?.raci_consulted || '',
+        informed: task.custom_fields?.raci_informed || '',
+      }
+      notifyTaskMoved(currentOrg.id, task.title, task.id, fromCol, toCol, currentUser, task.assignee, raciRoles)
+    }
+  }, [draggedTaskId, tasks, moveTask, columns, currentOrg, currentUser])
 
   const handleAddColumn = async () => {
     if (!newColTitle.trim()) return
@@ -167,6 +181,7 @@ export default function TasksPage() {
         addComment={addComment}
         currentUser={currentUser}
         teamMembers={teamMemberNames}
+        orgId={currentOrg?.id || ''}
       />
     </div>
   )

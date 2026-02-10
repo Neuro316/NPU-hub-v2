@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import type { KanbanTask, KanbanColumn, TaskComment } from '@/lib/types/tasks'
 import { PRIORITY_CONFIG } from '@/lib/types/tasks'
 import { X, Trash2, MessageSquare, Plus, Link2, Calendar, User, Flag, Eye, FileText, ExternalLink } from 'lucide-react'
+import { notifyTaskAssigned, notifyTaskMoved, notifyRACIAssigned } from '@/lib/slack-notifications'
 
 interface TaskDetailProps {
   task: KanbanTask | null
@@ -15,13 +16,14 @@ interface TaskDetailProps {
   addComment: (taskId: string, author: string, content: string) => Promise<any>
   currentUser: string
   teamMembers: string[]
+  orgId: string
 }
 
 // Team members passed as prop
 
 export function TaskDetail({
   task, columns, onClose, onUpdate, onDelete,
-  fetchComments, addComment, currentUser, teamMembers,
+  fetchComments, addComment, currentUser, teamMembers, orgId,
 }: TaskDetailProps) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -127,7 +129,22 @@ export function TaskDetail({
                   <Flag className="w-3 h-3 inline mr-0.5" /> Column
                 </label>
                 <select value={columnId}
-                  onChange={e => { setColumnId(e.target.value); save('column_id', e.target.value) }}
+                  onChange={e => {
+                    const newColId = e.target.value
+                    const fromCol = columns.find(c => c.id === columnId)?.title || ''
+                    const toCol = columns.find(c => c.id === newColId)?.title || ''
+                    setColumnId(newColId)
+                    save('column_id', newColId)
+                    if (newColId !== task.column_id) {
+                      const raciRoles = {
+                        responsible: fields.raci_responsible || '',
+                        accountable: fields.raci_accountable || '',
+                        consulted: fields.raci_consulted || '',
+                        informed: fields.raci_informed || '',
+                      }
+                      notifyTaskMoved(orgId, task.title, task.id, fromCol, toCol, currentUser, assignee, raciRoles)
+                    }
+                  }}
                   className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30">
                   {columns.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
                 </select>
@@ -153,7 +170,14 @@ export function TaskDetail({
                   <User className="w-3 h-3 inline mr-0.5" /> Assignee
                 </label>
                 <select value={assignee}
-                  onChange={e => { setAssignee(e.target.value); save('assignee', e.target.value) }}
+                  onChange={e => {
+                    const newAssignee = e.target.value
+                    setAssignee(newAssignee)
+                    save('assignee', newAssignee)
+                    if (newAssignee && newAssignee !== task.assignee) {
+                      notifyTaskAssigned(orgId, task.title, task.id, newAssignee, currentUser)
+                    }
+                  }}
                   className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30">
                   <option value="">Unassigned</option>
                   {teamMembers.map(m => <option key={m} value={m}>{m}</option>)}
@@ -204,7 +228,13 @@ export function TaskDetail({
                     <label className="text-[9px] text-gray-500 capitalize block mb-0.5">{role}</label>
                     <select
                       value={fields[`raci_${role}`] || ''}
-                      onChange={e => saveFields({ [`raci_${role}`]: e.target.value })}
+                      onChange={e => {
+                        const newPerson = e.target.value
+                        saveFields({ [`raci_${role}`]: newPerson })
+                        if (newPerson && newPerson !== fields[`raci_${role}`]) {
+                          notifyRACIAssigned(orgId, task.title, task.id, role, newPerson, currentUser)
+                        }
+                      }}
                       className="w-full text-[10px] border border-gray-200 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-np-blue/30">
                       <option value="">--</option>
                       {teamMembers.map(m => <option key={m} value={m}>{m}</option>)}

@@ -290,6 +290,7 @@ export default function TeamPage() {
         onDelete={deleteMember}
         isSuperAdmin={isSuperAdmin}
         isAdmin={isAdmin}
+        isOwnProfile={selectedMember?.user_id === user?.id || false}
         allOrgs={organizations}
       />
     </div>
