@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useJourneyData } from '@/lib/hooks/use-journey-data'
 import { useWorkspace } from '@/lib/workspace-context'
-import { PathRow } from '@/components/journey/path-row'
+import { PathGroup } from '@/components/journey/path-row'
 import { CardDetailPanel } from '@/components/journey/card-detail-panel'
 import type { JourneyCard } from '@/lib/types/journey'
 import { PHASE_COLORS } from '@/lib/types/journey'
@@ -85,18 +85,7 @@ export default function JourneysPage() {
             className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-np-blue/20 placeholder-gray-300 mb-2"
             autoFocus
           />
-          <div className="flex items-center gap-2">
-            <div className="flex gap-1">
-              {PATH_COLORS.slice(0, 6).map(color => (
-                <button
-                  key={color}
-                  className="w-5 h-5 rounded-full border-2 border-white shadow-sm"
-                  style={{ backgroundColor: color }}
-                  title={color}
-                />
-              ))}
-            </div>
-            <div className="flex-1" />
+          <div className="flex gap-2">
             <button onClick={handleAddPath} className="btn-primary text-xs py-1.5 px-4">Add Path</button>
             <button onClick={() => { setAddingPath(false); setNewPathLabel('') }} className="btn-secondary text-xs py-1.5 px-4">Cancel</button>
           </div>
@@ -109,8 +98,9 @@ export default function JourneysPage() {
           <Route className="w-14 h-14 text-gray-200 mx-auto mb-4" />
           <h2 className="text-lg font-semibold text-np-dark mb-2">Map Your Customer Journey</h2>
           <p className="text-sm text-gray-500 mb-6 max-w-md mx-auto">
-            Create horizontal paths for each major flow: Marketing, Sales, Onboarding, Program, Off-boarding.
-            Add cards to each path and connect them to show how customers move through your systems.
+            Create paths for each major flow: Marketing, Sales, Onboarding, Program, Off-boarding.
+            Each path can have multiple rows for parallel tracks (e.g., Marketing might have
+            Facebook Ads, Social Media, Podcast, and Referral rows).
           </p>
           <button onClick={() => setAddingPath(true)} className="btn-primary">
             Create First Path
@@ -118,10 +108,10 @@ export default function JourneysPage() {
         </div>
       )}
 
-      {/* Paths */}
-      <div className="space-y-2">
-        {sortedPhases.map((phase, idx) => (
-          <PathRow
+      {/* Path Groups */}
+      <div className="space-y-3">
+        {sortedPhases.map(phase => (
+          <PathGroup
             key={phase.id}
             phase={phase}
             cards={cards.filter(c => c.phase_id === phase.id)}
@@ -131,11 +121,10 @@ export default function JourneysPage() {
             onCardClick={setSelectedCard}
             onUpdatePhase={updatePhase}
             onDeletePhase={deletePhase}
-            rowIndex={idx}
           />
         ))}
 
-        {/* Add Path Row */}
+        {/* Add Path */}
         {phases.length > 0 && (
           <button
             onClick={() => setAddingPath(true)}
