@@ -130,7 +130,7 @@ export async function notifyTaskMoved(
 
   // Send DMs
   if (config.bot_token) {
-    for (const person of toNotify) {
+    for (const person of Array.from(toNotify)) {
       const slackId = await getSlackUserId(orgId, person)
       if (slackId) {
         await sendDM(
@@ -229,3 +229,4 @@ export async function notifyCommentMention(
     `💬 *${author}* mentioned you in task *${taskTitle}*:\n> ${commentPreview.slice(0, 200)}\n→ <${taskUrl}|Open Task>`
   )
 }
+
