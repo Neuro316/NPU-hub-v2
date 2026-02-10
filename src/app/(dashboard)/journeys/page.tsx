@@ -3,14 +3,15 @@
 import { useState } from 'react'
 import { useJourneyData } from '@/lib/hooks/use-journey-data'
 import { useWorkspace } from '@/lib/workspace-context'
-import { PhaseColumn } from '@/components/journey/phase-column'
+import { PathRow } from '@/components/journey/path-row'
 import { CardDetailPanel } from '@/components/journey/card-detail-panel'
 import type { JourneyCard } from '@/lib/types/journey'
-import { Plus, LayoutTemplate } from 'lucide-react'
+import { PHASE_COLORS } from '@/lib/types/journey'
+import { Plus, Wand2, Route } from 'lucide-react'
 
-const PHASE_COLORS = [
-  '#8B5CF6', '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#386797',
-  '#EC4899', '#06B6D4', '#84CC16', '#F97316',
+const PATH_COLORS = [
+  '#8B5CF6', '#3B82F6', '#10B981', '#F59E0B', '#EF4444',
+  '#386797', '#EC4899', '#06B6D4', '#84CC16', '#F97316',
 ]
 
 export default function JourneysPage() {
@@ -22,16 +23,16 @@ export default function JourneysPage() {
   } = useJourneyData()
 
   const [selectedCard, setSelectedCard] = useState<JourneyCard | null>(null)
-  const [addingPhase, setAddingPhase] = useState(false)
-  const [newPhaseLabel, setNewPhaseLabel] = useState('')
+  const [addingPath, setAddingPath] = useState(false)
+  const [newPathLabel, setNewPathLabel] = useState('')
 
-  const handleAddPhase = async () => {
-    if (!newPhaseLabel.trim()) return
-    const key = newPhaseLabel.trim().toLowerCase().replace(/\s+/g, '_')
-    const color = PHASE_COLORS[phases.length % PHASE_COLORS.length]
-    await addPhase(newPhaseLabel.trim(), key, color)
-    setNewPhaseLabel('')
-    setAddingPhase(false)
+  const handleAddPath = async () => {
+    if (!newPathLabel.trim()) return
+    const key = newPathLabel.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
+    const color = PATH_COLORS[phases.length % PATH_COLORS.length]
+    await addPhase(newPathLabel.trim(), key, color)
+    setNewPathLabel('')
+    setAddingPath(false)
   }
 
   if (orgLoading || loading) {
@@ -42,111 +43,108 @@ export default function JourneysPage() {
     )
   }
 
-  const hasPhases = phases.length > 0
+  const sortedPhases = [...phases].sort((a, b) => a.sort_order - b.sort_order)
 
   return (
     <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-semibold text-np-dark">Journey Builder</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Visual pipeline for {currentOrg?.name || 'your organization'}
+          <h1 className="text-xl font-semibold text-np-dark">Journey Builder</h1>
+          <p className="text-xs text-gray-400 mt-0.5">
+            {currentOrg?.name} · {phases.length} paths · {cards.length} cards
           </p>
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => setAddingPhase(true)}
-            className="btn-primary flex items-center gap-2 text-sm"
+            onClick={() => setAddingPath(true)}
+            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium text-np-dark hover:bg-gray-50 transition-colors"
           >
-            <Plus className="w-4 h-4" />
-            Add Phase
+            <Plus className="w-3.5 h-3.5" /> Add Path
+          </button>
+          <button
+            className="flex items-center gap-1.5 px-3 py-2 bg-np-blue text-white rounded-lg text-xs font-medium hover:bg-np-blue/90 transition-colors"
+          >
+            <Wand2 className="w-3.5 h-3.5" /> AI Journey Creator
           </button>
         </div>
       </div>
 
+      {/* Add Path Input */}
+      {addingPath && (
+        <div className="mb-4 bg-white border border-gray-200 rounded-xl p-4 max-w-sm">
+          <h3 className="text-xs font-semibold text-np-dark mb-2">New Path</h3>
+          <input
+            value={newPathLabel}
+            onChange={e => setNewPathLabel(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') handleAddPath()
+              if (e.key === 'Escape') { setAddingPath(false); setNewPathLabel('') }
+            }}
+            placeholder="Path name (e.g., Marketing, Sales, Onboarding)..."
+            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-np-blue/20 placeholder-gray-300 mb-2"
+            autoFocus
+          />
+          <div className="flex items-center gap-2">
+            <div className="flex gap-1">
+              {PATH_COLORS.slice(0, 6).map(color => (
+                <button
+                  key={color}
+                  className="w-5 h-5 rounded-full border-2 border-white shadow-sm"
+                  style={{ backgroundColor: color }}
+                  title={color}
+                />
+              ))}
+            </div>
+            <div className="flex-1" />
+            <button onClick={handleAddPath} className="btn-primary text-xs py-1.5 px-4">Add Path</button>
+            <button onClick={() => { setAddingPath(false); setNewPathLabel('') }} className="btn-secondary text-xs py-1.5 px-4">Cancel</button>
+          </div>
+        </div>
+      )}
+
       {/* Empty State */}
-      {!hasPhases && (
-        <div className="card p-12 text-center">
-          <LayoutTemplate className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-          <h2 className="text-lg font-semibold text-np-dark mb-2">No journey phases yet</h2>
+      {phases.length === 0 && (
+        <div className="bg-white border border-gray-100 rounded-2xl p-16 text-center">
+          <Route className="w-14 h-14 text-gray-200 mx-auto mb-4" />
+          <h2 className="text-lg font-semibold text-np-dark mb-2">Map Your Customer Journey</h2>
           <p className="text-sm text-gray-500 mb-6 max-w-md mx-auto">
-            Start building your pipeline by adding phases. Each phase represents a stage
-            in your customer or participant journey.
+            Create horizontal paths for each major flow: Marketing, Sales, Onboarding, Program, Off-boarding.
+            Add cards to each path and connect them to show how customers move through your systems.
           </p>
-          <button
-            onClick={() => setAddingPhase(true)}
-            className="btn-primary"
-          >
-            Create First Phase
+          <button onClick={() => setAddingPath(true)} className="btn-primary">
+            Create First Path
           </button>
         </div>
       )}
 
-      {/* Add Phase Input */}
-      {addingPhase && (
-        <div className="mb-6 card p-4 max-w-sm">
-          <input
-            value={newPhaseLabel}
-            onChange={e => setNewPhaseLabel(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter') handleAddPhase()
-              if (e.key === 'Escape') { setAddingPhase(false); setNewPhaseLabel('') }
-            }}
-            placeholder="Phase name (e.g., Awareness, Onboarding)..."
-            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 
-                       focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue
-                       placeholder-gray-300 mb-3"
-            autoFocus
+      {/* Paths */}
+      <div className="space-y-2">
+        {sortedPhases.map((phase, idx) => (
+          <PathRow
+            key={phase.id}
+            phase={phase}
+            cards={cards.filter(c => c.phase_id === phase.id)}
+            onAddCard={addCard}
+            onUpdateCard={updateCard}
+            onDeleteCard={deleteCard}
+            onCardClick={setSelectedCard}
+            onUpdatePhase={updatePhase}
+            onDeletePhase={deletePhase}
+            rowIndex={idx}
           />
-          <div className="flex gap-2">
-            <button onClick={handleAddPhase} className="btn-primary text-xs py-1.5 px-4">
-              Add Phase
-            </button>
-            <button
-              onClick={() => { setAddingPhase(false); setNewPhaseLabel('') }}
-              className="btn-secondary text-xs py-1.5 px-4"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
+        ))}
 
-      {/* Pipeline Board */}
-      {hasPhases && (
-        <div className="overflow-x-auto pb-4">
-          <div className="flex gap-4 min-w-max">
-            {phases.map(phase => (
-              <PhaseColumn
-                key={phase.id}
-                phase={phase}
-                cards={cards.filter(c => c.phase_id === phase.id)}
-                onAddCard={addCard}
-                onUpdateCard={updateCard}
-                onDeleteCard={deleteCard}
-                onCardClick={setSelectedCard}
-                onUpdatePhase={updatePhase}
-                onDeletePhase={deletePhase}
-              />
-            ))}
-
-            {/* Add Phase Column */}
-            <div className="flex-shrink-0 w-72">
-              <button
-                onClick={() => setAddingPhase(true)}
-                className="w-full flex items-center justify-center gap-2 px-4 py-8
-                           border-2 border-dashed border-gray-200 rounded-xl
-                           text-sm text-gray-400 hover:text-np-dark hover:border-gray-300
-                           transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                Add Phase
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+        {/* Add Path Row */}
+        {phases.length > 0 && (
+          <button
+            onClick={() => setAddingPath(true)}
+            className="w-full flex items-center justify-center gap-2 py-4 border-2 border-dashed border-gray-200 rounded-xl text-xs text-gray-400 hover:text-np-dark hover:border-gray-300 transition-colors"
+          >
+            <Plus className="w-4 h-4" /> Add Another Path
+          </button>
+        )}
+      </div>
 
       {/* Card Detail Panel */}
       <CardDetailPanel
@@ -154,6 +152,7 @@ export default function JourneysPage() {
         phases={phases}
         onClose={() => setSelectedCard(null)}
         onUpdate={updateCard}
+        onDelete={deleteCard}
       />
     </div>
   )
