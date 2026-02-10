@@ -65,25 +65,35 @@ export function PathGroup({
     await onUpdateCard(rowCards[swapIdx].id, { sort_order: currentOrder } as any)
   }
 
+  const handleMoveCardVertical = async (cardId: string, direction: 'up' | 'down', currentRow: number) => {
+    const currentRowIdx = rowNumbers.indexOf(currentRow)
+    if (currentRowIdx < 0) return
+
+    let targetRow: number
+    if (direction === 'up' && currentRowIdx > 0) {
+      targetRow = rowNumbers[currentRowIdx - 1]
+    } else if (direction === 'down' && currentRowIdx < rowNumbers.length - 1) {
+      targetRow = rowNumbers[currentRowIdx + 1]
+    } else {
+      return
+    }
+
+    await onUpdateCard(cardId, { row_index: targetRow } as any)
+  }
+
   const handleAddSubRow = () => {
     setAddingCard(nextRowIndex)
   }
 
   return (
     <div className="flex group/path">
-      {/* Path Label - spans all sub-rows */}
+      {/* Path Label */}
       <div
         className="flex-shrink-0 w-44 flex flex-col justify-center px-3 py-3 rounded-l-xl border-r-4"
-        style={{
-          backgroundColor: phase.color + '08',
-          borderRightColor: phase.color,
-        }}
+        style={{ backgroundColor: phase.color + '08', borderRightColor: phase.color }}
       >
         <div className="flex items-center gap-2">
-          <div
-            className="w-3 h-3 rounded-full flex-shrink-0"
-            style={{ backgroundColor: phase.color }}
-          />
+          <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: phase.color }} />
 
           {editing ? (
             <div className="flex items-center gap-1 flex-1 min-w-0">
@@ -100,29 +110,20 @@ export function PathGroup({
             </div>
           ) : (
             <div className="flex items-center gap-1 flex-1 min-w-0">
-              <span className="text-xs font-bold truncate" style={{ color: phase.color }}>
-                {phase.label}
-              </span>
-              <span className="text-[9px] text-gray-400">
-                ({cards.length})
-              </span>
+              <span className="text-xs font-bold truncate" style={{ color: phase.color }}>{phase.label}</span>
+              <span className="text-[9px] text-gray-400">({cards.length})</span>
             </div>
           )}
         </div>
 
-        {/* Row count + controls */}
         <div className="mt-2 flex items-center gap-1 ml-5">
           <span className="text-[9px] text-gray-400">{rowNumbers.length} row{rowNumbers.length !== 1 ? 's' : ''}</span>
-          <button
-            onClick={() => setEditing(true)}
-            className="opacity-0 group-hover/path:opacity-100 transition-opacity text-gray-400 hover:text-gray-600"
-          >
+          <button onClick={() => setEditing(true)}
+            className="opacity-0 group-hover/path:opacity-100 transition-opacity text-gray-400 hover:text-gray-600">
             <Pencil className="w-2.5 h-2.5" />
           </button>
-          <button
-            onClick={() => { if (confirm('Delete this path and all its cards?')) onDeletePhase(phase.id) }}
-            className="opacity-0 group-hover/path:opacity-100 transition-opacity text-gray-400 hover:text-red-500"
-          >
+          <button onClick={() => { if (confirm('Delete this path and all its cards?')) onDeletePhase(phase.id) }}
+            className="opacity-0 group-hover/path:opacity-100 transition-opacity text-gray-400 hover:text-red-500">
             <Trash2 className="w-2.5 h-2.5" />
           </button>
         </div>
@@ -136,18 +137,11 @@ export function PathGroup({
           return (
             <div
               key={rowNum}
-              className="flex items-center gap-3 px-4 py-2.5 min-h-[72px]"
-              style={{
-                borderBottom: rowIdx < rowNumbers.length - 1 ? '1px dashed #E5E7EB' : 'none',
-              }}
+              className="flex items-center gap-3 px-4 py-3 min-h-[80px]"
+              style={{ borderBottom: rowIdx < rowNumbers.length - 1 ? '1px dashed #E5E7EB' : 'none' }}
             >
-              {/* Row indicator */}
-              <div
-                className="flex-shrink-0 w-1 h-8 rounded-full opacity-40"
-                style={{ backgroundColor: phase.color }}
-              />
+              <div className="flex-shrink-0 w-1 h-8 rounded-full opacity-40" style={{ backgroundColor: phase.color }} />
 
-              {/* Cards */}
               {rowCards.map((card, cardIdx) => (
                 <div key={card.id} className="flex items-center gap-2">
                   <FlowCard
@@ -155,8 +149,12 @@ export function PathGroup({
                     pathColor={phase.color}
                     canMoveLeft={cardIdx > 0}
                     canMoveRight={cardIdx < rowCards.length - 1}
+                    canMoveUp={rowIdx > 0}
+                    canMoveDown={rowIdx < rowNumbers.length - 1}
                     onMoveLeft={() => handleMoveCard(card.id, 'left', rowNum)}
                     onMoveRight={() => handleMoveCard(card.id, 'right', rowNum)}
+                    onMoveUp={() => handleMoveCardVertical(card.id, 'up', rowNum)}
+                    onMoveDown={() => handleMoveCardVertical(card.id, 'down', rowNum)}
                     onClick={() => onCardClick(card)}
                   />
                   {cardIdx < rowCards.length - 1 && (
@@ -165,27 +163,19 @@ export function PathGroup({
                 </div>
               ))}
 
-              {/* Add card to this row */}
               {addingCard === rowNum ? (
                 <div className="flex-shrink-0 bg-white border border-gray-200 rounded-lg p-2 w-44">
-                  <input
-                    value={newTitle}
-                    onChange={e => setNewTitle(e.target.value)}
+                  <input value={newTitle} onChange={e => setNewTitle(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') handleAddCard(rowNum); if (e.key === 'Escape') { setAddingCard(null); setNewTitle('') } }}
-                    placeholder="Card title..."
-                    className="w-full text-xs border-none focus:outline-none placeholder-gray-300"
-                    autoFocus
-                  />
+                    placeholder="Card title..." className="w-full text-xs border-none focus:outline-none placeholder-gray-300" autoFocus />
                   <div className="flex gap-1 mt-1.5">
                     <button onClick={() => handleAddCard(rowNum)} className="text-[10px] bg-np-blue text-white px-2 py-0.5 rounded font-medium">Add</button>
                     <button onClick={() => { setAddingCard(null); setNewTitle('') }} className="text-[10px] text-gray-400 px-2 py-0.5 rounded">Cancel</button>
                   </div>
                 </div>
               ) : (
-                <button
-                  onClick={() => setAddingCard(rowNum)}
-                  className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 border border-dashed border-gray-200 rounded-lg text-[9px] text-gray-400 hover:text-np-dark hover:border-gray-300 transition-colors"
-                >
+                <button onClick={() => setAddingCard(rowNum)}
+                  className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 border border-dashed border-gray-200 rounded-lg text-[9px] text-gray-400 hover:text-np-dark hover:border-gray-300 transition-colors">
                   <Plus className="w-3 h-3" /> Card
                 </button>
               )}
@@ -195,17 +185,12 @@ export function PathGroup({
 
         {/* Add sub-row */}
         {addingCard === nextRowIndex ? (
-          <div className="flex items-center gap-3 px-4 py-2.5 border-t border-dashed border-gray-200">
+          <div className="flex items-center gap-3 px-4 py-3 border-t border-dashed border-gray-200">
             <div className="flex-shrink-0 w-1 h-8 rounded-full opacity-40" style={{ backgroundColor: phase.color }} />
             <div className="flex-shrink-0 bg-white border border-gray-200 rounded-lg p-2 w-44">
-              <input
-                value={newTitle}
-                onChange={e => setNewTitle(e.target.value)}
+              <input value={newTitle} onChange={e => setNewTitle(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') handleAddCard(nextRowIndex); if (e.key === 'Escape') { setAddingCard(null); setNewTitle('') } }}
-                placeholder="First card in new row..."
-                className="w-full text-xs border-none focus:outline-none placeholder-gray-300"
-                autoFocus
-              />
+                placeholder="First card in new row..." className="w-full text-xs border-none focus:outline-none placeholder-gray-300" autoFocus />
               <div className="flex gap-1 mt-1.5">
                 <button onClick={() => handleAddCard(nextRowIndex)} className="text-[10px] bg-np-blue text-white px-2 py-0.5 rounded font-medium">Add</button>
                 <button onClick={() => { setAddingCard(null); setNewTitle('') }} className="text-[10px] text-gray-400 px-2 py-0.5 rounded">Cancel</button>
@@ -213,10 +198,8 @@ export function PathGroup({
             </div>
           </div>
         ) : (
-          <button
-            onClick={handleAddSubRow}
-            className="flex items-center gap-1.5 px-4 py-2 text-[9px] text-gray-400 hover:text-np-dark transition-colors border-t border-dashed border-gray-100"
-          >
+          <button onClick={handleAddSubRow}
+            className="flex items-center gap-1.5 px-4 py-2 text-[9px] text-gray-400 hover:text-np-dark transition-colors border-t border-dashed border-gray-100">
             <Plus className="w-3 h-3" /> Add Row to {phase.label}
           </button>
         )}
