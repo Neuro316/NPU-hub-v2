@@ -26,6 +26,11 @@ export default function JourneysPage() {
   const [addingPath, setAddingPath] = useState(false)
   const [newPathLabel, setNewPathLabel] = useState('')
 
+  const handleDuplicate = async (card: JourneyCard, targetPhaseId: string, targetRow: number) => {
+    await addCard(targetPhaseId, card.title, targetRow)
+    // Note: custom_fields will need to be copied in a follow-up update
+  }
+
   const handleAddPath = async () => {
     if (!newPathLabel.trim()) return
     const key = newPathLabel.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
@@ -142,6 +147,7 @@ export default function JourneysPage() {
         onClose={() => setSelectedCard(null)}
         onUpdate={updateCard}
         onDelete={deleteCard}
+        onDuplicate={handleDuplicate}
       />
     </div>
   )
