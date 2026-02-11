@@ -101,6 +101,9 @@ export default function CampaignsPage() {
   const [endDate, setEndDate] = useState('')
   const [saving, setSaving] = useState(false)
 
+  const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null)
+  const [editingStatus, setEditingStatus] = useState(false)
+
   // AI Builder state
   const [aiMode, setAiMode] = useState(false)
   const [aiStep, setAiStep] = useState(0)
@@ -123,6 +126,23 @@ export default function CampaignsPage() {
 
   useEffect(() => { fetchData() }, [fetchData])
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [aiMessages])
+
+  const updateCampaignStatus = async (id: string, newStatus: string) => {
+    const { error } = await supabase.from('campaigns').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', id)
+    if (!error) {
+      setCampaigns(prev => prev.map(c => c.id === id ? { ...c, status: newStatus } : c))
+      if (selectedCampaign?.id === id) setSelectedCampaign(prev => prev ? { ...prev, status: newStatus } : null)
+    }
+  }
+
+  const deleteCampaign = async (id: string) => {
+    if (!confirm('Delete this campaign? This cannot be undone.')) return
+    const { error } = await supabase.from('campaigns').delete().eq('id', id)
+    if (!error) {
+      setCampaigns(prev => prev.filter(c => c.id !== id))
+      setSelectedCampaign(null)
+    }
+  }
 
   // Manual create
   const handleCreate = async () => {
@@ -562,7 +582,7 @@ Ready to create this campaign?`
             const statusConf = STATUS_CONFIG[campaign.status] || STATUS_CONFIG.draft
             const goals = campaign.goals || {}
             return (
-              <div key={campaign.id}
+              <div key={campaign.id} onClick={() => setSelectedCampaign(campaign)}
                 className="bg-white border border-gray-100 rounded-xl p-5 hover:shadow-md hover:border-gray-200 transition-all cursor-pointer">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
@@ -600,6 +620,138 @@ Ready to create this campaign?`
               </div>
             )
           })}
+        </div>
+      )}
+      {/* Campaign Detail Modal */}
+      {selectedCampaign && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setSelectedCampaign(null)} />
+          <div className="relative w-full max-w-2xl max-h-[85vh] bg-white rounded-2xl shadow-2xl overflow-y-auto">
+            {/* Header */}
+            <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between z-10">
+              <div className="flex items-center gap-3">
+                <Target className="w-5 h-5 text-np-blue" />
+                <h2 className="text-lg font-bold text-np-dark">{selectedCampaign.name}</h2>
+              </div>
+              <button onClick={() => setSelectedCampaign(null)} className="p-1.5 rounded-lg hover:bg-gray-100">
+                <X className="w-4 h-4 text-gray-400" />
+              </button>
+            </div>
+
+            <div className="px-6 py-5 space-y-6">
+              {/* Status + Brand Row */}
+              <div className="flex items-center gap-3">
+                <div className="flex gap-1.5">
+                  {Object.entries(STATUS_CONFIG).map(([key, conf]) => (
+                    <button key={key} onClick={() => updateCampaignStatus(selectedCampaign.id, key)}
+                      className={`text-[10px] font-bold px-2.5 py-1 rounded-lg transition-all ${selectedCampaign.status === key ? 'ring-2 ring-offset-1' : 'opacity-50 hover:opacity-80'}`}
+                      style={{ backgroundColor: conf.bg, color: conf.color, ...(selectedCampaign.status === key ? { ringColor: conf.color } : {}) }}>
+                      {conf.label}
+                    </button>
+                  ))}
+                </div>
+                <span className="text-[10px] font-bold uppercase text-gray-400 ml-auto">
+                  {selectedCampaign.brand === 'np' ? 'Neuro Progeny' : 'Sensorium'}
+                </span>
+              </div>
+
+              {/* Description */}
+              {selectedCampaign.description && (
+                <div>
+                  <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Description</h4>
+                  <p className="text-sm text-gray-600 leading-relaxed">{selectedCampaign.description}</p>
+                </div>
+              )}
+
+              {/* Details Grid */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <DollarSign className="w-3.5 h-3.5 text-yellow-500" />
+                    <span className="text-[10px] font-bold text-gray-400 uppercase">Budget</span>
+                  </div>
+                  <p className="text-lg font-bold text-np-dark">
+                    {selectedCampaign.budget ? '$' + selectedCampaign.budget.toLocaleString() : 'Not set'}
+                  </p>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Calendar className="w-3.5 h-3.5 text-blue-500" />
+                    <span className="text-[10px] font-bold text-gray-400 uppercase">Timeline</span>
+                  </div>
+                  <p className="text-sm font-bold text-np-dark">
+                    {selectedCampaign.start_date
+                      ? new Date(selectedCampaign.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                      : 'No start'}
+                    {selectedCampaign.end_date
+                      ? ' → ' + new Date(selectedCampaign.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                      : ''}
+                  </p>
+                </div>
+              </div>
+
+              {/* Goals / AI Data */}
+              {selectedCampaign.goals && Object.keys(selectedCampaign.goals).length > 0 && (
+                <div>
+                  <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Campaign Goals</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(selectedCampaign.goals).map(([key, value]) => (
+                      <div key={key} className="bg-purple-50 rounded-lg px-3 py-2">
+                        <span className="text-[8px] font-bold text-purple-400 uppercase block">{key.replace(/_/g, ' ')}</span>
+                        <span className="text-xs font-semibold text-purple-700">{String(value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* AI Suggestions */}
+              {selectedCampaign.ai_suggestions && Object.keys(selectedCampaign.ai_suggestions).length > 0 && (
+                <div>
+                  <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                    <Wand2 className="w-3 h-3 text-purple-500" /> AI Campaign Data
+                  </h4>
+                  <div className="bg-gradient-to-br from-purple-50 to-blue-50 rounded-xl p-4 space-y-2">
+                    {Object.entries(selectedCampaign.ai_suggestions)
+                      .filter(([k]) => !k.startsWith('_'))
+                      .map(([key, value]) => (
+                        <div key={key} className="flex items-start gap-2">
+                          <span className="text-[9px] font-bold text-gray-400 uppercase min-w-[80px]">{key}</span>
+                          <span className="text-xs text-np-dark">{String(value)}</span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Funnel Config */}
+              {selectedCampaign.custom_fields && Object.keys(selectedCampaign.custom_fields).length > 0 && (
+                <div>
+                  <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Custom Fields</h4>
+                  <div className="bg-gray-50 rounded-xl p-4">
+                    <pre className="text-[10px] text-gray-600 overflow-auto">{JSON.stringify(selectedCampaign.custom_fields, null, 2)}</pre>
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex items-center gap-3 pt-2 border-t border-gray-100">
+                <button onClick={() => { setSelectedCampaign(null) }}
+                  className="btn-primary text-xs py-2 px-4 flex items-center gap-1.5">
+                  <ArrowRight className="w-3.5 h-3.5" /> Go to Social Designer
+                </button>
+                <button onClick={() => deleteCampaign(selectedCampaign.id)}
+                  className="ml-auto text-xs text-red-400 hover:text-red-600 font-medium px-3 py-2">
+                  Delete Campaign
+                </button>
+              </div>
+
+              {/* Meta */}
+              <p className="text-[9px] text-gray-300">
+                Created {new Date(selectedCampaign.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}
+              </p>
+            </div>
+          </div>
         </div>
       )}
     </div>
