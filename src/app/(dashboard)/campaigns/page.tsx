@@ -323,108 +323,145 @@ export default function CampaignsPage() {
     setShowStepModal(newStep)
   }
 
-  // ─── AI BUILDER ───
-
-  const AI_QUESTIONS = [
-    { field: 'goal', q: "What's the primary goal?", options: ['Lead Generation', 'Brand Awareness', 'Program Enrollment', 'Event Promotion', 'Sales', 'Retargeting'] },
-    { field: 'icp', q: "Who's the target audience?", options: ['High-Performers / Executives', 'Burnt-Out Parents', 'Wellness Practitioners', 'Athletes / Peak Performance', 'Corporate Wellness', 'Veterans & First Responders', 'Custom...'] },
-    { field: 'platform', q: "Which platform(s)?", options: ['Meta (Facebook/Instagram)', 'Google Ads', 'LinkedIn', 'TikTok', 'YouTube', 'Multi-Platform'] },
-    { field: 'budget', q: "Budget range for the test phase?", options: ['$0 (organic)', '$100-500/mo', '$500-2,000/mo', '$2,000-5,000/mo', '$5,000+/mo'] },
-    { field: 'offer', q: "What's the offer or lead magnet?", options: ['NSCI Quick-Score Quiz', 'Free Workshop/Webinar', 'Immersive Mastermind Enrollment', 'Free Consultation', 'Content Download', 'Custom...'] },
-    { field: 'timeline', q: "Campaign timeline?", options: ['2 weeks (sprint)', '30 days', '60 days', '90 days (evergreen)'] },
-    { field: 'creative', q: "What creative assets do you have?", options: ['Video ready', 'Images ready', 'Need everything created', 'Some assets, need more'] },
-    { field: 'hook', q: "What's the core hook or angle?", },
-  ]
+  // ─── AI BUILDER (Claude API) ───
 
   const startAI = () => {
     setShowAI(true)
     setAiStep(0)
     setAiData({})
+    setAiGenerating(false)
     setAiMessages([
-      { role: 'ai', content: "I'm your AI Campaign Builder. I'll ask you a series of questions, and once I have everything I need, I'll generate a complete campaign with all phase steps, targeting, and creative briefs.\n\nLet's start:" },
-      { role: 'ai', content: AI_QUESTIONS[0].q, options: AI_QUESTIONS[0].options },
+      { role: 'ai', content: "I'm your AI CMO. I'll help you build a complete campaign from scratch, whether it's digital ads, organic social, print, conference marketing, podcast outreach, or email sequences.\n\nTell me what you're working on. What's the campaign idea, goal, or challenge you're trying to solve?" },
     ])
   }
 
-  const handleAIResponse = (response: string) => {
-    const current = AI_QUESTIONS[aiStep]
-    const newData = { ...aiData, [current.field]: response }
-    const newMessages: AIMessage[] = [...aiMessages, { role: 'user', content: response }]
-    const next = aiStep + 1
-
-    if (next < AI_QUESTIONS.length) {
-      const nextQ = AI_QUESTIONS[next]
-      const acks = ['Got it.', 'Perfect.', 'Nice.', 'Good.', 'That helps.', 'Great choice.']
-      newMessages.push({ role: 'ai', content: `${acks[Math.floor(Math.random() * acks.length)]} ${nextQ.q}`, options: nextQ.options })
-      setAiStep(next)
-    } else {
-      newMessages.push({ role: 'ai', content: 'I have everything I need. Generating your campaign...' })
-      setAiGenerating(true)
-      setTimeout(() => generateAICampaign(newData, newMessages), 1500)
-    }
-    setAiData(newData)
-    setAiMessages(newMessages)
-    setAiInput('')
-  }
-
-  const generateAICampaign = async (data: Record<string, string>, messages: AIMessage[]) => {
-    const platformMap: Record<string, string> = { 'Meta (Facebook/Instagram)': 'meta', 'Google Ads': 'google', 'LinkedIn': 'linkedin', 'TikTok': 'tiktok', 'YouTube': 'youtube', 'Multi-Platform': 'multi' }
-    const typeMap: Record<string, string> = { 'Lead Generation': 'lead-gen', 'Brand Awareness': 'awareness', 'Program Enrollment': 'sales', 'Event Promotion': 'event', 'Sales': 'sales', 'Retargeting': 'retargeting' }
-
-    const name = `${data.goal || 'Campaign'} - ${data.icp?.split('/')[0]?.trim() || 'General'}`
-    const platform = platformMap[data.platform || ''] || 'meta'
-    const type = typeMap[data.goal || ''] || 'lead-gen'
-    const budgetMatch = data.budget?.match(/\d[\d,]*/)
-    const budget = budgetMatch ? parseInt(budgetMatch[0].replace(',', '')) : 0
-
-    const today = new Date()
-    const durationDays = data.timeline?.includes('2 week') ? 14 : data.timeline?.includes('60') ? 60 : data.timeline?.includes('90') ? 90 : 30
-    const endDate = new Date(today.getTime() + durationDays * 24 * 60 * 60 * 1000)
-
-    // Generate customized steps based on AI data
-    const customSteps: CampaignStep[] = DEFAULT_STEPS.map((s, i) => ({
-      ...s, id: `step-ai-${Date.now()}-${i}`, status: 'not-started',
-      assignee: '', dueDate: '', checklist: [], mediaUrl: '', copyDocUrl: '',
-      landingPageUrl: '', trackingPixel: '', linkedTaskIds: [],
-    }))
-
-    // Save to database
-    if (currentOrg) {
-      setSaving(true)
-      const { data: saved, error } = await supabase.from('campaigns').insert({
-        org_id: currentOrg.id, name, brand: 'np', description: data.hook || null,
-        status: 'planning', budget, start_date: today.toISOString().split('T')[0],
-        end_date: endDate.toISOString().split('T')[0],
-        goals: { objective: data.goal, cta: data.offer, type },
-        ai_suggestions: data,
-        custom_fields: { platform, type, icp: data.icp, objective: data.goal, cta: data.offer, owner: '', steps: customSteps, folderUrl: '', docUrl: '' },
-      }).select().single()
-      setSaving(false)
-
-      if (saved && !error) {
-        setCampaigns(prev => [saved, ...prev])
-        setAiMessages([...messages, {
-          role: 'ai',
-          content: `Campaign "${name}" created with ${customSteps.length} steps across all phases!\n\nPlatform: ${data.platform}\nTarget: ${data.icp}\nBudget: ${data.budget}\nOffer: ${data.offer}\nTimeline: ${durationDays} days\n\nClick "View Campaign" to open the phase pipeline and start working through each step.`,
-          options: ['View Campaign', 'Create Another'],
-        }])
-        setAiGenerating(false)
-        setAiData({ ...data, _campaignId: saved.id })
+  const fetchBrandSettings = async () => {
+    if (!currentOrg) return null
+    const { data } = await supabase.from('brand_profiles').select('*').eq('org_id', currentOrg.id).eq('brand_key', 'np').single()
+    if (data) {
+      return {
+        vocabulary_use: data.vocabulary_use || [],
+        vocabulary_avoid: data.vocabulary_avoid || [],
+        voice_description: data.voice_description || '',
+        ...(data.guidelines || {}),
       }
     }
+    return null
+  }
+
+  const sendToAI = async (userMessage: string) => {
+    const newMessages: AIMessage[] = [...aiMessages, { role: 'user', content: userMessage }]
+    setAiMessages(newMessages)
+    setAiInput('')
+    setAiGenerating(true)
+
+    try {
+      const brandSettings = await fetchBrandSettings()
+
+      const campaignContext = selected ? {
+        name: selected.name,
+        status: selected.status,
+        steps: selectedData?.steps?.map(s => ({ phase: s.phase, name: s.name, status: s.status })),
+        platform: selectedData?.platform,
+        objective: selectedData?.objective,
+      } : null
+
+      const apiMessages = newMessages
+        .filter(m => m.content.trim())
+        .map(m => ({ role: m.role === 'ai' ? 'assistant' : 'user', content: m.content }))
+
+      const res = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: apiMessages, brandSettings, campaignContext }),
+      })
+
+      const data = await res.json()
+      
+      if (data.error) {
+        setAiMessages([...newMessages, { role: 'ai', content: `Error: ${data.error}\n\nMake sure ANTHROPIC_API_KEY is set in your Vercel environment variables.` }])
+      } else {
+        const aiResponse = data.content
+        
+        // Check if response contains a campaign JSON
+        const jsonMatch = aiResponse.match(/```json\s*([\s\S]*?)```/)
+        if (jsonMatch) {
+          try {
+            const campaignPlan = JSON.parse(jsonMatch[1])
+            setAiData(prev => ({ ...prev, _plan: JSON.stringify(campaignPlan) }))
+            setAiMessages([...newMessages, {
+              role: 'ai',
+              content: aiResponse.replace(/```json[\s\S]*?```/, '[Campaign plan generated - see options below]'),
+              options: ['Create This Campaign', 'Modify Steps', 'Change Target Audience', 'Adjust Budget', 'Add More Steps', 'Start Over'],
+            }])
+          } catch {
+            setAiMessages([...newMessages, { role: 'ai', content: aiResponse }])
+          }
+        } else {
+          setAiMessages([...newMessages, { role: 'ai', content: aiResponse }])
+        }
+      }
+    } catch (err: any) {
+      setAiMessages([...newMessages, { role: 'ai', content: `Connection error: ${err.message}. Check that your API key is configured.` }])
+    }
+    setAiGenerating(false)
+  }
+
+  const createCampaignFromAI = async () => {
+    if (!currentOrg || !aiData._plan) return
+    setSaving(true)
+    try {
+      const plan = JSON.parse(aiData._plan)
+      const steps: CampaignStep[] = (plan.steps || []).map((s: any, i: number) => ({
+        id: `step-ai-${Date.now()}-${i}`,
+        phase: s.phase || 'ideation',
+        name: s.name || `Step ${i + 1}`,
+        desc: s.desc || s.description || '',
+        status: 'not-started',
+        assignee: '', dueDate: '', checklist: [],
+        mediaUrl: '', copyDocUrl: '', landingPageUrl: '', trackingPixel: '', linkedTaskIds: [],
+      }))
+
+      const budgetMatch = plan.budget?.match(/[\d,]+/)
+      const budget = budgetMatch ? parseFloat(budgetMatch[0].replace(',', '')) : null
+
+      const { data, error } = await supabase.from('campaigns').insert({
+        org_id: currentOrg.id, name: plan.name || 'AI Campaign', brand: 'np',
+        description: plan.objective || null, status: 'planning', budget,
+        start_date: new Date().toISOString().split('T')[0],
+        end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        goals: { objective: plan.objective, cta: plan.cta, type: plan.type, dataPoints: plan.dataPoints, risks: plan.risks, successCriteria: plan.successCriteria },
+        ai_suggestions: { ...aiData, plan },
+        custom_fields: { platform: plan.platform || 'multi', type: plan.type || 'lead-gen', icp: plan.icp || '', objective: plan.objective || '', cta: plan.cta || '', owner: '', steps, folderUrl: '', docUrl: '' },
+      }).select().single()
+
+      if (data && !error) {
+        setCampaigns(prev => [data, ...prev])
+        setAiMessages(prev => [...prev, {
+          role: 'ai',
+          content: `Campaign "${plan.name}" created with ${steps.length} steps!\n\nKey data points to track:\n${(plan.dataPoints || []).map((d: string) => `• ${d}`).join('\n')}\n\nClick "View Campaign" to open the phase pipeline.`,
+          options: ['View Campaign', 'Create Another'],
+        }])
+        setAiData(prev => ({ ...prev, _campaignId: data.id }))
+      }
+    } catch (err: any) {
+      setAiMessages(prev => [...prev, { role: 'ai', content: `Error creating campaign: ${err.message}` }])
+    }
+    setSaving(false)
   }
 
   const handleAIAction = (action: string) => {
     if (action === 'View Campaign') {
       const camp = campaigns.find(c => c.id === aiData._campaignId)
-      if (camp) {
-        setSelected(camp)
-        setSelectedData(getCampaignData(camp))
-        setView('expanded')
-      }
+      if (camp) { setSelected(camp); setSelectedData(getCampaignData(camp)); setView('expanded') }
       setShowAI(false)
     } else if (action === 'Create Another') {
       startAI()
+    } else if (action === 'Create This Campaign') {
+      createCampaignFromAI()
+    } else {
+      // For modification options, send as a follow-up message to Claude
+      sendToAI(action)
     }
   }
 
@@ -580,6 +617,10 @@ export default function CampaignsPage() {
             </div>
             <div className="flex gap-2">
               {/* Status switcher */}
+              <button onClick={() => { startAI(); /* AI will have campaign context */ }}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-gradient-to-r from-purple-600 to-np-blue text-white rounded-lg text-[10px] font-medium hover:opacity-90">
+                <Wand2 className="w-3.5 h-3.5" /> AI Advisor
+              </button>
               <select value={selected.status} onChange={e => updateCampaignStatus(selected.id, e.target.value)}
                 className="text-[10px] px-2 py-1.5 bg-white border border-gray-200 rounded-lg text-gray-600 focus:outline-none">
                 {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.icon} {v.label}</option>)}
@@ -781,7 +822,7 @@ export default function CampaignsPage() {
                     {msg.options && msg.role === 'ai' && i === aiMessages.length - 1 && (
                       <div className="flex flex-wrap gap-1.5 mt-3">
                         {msg.options.map(opt => (
-                          <button key={opt} onClick={() => opt === 'View Campaign' || opt === 'Create Another' ? handleAIAction(opt) : handleAIResponse(opt)}
+                          <button key={opt} onClick={() => ['View Campaign', 'Create Another', 'Create This Campaign', 'Modify Steps', 'Change Target Audience', 'Adjust Budget', 'Add More Steps', 'Start Over'].includes(opt) ? handleAIAction(opt) : sendToAI(opt)}
                             className="text-[11px] px-3 py-1.5 rounded-full border border-gray-200 bg-white text-np-dark hover:bg-np-blue hover:text-white hover:border-np-blue transition-all font-medium">
                             {opt}
                           </button>
@@ -804,10 +845,10 @@ export default function CampaignsPage() {
             <div className="px-5 py-3 border-t border-gray-100">
               <div className="flex gap-2">
                 <input value={aiInput} onChange={e => setAiInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && aiInput.trim()) { handleAIResponse(aiInput.trim()); setAiInput('') } }}
-                  placeholder="Type your answer..."
+                  onKeyDown={e => { if (e.key === 'Enter' && aiInput.trim()) { sendToAI(aiInput.trim()); setAiInput('') } }}
+                  placeholder="Describe your campaign, ask for advice, or request changes..."
                   className="flex-1 text-sm border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-purple-500/20 placeholder-gray-300" />
-                <button onClick={() => { if (aiInput.trim()) { handleAIResponse(aiInput.trim()); setAiInput('') } }}
+                <button onClick={() => { if (aiInput.trim()) { sendToAI(aiInput.trim()); setAiInput('') } }}
                   className="px-4 py-2.5 bg-gradient-to-r from-purple-600 to-np-blue text-white rounded-xl hover:opacity-90">
                   <Send className="w-4 h-4" />
                 </button>
