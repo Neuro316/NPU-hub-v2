@@ -103,6 +103,8 @@ interface CampaignStep {
   landingPageUrl: string
   trackingPixel: string
   linkedTaskIds: string[]
+  raci: { responsible: string; accountable: string; consulted: string[]; informed: string[] }
+  uploads: Array<{ id: string; name: string; type: string; url: string; library: 'media' | 'company' }>
 }
 
 interface Campaign {
@@ -173,20 +175,26 @@ export default function CampaignsPage() {
   const [aiGenerating, setAiGenerating] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
 
-  // Linked tasks
+  // Linked tasks and team
   const [tasks, setTasks] = useState<any[]>([])
+  const [teamMembers, setTeamMembers] = useState<Array<{ id: string; display_name: string }>>([])
+  const [columns, setColumns] = useState<any[]>([])
 
   const supabase = createClient()
 
   const fetchData = useCallback(async () => {
     if (!currentOrg) return
     setLoading(true)
-    const [campRes, taskRes] = await Promise.all([
+    const [campRes, taskRes, teamRes, colRes] = await Promise.all([
       supabase.from('campaigns').select('*').eq('org_id', currentOrg.id).order('created_at', { ascending: false }),
       supabase.from('kanban_tasks').select('id, title, status, assignee, priority').eq('org_id', currentOrg.id),
+      supabase.from('team_profiles').select('id, display_name').eq('org_id', currentOrg.id),
+      supabase.from('kanban_columns').select('id, title, position').eq('org_id', currentOrg.id).order('position'),
     ])
     if (campRes.data) setCampaigns(campRes.data)
     if (taskRes.data) setTasks(taskRes.data)
+    if (teamRes.data) setTeamMembers(teamRes.data)
+    if (colRes.data) setColumns(colRes.data)
     setLoading(false)
   }, [currentOrg?.id])
 
@@ -219,7 +227,7 @@ export default function CampaignsPage() {
       : DEFAULT_STEPS.map((s, i) => ({
           ...s, id: `step-${Date.now()}-${i}`, status: 'not-started',
           assignee: '', dueDate: '', checklist: [], mediaUrl: '', copyDocUrl: '',
-          landingPageUrl: '', trackingPixel: '', linkedTaskIds: [],
+          landingPageUrl: '', trackingPixel: '', linkedTaskIds: [], raci: { responsible: '', accountable: '', consulted: [], informed: [] }, uploads: [],
         }))
 
     const payload = {
@@ -310,7 +318,7 @@ export default function CampaignsPage() {
     const newStep: CampaignStep = {
       id: `step-${Date.now()}`, phase: phaseId, name: 'New Step', desc: '',
       status: 'not-started', assignee: '', dueDate: '', checklist: [],
-      mediaUrl: '', copyDocUrl: '', landingPageUrl: '', trackingPixel: '', linkedTaskIds: [],
+      mediaUrl: '', copyDocUrl: '', landingPageUrl: '', trackingPixel: '', linkedTaskIds: [], raci: { responsible: '', accountable: '', consulted: [], informed: [] }, uploads: [],
     }
     const newSteps = [...selectedData.steps, newStep]
     const newCF = { ...selected.custom_fields, steps: newSteps }
@@ -419,7 +427,7 @@ export default function CampaignsPage() {
         desc: s.desc || s.description || '',
         status: 'not-started',
         assignee: '', dueDate: '', checklist: [],
-        mediaUrl: '', copyDocUrl: '', landingPageUrl: '', trackingPixel: '', linkedTaskIds: [],
+        mediaUrl: '', copyDocUrl: '', landingPageUrl: '', trackingPixel: '', linkedTaskIds: [], raci: { responsible: '', accountable: '', consulted: [], informed: [] }, uploads: [],
       }))
 
       const budgetMatch = plan.budget?.match(/[\d,]+/)
@@ -675,11 +683,15 @@ export default function CampaignsPage() {
                               <span className="text-[11px] font-medium text-np-dark truncate">{step.name}</span>
                             </div>
                             {step.assignee && <div className="text-[9px] text-gray-400 mt-0.5 ml-5">👤 {step.assignee}</div>}
+                            {step.raci?.responsible && !step.assignee && <div className="text-[9px] text-blue-400 mt-0.5 ml-5">🔵 {step.raci.responsible}</div>}
                             {step.dueDate && <div className="text-[9px] text-gray-400 ml-5">📅 {new Date(step.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>}
                             {step.checklist?.length > 0 && (
                               <div className="text-[8px] text-gray-400 ml-5 mt-0.5">
                                 ☑ {step.checklist.filter(c => c.done).length}/{step.checklist.length}
                               </div>
+                            )}
+                            {step.uploads?.length > 0 && (
+                              <div className="text-[8px] text-purple-400 ml-5">📎 {step.uploads.length} file{step.uploads.length > 1 ? 's' : ''}</div>
                             )}
                           </div>
                         )
@@ -797,7 +809,7 @@ export default function CampaignsPage() {
               <h3 className="text-sm font-bold text-np-dark">Edit Step</h3>
               <button onClick={() => setShowStepModal(null)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
             </div>
-            <StepEditor step={showStepModal} onSave={updateStep} tasks={tasks} />
+            <StepEditor step={showStepModal} onSave={updateStep} tasks={tasks} teamMembers={teamMembers} columns={columns} currentOrg={currentOrg} supabase={supabase} onTaskCreated={fetchData} />
           </div>
         </div>
       )}
@@ -863,9 +875,21 @@ export default function CampaignsPage() {
 
 // ─── STEP EDITOR COMPONENT ───
 
-function StepEditor({ step, onSave, tasks }: { step: CampaignStep; onSave: (s: CampaignStep) => void; tasks: any[] }) {
-  const [f, setF] = useState<CampaignStep>({ ...step })
+function StepEditor({ step, onSave, tasks, teamMembers, columns, currentOrg, supabase, onTaskCreated }: {
+  step: CampaignStep; onSave: (s: CampaignStep) => void; tasks: any[];
+  teamMembers: Array<{ id: string; display_name: string }>; columns: any[];
+  currentOrg: any; supabase: any; onTaskCreated: () => void
+}) {
+  const [f, setF] = useState<CampaignStep>({
+    ...step,
+    raci: step.raci || { responsible: '', accountable: '', consulted: [], informed: [] },
+    uploads: step.uploads || [],
+  })
   const [newCheckItem, setNewCheckItem] = useState('')
+  const [creatingTask, setCreatingTask] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [activeTab, setActiveTab] = useState<'details' | 'raci' | 'files' | 'tasks'>('details')
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const addCheckItem = () => {
     if (!newCheckItem.trim()) return
@@ -874,129 +898,358 @@ function StepEditor({ step, onSave, tasks }: { step: CampaignStep; onSave: (s: C
   }
 
   const toggleCheck = (index: number) => {
-    setF(prev => ({
-      ...prev,
-      checklist: prev.checklist.map((c, i) => i === index ? { ...c, done: !c.done } : c),
-    }))
+    setF(prev => ({ ...prev, checklist: prev.checklist.map((c, i) => i === index ? { ...c, done: !c.done } : c) }))
   }
 
   const removeCheck = (index: number) => {
     setF(prev => ({ ...prev, checklist: prev.checklist.filter((_, i) => i !== index) }))
   }
 
+  const createTaskFromStep = async () => {
+    if (!currentOrg || !columns.length) return
+    setCreatingTask(true)
+    const firstCol = columns[0]
+    const { data, error } = await supabase.from('kanban_tasks').insert({
+      org_id: currentOrg.id,
+      column_id: firstCol.id,
+      title: f.name,
+      description: f.desc,
+      assignee: f.raci?.responsible || f.assignee || '',
+      priority: 'medium',
+      due_date: f.dueDate || null,
+    }).select().single()
+    if (data && !error) {
+      setF(prev => ({ ...prev, linkedTaskIds: [...(prev.linkedTaskIds || []), data.id] }))
+      onTaskCreated()
+    }
+    setCreatingTask(false)
+  }
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files?.length || !currentOrg) return
+    setUploading(true)
+
+    for (const file of Array.from(files)) {
+      const isMedia = file.type.startsWith('image/') || file.type.startsWith('video/') || file.type.startsWith('audio/')
+      const library = isMedia ? 'media' as const : 'company' as const
+      const folder = isMedia ? 'campaign-media' : 'campaign-docs'
+      const filePath = `${currentOrg.id}/${folder}/${Date.now()}-${file.name}`
+
+      const { error: uploadError } = await supabase.storage.from('assets').upload(filePath, file)
+
+      if (!uploadError) {
+        const { data: urlData } = supabase.storage.from('assets').getPublicUrl(filePath)
+        const url = urlData?.publicUrl || ''
+
+        // Also create entry in media_assets or a record
+        if (isMedia) {
+          await supabase.from('media_assets').insert({
+            org_id: currentOrg.id,
+            file_name: file.name,
+            file_type: file.type,
+            file_size: file.size,
+            storage_path: filePath,
+            url,
+            tags: ['campaign'],
+            brand: 'np',
+          })
+        }
+
+        setF(prev => ({
+          ...prev,
+          uploads: [...(prev.uploads || []), {
+            id: `upload-${Date.now()}`,
+            name: file.name,
+            type: file.type,
+            url,
+            library,
+          }],
+        }))
+      }
+    }
+    setUploading(false)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const removeUpload = (uploadId: string) => {
+    setF(prev => ({ ...prev, uploads: prev.uploads.filter(u => u.id !== uploadId) }))
+  }
+
+  const memberNames = teamMembers.map(m => m.display_name)
+
+  const toggleRaciList = (role: 'consulted' | 'informed', name: string) => {
+    setF(prev => {
+      const list = prev.raci[role] || []
+      const updated = list.includes(name) ? list.filter(n => n !== name) : [...list, name]
+      return { ...prev, raci: { ...prev.raci, [role]: updated } }
+    })
+  }
+
   return (
-    <div className="space-y-3">
-      <div>
-        <label className="text-[10px] font-bold text-gray-400 uppercase block mb-0.5">Step Name</label>
-        <input value={f.name} onChange={e => setF({ ...f, name: e.target.value })}
-          className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="text-[10px] font-bold text-gray-400 uppercase block mb-0.5">Phase</label>
-          <select value={f.phase} onChange={e => setF({ ...f, phase: e.target.value })}
-            className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none">
-            {PHASES.map(p => <option key={p.id} value={p.id}>{p.emoji} {p.name}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="text-[10px] font-bold text-gray-400 uppercase block mb-0.5">Status</label>
-          <select value={f.status} onChange={e => setF({ ...f, status: e.target.value })}
-            className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none">
-            {Object.entries(STEP_STATUS).map(([k, v]) => <option key={k} value={k}>{v.icon} {v.label}</option>)}
-          </select>
-        </div>
-      </div>
-      <div>
-        <label className="text-[10px] font-bold text-gray-400 uppercase block mb-0.5">Description</label>
-        <textarea value={f.desc} onChange={e => setF({ ...f, desc: e.target.value })} rows={2}
-          className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none resize-none" />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="text-[10px] font-bold text-gray-400 uppercase block mb-0.5">Assigned To</label>
-          <input value={f.assignee} onChange={e => setF({ ...f, assignee: e.target.value })} placeholder="Team member"
-            className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none" />
-        </div>
-        <div>
-          <label className="text-[10px] font-bold text-gray-400 uppercase block mb-0.5">Due Date</label>
-          <input type="date" value={f.dueDate} onChange={e => setF({ ...f, dueDate: e.target.value })}
-            className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none" />
-        </div>
-      </div>
-
-      {/* Resource Links */}
-      <div className="bg-gray-50 rounded-xl p-3 space-y-2">
-        <label className="text-[10px] font-bold text-gray-400 uppercase block">Resource Links</label>
+    <div>
+      {/* Tabs */}
+      <div className="flex gap-1 mb-4 border-b border-gray-100 pb-2">
         {[
-          { key: 'mediaUrl' as const, label: '🖼️ Media Asset URL', ph: 'Google Drive link...' },
-          { key: 'copyDocUrl' as const, label: '📄 Copy/Script Doc', ph: 'Google Doc link...' },
-          { key: 'landingPageUrl' as const, label: '🔗 Landing Page', ph: 'URL...' },
-          { key: 'trackingPixel' as const, label: '📊 Tracking/Pixel', ph: 'Pixel ID or UTM...' },
-        ].map(({ key, label, ph }) => (
-          <div key={key} className="flex gap-1.5">
-            <input value={f[key]} onChange={e => setF({ ...f, [key]: e.target.value })} placeholder={`${label} - ${ph}`}
-              className="flex-1 text-[10px] border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none" />
-            {f[key] && (
-              <a href={f[key]} target="_blank" rel="noopener noreferrer"
-                className="p-1.5 rounded-lg bg-white border border-gray-200 hover:bg-gray-100">
-                <ExternalLink className="w-3 h-3 text-gray-400" />
-              </a>
-            )}
-          </div>
+          { id: 'details' as const, label: 'Details', icon: '📋' },
+          { id: 'raci' as const, label: 'RACI', icon: '👥' },
+          { id: 'files' as const, label: 'Files', icon: '📁' },
+          { id: 'tasks' as const, label: 'Tasks', icon: '✅' },
+        ].map(tab => (
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+            className={`text-[10px] font-bold px-3 py-1.5 rounded-lg ${activeTab === tab.id ? 'bg-np-blue text-white' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>
+            {tab.icon} {tab.label}
+          </button>
         ))}
       </div>
 
-      {/* Checklist */}
-      <div className="bg-gray-50 rounded-xl p-3">
-        <label className="text-[10px] font-bold text-gray-400 uppercase block mb-2">Checklist</label>
-        {f.checklist?.map((item, i) => (
-          <div key={i} className="flex items-center gap-2 mb-1.5">
-            <button onClick={() => toggleCheck(i)} className="flex-shrink-0">
-              {item.done ? <CheckSquare className="w-3.5 h-3.5 text-green-500" /> : <Square className="w-3.5 h-3.5 text-gray-300" />}
-            </button>
-            <span className={`text-xs flex-1 ${item.done ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{item.text}</span>
-            <button onClick={() => removeCheck(i)} className="text-gray-300 hover:text-red-400">
-              <X className="w-3 h-3" />
-            </button>
+      {/* ─── DETAILS TAB ─── */}
+      {activeTab === 'details' && (
+        <div className="space-y-3">
+          <div>
+            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-0.5">Step Name</label>
+            <input value={f.name} onChange={e => setF({ ...f, name: e.target.value })}
+              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
           </div>
-        ))}
-        <div className="flex gap-1.5 mt-2">
-          <input value={newCheckItem} onChange={e => setNewCheckItem(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') addCheckItem() }}
-            placeholder="Add checklist item..."
-            className="flex-1 text-[10px] border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none" />
-          <button onClick={addCheckItem} className="text-[10px] px-2.5 py-1.5 bg-np-blue text-white rounded-lg font-medium">Add</button>
-        </div>
-      </div>
-
-      {/* Linked Tasks */}
-      <div className="bg-gray-50 rounded-xl p-3">
-        <label className="text-[10px] font-bold text-gray-400 uppercase block mb-2">Linked Tasks</label>
-        {f.linkedTaskIds?.map(taskId => {
-          const task = tasks.find(t => t.id === taskId)
-          return task ? (
-            <div key={taskId} className="flex items-center justify-between bg-white rounded-lg px-2.5 py-1.5 mb-1 border border-gray-100">
-              <span className="text-[10px] text-np-dark">{task.title}</span>
-              <button onClick={() => setF({ ...f, linkedTaskIds: f.linkedTaskIds.filter(id => id !== taskId) })}
-                className="text-gray-300 hover:text-red-400"><X className="w-3 h-3" /></button>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase block mb-0.5">Phase</label>
+              <select value={f.phase} onChange={e => setF({ ...f, phase: e.target.value })}
+                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none">
+                {PHASES.map(p => <option key={p.id} value={p.id}>{p.emoji} {p.name}</option>)}
+              </select>
             </div>
-          ) : null
-        })}
-        <select onChange={e => {
-          if (e.target.value && !f.linkedTaskIds?.includes(e.target.value)) {
-            setF({ ...f, linkedTaskIds: [...(f.linkedTaskIds || []), e.target.value] })
-          }
-          e.target.value = ''
-        }} className="w-full text-[10px] border border-gray-200 rounded-lg px-2.5 py-1.5 mt-1 focus:outline-none text-gray-400">
-          <option value="">Link a task...</option>
-          {tasks.filter(t => !f.linkedTaskIds?.includes(t.id)).map(t => (
-            <option key={t.id} value={t.id}>{t.title}</option>
-          ))}
-        </select>
-      </div>
+            <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase block mb-0.5">Status</label>
+              <select value={f.status} onChange={e => setF({ ...f, status: e.target.value })}
+                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none">
+                {Object.entries(STEP_STATUS).map(([k, v]) => <option key={k} value={k}>{v.icon} {v.label}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-0.5">Description</label>
+            <textarea value={f.desc} onChange={e => setF({ ...f, desc: e.target.value })} rows={2}
+              className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none resize-none" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase block mb-0.5">Assigned To</label>
+              <select value={f.assignee} onChange={e => setF({ ...f, assignee: e.target.value })}
+                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none">
+                <option value="">Unassigned</option>
+                {memberNames.map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase block mb-0.5">Due Date</label>
+              <input type="date" value={f.dueDate} onChange={e => setF({ ...f, dueDate: e.target.value })}
+                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none" />
+            </div>
+          </div>
 
-      <div className="flex justify-end gap-2 pt-2">
+          {/* Resource Links */}
+          <div className="bg-gray-50 rounded-xl p-3 space-y-2">
+            <label className="text-[10px] font-bold text-gray-400 uppercase block">Resource Links</label>
+            {[
+              { key: 'mediaUrl' as const, label: '🖼️ Media Asset URL', ph: 'Google Drive link...' },
+              { key: 'copyDocUrl' as const, label: '📄 Copy/Script Doc', ph: 'Google Doc link...' },
+              { key: 'landingPageUrl' as const, label: '🔗 Landing Page', ph: 'URL...' },
+              { key: 'trackingPixel' as const, label: '📊 Tracking/Pixel', ph: 'Pixel ID or UTM...' },
+            ].map(({ key, label, ph }) => (
+              <div key={key} className="flex gap-1.5">
+                <input value={f[key]} onChange={e => setF({ ...f, [key]: e.target.value })} placeholder={`${label} - ${ph}`}
+                  className="flex-1 text-[10px] border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none" />
+                {f[key] && (
+                  <a href={f[key]} target="_blank" rel="noopener noreferrer"
+                    className="p-1.5 rounded-lg bg-white border border-gray-200 hover:bg-gray-100">
+                    <ExternalLink className="w-3 h-3 text-gray-400" />
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Checklist */}
+          <div className="bg-gray-50 rounded-xl p-3">
+            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-2">Checklist</label>
+            {f.checklist?.map((item, i) => (
+              <div key={i} className="flex items-center gap-2 mb-1.5">
+                <button onClick={() => toggleCheck(i)} className="flex-shrink-0">
+                  {item.done ? <CheckSquare className="w-3.5 h-3.5 text-green-500" /> : <Square className="w-3.5 h-3.5 text-gray-300" />}
+                </button>
+                <span className={`text-xs flex-1 ${item.done ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{item.text}</span>
+                <button onClick={() => removeCheck(i)} className="text-gray-300 hover:text-red-400"><X className="w-3 h-3" /></button>
+              </div>
+            ))}
+            <div className="flex gap-1.5 mt-2">
+              <input value={newCheckItem} onChange={e => setNewCheckItem(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') addCheckItem() }}
+                placeholder="Add checklist item..."
+                className="flex-1 text-[10px] border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none" />
+              <button onClick={addCheckItem} className="text-[10px] px-2.5 py-1.5 bg-np-blue text-white rounded-lg font-medium">Add</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── RACI TAB ─── */}
+      {activeTab === 'raci' && (
+        <div className="space-y-4">
+          <p className="text-[10px] text-gray-500">Assign team members to RACI roles for this step.</p>
+
+          {/* Responsible */}
+          <div className="bg-blue-50 rounded-xl p-3">
+            <label className="text-[10px] font-bold text-blue-600 uppercase block mb-1">🔵 Responsible (Does the work)</label>
+            <select value={f.raci.responsible} onChange={e => setF({ ...f, raci: { ...f.raci, responsible: e.target.value } })}
+              className="w-full text-xs border border-blue-200 rounded-lg px-3 py-2 focus:outline-none bg-white">
+              <option value="">Select person...</option>
+              {memberNames.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </div>
+
+          {/* Accountable */}
+          <div className="bg-red-50 rounded-xl p-3">
+            <label className="text-[10px] font-bold text-red-600 uppercase block mb-1">🔴 Accountable (Final approver)</label>
+            <select value={f.raci.accountable} onChange={e => setF({ ...f, raci: { ...f.raci, accountable: e.target.value } })}
+              className="w-full text-xs border border-red-200 rounded-lg px-3 py-2 focus:outline-none bg-white">
+              <option value="">Select person...</option>
+              {memberNames.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </div>
+
+          {/* Consulted */}
+          <div className="bg-yellow-50 rounded-xl p-3">
+            <label className="text-[10px] font-bold text-yellow-700 uppercase block mb-1.5">🟡 Consulted (Provides input)</label>
+            <div className="flex flex-wrap gap-1.5">
+              {memberNames.map(n => (
+                <button key={n} onClick={() => toggleRaciList('consulted', n)}
+                  className={`text-[10px] px-2.5 py-1 rounded-lg border font-medium transition-all ${(f.raci.consulted || []).includes(n) ? 'bg-yellow-100 border-yellow-400 text-yellow-700' : 'bg-white border-gray-200 text-gray-500'}`}>
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Informed */}
+          <div className="bg-green-50 rounded-xl p-3">
+            <label className="text-[10px] font-bold text-green-600 uppercase block mb-1.5">🟢 Informed (Kept in the loop)</label>
+            <div className="flex flex-wrap gap-1.5">
+              {memberNames.map(n => (
+                <button key={n} onClick={() => toggleRaciList('informed', n)}
+                  className={`text-[10px] px-2.5 py-1 rounded-lg border font-medium transition-all ${(f.raci.informed || []).includes(n) ? 'bg-green-100 border-green-400 text-green-700' : 'bg-white border-gray-200 text-gray-500'}`}>
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {memberNames.length === 0 && (
+            <p className="text-[10px] text-gray-400 text-center py-4">No team members found. Add team members in the Team page first.</p>
+          )}
+        </div>
+      )}
+
+      {/* ─── FILES TAB ─── */}
+      {activeTab === 'files' && (
+        <div className="space-y-3">
+          <p className="text-[10px] text-gray-500">Upload files to this step. Images, video, and audio go to the Media Library. Documents go to the Company Library.</p>
+
+          <input ref={fileInputRef} type="file" multiple onChange={handleFileUpload} className="hidden" />
+          <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
+            className="w-full py-6 border-2 border-dashed border-gray-200 rounded-xl text-center hover:border-np-blue hover:bg-np-blue/5 transition-all disabled:opacity-50">
+            {uploading ? (
+              <div className="flex items-center justify-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-np-blue" />
+                <span className="text-xs text-gray-500">Uploading...</span>
+              </div>
+            ) : (
+              <div>
+                <div className="text-2xl mb-1">📎</div>
+                <span className="text-xs text-gray-500">Click to upload files</span>
+                <div className="text-[9px] text-gray-400 mt-0.5">Images/Video/Audio → Media Library | Docs/Text → Company Library</div>
+              </div>
+            )}
+          </button>
+
+          {/* Uploaded files list */}
+          {(f.uploads || []).length > 0 && (
+            <div className="space-y-1.5">
+              {f.uploads.map(upload => {
+                const isMedia = upload.library === 'media'
+                return (
+                  <div key={upload.id} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2">
+                    <span className="text-sm">{isMedia ? (upload.type.startsWith('image') ? '🖼️' : upload.type.startsWith('video') ? '🎬' : '🎵') : '📄'}</span>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-[11px] font-medium text-np-dark truncate block">{upload.name}</span>
+                      <span className="text-[9px] text-gray-400">{isMedia ? 'Media Library' : 'Company Library'}</span>
+                    </div>
+                    {upload.url && (
+                      <a href={upload.url} target="_blank" rel="noopener noreferrer" className="p-1 rounded hover:bg-gray-200">
+                        <ExternalLink className="w-3 h-3 text-gray-400" />
+                      </a>
+                    )}
+                    <button onClick={() => removeUpload(upload.id)} className="p-1 rounded hover:bg-red-50 text-gray-300 hover:text-red-400">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── TASKS TAB ─── */}
+      {activeTab === 'tasks' && (
+        <div className="space-y-3">
+          <p className="text-[10px] text-gray-500">Create kanban tasks from this step or link existing tasks.</p>
+
+          {/* Create task button */}
+          <button onClick={createTaskFromStep} disabled={creatingTask}
+            className="w-full flex items-center justify-center gap-2 py-3 bg-np-blue/10 border border-np-blue/20 rounded-xl text-np-blue hover:bg-np-blue/20 transition-all disabled:opacity-50">
+            {creatingTask ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+            <span className="text-xs font-bold">{creatingTask ? 'Creating...' : 'Create Kanban Task from This Step'}</span>
+          </button>
+          <p className="text-[9px] text-gray-400 text-center">Creates a task in Task Manager with this step's name, description, and RACI responsible person as assignee.</p>
+
+          {/* Linked tasks */}
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold text-gray-400 uppercase block">Linked Tasks</label>
+            {f.linkedTaskIds?.map(taskId => {
+              const task = tasks.find(t => t.id === taskId)
+              return task ? (
+                <div key={taskId} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <CheckSquare className="w-3 h-3 text-np-blue" />
+                    <span className="text-[11px] text-np-dark font-medium">{task.title}</span>
+                    {task.assignee && <span className="text-[9px] text-gray-400">👤 {task.assignee}</span>}
+                    {task.priority && <span className={`text-[8px] px-1.5 py-0.5 rounded font-bold uppercase ${task.priority === 'high' ? 'bg-red-50 text-red-500' : task.priority === 'medium' ? 'bg-yellow-50 text-yellow-600' : 'bg-gray-50 text-gray-400'}`}>{task.priority}</span>}
+                  </div>
+                  <button onClick={() => setF({ ...f, linkedTaskIds: f.linkedTaskIds.filter(id => id !== taskId) })}
+                    className="text-gray-300 hover:text-red-400"><X className="w-3 h-3" /></button>
+                </div>
+              ) : null
+            })}
+          </div>
+
+          {/* Link existing task */}
+          <select onChange={e => {
+            if (e.target.value && !f.linkedTaskIds?.includes(e.target.value)) {
+              setF({ ...f, linkedTaskIds: [...(f.linkedTaskIds || []), e.target.value] })
+            }
+            e.target.value = ''
+          }} className="w-full text-[10px] border border-gray-200 rounded-lg px-2.5 py-2 focus:outline-none text-gray-400">
+            <option value="">Link an existing task...</option>
+            {tasks.filter(t => !f.linkedTaskIds?.includes(t.id)).map(t => (
+              <option key={t.id} value={t.id}>{t.title} {t.assignee ? `(${t.assignee})` : ''}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* Save */}
+      <div className="flex justify-end gap-2 pt-4 mt-4 border-t border-gray-100">
         <button onClick={() => onSave(f)} className="btn-primary text-xs py-2 px-4">Save Step</button>
       </div>
     </div>
