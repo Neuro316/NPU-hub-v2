@@ -220,7 +220,7 @@ const DEFAULT_SETTINGS: BrandSettings = {
       max_length: 5000,
       hashtag_count: 3,
       emoji_usage: 'Moderate. Match community tone.',
-      cta_style: 'Community: "Drop a 🧠 if this resonates" / "Share your experience"',
+      cta_style: 'Community: "Drop a ðŸ§  if this resonates" / "Share your experience"',
       post_frequency: '3x per week',
       best_times: '9am, 1pm, 7pm EST',
       content_mix: '35% educational, 30% community, 20% testimonial, 15% CTA',
@@ -240,7 +240,7 @@ const DEFAULT_SETTINGS: BrandSettings = {
       max_length: 280,
       hashtag_count: 2,
       emoji_usage: 'Minimal. Strategic only.',
-      cta_style: 'Thread: "Thread 🧵" / DM-based',
+      cta_style: 'Thread: "Thread ðŸ§µ" / DM-based',
       post_frequency: '5-7x per week',
       best_times: '8am, 12pm, 5pm EST',
       content_mix: '40% hot takes, 30% threads, 20% engagement, 10% CTA',
@@ -271,7 +271,7 @@ VOICE: Scientific authority + accessible language. Direct but compassionate. Lea
 
 Use Hormozi's value equation: maximize dream outcome and perceived likelihood, minimize time delay and effort.
 
-Structure the funnel: Awareness (educational) → Engagement (interactive) → Conversion (social proof + CTA) → Enrollment (offer stack + guarantee).
+Structure the funnel: Awareness (educational) â†’ Engagement (interactive) â†’ Conversion (social proof + CTA) â†’ Enrollment (offer stack + guarantee).
 
 Use Voss-style emotional labeling in objection-handling content.`,
 
@@ -319,7 +319,7 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<BrandSettings>(DEFAULT_SETTINGS)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
-  const [expandedSections, setExpandedSections] = useState<Set<SectionKey>>(new Set(['identity']))
+  const [expandedSections, setExpandedSections] = useState<Set<SectionKey>>(new Set<SectionKey>(['identity'] as SectionKey[]))
   const [activeBrand, setActiveBrand] = useState('np')
   const supabase = createClient()
 
@@ -451,7 +451,7 @@ export default function SettingsPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-semibold text-np-dark">AI & Brand Settings</h1>
-          <p className="text-xs text-gray-400 mt-0.5">{currentOrg?.name} · Configure AI voice, messaging, and brand rules</p>
+          <p className="text-xs text-gray-400 mt-0.5">{currentOrg?.name} Â· Configure AI voice, messaging, and brand rules</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex gap-1">
@@ -488,7 +488,7 @@ export default function SettingsPage() {
           <TextInput label="Sentence Structure" value={settings.sentence_structure} onChange={v => updateField('sentence_structure', v)} multiline />
           <div className="mt-4 mb-2">
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-3">Tone Spectrum</label>
-            <SliderInput label="Formal ↔ Casual" value={settings.tone_spectrum.casual} onChange={v => updateField('tone_spectrum', { ...settings.tone_spectrum, casual: v, formal: 100 - v })} />
+            <SliderInput label="Formal â†” Casual" value={settings.tone_spectrum.casual} onChange={v => updateField('tone_spectrum', { ...settings.tone_spectrum, casual: v, formal: 100 - v })} />
             <SliderInput label="Authoritative" value={settings.tone_spectrum.authoritative} onChange={v => updateField('tone_spectrum', { ...settings.tone_spectrum, authoritative: v })} />
             <SliderInput label="Warm" value={settings.tone_spectrum.warm} onChange={v => updateField('tone_spectrum', { ...settings.tone_spectrum, warm: v })} />
             <SliderInput label="Urgent" value={settings.tone_spectrum.urgent} onChange={v => updateField('tone_spectrum', { ...settings.tone_spectrum, urgent: v })} />
@@ -499,12 +499,12 @@ export default function SettingsPage() {
         {/* Vocabulary */}
         <Section id="vocabulary" icon={Shield} title="Vocabulary Rules" color="#EF4444">
           <div className="grid grid-cols-2 gap-4">
-            <ArrayEditor label="✅ Always Use" field="vocabulary_use" placeholder="Add word or phrase" />
-            <ArrayEditor label="🚫 Never Use" field="vocabulary_avoid" placeholder="Add word or phrase" />
+            <ArrayEditor label="âœ… Always Use" field="vocabulary_use" placeholder="Add word or phrase" />
+            <ArrayEditor label="ðŸš« Never Use" field="vocabulary_avoid" placeholder="Add word or phrase" />
           </div>
-          <ArrayEditor label="⚡ Power Words" field="power_words" placeholder="Words that drive action" />
-          <ArrayEditor label="🔥 Emotional Triggers" field="emotional_triggers" placeholder="Phrases that create resonance" />
-          <ArrayEditor label="👉 CTA Phrases" field="cta_phrases" placeholder="Call-to-action phrases" />
+          <ArrayEditor label="âš¡ Power Words" field="power_words" placeholder="Words that drive action" />
+          <ArrayEditor label="ðŸ”¥ Emotional Triggers" field="emotional_triggers" placeholder="Phrases that create resonance" />
+          <ArrayEditor label="ðŸ‘‰ CTA Phrases" field="cta_phrases" placeholder="Call-to-action phrases" />
         </Section>
 
         {/* Messaging Framework */}
