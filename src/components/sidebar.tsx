@@ -25,6 +25,7 @@ import {
   Mic,
   TicketCheck,
   Activity,
+  Image,
 } from 'lucide-react'
 
 const navItems = [
@@ -33,13 +34,14 @@ const navItems = [
   { label: 'Task Manager', href: '/tasks', icon: CheckSquare },
   { label: 'Campaigns', href: '/campaigns', icon: Megaphone },
   { label: 'Social Media', href: '/social', icon: Target },
+  { label: 'Media Library', href: '/media', icon: Image },
   { label: 'AI Advisory', href: '/advisory', icon: Brain },
   { label: 'SOPs', href: '/sops', icon: FileText },
   { label: 'Ideas', href: '/ideas', icon: Lightbulb },
   { label: 'ICP Profiles', href: '/icps', icon: Users },
   { label: 'Calendar', href: '/calendar', icon: Calendar },
   { label: 'Company Library', href: '/library', icon: BookOpen },
-  { label: 'Media Appearances', href: '/media', icon: Mic },
+  { label: 'Media Appearances', href: '/media-appearances', icon: Mic },
   { label: 'Support Tickets', href: '/tickets', icon: TicketCheck },
   { label: 'Analytics', href: '/analytics', icon: BarChart3 },
   { label: 'Integrations', href: '/integrations', icon: Activity },

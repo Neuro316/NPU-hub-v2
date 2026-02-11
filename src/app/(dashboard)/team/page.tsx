@@ -5,10 +5,10 @@ import { useTeamData, ROLE_CONFIG } from '@/lib/hooks/use-team-data'
 import type { TeamMember } from '@/lib/hooks/use-team-data'
 import { useWorkspace } from '@/lib/workspace-context'
 import { MemberDetail } from '@/components/team/member-detail'
-import { Plus, Users, Shield, MessageSquare, Search, Mail, Phone } from 'lucide-react'
+import { Plus, Users, Shield, Search, Mail, Phone } from 'lucide-react'
 
 export default function TeamPage() {
-  const { currentOrg, organizations, user, loading: orgLoading } = useWorkspace()
+  const { currentOrg, organizations, loading: orgLoading } = useWorkspace()
   const {
     members, loading, isSuperAdmin, isAdmin,
     addMember, updateMember, deleteMember,
@@ -22,9 +22,6 @@ export default function TeamPage() {
   const [newRole, setNewRole] = useState<TeamMember['role']>('team_member')
   const [newTitle, setNewTitle] = useState('')
   const [search, setSearch] = useState('')
-  const [showSlackConfig, setShowSlackConfig] = useState(false)
-
-  const slackConfig = getSetting('slack_config') as any || {}
 
   const handleAddMember = async () => {
     if (!newName.trim()) return
@@ -73,12 +70,6 @@ export default function TeamPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          {isSuperAdmin && (
-            <button onClick={() => setShowSlackConfig(!showSlackConfig)}
-              className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium text-np-dark hover:bg-gray-50">
-              <MessageSquare className="w-3.5 h-3.5" /> Slack Config
-            </button>
-          )}
           {isAdmin && (
             <button onClick={() => setAddingMember(true)}
               className="flex items-center gap-1.5 px-3 py-2 bg-np-blue text-white rounded-lg text-xs font-medium hover:bg-np-blue/90">
@@ -87,61 +78,6 @@ export default function TeamPage() {
           )}
         </div>
       </div>
-
-      {/* Slack Config Panel - Super Admin only */}
-      {showSlackConfig && isSuperAdmin && (
-        <div className="mb-6 bg-white border border-gray-200 rounded-xl p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <MessageSquare className="w-4 h-4 text-[#4A154B]" />
-            <h3 className="text-sm font-semibold text-np-dark">Slack Configuration</h3>
-            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${slackConfig.enabled ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-500'}`}>
-              {slackConfig.enabled ? 'Connected' : 'Disabled'}
-            </span>
-          </div>
-          <div className="space-y-3">
-            <div>
-              <label className="text-[10px] text-gray-500 block mb-0.5">Webhook URL</label>
-              <input
-                value={slackConfig.webhook_url || ''}
-                onChange={e => {
-                  const updated = { ...slackConfig, webhook_url: e.target.value }
-                  saveSetting('slack_config', updated)
-                }}
-                placeholder="https://hooks.slack.com/services/..."
-                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 font-mono" />
-            </div>
-            <div>
-              <label className="text-[10px] text-gray-500 block mb-0.5">Bot Token</label>
-              <input
-                value={slackConfig.bot_token || ''}
-                onChange={e => {
-                  const updated = { ...slackConfig, bot_token: e.target.value }
-                  saveSetting('slack_config', updated)
-                }}
-                placeholder="xoxb-..."
-                type="password"
-                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 font-mono" />
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => saveSetting('slack_config', { ...slackConfig, enabled: !slackConfig.enabled })}
-                className={`text-xs font-medium px-3 py-1.5 rounded-lg ${slackConfig.enabled ? 'bg-red-50 text-red-500' : 'bg-green-50 text-green-600'}`}>
-                {slackConfig.enabled ? 'Disable' : 'Enable'}
-              </button>
-              <button
-                onClick={() => {
-                  fetch(slackConfig.webhook_url, {
-                    method: 'POST',
-                    body: JSON.stringify({ text: '✅ NPU Hub Slack integration test successful!' }),
-                  }).then(() => alert('Test message sent!')).catch(() => alert('Failed to send test'))
-                }}
-                className="text-xs font-medium px-3 py-1.5 rounded-lg bg-[#4A154B] text-white hover:opacity-90">
-                Send Test
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Add Member Form */}
       {addingMember && (
@@ -296,4 +232,3 @@ export default function TeamPage() {
     </div>
   )
 }
-

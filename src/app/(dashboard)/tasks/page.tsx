@@ -24,7 +24,6 @@ export default function TasksPage() {
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null)
   const [addingColumn, setAddingColumn] = useState(false)
   const [newColTitle, setNewColTitle] = useState('')
-  const currentUser = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Unknown'
   const [filterMember, setFilterMember] = useState<string | null>(null)
 
   const teamMemberNames = members.map(m => m.display_name)
@@ -69,6 +68,7 @@ export default function TasksPage() {
     ? tasks.filter(t => t.assignee === filterMember)
     : tasks
 
+  const currentUser = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Unknown'
 
   if (orgLoading || loading) {
     return (
@@ -85,7 +85,7 @@ export default function TasksPage() {
         <div>
           <h1 className="text-xl font-semibold text-np-dark">Task Manager</h1>
           <p className="text-xs text-gray-400 mt-0.5">
-            {currentOrg?.name} Â· {columns.length} columns Â· {tasks.length} tasks
+            {currentOrg?.name} · {columns.length} columns · {tasks.length} tasks
           </p>
         </div>
         <div className="flex gap-2">
