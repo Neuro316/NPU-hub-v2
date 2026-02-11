@@ -553,7 +553,7 @@ export default function SettingsPage() {
           <ArrayEditor label="Emotional Labels" field="emotional_labels" placeholder="It sounds like..." />
           <ArrayEditor label="Mirror Phrases" field="mirror_phrases" placeholder="Phrases that reflect their experience" />
           <ArrayEditor label="Calibrated Questions" field="calibrated_questions" placeholder="What/How questions" />
-          <ArrayEditor label='"That\'s Right" Triggers' field="thats_right_triggers" placeholder="What makes them say 'that's right'" />
+          <ArrayEditor label={'"That\'s Right" Triggers'} field="thats_right_triggers" placeholder="What makes them say that" />
           <ArrayEditor label="Accusation Audit" field="accusation_audit" placeholder="Pre-empt their concerns" />
         </Section>
 
