@@ -8,7 +8,7 @@ import { MemberDetail } from '@/components/team/member-detail'
 import { Plus, Users, Shield, Search, Mail, Phone } from 'lucide-react'
 
 export default function TeamPage() {
-  const { currentOrg, organizations, user, loading: orgLoading } = useWorkspace()
+  const { currentOrg, organizations, loading: orgLoading } = useWorkspace()
   const {
     members, loading, isSuperAdmin, isAdmin,
     addMember, updateMember, deleteMember,
@@ -64,9 +64,9 @@ export default function TeamPage() {
         <div>
           <h1 className="text-xl font-semibold text-np-dark">Team</h1>
           <p className="text-xs text-gray-400 mt-0.5">
-            {currentOrg?.name} Â· {members.length} members
-            {isSuperAdmin && ' Â· Super Admin View'}
-            {!isSuperAdmin && isAdmin && ' Â· Admin View'}
+            {currentOrg?.name} · {members.length} members
+            {isSuperAdmin && ' · Super Admin View'}
+            {!isSuperAdmin && isAdmin && ' · Admin View'}
           </p>
         </div>
         <div className="flex gap-2">
