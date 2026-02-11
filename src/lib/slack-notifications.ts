@@ -84,7 +84,7 @@ export async function notifyTaskAssigned(
   // Channel message
   await sendChannelMessage(
     config.webhook_url,
-    `📋 *${actor}* assigned *${taskTitle}* to *${assignee}*\n→ <${taskUrl}|Open Task>`
+    `ðŸ“‹ *${actor}* assigned *${taskTitle}* to *${assignee}*\nâ†’ <${taskUrl}|Open Task>`
   )
 
   // DM to assignee
@@ -94,7 +94,7 @@ export async function notifyTaskAssigned(
       await sendDM(
         config.bot_token,
         slackId,
-        `📋 *${actor}* assigned you to task *${taskTitle}*\n→ <${taskUrl}|Open Task>`
+        `ðŸ“‹ *${actor}* assigned you to task *${taskTitle}*\nâ†’ <${taskUrl}|Open Task>`
       )
     }
   }
@@ -118,7 +118,7 @@ export async function notifyTaskMoved(
   // Channel message
   await sendChannelMessage(
     config.webhook_url,
-    `🔄 *${actor}* moved *${taskTitle}* from ${fromColumn} → *${toColumn}*\n→ <${taskUrl}|Open Task>`
+    `ðŸ”„ *${actor}* moved *${taskTitle}* from ${fromColumn} â†’ *${toColumn}*\nâ†’ <${taskUrl}|Open Task>`
   )
 
   // Collect unique people to notify
@@ -130,13 +130,13 @@ export async function notifyTaskMoved(
 
   // Send DMs
   if (config.bot_token) {
-    for (const person of toNotify) {
+    for (const person of Array.from(toNotify)) {
       const slackId = await getSlackUserId(orgId, person)
       if (slackId) {
         await sendDM(
           config.bot_token,
           slackId,
-          `🔄 *${actor}* moved *${taskTitle}* from ${fromColumn} → *${toColumn}*\n→ <${taskUrl}|Open Task>`
+          `ðŸ”„ *${actor}* moved *${taskTitle}* from ${fromColumn} â†’ *${toColumn}*\nâ†’ <${taskUrl}|Open Task>`
         )
       }
     }
@@ -156,12 +156,12 @@ export async function notifyRACIAssigned(
 
   const taskUrl = `https://hub.neuroprogeny.com/tasks?task=${taskId}`
   const roleLabel = raciRole.charAt(0).toUpperCase() + raciRole.slice(1)
-  const roleEmoji = raciRole === 'responsible' ? '🎯' : raciRole === 'accountable' ? '✅' : raciRole === 'consulted' ? '💬' : 'ℹ️'
+  const roleEmoji = raciRole === 'responsible' ? 'ðŸŽ¯' : raciRole === 'accountable' ? 'âœ…' : raciRole === 'consulted' ? 'ðŸ’¬' : 'â„¹ï¸'
 
   // Channel message
   await sendChannelMessage(
     config.webhook_url,
-    `${roleEmoji} *${actor}* assigned *${assignedTo}* as *${roleLabel}* (RACI) on *${taskTitle}*\n→ <${taskUrl}|Open Task>`
+    `${roleEmoji} *${actor}* assigned *${assignedTo}* as *${roleLabel}* (RACI) on *${taskTitle}*\nâ†’ <${taskUrl}|Open Task>`
   )
 
   // DM to the person assigned the RACI role
@@ -171,7 +171,7 @@ export async function notifyRACIAssigned(
       await sendDM(
         config.bot_token,
         slackId,
-        `${roleEmoji} *${actor}* assigned you as *${roleLabel}* (RACI) on task *${taskTitle}*\n→ <${taskUrl}|Open Task>`
+        `${roleEmoji} *${actor}* assigned you as *${roleLabel}* (RACI) on task *${taskTitle}*\nâ†’ <${taskUrl}|Open Task>`
       )
     }
   }
@@ -189,11 +189,11 @@ export async function notifyTaskCreated(
   if (!config) return
 
   const taskUrl = `https://hub.neuroprogeny.com/tasks?task=${taskId}`
-  const assignText = assignee ? ` → assigned to *${assignee}*` : ''
+  const assignText = assignee ? ` â†’ assigned to *${assignee}*` : ''
 
   await sendChannelMessage(
     config.webhook_url,
-    `🆕 *${actor}* created task *${taskTitle}* in ${columnName}${assignText}\n→ <${taskUrl}|Open Task>`
+    `ðŸ†• *${actor}* created task *${taskTitle}* in ${columnName}${assignText}\nâ†’ <${taskUrl}|Open Task>`
   )
 
   if (assignee && assignee !== actor && config.bot_token) {
@@ -202,7 +202,7 @@ export async function notifyTaskCreated(
       await sendDM(
         config.bot_token,
         slackId,
-        `🆕 *${actor}* created and assigned task *${taskTitle}* to you\n→ <${taskUrl}|Open Task>`
+        `ðŸ†• *${actor}* created and assigned task *${taskTitle}* to you\nâ†’ <${taskUrl}|Open Task>`
       )
     }
   }
@@ -226,6 +226,6 @@ export async function notifyCommentMention(
   await sendDM(
     config.bot_token,
     slackId,
-    `💬 *${author}* mentioned you in task *${taskTitle}*:\n> ${commentPreview.slice(0, 200)}\n→ <${taskUrl}|Open Task>`
+    `ðŸ’¬ *${author}* mentioned you in task *${taskTitle}*:\n> ${commentPreview.slice(0, 200)}\nâ†’ <${taskUrl}|Open Task>`
   )
 }
