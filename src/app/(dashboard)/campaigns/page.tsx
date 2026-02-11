@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
+import Link from 'next/link'
 import { Plus, Wand2, Target, TrendingUp, Calendar, DollarSign, Zap, X, Send, Bot, ArrowRight, CheckCircle2, Loader2 } from 'lucide-react'
 
 interface Campaign {
@@ -16,7 +17,6 @@ interface Campaign {
   start_date: string | null
   end_date: string | null
   goals: Record<string, any>
-  ai_suggestions: Record<string, any>
   custom_fields: Record<string, any>
   created_at: string
 }
@@ -269,26 +269,26 @@ export default function CampaignsPage() {
 
 **${campaignName}**
 Brand: ${brandLabel}
-Duration: ${durationDays} days (${today.toLocaleDateString()} Ã¢â€ â€™ ${endDate.toLocaleDateString()})
+Duration: ${durationDays} days (${today.toLocaleDateString()} → ${endDate.toLocaleDateString()})
 Budget: ${data.budget || 'TBD'}
 Target: ${data.icp || 'General audience'}
 
 **Core Message:** ${data.messaging || 'To be refined'}
 
 **Strategy:**
-Ã¢â‚¬Â¢ Objective: ${data.objective}
-Ã¢â‚¬Â¢ Tone: ${data.tone || 'Brand standard'}
-Ã¢â‚¬Â¢ Platforms: ${data.platforms || 'Multi-platform'}
-Ã¢â‚¬Â¢ Lead Capture: ${data.quiz || 'Direct CTA'}
+• Objective: ${data.objective}
+• Tone: ${data.tone || 'Brand standard'}
+• Platforms: ${data.platforms || 'Multi-platform'}
+• Lead Capture: ${data.quiz || 'Direct CTA'}
 
 **Suggested Content Calendar (${durationDays} days):**
-Ã¢â‚¬Â¢ Week 1-2: Awareness phase - educational posts establishing authority
-Ã¢â‚¬Â¢ Week 2-3: Engagement phase - interactive content, polls, questions
-Ã¢â‚¬Â¢ Week 3-4: Conversion phase - testimonials, case studies, direct CTAs
-${durationDays > 30 ? 'Ã¢â‚¬Â¢ Week 5+: Nurture phase - deeper content, email sequences, retargeting' : ''}
+• Week 1-2: Awareness phase - educational posts establishing authority
+• Week 2-3: Engagement phase - interactive content, polls, questions
+• Week 3-4: Conversion phase - testimonials, case studies, direct CTAs
+${durationDays > 30 ? '• Week 5+: Nurture phase - deeper content, email sequences, retargeting' : ''}
 
 **Recommended Post Frequency:**
-${budgetVal > 2000 ? 'Ã¢â‚¬Â¢ 5-7 posts/week across platforms with paid amplification' : budgetVal > 500 ? 'Ã¢â‚¬Â¢ 3-5 posts/week with selective boosting' : 'Ã¢â‚¬Â¢ 3-4 organic posts/week'}
+${budgetVal > 2000 ? '• 5-7 posts/week across platforms with paid amplification' : budgetVal > 500 ? '• 3-5 posts/week with selective boosting' : '• 3-4 organic posts/week'}
 
 **Next Steps:**
 1. Review and approve this plan
@@ -391,7 +391,7 @@ Ready to create this campaign?`
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-semibold text-np-dark">Campaigns</h1>
-          <p className="text-xs text-gray-400 mt-0.5">{currentOrg?.name} Ã‚Â· {campaigns.length} campaigns Ã‚Â· {activeCampaigns.length} active</p>
+          <p className="text-xs text-gray-400 mt-0.5">{currentOrg?.name} · {campaigns.length} campaigns · {activeCampaigns.length} active</p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => setCreating(true)}
@@ -614,7 +614,7 @@ Ready to create this campaign?`
                     <span className="flex items-center gap-0.5">
                       <Calendar className="w-3 h-3" />
                       {new Date(campaign.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      {campaign.end_date && (' Ã¢â€ â€™ ' + new Date(campaign.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))}
+                      {campaign.end_date && (' → ' + new Date(campaign.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))}
                     </span>
                   )}
                 </div>
@@ -685,7 +685,7 @@ Ready to create this campaign?`
                       ? new Date(selectedCampaign.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
                       : 'No start'}
                     {selectedCampaign.end_date
-                      ? ' Ã¢â€ â€™ ' + new Date(selectedCampaign.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                      ? ' → ' + new Date(selectedCampaign.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                       : ''}
                   </p>
                 </div>
@@ -737,10 +737,10 @@ Ready to create this campaign?`
 
               {/* Actions */}
               <div className="flex items-center gap-3 pt-2 border-t border-gray-100">
-                <button onClick={() => { setSelectedCampaign(null) }}
+                <Link href="/social"
                   className="btn-primary text-xs py-2 px-4 flex items-center gap-1.5">
                   <ArrowRight className="w-3.5 h-3.5" /> Go to Social Designer
-                </button>
+                </Link>
                 <button onClick={() => deleteCampaign(selectedCampaign.id)}
                   className="ml-auto text-xs text-red-400 hover:text-red-600 font-medium px-3 py-2">
                   Delete Campaign
