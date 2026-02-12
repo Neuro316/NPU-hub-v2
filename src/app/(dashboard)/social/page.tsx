@@ -4,7 +4,8 @@ import { useState, useRef, useEffect } from 'react'
 import { useSocialData } from '@/lib/hooks/use-social-data'
 import type { SocialPost, PlatformFormat } from '@/lib/hooks/use-social-data'
 import { useWorkspace } from '@/lib/workspace-context'
-import { Plus, Wand2, Send, Clock, Archive, Edit3, Trash2, Hash, Eye, Sparkles, X, Bot, Loader2, Copy, Check } from 'lucide-react'
+import { createClient } from '@/lib/supabase-browser'
+import { Plus, Wand2, Send, Clock, Archive, Edit3, Trash2, Hash, Eye, Sparkles, X, Bot, Loader2, Copy, Check, Film, Image, FileText, Video } from 'lucide-react'
 
 const PLATFORMS = [
   { key: 'instagram', label: 'Instagram', color: '#E4405F', icon: '📸' },
@@ -12,6 +13,16 @@ const PLATFORMS = [
   { key: 'linkedin', label: 'LinkedIn', color: '#0A66C2', icon: '💼' },
   { key: 'tiktok', label: 'TikTok', color: '#000000', icon: '🎵' },
   { key: 'x', label: 'X (Twitter)', color: '#1DA1F2', icon: '𝕏' },
+  { key: 'youtube', label: 'YouTube', color: '#FF0000', icon: '📺' },
+]
+
+const CONTENT_FORMATS = [
+  { key: 'static', label: 'Static Post', icon: '🖼️', desc: 'Image + caption' },
+  { key: 'carousel', label: 'Carousel', icon: '📑', desc: 'Multi-slide post' },
+  { key: 'reel', label: 'Reel / Short', icon: '🎬', desc: 'Vertical video 15-90s' },
+  { key: 'video', label: 'Long Video', icon: '🎥', desc: 'YouTube / LinkedIn video' },
+  { key: 'story', label: 'Story', icon: '⏳', desc: '24hr ephemeral content' },
+  { key: 'text', label: 'Text Only', icon: '📝', desc: 'No media needed' },
 ]
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
@@ -21,46 +32,34 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }
   archived: { label: 'Archived', color: '#6B7280', bg: '#E5E7EB' },
 }
 
-// AI content generation templates
-const AI_TEMPLATES: Record<string, (topic: string) => Record<string, string>> = {
-  educational: (topic: string) => ({
-    instagram: `Your nervous system isn't broken. It adapted.\n\n${topic}\n\nThis is what capacity training looks like. Not managing symptoms. Building the bandwidth to hold more of life without shutting down.\n\nSave this if it resonated. Share it with someone who needs to hear it.\n\n#NervousSystemCapacity #HRV #Biofeedback #StateTraining #VR`,
-    linkedin: `Most wellness approaches get this backwards.\n\nThey try to fix what's "wrong" with your nervous system. But here's the thing: nothing is wrong.\n\n${topic}\n\nAt Neuro Progeny, we train capacity. Not calm. Not relaxation. The ability to move fluidly between states, using VR biofeedback as a mirror, not a scorecard.\n\nThe nervous system that got you here was adaptive. The one that takes you forward needs more bandwidth.\n\nWhat does capacity training look like in your world?`,
-    facebook: `${topic}\n\nYour nervous system developed patterns that made sense at the time. Every single one was adaptive.\n\nCapacity training doesn't ask "what's wrong with you?" It asks "what did your system learn, and what does it need now?"\n\nThis changes everything about how we approach performance, resilience, and wellbeing.`,
-    tiktok: `POV: You realize your nervous system isn't broken, it's adaptive 🧠\n\n${topic}\n\n#NervousSystem #HRV #Biofeedback #VR #CapacityTraining #Resilience`,
-    x: `${topic}\n\nYour nervous system isn't broken. It adapted.\n\nCapacity training > calm-chasing.\n\n🧠 HRV as a mirror, not a score\n🎮 VR as a feedback amplifier\n⚡ State fluidity, not stillness`,
-  }),
-  testimonial: (topic: string) => ({
-    instagram: `"${topic}"\n\nThis is what happens when you stop trying to fix yourself and start building capacity.\n\nNo diagnosis. No disorder. Just a nervous system learning it can hold more.\n\n#NervousSystem #CapacityTraining #Transformation #HRV #VRBiofeedback`,
-    linkedin: `One of our participants shared this recently:\n\n"${topic}"\n\nWhat changed wasn't their circumstances. It was their nervous system's capacity to hold complexity without collapsing into survival mode.\n\nThis is the shift from symptom management to capacity building. And it's measurable through HRV data.`,
-    facebook: `"${topic}"\n\nWe hear stories like this every cohort. Not because we "fixed" anyone. Because nervous systems, when given the right feedback environment, remember how to expand.\n\nCapacity over pathology. Always.`,
-    tiktok: `Wait for the transformation 🧠✨\n\n"${topic}"\n\n#NervousSystem #Transformation #CapacityTraining #HRV #Biofeedback`,
-    x: `"${topic}"\n\nCapacity training in action. No fixing. No diagnosing. Just building bandwidth.\n\nThe nervous system knows what to do when it has the right mirror.`,
-  }),
-  cta: (topic: string) => ({
-    instagram: `Ready to train your nervous system?\n\n${topic}\n\nThe Immersive Mastermind is a 5-week VR biofeedback experience that builds nervous system capacity through state fluidity.\n\nNot therapy. Not meditation. Training.\n\n🔗 Link in bio to learn more\n\n#ImmersiveMastermind #NervousSystem #VR #HRV #CapacityTraining`,
-    linkedin: `${topic}\n\nIf you've tried meditation, breathwork, therapy, and coaching but still find yourself hitting the same ceiling under pressure, this might be the missing piece.\n\nThe Immersive Mastermind is a 5-week program that uses VR biofeedback to train nervous system capacity. Not relaxation. Not calm-chasing. The ability to hold complexity and perform from a wider window.\n\nInterested? Comment "CAPACITY" and I'll send you the details.`,
-    facebook: `${topic}\n\nThe Immersive Mastermind is open for enrollment.\n\n5 weeks. VR biofeedback. Nervous system capacity training.\n\nThis isn't about learning to relax. It's about expanding what your system can hold.\n\nDrop a 🧠 if you want details.`,
-    tiktok: `This changed everything for me 🧠\n\n${topic}\n\nLink in bio for the Immersive Mastermind\n\n#NervousSystem #VR #Biofeedback #CapacityTraining #ImmersiveMastermind`,
-    x: `${topic}\n\nThe Immersive Mastermind: 5 weeks of VR biofeedback training for nervous system capacity.\n\nNot therapy. Training.\n\nDM "CAPACITY" for details.`,
-  }),
-}
-
 interface AIMessage {
   role: 'ai' | 'user'
   content: string
   options?: string[]
-  generated?: Record<string, string>
+  generated?: GeneratedContent[]
+}
+
+interface GeneratedContent {
+  platform: string
+  format: string
+  caption: string
+  imageDirection?: string
+  videoScript?: string
+  carouselSlides?: string[]
+  hashtags: string[]
+  hook?: string
 }
 
 export default function SocialPage() {
   const { currentOrg, loading: orgLoading } = useWorkspace()
   const { posts, formats, loading, addPost, updatePost, deletePost } = useSocialData()
+  const supabase = createClient()
 
   const [creating, setCreating] = useState(false)
   const [content, setContent] = useState('')
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['instagram', 'linkedin'])
   const [selectedFormats, setSelectedFormats] = useState<string[]>([])
+  const [selectedContentFormat, setSelectedContentFormat] = useState('static')
   const [brand, setBrand] = useState<string>('np')
   const [hashtags, setHashtags] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
@@ -70,10 +69,9 @@ export default function SocialPage() {
   const [aiMode, setAiMode] = useState(false)
   const [aiMessages, setAiMessages] = useState<AIMessage[]>([])
   const [aiInput, setAiInput] = useState('')
-  const [aiStep, setAiStep] = useState(0)
-  const [aiData, setAiData] = useState<Record<string, string>>({})
   const [aiGenerating, setAiGenerating] = useState(false)
-  const [copiedPlatform, setCopiedPlatform] = useState<string | null>(null)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [expandedCard, setExpandedCard] = useState<string | null>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [aiMessages])
@@ -86,205 +84,260 @@ export default function SocialPage() {
     if (!content.trim()) return
     setSaving(true)
     const platformVersions = selectedPlatforms.map(p => ({
-      platform: p,
-      content: content.trim(),
+      platform: p, content: content.trim(),
       formats: formats.filter(f => f.platform === p && selectedFormats.includes(f.id)).map(f => ({ id: f.id, name: f.format_name, width: f.width, height: f.height })),
     }))
-    await addPost({
-      brand,
-      content_original: content.trim(),
-      platform_versions: platformVersions,
-      hashtags: hashtags.split(',').map(h => h.trim().replace(/^#/, '')).filter(Boolean),
-      status: 'draft',
-    })
+    await addPost({ brand, content_original: content.trim(), platform_versions: platformVersions, hashtags: hashtags.split(',').map(h => h.trim().replace(/^#/, '')).filter(Boolean), status: 'draft' })
     setSaving(false)
     setContent(''); setHashtags(''); setCreating(false)
   }
 
-  // AI Content Generator
+  // ─── AI CONTENT GENERATOR (Claude API) ───
+
+  const fetchBrandSettings = async () => {
+    if (!currentOrg) return null
+    const { data } = await supabase.from('brand_profiles').select('*').eq('org_id', currentOrg.id).eq('brand_key', 'np').single()
+    if (data) return { vocabulary_use: data.vocabulary_use || [], vocabulary_avoid: data.vocabulary_avoid || [], voice_description: data.voice_description || '', ...(data.guidelines || {}) }
+    return null
+  }
+
   const startAI = () => {
     setAiMode(true)
-    setAiStep(0)
-    setAiData({})
     setAiMessages([
-      { role: 'ai', content: "I'll help you generate social content across all your platforms. Let's start with the content type:", options: ['Educational / Authority', 'Testimonial / Story', 'CTA / Enrollment', 'Custom Topic'] },
+      { role: 'ai', content: "I'm your Social Content AI. I create platform-specific content with image direction, video scripts, and carousel breakdowns.\n\nWhat type of content are you creating?", options: ['Static Post (Image + Caption)', 'Reel / Short Video', 'Carousel / Multi-Slide', 'Long-Form Video', 'Story Content', 'Full Campaign Bundle (all formats)'] },
     ])
   }
 
-  const handleAIResponse = (response: string) => {
-    const newMessages: AIMessage[] = [...aiMessages, { role: 'user', content: response }]
-    const newData = { ...aiData }
-
-    if (aiStep === 0) {
-      newData.type = response
-      if (response === 'Custom Topic') {
-        newMessages.push({ role: 'ai', content: "What's the topic or core message you want to communicate?" })
-        setAiStep(1)
-      } else {
-        newMessages.push({ role: 'ai', content: "What's the key insight, story, or message? Give me the raw idea and I'll shape it for each platform." })
-        setAiStep(1)
-      }
-    } else if (aiStep === 1) {
-      newData.topic = response
-      newMessages.push({ role: 'ai', content: "Which platforms should I generate for?", options: ['All Platforms', 'Instagram + LinkedIn', 'Instagram + TikTok', 'LinkedIn Only', 'Instagram Only'] })
-      setAiStep(2)
-    } else if (aiStep === 2) {
-      newData.platforms = response
-      // Generate content
-      setAiGenerating(true)
-      setAiData(newData)
-      setAiMessages(newMessages)
-
-      setTimeout(() => {
-        const templateKey = newData.type?.includes('Testimonial') ? 'testimonial' : newData.type?.includes('CTA') ? 'cta' : 'educational'
-        const template = AI_TEMPLATES[templateKey]
-        const generated = template(newData.topic || '')
-
-        let platformsToShow: string[]
-        if (response.includes('All')) platformsToShow = ['instagram', 'linkedin', 'facebook', 'tiktok', 'x']
-        else if (response.includes('TikTok')) platformsToShow = ['instagram', 'tiktok']
-        else if (response.includes('LinkedIn Only')) platformsToShow = ['linkedin']
-        else if (response.includes('Instagram Only')) platformsToShow = ['instagram']
-        else platformsToShow = ['instagram', 'linkedin']
-
-        const filtered: Record<string, string> = {}
-        for (const p of platformsToShow) {
-          if (generated[p]) filtered[p] = generated[p]
-        }
-
-        setAiMessages(prev => [...prev, {
-          role: 'ai',
-          content: "Here's your content adapted for each platform. Click to copy, or save directly as drafts:",
-          generated: filtered,
-        }])
-        setAiGenerating(false)
-        setAiStep(3)
-      }, 1500)
-      return
-    }
-
-    setAiData(newData)
+  const sendToAI = async (userMessage: string) => {
+    const newMessages: AIMessage[] = [...aiMessages, { role: 'user', content: userMessage }]
     setAiMessages(newMessages)
     setAiInput('')
-  }
+    setAiGenerating(true)
 
-  const copyToClipboard = (text: string, platform: string) => {
-    navigator.clipboard.writeText(text)
-    setCopiedPlatform(platform)
-    setTimeout(() => setCopiedPlatform(null), 2000)
-  }
+    try {
+      const brandSettings = await fetchBrandSettings()
+      const apiMessages = newMessages.filter(m => m.content.trim()).map(m => ({ role: m.role === 'ai' ? 'assistant' : 'user', content: m.content }))
 
-  const saveAllAsDrafts = async () => {
-    const lastGenerated = aiMessages.find(m => m.generated)?.generated
-    if (!lastGenerated) return
-    setSaving(true)
-    for (const [platform, text] of Object.entries(lastGenerated)) {
-      await addPost({
-        brand: 'np',
-        content_original: text,
-        platform_versions: [{ platform, content: text, formats: [] }],
-        hashtags: text.match(/#(\w+)/g)?.map(h => h.replace('#', '')) || [],
-        status: 'draft',
-      })
+      const res = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: apiMessages, brandSettings,
+          campaignContext: { type: 'social_content_generation', systemOverride: `You are a world-class social media content strategist for Neuro Progeny. You create platform-specific content with detailed creative direction.
+
+BRAND RULES (CRITICAL):
+- NEVER use: treatment, therapy, fix, broken, disorder, diagnosis, cure, patient, calm-chasing, sympathovagal balance
+- ALWAYS use: capacity, training, regulation, adaptive, bandwidth, state fluidity, mirror (for HRV)
+- All behavior is adaptive. Nothing is broken. No em dashes.
+- Questions orient forward, never backward into past failure
+
+When you have enough context (content type, topic, platforms), generate content using this JSON format wrapped in \`\`\`json ... \`\`\`:
+
+{
+  "content": [
+    {
+      "platform": "instagram",
+      "format": "reel|static|carousel|video|story|text",
+      "caption": "Full post caption",
+      "hook": "First line scroll-stopping hook",
+      "imageDirection": "Detailed image description: composition, colors, mood, text overlays, style. Specific enough for a designer or AI image generator.",
+      "videoScript": "Full script with timing: Hook (0-3s), Setup (3-10s), Value (10-45s), CTA (45-60s). Include on-screen text, b-roll ideas, transitions, audio suggestions.",
+      "carouselSlides": ["Slide 1: Cover with bold text...", "Slide 2: Problem...", "Slide 3: Insight..."],
+      "hashtags": ["NervousSystem", "CapacityTraining"]
     }
-    setSaving(false)
-    setAiMessages(prev => [...prev, { role: 'ai', content: `Saved ${Object.keys(lastGenerated).length} posts as drafts! You can find them in your post list.` }])
+  ]
+}
+
+FORMAT RULES:
+- Static: Always include imageDirection
+- Reel/Short: Always include videoScript with timing and on-screen text
+- Carousel: Always include carouselSlides (5-10 slides) with text overlay + visual direction
+- Long Video: Full videoScript with sections, b-roll notes, talking points
+- Story: imageDirection + short caption
+- Full Bundle: One of each format
+
+Adapt tone per platform. Instagram = visual hooks. LinkedIn = authority. TikTok = pattern interrupts. X = punchy. YouTube = depth.
+Ask 2-3 clarifying questions if needed. Once ready, generate immediately.` },
+        }),
+      })
+
+      const data = await res.json()
+      if (data.error) {
+        setAiMessages([...newMessages, { role: 'ai', content: `Error: ${data.error}\n\nMake sure ANTHROPIC_API_KEY is set in Vercel.` }])
+      } else {
+        const aiResponse = data.content
+        const jsonMatch = aiResponse.match(/```json\s*([\s\S]*?)```/)
+        if (jsonMatch) {
+          try {
+            const parsed = JSON.parse(jsonMatch[1])
+            const generated: GeneratedContent[] = parsed.content || []
+            const textBefore = aiResponse.split('```json')[0].trim()
+            setAiMessages([...newMessages, {
+              role: 'ai', content: textBefore || "Here's your content. Expand any card to see image direction, video scripts, or carousel slides:", generated,
+              options: ['Save All as Drafts', 'Regenerate', 'Different Angle', 'Add More Platforms', 'Create Another'],
+            }])
+          } catch { setAiMessages([...newMessages, { role: 'ai', content: aiResponse }]) }
+        } else {
+          setAiMessages([...newMessages, { role: 'ai', content: aiResponse }])
+        }
+      }
+    } catch (err: any) {
+      setAiMessages([...newMessages, { role: 'ai', content: `Connection error: ${err.message}` }])
+    }
+    setAiGenerating(false)
   }
 
-  const handleAISubmit = () => {
-    if (!aiInput.trim()) return
-    handleAIResponse(aiInput.trim())
-    setAiInput('')
+  const handleAIAction = async (action: string) => {
+    if (action === 'Save All as Drafts') {
+      const lastGenerated = [...aiMessages].reverse().find(m => m.generated)?.generated
+      if (!lastGenerated) return
+      setSaving(true)
+      for (const item of lastGenerated) {
+        await addPost({
+          brand: 'np', content_original: item.caption,
+          platform_versions: [{ platform: item.platform, content: item.caption, formats: [] }],
+          hashtags: item.hashtags || [], status: 'draft',
+        })
+      }
+      setSaving(false)
+      setAiMessages(prev => [...prev, { role: 'ai', content: `Saved ${lastGenerated.length} posts as drafts!` }])
+    } else if (action === 'Create Another') { startAI() }
+    else { sendToAI(action) }
   }
 
-  if (orgLoading || loading) {
-    return <div className="flex items-center justify-center h-64"><div className="animate-pulse text-gray-400">Loading social...</div></div>
+  const copyToClipboard = (text: string, id: string) => {
+    navigator.clipboard.writeText(text); setCopiedId(id); setTimeout(() => setCopiedId(null), 2000)
   }
+
+  if (orgLoading || loading) return <div className="flex items-center justify-center h-64"><div className="animate-pulse text-gray-400">Loading social...</div></div>
 
   const filteredPosts = statusFilter === 'all' ? posts : posts.filter(p => p.status === statusFilter)
 
   return (
     <div>
-      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-semibold text-np-dark">Social Media</h1>
-          <p className="text-xs text-gray-400 mt-0.5">{currentOrg?.name} · {posts.length} posts · {formats.length} formats loaded</p>
+          <p className="text-xs text-gray-400 mt-0.5">{currentOrg?.name} · {posts.length} posts</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => setCreating(true)}
-            className="flex items-center gap-1.5 px-3 py-2 bg-np-blue text-white rounded-lg text-xs font-medium hover:bg-np-blue/90">
+          <button onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-3 py-2 bg-np-blue text-white rounded-lg text-xs font-medium hover:bg-np-blue/90">
             <Plus className="w-3.5 h-3.5" /> New Post
           </button>
-          <button onClick={startAI}
-            className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-purple-600 to-np-blue text-white rounded-lg text-xs font-medium hover:opacity-90">
+          <button onClick={startAI} className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-purple-600 to-np-blue text-white rounded-lg text-xs font-medium hover:opacity-90">
             <Wand2 className="w-3.5 h-3.5" /> AI Content Generator
           </button>
         </div>
       </div>
 
-      {/* AI Content Generator Modal */}
+      {/* ═══ AI MODAL ═══ */}
       {aiMode && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/30" onClick={() => setAiMode(false)} />
-          <div className="relative w-full max-w-2xl h-[80vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+          <div className="relative w-full max-w-3xl h-[85vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
             <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 bg-gradient-to-r from-purple-600 to-np-blue">
               <div className="flex items-center gap-2">
                 <Bot className="w-5 h-5 text-white" />
                 <span className="text-sm font-bold text-white">AI Content Generator</span>
+                <span className="text-[9px] bg-white/20 px-2 py-0.5 rounded-full text-white">Posts, Reels, Videos, Carousels</span>
               </div>
-              <button onClick={() => setAiMode(false)} className="p-1 rounded hover:bg-white/10">
-                <X className="w-4 h-4 text-white" />
-              </button>
+              <button onClick={() => setAiMode(false)} className="p-1 rounded hover:bg-white/10"><X className="w-4 h-4 text-white" /></button>
             </div>
-
             <div className="flex-1 overflow-y-auto p-5 space-y-4">
               {aiMessages.map((msg, i) => (
                 <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[85%] ${msg.role === 'user' ? 'bg-np-blue text-white rounded-2xl rounded-br-sm' : 'bg-gray-50 text-np-dark rounded-2xl rounded-bl-sm'} px-4 py-3`}>
+                  <div className={`max-w-[90%] ${msg.role === 'user' ? 'bg-np-blue text-white rounded-2xl rounded-br-sm' : 'bg-gray-50 text-np-dark rounded-2xl rounded-bl-sm'} px-4 py-3`}>
                     <div className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</div>
-
-                    {/* Option buttons */}
-                    {msg.options && msg.role === 'ai' && i === aiMessages.length - 1 && (
+                    {msg.options && msg.role === 'ai' && i === aiMessages.length - 1 && !msg.generated && (
                       <div className="flex flex-wrap gap-1.5 mt-3">
                         {msg.options.map(opt => (
-                          <button key={opt} onClick={() => handleAIResponse(opt)}
+                          <button key={opt} onClick={() => ['Save All as Drafts', 'Create Another'].includes(opt) ? handleAIAction(opt) : sendToAI(opt)}
                             className="text-[11px] px-3 py-1.5 rounded-full border border-gray-200 bg-white text-np-dark hover:bg-np-blue hover:text-white hover:border-np-blue transition-all font-medium">
                             {opt}
                           </button>
                         ))}
                       </div>
                     )}
-
-                    {/* Generated content cards */}
-                    {msg.generated && (
-                      <div className="mt-3 space-y-3">
-                        {Object.entries(msg.generated).map(([platform, text]) => {
-                          const plat = PLATFORMS.find(p => p.key === platform)
+                    {msg.generated && msg.generated.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        {msg.generated.map((item, idx) => {
+                          const plat = PLATFORMS.find(p => p.key === item.platform)
+                          const fmt = CONTENT_FORMATS.find(f => f.key === item.format)
+                          const cardId = `${i}-${idx}`
+                          const isExpanded = expandedCard === cardId
                           return (
-                            <div key={platform} className="bg-white border border-gray-200 rounded-xl p-3">
-                              <div className="flex items-center justify-between mb-2">
-                                <span className="text-xs font-bold flex items-center gap-1.5">
-                                  <span>{plat?.icon}</span> {plat?.label}
-                                </span>
-                                <button onClick={() => copyToClipboard(text, platform)}
-                                  className="text-[10px] flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-500 font-medium">
-                                  {copiedPlatform === platform ? <><Check className="w-3 h-3 text-green-500" /> Copied!</> : <><Copy className="w-3 h-3" /> Copy</>}
-                                </button>
+                            <div key={idx} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                              <div className="flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-gray-50" onClick={() => setExpandedCard(isExpanded ? null : cardId)}>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm">{plat?.icon}</span>
+                                  <span className="text-xs font-bold text-np-dark">{plat?.label}</span>
+                                  <span className="text-[9px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-600 font-bold">{fmt?.icon} {fmt?.label || item.format}</span>
+                                  {item.imageDirection && <span className="text-[8px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-500">🖼️ Image</span>}
+                                  {item.videoScript && <span className="text-[8px] px-1.5 py-0.5 rounded bg-red-50 text-red-500">🎬 Script</span>}
+                                  {item.carouselSlides && <span className="text-[8px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-500">📑 {item.carouselSlides.length} slides</span>}
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <button onClick={e => { e.stopPropagation(); copyToClipboard(item.caption, cardId) }}
+                                    className="text-[10px] flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-500 font-medium">
+                                    {copiedId === cardId ? <><Check className="w-3 h-3 text-green-500" /> Copied!</> : <><Copy className="w-3 h-3" /> Copy</>}
+                                  </button>
+                                  <span className="text-gray-400 text-xs ml-1">{isExpanded ? '▲' : '▼'}</span>
+                                </div>
                               </div>
-                              <p className="text-[11px] text-gray-600 whitespace-pre-wrap leading-relaxed max-h-32 overflow-y-auto">{text}</p>
+                              {item.hook && <div className="px-3 pb-1"><span className="text-[9px] font-bold text-orange-500 uppercase">Hook: </span><span className="text-[10px] text-gray-600">{item.hook}</span></div>}
+                              <div className="px-3 pb-2"><p className={`text-[11px] text-gray-600 whitespace-pre-wrap leading-relaxed ${isExpanded ? '' : 'line-clamp-3'}`}>{item.caption}</p></div>
+                              {isExpanded && (
+                                <div className="border-t border-gray-100 px-3 py-3 space-y-3">
+                                  {item.imageDirection && (
+                                    <div className="bg-blue-50 rounded-lg p-3">
+                                      <div className="flex items-center gap-1.5 mb-1.5">
+                                        <Image className="w-3.5 h-3.5 text-blue-500" />
+                                        <span className="text-[10px] font-bold text-blue-600 uppercase">Image Direction</span>
+                                        <button onClick={() => copyToClipboard(item.imageDirection!, `img-${cardId}`)} className="ml-auto text-[9px] text-blue-400 hover:text-blue-600">{copiedId === `img-${cardId}` ? 'Copied!' : 'Copy'}</button>
+                                      </div>
+                                      <p className="text-[11px] text-blue-800 leading-relaxed">{item.imageDirection}</p>
+                                    </div>
+                                  )}
+                                  {item.videoScript && (
+                                    <div className="bg-red-50 rounded-lg p-3">
+                                      <div className="flex items-center gap-1.5 mb-1.5">
+                                        <Film className="w-3.5 h-3.5 text-red-500" />
+                                        <span className="text-[10px] font-bold text-red-600 uppercase">Video Script</span>
+                                        <button onClick={() => copyToClipboard(item.videoScript!, `vid-${cardId}`)} className="ml-auto text-[9px] text-red-400 hover:text-red-600">{copiedId === `vid-${cardId}` ? 'Copied!' : 'Copy'}</button>
+                                      </div>
+                                      <p className="text-[11px] text-red-800 leading-relaxed whitespace-pre-wrap">{item.videoScript}</p>
+                                    </div>
+                                  )}
+                                  {item.carouselSlides && item.carouselSlides.length > 0 && (
+                                    <div className="bg-purple-50 rounded-lg p-3">
+                                      <div className="flex items-center gap-1.5 mb-2">
+                                        <FileText className="w-3.5 h-3.5 text-purple-500" />
+                                        <span className="text-[10px] font-bold text-purple-600 uppercase">Carousel Slides ({item.carouselSlides.length})</span>
+                                        <button onClick={() => copyToClipboard(item.carouselSlides!.join('\n\n'), `car-${cardId}`)} className="ml-auto text-[9px] text-purple-400 hover:text-purple-600">{copiedId === `car-${cardId}` ? 'Copied!' : 'Copy All'}</button>
+                                      </div>
+                                      <div className="space-y-1.5">
+                                        {item.carouselSlides.map((slide, si) => (
+                                          <div key={si} className="bg-white rounded-lg px-3 py-2 border border-purple-100">
+                                            <span className="text-[9px] font-bold text-purple-500">Slide {si + 1}</span>
+                                            <p className="text-[10px] text-purple-800">{slide}</p>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {item.hashtags?.length > 0 && <div className="flex flex-wrap gap-1">{item.hashtags.map((h, hi) => <span key={hi} className="text-[9px] text-np-blue font-medium">#{h}</span>)}</div>}
+                                </div>
+                              )}
                             </div>
                           )
                         })}
                         <div className="flex gap-2 mt-2">
-                          <button onClick={saveAllAsDrafts} disabled={saving}
+                          <button onClick={() => handleAIAction('Save All as Drafts')} disabled={saving}
                             className="text-[11px] px-4 py-2 bg-np-blue text-white rounded-lg font-medium hover:bg-np-blue/90 disabled:opacity-50 flex items-center gap-1.5">
                             {saving ? <><Loader2 className="w-3 h-3 animate-spin" /> Saving...</> : <><Send className="w-3 h-3" /> Save All as Drafts</>}
                           </button>
-                          <button onClick={() => { setAiStep(0); setAiMessages([...aiMessages, { role: 'ai', content: "Want to generate more? Pick a content type:", options: ['Educational / Authority', 'Testimonial / Story', 'CTA / Enrollment', 'Custom Topic'] }]) }}
-                            className="text-[11px] px-4 py-2 bg-white border border-gray-200 text-np-dark rounded-lg font-medium hover:bg-gray-50">
-                            Generate More
-                          </button>
+                          <button onClick={() => sendToAI('Regenerate with a different angle')} className="text-[11px] px-4 py-2 bg-white border border-gray-200 text-np-dark rounded-lg font-medium hover:bg-gray-50">Regenerate</button>
+                          <button onClick={startAI} className="text-[11px] px-4 py-2 bg-white border border-gray-200 text-np-dark rounded-lg font-medium hover:bg-gray-50">New Content</button>
                         </div>
                       </div>
                     )}
@@ -295,20 +348,19 @@ export default function SocialPage() {
                 <div className="flex justify-start">
                   <div className="bg-gray-50 rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-2">
                     <Loader2 className="w-4 h-4 text-purple-500 animate-spin" />
-                    <span className="text-sm text-gray-500">Generating content for each platform...</span>
+                    <span className="text-sm text-gray-500">Generating content with image direction and video scripts...</span>
                   </div>
                 </div>
               )}
               <div ref={chatEndRef} />
             </div>
-
             <div className="px-5 py-3 border-t border-gray-100">
               <div className="flex gap-2">
                 <input value={aiInput} onChange={e => setAiInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') handleAISubmit() }}
-                  placeholder="Type your message or pick an option above..."
+                  onKeyDown={e => { if (e.key === 'Enter' && aiInput.trim()) sendToAI(aiInput.trim()) }}
+                  placeholder="Describe your content, ask for revisions, or pick an option..."
                   className="flex-1 text-sm border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-purple-500/20 placeholder-gray-300" />
-                <button onClick={handleAISubmit}
+                <button onClick={() => { if (aiInput.trim()) sendToAI(aiInput.trim()) }}
                   className="px-4 py-2.5 bg-gradient-to-r from-purple-600 to-np-blue text-white rounded-xl hover:opacity-90">
                   <Send className="w-4 h-4" />
                 </button>
@@ -318,66 +370,49 @@ export default function SocialPage() {
         </div>
       )}
 
-      {/* Manual Post Creator */}
+      {/* ═══ MANUAL CREATOR ═══ */}
       {creating && (
         <div className="mb-6 bg-white border border-gray-200 rounded-2xl p-6">
           <h3 className="text-sm font-bold text-np-dark mb-4">Create Post</h3>
-
-          <div className="flex items-center gap-4 mb-4">
+          <div className="flex items-start gap-4 mb-4">
             <div>
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">Brand</label>
               <div className="flex gap-1.5">
                 {[{ k: 'np', l: 'NP' }, { k: 'sensorium', l: 'SEN' }].map(b => (
                   <button key={b.k} onClick={() => setBrand(b.k)}
-                    className={`text-[10px] font-bold px-3 py-1.5 rounded-lg border-2 ${brand === b.k ? 'border-np-blue bg-np-blue/10 text-np-blue' : 'border-transparent bg-gray-100 text-gray-500'}`}>
-                    {b.l}
-                  </button>
+                    className={`text-[10px] font-bold px-3 py-1.5 rounded-lg border-2 ${brand === b.k ? 'border-np-blue bg-np-blue/10 text-np-blue' : 'border-transparent bg-gray-100 text-gray-500'}`}>{b.l}</button>
                 ))}
               </div>
             </div>
-            <div className="flex-1">
-              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">Platforms</label>
-              <div className="flex gap-1.5">
-                {PLATFORMS.map(p => (
-                  <button key={p.key} onClick={() => togglePlatform(p.key)}
-                    className={`text-sm px-2.5 py-1.5 rounded-lg border-2 transition-all ${selectedPlatforms.includes(p.key) ? 'border-current' : 'border-transparent bg-gray-100 opacity-40'}`}
-                    style={selectedPlatforms.includes(p.key) ? { borderColor: p.color, color: p.color, backgroundColor: p.color + '15' } : {}}>
-                    {p.icon}
-                  </button>
+            <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">Content Format</label>
+              <div className="flex gap-1.5 flex-wrap">
+                {CONTENT_FORMATS.map(f => (
+                  <button key={f.key} onClick={() => setSelectedContentFormat(f.key)}
+                    className={`text-[10px] font-bold px-2.5 py-1.5 rounded-lg border-2 ${selectedContentFormat === f.key ? 'border-purple-500 bg-purple-50 text-purple-600' : 'border-transparent bg-gray-100 text-gray-500'}`}>{f.icon} {f.label}</button>
                 ))}
               </div>
             </div>
           </div>
-
-          {/* Format picker */}
-          {selectedPlatforms.length > 0 && (
-            <div className="mb-4">
-              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">Formats</label>
-              <div className="flex flex-wrap gap-1.5">
-                {formats
-                  .filter(f => selectedPlatforms.includes(f.platform))
-                  .map(f => (
-                    <button key={f.id} onClick={() => setSelectedFormats(prev => prev.includes(f.id) ? prev.filter(x => x !== f.id) : [...prev, f.id])}
-                      className={`text-[9px] px-2 py-1 rounded border ${selectedFormats.includes(f.id) ? 'border-np-blue bg-np-blue/10 text-np-blue font-bold' : 'border-gray-200 text-gray-500'}`}>
-                      {PLATFORMS.find(p => p.key === f.platform)?.icon} {f.format_name} ({f.width}x{f.height})
-                    </button>
-                  ))}
-              </div>
+          <div className="mb-4">
+            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">Platforms</label>
+            <div className="flex gap-1.5">
+              {PLATFORMS.map(p => (
+                <button key={p.key} onClick={() => togglePlatform(p.key)}
+                  className={`text-sm px-2.5 py-1.5 rounded-lg border-2 transition-all ${selectedPlatforms.includes(p.key) ? 'border-current' : 'border-transparent bg-gray-100 opacity-40'}`}
+                  style={selectedPlatforms.includes(p.key) ? { borderColor: p.color, color: p.color, backgroundColor: p.color + '15' } : {}}>{p.icon}</button>
+              ))}
             </div>
-          )}
-
+          </div>
           <textarea value={content} onChange={e => setContent(e.target.value)} placeholder="Write your post content..."
             rows={4} className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 mb-3 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 resize-none" />
-
           <div className="mb-3">
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Hashtags</label>
             <input value={hashtags} onChange={e => setHashtags(e.target.value)} placeholder="nervous system, capacity, HRV"
               className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300" />
           </div>
-
           <div className="flex gap-2">
-            <button onClick={handleCreate} disabled={saving || !content.trim()}
-              className="btn-primary text-xs py-2 px-4 disabled:opacity-50 flex items-center gap-1.5">
+            <button onClick={handleCreate} disabled={saving || !content.trim()} className="btn-primary text-xs py-2 px-4 disabled:opacity-50 flex items-center gap-1.5">
               {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving...</> : 'Save as Draft'}
             </button>
             <button onClick={() => setCreating(false)} className="btn-secondary text-xs py-2 px-4">Cancel</button>
@@ -385,7 +420,7 @@ export default function SocialPage() {
         </div>
       )}
 
-      {/* Status Filters */}
+      {/* Filters */}
       <div className="flex gap-1.5 mb-4">
         {['all', 'draft', 'scheduled', 'published', 'archived'].map(s => (
           <button key={s} onClick={() => setStatusFilter(s)}
@@ -395,25 +430,20 @@ export default function SocialPage() {
         ))}
       </div>
 
-      {/* Empty State */}
       {posts.length === 0 && !creating && (
         <div className="bg-white border border-gray-100 rounded-2xl p-16 text-center">
           <Send className="w-14 h-14 text-gray-200 mx-auto mb-4" />
-          <h2 className="text-lg font-semibold text-np-dark mb-2">Social Media Designer</h2>
-          <p className="text-sm text-gray-500 mb-6 max-w-md mx-auto">
-            Create content once, adapt for all platforms. Use the AI generator to produce brand-aligned posts for Instagram, LinkedIn, Facebook, TikTok, and X.
-          </p>
+          <h2 className="text-lg font-semibold text-np-dark mb-2">Social Media Content Hub</h2>
+          <p className="text-sm text-gray-500 mb-6 max-w-md mx-auto">Create posts, reels, videos, and carousels with AI-generated image direction, video scripts, and platform-specific optimization.</p>
           <div className="flex justify-center gap-3">
             <button onClick={() => setCreating(true)} className="btn-secondary text-sm py-2.5 px-5">Write Manually</button>
-            <button onClick={startAI}
-              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-purple-600 to-np-blue text-white rounded-lg text-sm font-medium hover:opacity-90">
+            <button onClick={startAI} className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-purple-600 to-np-blue text-white rounded-lg text-sm font-medium hover:opacity-90">
               <Wand2 className="w-4 h-4" /> AI Content Generator
             </button>
           </div>
         </div>
       )}
 
-      {/* Post Grid */}
       {filteredPosts.length > 0 && (
         <div className="space-y-3">
           {filteredPosts.map(post => {
@@ -424,30 +454,19 @@ export default function SocialPage() {
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1.5">
-                      <span className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
-                        style={{ backgroundColor: statusConf.bg, color: statusConf.color }}>
-                        {statusConf.label}
-                      </span>
-                      <span className="text-[8px] font-bold uppercase text-gray-400">
-                        {post.brand === 'np' ? 'Neuro Progeny' : 'Sensorium'}
-                      </span>
-                      {platforms.map((p: string) => (
-                        <span key={p} className="text-xs">{PLATFORMS.find(pl => pl.key === p)?.icon}</span>
-                      ))}
+                      <span className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ backgroundColor: statusConf.bg, color: statusConf.color }}>{statusConf.label}</span>
+                      <span className="text-[8px] font-bold uppercase text-gray-400">{post.brand === 'np' ? 'Neuro Progeny' : 'Sensorium'}</span>
+                      {platforms.map((p: string) => <span key={p} className="text-xs">{PLATFORMS.find(pl => pl.key === p)?.icon}</span>)}
                     </div>
                     <p className="text-sm text-np-dark line-clamp-2">{post.content_original}</p>
                     {post.hashtags?.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-1.5">
-                        {post.hashtags.map((h: string, i: number) => (
-                          <span key={i} className="text-[9px] text-np-blue font-medium">#{h}</span>
-                        ))}
+                        {post.hashtags.map((h: string, i: number) => <span key={i} className="text-[9px] text-np-blue font-medium">#{h}</span>)}
                       </div>
                     )}
                     <p className="text-[9px] text-gray-400 mt-1">{new Date(post.created_at).toLocaleDateString()}</p>
                   </div>
-                  <button onClick={() => deletePost(post.id)} className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400">
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  <button onClick={() => deletePost(post.id)} className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
                 </div>
               </div>
             )
