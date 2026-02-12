@@ -110,7 +110,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (campaignContext) {
+    if (campaignContext?.systemOverride) {
+      systemPrompt = campaignContext.systemOverride
+    } else if (campaignContext) {
       systemPrompt += `\n\nCURRENT CAMPAIGN CONTEXT:\n${JSON.stringify(campaignContext, null, 2)}`
     }
 
