@@ -80,6 +80,14 @@ export default function SocialPage() {
   const [mediaPicker, setMediaPicker] = useState<{ optionId: string; slotIndex: number; type: 'image' | 'video' } | null>(null)
   const [mediaSearch, setMediaSearch] = useState('')
 
+  // Transcript
+  const [transcript, setTranscript] = useState<{ text: string; title: string; source: string } | null>(null)
+  const [showTranscriptModal, setShowTranscriptModal] = useState(false)
+  const [transcriptUrl, setTranscriptUrl] = useState('')
+  const [transcriptPaste, setTranscriptPaste] = useState('')
+  const [transcriptLoading, setTranscriptLoading] = useState(false)
+  const [transcriptError, setTranscriptError] = useState('')
+
   const [posts, setPosts] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -103,8 +111,31 @@ export default function SocialPage() {
 
   useEffect(() => {
     const av = voices.filter(v => v.on)
-    setMsgs([{ role: 'ai', content: `I'm your AI CMO. ${av.length ? `Voices: ${av.map(v => v.name).join(', ')}` : ''}\n${brand === 'np' ? 'Neuro Progeny' : 'Sensorium'} | ${plats.map(p => PL[p]?.name).join(', ')}\nFormat: ${formatPref === 'ai' ? 'AI Recommends (I\'ll pick the best format for each option)' : FORMAT_PREFS.find(f => f.id === formatPref)?.name}\n\nDescribe what you want to post. I'll generate 3 options with the best format for each.` }])
+    setMsgs([{ role: 'ai', content: `I'm your AI CMO. ${av.length ? `Voices: ${av.map(v => v.name).join(', ')}` : ''}\n${brand === 'np' ? 'Neuro Progeny' : 'Sensorium'} | ${plats.map(p => PL[p]?.name).join(', ')}\nFormat: ${formatPref === 'ai' ? 'AI Recommends' : FORMAT_PREFS.find(f => f.id === formatPref)?.name}${transcript ? `\nTranscript loaded: "${transcript.title}" (${Math.round(transcript.text.length / 1000)}k chars)` : ''}\n\nDescribe what you want to post${transcript ? ', or say "create posts from transcript" and I\'ll mine it for the best content' : '. Load a transcript to repurpose video/podcast content.'}.` }])
   }, [brand])
+
+  const fetchTranscript = async (mode: 'url' | 'paste') => {
+    setTranscriptLoading(true)
+    setTranscriptError('')
+    try {
+      const res = await fetch('/api/transcript', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(mode === 'url' ? { url: transcriptUrl } : { rawText: transcriptPaste }),
+      })
+      const text = await res.text()
+      let data: any
+      try { data = JSON.parse(text) } catch { data = { error: text.slice(0, 200) } }
+      if (data.error) { setTranscriptError(data.error) }
+      else {
+        setTranscript({ text: data.transcript, title: data.title || 'Pasted Transcript', source: data.source || 'pasted' })
+        setShowTranscriptModal(false)
+        setTranscriptUrl('')
+        setTranscriptPaste('')
+        setMsgs(prev => [...prev, { role: 'ai', content: `Transcript loaded: "${data.title || 'Pasted Transcript'}"\n${Math.round(data.transcript.length / 1000)}k characters, ${data.source === 'youtube' ? 'fetched from YouTube' : 'from pasted text'}.\n\nI can now create posts from this content. Try:\n- "Create 3 post options from the best moments"\n- "Find the most quotable sections and make carousels"\n- "Turn the key insights into a reel series"\n- "What are the most shareable takeaways?"` }])
+      }
+    } catch (err: any) { setTranscriptError(err.message) }
+    setTranscriptLoading(false)
+  }
 
   const togglePlat = (pid: string) => {
     setPlats(prev => { if (prev.includes(pid)) return prev.length > 1 ? prev.filter(p => p !== pid) : prev; return [...prev, pid] })
@@ -138,6 +169,12 @@ ${formatInstruction}
 
 `
     if (av.length) { s += 'ADVISORY VOICES:\n'; av.forEach(v => { s += `- ${v.name} (${v.role}): ${v.persp}\n` }) }
+
+    // Inject transcript if loaded
+    if (transcript) {
+      const truncated = transcript.text.length > 12000 ? transcript.text.slice(0, 12000) + '\n[...truncated]' : transcript.text
+      s += `\nSOURCE TRANSCRIPT (from "${transcript.title}"):\nMine this transcript for the most compelling, shareable moments. Pull direct insights, stories, quotes, and data points. Rewrite for social media (not just copy/paste). Each option should pull from DIFFERENT sections of the transcript.\n\n${truncated}\n\n`
+    }
     if (currentOrg) {
       const { data } = await supabase.from('brand_profiles').select('*').eq('org_id', currentOrg.id).eq('brand_key', brand).single()
       if (data?.guidelines?.core_messages?.length) s += `\nCore Messages: ${data.guidelines.core_messages.join(' | ')}\n`
@@ -336,6 +373,29 @@ Return exactly 3 options with distinctly different angles. Zero markdown. Immedi
                   </div>
                 )
               })}
+            </div>
+
+            {/* Transcript Source */}
+            <div className="bg-white border border-gray-100 rounded-xl p-3">
+              <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-2">Source Content</div>
+              {transcript ? (
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[9px] font-bold text-purple-600">Transcript Loaded</span>
+                    <button onClick={() => setTranscript(null)} className="text-[8px] text-red-400 hover:text-red-600">Clear</button>
+                  </div>
+                  <p className="text-[9px] text-purple-800 line-clamp-2">{transcript.title}</p>
+                  <p className="text-[8px] text-purple-500 mt-0.5">{Math.round(transcript.text.length / 1000)}k chars | {transcript.source}</p>
+                </div>
+              ) : (
+                <button onClick={() => setShowTranscriptModal(true)} className="w-full flex items-center gap-2 px-2.5 py-2 border-2 border-dashed border-gray-200 rounded-lg text-left hover:border-purple-300 hover:bg-purple-50/50 transition-all">
+                  <Film className="w-4 h-4 text-gray-400" />
+                  <div>
+                    <div className="text-[10px] font-medium text-gray-600">From Video / Podcast</div>
+                    <div className="text-[8px] text-gray-400">YouTube URL or paste transcript</div>
+                  </div>
+                </button>
+              )}
             </div>
 
             <div className="bg-white border border-gray-100 rounded-xl p-3">
@@ -639,6 +699,63 @@ Return exactly 3 options with distinctly different angles. Zero markdown. Immedi
                   <button onClick={() => setEditPost(null)} className="btn-secondary text-xs py-2 px-4">Cancel</button>
                   <button onClick={async () => { await supabase.from('social_posts').delete().eq('id', editPost.id); await fetchPosts(); setEditPost(null) }} className="text-xs py-2 px-4 text-red-500 hover:bg-red-50 rounded-lg ml-auto">Delete</button>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Transcript Modal */}
+      {showTranscriptModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setShowTranscriptModal(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+              <h3 className="text-sm font-bold text-np-dark">Load Transcript</h3>
+              <button onClick={() => { setShowTranscriptModal(false); setTranscriptError('') }}><X className="w-4 h-4 text-gray-400" /></button>
+            </div>
+            <div className="p-5 space-y-4 overflow-y-auto">
+              {/* YouTube URL */}
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">YouTube URL</label>
+                <p className="text-[9px] text-gray-500 mb-1.5">Paste a YouTube link and we'll pull the transcript automatically</p>
+                <div className="flex gap-2">
+                  <input value={transcriptUrl} onChange={e => setTranscriptUrl(e.target.value)} placeholder="https://youtube.com/watch?v=..."
+                    className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-purple-500/30" />
+                  <button onClick={() => fetchTranscript('url')} disabled={transcriptLoading || !transcriptUrl.trim()}
+                    className="px-4 py-2 bg-red-500 text-white rounded-lg text-xs font-bold disabled:opacity-40 flex items-center gap-1">
+                    {transcriptLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Film className="w-3 h-3" />} Fetch
+                  </button>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-3"><div className="flex-1 h-px bg-gray-200" /><span className="text-[9px] text-gray-400 font-bold">OR</span><div className="flex-1 h-px bg-gray-200" /></div>
+              
+              {/* Paste transcript */}
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Paste Transcript</label>
+                <p className="text-[9px] text-gray-500 mb-1.5">Works with any text: podcast transcripts, meeting notes, blog posts, interview recordings</p>
+                <textarea value={transcriptPaste} onChange={e => setTranscriptPaste(e.target.value)} rows={8}
+                  placeholder="Paste your transcript, show notes, or any source content here..."
+                  className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-purple-500/30 resize-none" />
+                <div className="flex items-center justify-between mt-1.5">
+                  <span className="text-[8px] text-gray-400">{transcriptPaste.length > 0 ? `${Math.round(transcriptPaste.length / 1000)}k characters` : ''}</span>
+                  <button onClick={() => fetchTranscript('paste')} disabled={transcriptLoading || !transcriptPaste.trim()}
+                    className="px-4 py-2 bg-np-blue text-white rounded-lg text-xs font-bold disabled:opacity-40 flex items-center gap-1">
+                    {transcriptLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />} Load
+                  </button>
+                </div>
+              </div>
+
+              {transcriptError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                  <p className="text-[10px] text-red-600">{transcriptError}</p>
+                </div>
+              )}
+
+              <div className="bg-gray-50 rounded-lg p-3">
+                <div className="text-[10px] font-bold text-gray-500 mb-1">How it works</div>
+                <p className="text-[9px] text-gray-500 leading-relaxed">Load a transcript and the AI CMO will mine it for the most compelling, shareable moments. Each of the 3 options will pull from different sections, rewriting for social media rather than copy/pasting. Works great for repurposing podcasts, interviews, webinars, and talks into a week's worth of content.</p>
               </div>
             </div>
           </div>
