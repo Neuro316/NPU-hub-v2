@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-export const runtime = 'edge'
 export const maxDuration = 60
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY

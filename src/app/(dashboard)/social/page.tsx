@@ -178,9 +178,12 @@ Be tactical and specific. No generic advice. Every piece of direction should be 
         }),
       })
 
-      const data = await res.json()
+      const text = await res.text()
+      let data: any
+      try { data = JSON.parse(text) } catch { data = { error: text.slice(0, 200) } }
+
       if (data.error) {
-        setMsgs([...newMsgs, { role: 'ai', content: `Error: ${data.error}\n\nSet ANTHROPIC_API_KEY in Vercel environment variables.` }])
+        setMsgs([...newMsgs, { role: 'ai', content: `Error: ${data.error}\n\nMake sure ANTHROPIC_API_KEY is set in Vercel > Settings > Environment Variables, then redeploy.` }])
       } else {
         setMsgs([...newMsgs, { role: 'ai', content: data.content }])
       }
