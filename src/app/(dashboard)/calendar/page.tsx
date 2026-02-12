@@ -7,12 +7,12 @@ import Link from 'next/link'
 import { Calendar, ChevronLeft, ChevronRight, Plus, Clock, Wand2 } from 'lucide-react'
 
 const PLATFORMS = [
-  { key: 'instagram', icon: '📸', color: '#E4405F' },
-  { key: 'facebook', icon: '📘', color: '#1877F2' },
-  { key: 'linkedin', icon: '💼', color: '#0A66C2' },
-  { key: 'tiktok', icon: '🎵', color: '#000' },
-  { key: 'x', icon: '𝕏', color: '#1DA1F2' },
-  { key: 'youtube', icon: '📺', color: '#FF0000' },
+  { key: 'instagram', icon: 'IG', color: '#E4405F' },
+  { key: 'facebook', icon: 'FB', color: '#1877F2' },
+  { key: 'linkedin', icon: 'LI', color: '#0A66C2' },
+  { key: 'tiktok', icon: 'TT', color: '#000' },
+  { key: 'x', icon: 'X', color: '#1DA1F2' },
+  { key: 'youtube', icon: 'YT', color: '#FF0000' },
 ]
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -149,7 +149,7 @@ export default function CalendarPage() {
       {/* Unscheduled drafts sidebar */}
       {unscheduledPosts.length > 0 && (
         <div className="bg-white border border-gray-100 rounded-xl p-4">
-          <h3 className="text-xs font-bold text-np-dark mb-2">📌 Unscheduled Drafts (drag to calendar)</h3>
+          <h3 className="text-xs font-bold text-np-dark mb-2"> Unscheduled Drafts (drag to calendar)</h3>
           <div className="flex flex-wrap gap-2">
             {unscheduledPosts.map(post => {
               const platforms = post.platform_versions?.map((v: any) => v.platform) || []

@@ -6,23 +6,23 @@ import { useWorkspace } from '@/lib/workspace-context'
 import Link from 'next/link'
 import { Send, X, Loader2, Copy, Check, Plus, Calendar, Trash2, Save, Film, Image, FileText } from 'lucide-react'
 
-// ─── PLATFORM CONFIG ───
+// --- PLATFORM CONFIG ---
 const PL: Record<string, { name: string; icon: string; color: string; cl: number; formats: Array<{ id: string; name: string; w: number; h: number; r: string }> }> = {
-  instagram: { name: 'Instagram', icon: '📸', color: '#E1306C', cl: 2200, formats: [{ id: 'ig-sq', name: 'Square', w: 1080, h: 1080, r: '1:1' }, { id: 'ig-port', name: 'Portrait', w: 1080, h: 1350, r: '4:5' }, { id: 'ig-story', name: 'Story/Reel', w: 1080, h: 1920, r: '9:16' }, { id: 'ig-land', name: 'Landscape', w: 1080, h: 566, r: '1.91:1' }] },
-  facebook: { name: 'Facebook', icon: '📘', color: '#1877F2', cl: 63206, formats: [{ id: 'fb-sq', name: 'Square', w: 1080, h: 1080, r: '1:1' }, { id: 'fb-land', name: 'Landscape', w: 1200, h: 630, r: '1.91:1' }, { id: 'fb-story', name: 'Story', w: 1080, h: 1920, r: '9:16' }] },
-  linkedin: { name: 'LinkedIn', icon: '💼', color: '#0A66C2', cl: 3000, formats: [{ id: 'li-sq', name: 'Square', w: 1080, h: 1080, r: '1:1' }, { id: 'li-port', name: 'Portrait', w: 1080, h: 1350, r: '4:5' }, { id: 'li-land', name: 'Landscape', w: 1200, h: 627, r: '1.91:1' }, { id: 'li-art', name: 'Article', w: 1280, h: 720, r: '16:9' }] },
-  tiktok: { name: 'TikTok', icon: '🎵', color: '#010101', cl: 2200, formats: [{ id: 'tt-vid', name: 'Video', w: 1080, h: 1920, r: '9:16' }] },
-  x: { name: 'X (Twitter)', icon: '𝕏', color: '#1DA1F2', cl: 280, formats: [{ id: 'tw-img', name: 'Image', w: 1600, h: 900, r: '16:9' }, { id: 'tw-sq', name: 'Square', w: 1080, h: 1080, r: '1:1' }] },
-  youtube: { name: 'YouTube', icon: '📺', color: '#FF0000', cl: 5000, formats: [{ id: 'yt-thumb', name: 'Thumbnail', w: 1280, h: 720, r: '16:9' }, { id: 'yt-short', name: 'Short', w: 1080, h: 1920, r: '9:16' }] },
+  instagram: { name: 'Instagram', icon: 'IG', color: '#E1306C', cl: 2200, formats: [{ id: 'ig-sq', name: 'Square', w: 1080, h: 1080, r: '1:1' }, { id: 'ig-port', name: 'Portrait', w: 1080, h: 1350, r: '4:5' }, { id: 'ig-story', name: 'Story/Reel', w: 1080, h: 1920, r: '9:16' }, { id: 'ig-land', name: 'Landscape', w: 1080, h: 566, r: '1.91:1' }] },
+  facebook: { name: 'Facebook', icon: 'FB', color: '#1877F2', cl: 63206, formats: [{ id: 'fb-sq', name: 'Square', w: 1080, h: 1080, r: '1:1' }, { id: 'fb-land', name: 'Landscape', w: 1200, h: 630, r: '1.91:1' }, { id: 'fb-story', name: 'Story', w: 1080, h: 1920, r: '9:16' }] },
+  linkedin: { name: 'LinkedIn', icon: 'LI', color: '#0A66C2', cl: 3000, formats: [{ id: 'li-sq', name: 'Square', w: 1080, h: 1080, r: '1:1' }, { id: 'li-port', name: 'Portrait', w: 1080, h: 1350, r: '4:5' }, { id: 'li-land', name: 'Landscape', w: 1200, h: 627, r: '1.91:1' }, { id: 'li-art', name: 'Article', w: 1280, h: 720, r: '16:9' }] },
+  tiktok: { name: 'TikTok', icon: 'TT', color: '#010101', cl: 2200, formats: [{ id: 'tt-vid', name: 'Video', w: 1080, h: 1920, r: '9:16' }] },
+  x: { name: 'X (Twitter)', icon: 'X', color: '#1DA1F2', cl: 280, formats: [{ id: 'tw-img', name: 'Image', w: 1600, h: 900, r: '16:9' }, { id: 'tw-sq', name: 'Square', w: 1080, h: 1080, r: '1:1' }] },
+  youtube: { name: 'YouTube', icon: 'YT', color: '#FF0000', cl: 5000, formats: [{ id: 'yt-thumb', name: 'Thumbnail', w: 1280, h: 720, r: '16:9' }, { id: 'yt-short', name: 'Short', w: 1080, h: 1920, r: '9:16' }] },
 }
 
 const CONTENT_TYPES = [
-  { id: 'edu', name: 'Educational', icon: '🧠' },
-  { id: 'story', name: 'Story', icon: '📖' },
-  { id: 'promo', name: 'Promotional', icon: '📣' },
-  { id: 'engage', name: 'Engagement', icon: '💬' },
-  { id: 'authority', name: 'Authority', icon: '🏆' },
-  { id: 'bts', name: 'Behind Scenes', icon: '🎬' },
+  { id: 'edu', name: 'Educational', icon: '' },
+  { id: 'story', name: 'Story', icon: '' },
+  { id: 'promo', name: 'Promotional', icon: '' },
+  { id: 'engage', name: 'Engagement', icon: '' },
+  { id: 'authority', name: 'Authority', icon: '' },
+  { id: 'bts', name: 'Behind Scenes', icon: '' },
 ]
 
 interface Voice { id: string; name: string; role: string; persp: string; color: string; on: boolean }
@@ -218,7 +218,7 @@ Be tactical and specific. No generic advice. Every piece of direction should be 
     if (!voiceForm.name.trim()) return
     if (editVoice === 'new') {
       setVoices(prev => [...prev, { ...voiceForm, id: `v-${Date.now()}`, on: true }])
-    } else if (editVoice && editVoice !== 'new') {
+    } else if (editVoice) {
       setVoices(prev => prev.map(v => v.id === editVoice.id ? { ...v, ...voiceForm } : v))
     }
     setEditVoice(null)
@@ -231,11 +231,11 @@ Be tactical and specific. No generic advice. Every piece of direction should be 
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div>
-          <h1 className="text-xl font-semibold text-np-dark flex items-center gap-2">🎨 Social Media Designer</h1>
+          <h1 className="text-xl font-semibold text-np-dark flex items-center gap-2">Social Media Designer</h1>
           <p className="text-[10px] text-gray-400 mt-0.5">AI CMO | {voices.filter(v => v.on).length} voice{voices.filter(v => v.on).length !== 1 ? 's' : ''} active | {plats.map(p => PL[p]?.icon).join(' ')}</p>
         </div>
         <div className="flex gap-1.5">
-          {([['create', '✨ Create'], ['posts', `📋 Posts (${posts.length})`], ['voices', `🎭 Voices (${voices.length})`]] as const).map(([k, l]) => (
+          {([['create', ' Create'], ['posts', ` Posts (${posts.length})`], ['voices', ` Voices (${voices.length})`]] as const).map(([k, l]) => (
             <button key={k} onClick={() => setTab(k as any)}
               className={`text-[10px] font-bold px-3 py-1.5 rounded-lg border ${tab === k ? 'bg-np-blue text-white border-np-blue' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}>{l}</button>
           ))}
@@ -245,7 +245,7 @@ Be tactical and specific. No generic advice. Every piece of direction should be 
         </div>
       </div>
 
-      {/* ═══ CREATE TAB: 3-PANEL LAYOUT ═══ */}
+      {/* === CREATE TAB: 3-PANEL LAYOUT === */}
       {tab === 'create' && (
         <div className="flex-1 grid grid-cols-[260px_1fr_260px] gap-3 min-h-0">
 
@@ -317,7 +317,7 @@ Be tactical and specific. No generic advice. Every piece of direction should be 
                     <span className="w-3.5 h-3.5 rounded-full text-white text-[7px] font-bold flex items-center justify-center" style={{ backgroundColor: v.color }}>
                       {v.name.split(' ').map(w => w[0]).join('').slice(0, 2)}
                     </span>
-                    {v.name} ✓
+                    {v.name} ON
                   </button>
                 ))}
                 {!voices.some(v => v.on) && <span className="text-[10px] text-gray-400 italic">None selected</span>}
@@ -329,7 +329,7 @@ Be tactical and specific. No generic advice. Every piece of direction should be 
           <div className="bg-white border border-gray-100 rounded-xl flex flex-col min-h-0">
             <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
               <div className="flex items-center gap-2">
-                <span className="text-lg">🟣</span>
+                <span className="text-lg"></span>
                 <span className="text-xs font-bold text-purple-600">CMO AI Assistant</span>
               </div>
               <div className="flex items-center gap-1.5">
@@ -346,7 +346,7 @@ Be tactical and specific. No generic advice. Every piece of direction should be 
               {msgs.map((m, i) => (
                 <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[88%] px-3.5 py-2.5 rounded-xl text-sm leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-np-blue text-white rounded-br-sm' : 'bg-gray-50 text-np-dark border border-gray-100 rounded-bl-sm'}`}>
-                    {m.role === 'ai' && <div className="text-[8px] font-bold text-purple-500 uppercase tracking-wider mb-1">🟣 CMO AI</div>}
+                    {m.role === 'ai' && <div className="text-[8px] font-bold text-purple-500 uppercase tracking-wider mb-1"> CMO AI</div>}
                     {m.content}
                     {m.role === 'ai' && i > 0 && (
                       <button onClick={() => copyText(m.content, `msg-${i}`)}
@@ -414,7 +414,7 @@ Be tactical and specific. No generic advice. Every piece of direction should be 
         </div>
       )}
 
-      {/* ═══ POSTS TAB ═══ */}
+      {/* === POSTS TAB === */}
       {tab === 'posts' && (
         <div className="flex-1 overflow-y-auto">
           {loading ? <div className="text-center py-8 text-gray-400 text-sm">Loading...</div> : posts.length === 0 ? (
@@ -434,7 +434,7 @@ Be tactical and specific. No generic advice. Every piece of direction should be 
                         <span className={`text-[8px] font-bold uppercase px-1.5 py-0.5 rounded ${post.status === 'draft' ? 'bg-gray-100 text-gray-500' : post.status === 'scheduled' ? 'bg-blue-50 text-blue-500' : 'bg-green-50 text-green-500'}`}>{post.status}</span>
                         <span className="text-[8px] font-bold uppercase text-gray-400">{post.brand === 'np' ? 'NP' : 'SEN'}</span>
                         {post.platform_versions?.map((v: any) => <span key={v.platform} className="text-xs">{PL[v.platform]?.icon}</span>)}
-                        {post.scheduled_at && <span className="text-[8px] text-blue-500">📅 {new Date(post.scheduled_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>}
+                        {post.scheduled_at && <span className="text-[8px] text-blue-500"> {new Date(post.scheduled_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>}
                       </div>
                       <p className="text-sm text-np-dark line-clamp-3">{post.content_original}</p>
                       {post.hashtags?.length > 0 && <div className="flex flex-wrap gap-1 mt-1">{post.hashtags.map((h: string, i: number) => <span key={i} className="text-[9px] text-np-blue font-medium">#{h}</span>)}</div>}
@@ -449,12 +449,12 @@ Be tactical and specific. No generic advice. Every piece of direction should be 
         </div>
       )}
 
-      {/* ═══ VOICES TAB ═══ */}
+      {/* === VOICES TAB === */}
       {tab === 'voices' && (
         <div className="flex-1 overflow-y-auto max-w-3xl mx-auto">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="text-base font-bold text-np-dark">🎭 Advisory Voices</h2>
+              <h2 className="text-base font-bold text-np-dark">Advisory Voices</h2>
               <p className="text-xs text-gray-500 mt-0.5">Add theorists, marketers, frameworks, or perspectives. AI analyzes through each selected lens simultaneously.</p>
             </div>
             <button onClick={() => openVoiceEditor('new')} className="text-xs px-3 py-1.5 bg-np-blue text-white rounded-lg font-medium">+ Add Voice</button>
@@ -475,7 +475,7 @@ Be tactical and specific. No generic advice. Every piece of direction should be 
                     </div>
                   </div>
                   <div className="flex gap-1">
-                    <button onClick={() => openVoiceEditor(v)} className="text-[10px] text-gray-400 hover:text-np-blue">✏️</button>
+                    <button onClick={() => openVoiceEditor(v)} className="text-[10px] text-gray-400 hover:text-np-blue">Edit</button>
                     <button onClick={() => setVoices(prev => prev.map(x => x.id === v.id ? { ...x, on: !x.on } : x))}
                       className={`text-[9px] px-2 py-0.5 rounded font-bold border ${v.on ? 'text-white' : 'text-gray-400 border-gray-200'}`}
                       style={v.on ? { backgroundColor: v.color, borderColor: v.color } : {}}>
