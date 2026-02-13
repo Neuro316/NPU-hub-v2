@@ -199,6 +199,57 @@ export default function IntegrationsPage() {
                 placeholder="cameron.allen@neuroprogeny.com"
                 className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300" />
             </div>
+
+            {/* Test Email */}
+            <div className="border-t border-gray-100 pt-3">
+              <label className="text-[10px] font-bold text-gray-500 block mb-1">Send Test Email</label>
+              <div className="flex gap-2">
+                <input id="test-email-input"
+                  defaultValue={gmailConfig.sender_email || 'cameron.allen@neuroprogeny.com'}
+                  placeholder="your@email.com"
+                  className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300" />
+                <button
+                  onClick={async () => {
+                    const emailInput = document.getElementById('test-email-input') as HTMLInputElement
+                    const testEmail = emailInput?.value?.trim()
+                    if (!testEmail || !testEmail.includes('@')) { alert('Enter a valid email'); return }
+                    const btn = document.getElementById('test-email-btn') as HTMLButtonElement
+                    if (btn) { btn.disabled = true; btn.textContent = 'Sending...' }
+                    try {
+                      const res = await fetch('/api/send-resources', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          recipientName: 'Test User',
+                          recipientEmail: testEmail,
+                          personalNote: 'This is a test email from NPU Hub to verify your Gmail integration is working correctly.',
+                          resources: [
+                            { name: 'NPU Hub', url: 'https://hub.neuroprogeny.com', type: 'link' },
+                            { name: 'Neuro Progeny Website', url: 'https://neuroprogeny.com', type: 'link' },
+                          ],
+                          cardName: 'Integration Test',
+                          orgId: currentOrg?.id || '',
+                          useSenderFromSettings: true,
+                        }),
+                      })
+                      const result = await res.json()
+                      if (result.success) {
+                        alert('Test email sent! Check your inbox.')
+                      } else {
+                        alert('Failed: ' + (result.error || 'Unknown error'))
+                      }
+                    } catch (err: any) {
+                      alert('Error: ' + (err.message || 'Network error'))
+                    }
+                    if (btn) { btn.disabled = false; btn.textContent = 'Send Test' }
+                  }}
+                  id="test-email-btn"
+                  className="text-xs font-medium px-3 py-1.5 rounded-lg bg-red-500 text-white hover:bg-red-600 whitespace-nowrap">
+                  Send Test
+                </button>
+              </div>
+              <p className="text-[9px] text-gray-400 mt-1">Sends a branded test email with sample resources to verify the full pipeline works.</p>
+            </div>
+
             <div className="text-[10px] text-gray-500 leading-relaxed">
               <p className="font-bold text-gray-600 mb-1">Email is used in:</p>
               <p>&#10003; Journey Cards → Email selected resources to participants</p>
