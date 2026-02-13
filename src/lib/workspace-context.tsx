@@ -86,6 +86,35 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
               })
             }
           }
+        } else {
+          // No memberships: auto-join the default org
+          const { data: allOrgs } = await supabase
+            .from('organizations')
+            .select('id, name, slug')
+            .limit(1)
+            .single()
+
+          if (allOrgs) {
+            // Add user to org_members
+            await supabase.from('org_members').insert({
+              org_id: allOrgs.id,
+              user_id: user.id,
+              role: 'member',
+            })
+
+            // Create team profile
+            await supabase.from('team_profiles').insert({
+              org_id: allOrgs.id,
+              user_id: user.id,
+              display_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'New Member',
+              email: user.email,
+              role: 'team_member',
+              status: 'active',
+            })
+
+            setOrganizations([allOrgs])
+            setCurrentOrg(allOrgs)
+          }
         }
       }
 
