@@ -363,7 +363,7 @@ export default function ShipItPage() {
                       <div key={f.id}>
                         <label className="text-[11px] font-medium text-gray-500 block mb-1">{f.label}</label>
                         <textarea value={sectionData[f.id] || ''} onChange={e => setSectionData(p => ({ ...p, [f.id]: e.target.value }))}
-                          placeholder={f.placeholder} rows={f.rows || 2}
+                          placeholder={f.placeholder} rows={(f as any).rows || 2}
                           className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-np-blue/20 placeholder-gray-300 resize-vertical" />
                       </div>
                     ))}
