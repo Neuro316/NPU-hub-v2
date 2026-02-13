@@ -20,25 +20,25 @@ async function getAppsScriptUrl(orgId: string): Promise<string | null> {
   // Try apps_script setting first (unified)
   const { data: asSetting } = await supabase
     .from('org_settings')
-    .select('value')
+    .select('setting_value')
     .eq('org_id', orgId)
-    .eq('key', 'apps_script')
+    .eq('setting_key', 'apps_script')
     .single()
 
-  if (asSetting?.value?.url && asSetting?.value?.enabled) {
-    return asSetting.value.url
+  if (asSetting?.setting_value?.url && asSetting?.setting_value?.enabled) {
+    return asSetting.setting_value.url
   }
 
   // Fallback to gmail setting
   const { data: gmailSetting } = await supabase
     .from('org_settings')
-    .select('value')
+    .select('setting_value')
     .eq('org_id', orgId)
-    .eq('key', 'gmail')
+    .eq('setting_key', 'gmail')
     .single()
 
-  if (gmailSetting?.value?.apps_script_url && gmailSetting?.value?.enabled) {
-    return gmailSetting.value.apps_script_url
+  if (gmailSetting?.setting_value?.apps_script_url && gmailSetting?.setting_value?.enabled) {
+    return gmailSetting.setting_value.apps_script_url
   }
 
   // Fallback to env var
@@ -65,9 +65,9 @@ export async function POST(req: NextRequest) {
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
         { cookies: { getAll() { return cookieStore.getAll() }, setAll() {} } }
       )
-      const { data: gmailSetting } = await supabase.from('org_settings').select('value').eq('org_id', orgId).eq('key', 'gmail').single()
-      if (gmailSetting?.value?.sender_name) finalSenderName = gmailSetting.value.sender_name
-      if (gmailSetting?.value?.sender_email) finalSenderEmail = gmailSetting.value.sender_email
+      const { data: gmailSetting } = await supabase.from('org_settings').select('setting_value').eq('org_id', orgId).eq('setting_key', 'gmail').single()
+      if (gmailSetting?.setting_value?.sender_name) finalSenderName = gmailSetting.setting_value.sender_name
+      if (gmailSetting?.setting_value?.sender_email) finalSenderEmail = gmailSetting.setting_value.sender_email
     }
 
     const appsScriptUrl = orgId ? await getAppsScriptUrl(orgId) : process.env.APPS_SCRIPT_URL || null

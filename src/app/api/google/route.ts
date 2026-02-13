@@ -19,12 +19,12 @@ async function getAppsScriptUrl(orgId: string): Promise<string | null> {
 
   const { data } = await supabase
     .from('org_settings')
-    .select('value')
+    .select('setting_value')
     .eq('org_id', orgId)
-    .eq('key', 'apps_script')
+    .eq('setting_key', 'apps_script')
     .single()
 
-  if (data?.value?.url && data?.value?.enabled) return data.value.url
+  if (data?.setting_value?.url && data?.setting_value?.enabled) return data.setting_value.url
   return process.env.APPS_SCRIPT_URL || null
 }
 
