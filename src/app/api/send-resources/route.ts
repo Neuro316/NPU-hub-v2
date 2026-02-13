@@ -1,28 +1,78 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
 
 export const maxDuration = 30
+
+async function getAppsScriptUrl(orgId: string): Promise<string | null> {
+  const cookieStore = await cookies()
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() { return cookieStore.getAll() },
+        setAll() {},
+      },
+    }
+  )
+
+  // Try apps_script setting first (unified)
+  const { data: asSetting } = await supabase
+    .from('org_settings')
+    .select('value')
+    .eq('org_id', orgId)
+    .eq('key', 'apps_script')
+    .single()
+
+  if (asSetting?.value?.url && asSetting?.value?.enabled) {
+    return asSetting.value.url
+  }
+
+  // Fallback to gmail setting
+  const { data: gmailSetting } = await supabase
+    .from('org_settings')
+    .select('value')
+    .eq('org_id', orgId)
+    .eq('key', 'gmail')
+    .single()
+
+  if (gmailSetting?.value?.apps_script_url && gmailSetting?.value?.enabled) {
+    return gmailSetting.value.apps_script_url
+  }
+
+  // Fallback to env var
+  return process.env.APPS_SCRIPT_URL || null
+}
 
 export async function POST(req: NextRequest) {
   try {
     const data = await req.json()
-    const { recipientName, recipientEmail, personalNote, resources, cardName, senderName, senderEmail } = data
+    const { recipientName, recipientEmail, personalNote, resources, cardName, senderName, senderEmail, orgId, useSenderFromSettings } = data
 
-    // Validation
-    if (!recipientName?.trim()) {
-      return NextResponse.json({ success: false, error: 'Recipient name is required' })
-    }
-    if (!recipientEmail?.trim() || !recipientEmail.includes('@')) {
-      return NextResponse.json({ success: false, error: 'Valid email is required' })
-    }
-    if (!resources?.length) {
-      return NextResponse.json({ success: false, error: 'At least one resource is required' })
+    if (!recipientName?.trim()) return NextResponse.json({ success: false, error: 'Recipient name required' })
+    if (!recipientEmail?.trim() || !recipientEmail.includes('@')) return NextResponse.json({ success: false, error: 'Valid email required' })
+    if (!resources?.length) return NextResponse.json({ success: false, error: 'At least one resource required' })
+
+    // Get sender info from settings if requested
+    let finalSenderName = senderName || 'Cameron Allen'
+    let finalSenderEmail = senderEmail || 'cameron.allen@neuroprogeny.com'
+
+    if (useSenderFromSettings && orgId) {
+      const cookieStore = await cookies()
+      const supabase = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        { cookies: { getAll() { return cookieStore.getAll() }, setAll() {} } }
+      )
+      const { data: gmailSetting } = await supabase.from('org_settings').select('value').eq('org_id', orgId).eq('key', 'gmail').single()
+      if (gmailSetting?.value?.sender_name) finalSenderName = gmailSetting.value.sender_name
+      if (gmailSetting?.value?.sender_email) finalSenderEmail = gmailSetting.value.sender_email
     }
 
-    // Try Apps Script URL from env
-    const appsScriptUrl = process.env.APPS_SCRIPT_URL
+    const appsScriptUrl = orgId ? await getAppsScriptUrl(orgId) : process.env.APPS_SCRIPT_URL || null
 
     if (appsScriptUrl) {
-      // Forward to Apps Script for Gmail sending
       const response = await fetch(appsScriptUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -33,32 +83,22 @@ export async function POST(req: NextRequest) {
           personalNote: personalNote || '',
           resources,
           cardName: cardName || 'Journey Card',
-          senderName: senderName || 'Cameron Allen',
-          senderEmail: senderEmail || 'cameron.allen@neuroprogeny.com',
+          senderName: finalSenderName,
+          senderEmail: finalSenderEmail,
         }),
       })
 
-      // Apps Script returns JSON wrapped in various formats
       const text = await response.text()
       try {
-        const result = JSON.parse(text)
-        return NextResponse.json(result)
+        return NextResponse.json(JSON.parse(text))
       } catch {
-        // Sometimes Apps Script returns HTML on first auth
-        return NextResponse.json({ success: false, error: 'Apps Script returned non-JSON. Make sure the Web App is deployed and accessible.' })
+        return NextResponse.json({ success: false, error: 'Apps Script returned invalid response. Redeploy the Web App.' })
       }
     }
 
-    // Fallback: No Apps Script configured, return success with mailto hint
-    // In production, this would use a proper email service (SendGrid, Resend, etc.)
     return NextResponse.json({
       success: false,
-      error: 'Email service not configured. Add APPS_SCRIPT_URL to Vercel environment variables. See the Apps Script deployment guide.',
-      fallback: {
-        mailto: `mailto:${recipientEmail}?subject=${encodeURIComponent(`Resources from ${senderName || 'Cameron Allen'} - Neuro Progeny`)}&body=${encodeURIComponent(
-          `Hi ${recipientName},\n\n${personalNote ? personalNote + '\n\n' : ''}Here are the resources from "${cardName}":\n\n${resources.map((r: any, i: number) => `${i + 1}. ${r.name}\n   ${r.url}`).join('\n\n')}\n\nSent from NPU Hub`
-        )}`,
-      },
+      error: 'Google Apps Script not configured. Go to Integrations to set it up.',
     })
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message || 'Server error' }, { status: 500 })

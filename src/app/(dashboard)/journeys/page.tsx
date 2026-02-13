@@ -148,6 +148,7 @@ export default function JourneysPage() {
         onUpdate={updateCard}
         onDelete={deleteCard}
         onDuplicate={handleDuplicate}
+        orgId={currentOrg?.id}
       />
     </div>
   )

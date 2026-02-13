@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
-import { ArrowLeft, Plus, Send, ChevronDown, ChevronUp, Loader2, Download, Trash2, RefreshCw, ExternalLink, X, Rocket, Sparkles } from 'lucide-react'
+import { ArrowLeft, Plus, Send, ChevronDown, ChevronUp, Loader2, Download, Trash2, RefreshCw, ExternalLink, X, Rocket, Sparkles, FileText, FolderOpen, Globe, Check } from 'lucide-react'
 
 const SECTIONS = [
   { id: 'project', icon: '01', title: 'The Project', fields: [
@@ -90,6 +90,16 @@ export default function ShipItPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set(SECTIONS.map(s => s.id)))
   const [saving, setSaving] = useState(false)
 
+  // Google Docs state
+  const [docUrl, setDocUrl] = useState<string | null>(null)
+  const [docId, setDocId] = useState<string | null>(null)
+  const [folderUrl, setFolderUrl] = useState<string | null>(null)
+  const [folderId, setFolderId] = useState<string | null>(null)
+  const [showExport, setShowExport] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [syncMsg, setSyncMsg] = useState('')
+
   // AI Chat
   const [chatMsgs, setChatMsgs] = useState<Array<{ role: string; content: string }>>([])
   const [chatInput, setChatInput] = useState('')
@@ -97,6 +107,18 @@ export default function ShipItPage() {
   const chatRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => { chatRef.current?.scrollTo(0, chatRef.current?.scrollHeight || 0) }, [chatMsgs])
+
+  // Google proxy helper
+  const googleCall = async (action: string, payload: any = {}) => {
+    if (!currentOrg) return null
+    try {
+      const res = await fetch('/api/google', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orgId: currentOrg.id, action, ...payload }),
+      })
+      return await res.json()
+    } catch { return null }
+  }
 
   // Fetch projects
   const fetchProjects = useCallback(async () => {
@@ -116,7 +138,12 @@ export default function ShipItPage() {
     setMeta({ name: p.name || '', shipDate: p.ship_date || '', description: p.description || '', status: p.status || 'planning' })
     setSectionData(p.sections || {})
     setChatMsgs(p.chat_history || [])
+    setDocUrl(p.doc_url || null)
+    setDocId(p.doc_id || null)
+    setFolderUrl(p.folder_url || null)
+    setFolderId(p.folder_id || null)
     setExpanded(new Set(SECTIONS.map(s => s.id)))
+    setSyncMsg('')
     setView('editor')
   }
 
@@ -126,17 +153,18 @@ export default function ShipItPage() {
     setMeta({ name: '', shipDate: '', description: '', status: 'planning' })
     setSectionData({})
     setChatMsgs([])
+    setDocUrl(null); setDocId(null); setFolderUrl(null); setFolderId(null)
     setExpanded(new Set(SECTIONS.map(s => s.id)))
+    setSyncMsg('')
     setView('editor')
   }
 
   // Save
   const saveProject = async () => {
-    if (!meta.name.trim() || !meta.shipDate) return
-    if (!currentOrg) return
+    if (!meta.name.trim() || !meta.shipDate || !currentOrg) return
     setSaving(true)
 
-    const payload = {
+    const payload: any = {
       org_id: currentOrg.id,
       name: meta.name.trim(),
       ship_date: meta.shipDate,
@@ -144,6 +172,7 @@ export default function ShipItPage() {
       status: meta.status,
       sections: sectionData,
       chat_history: chatMsgs,
+      doc_url: docUrl, doc_id: docId, folder_url: folderUrl, folder_id: folderId,
     }
 
     if (currentId) {
@@ -154,6 +183,17 @@ export default function ShipItPage() {
     }
     await fetchProjects()
     setSaving(false)
+
+    // Background sync to Google Doc (non-blocking)
+    if (docId) {
+      setSyncMsg('Syncing...')
+      googleCall('updateShipitDoc', {
+        docId, project: { name: meta.name, shipDate: meta.shipDate, description: meta.description, status: meta.status, sections: sectionData }
+      }).then(r => {
+        setSyncMsg(r?.success ? 'Synced to Doc' : '')
+        setTimeout(() => setSyncMsg(''), 2500)
+      })
+    }
   }
 
   // Delete
@@ -170,56 +210,75 @@ export default function ShipItPage() {
     setView('list')
   }
 
-  // AI Send
-  const sendChat = async () => {
-    await sendChatMsg(chatInput)
-  }
+  // ── GOOGLE DOCS ──
 
-  // Ask AI about section
-  const askAISection = (section: any) => {
-    const filled = section.fields.some((f: any) => sectionData[f.id]?.trim())
-    const prompt = filled
-      ? `Evaluate my "${section.title}" section. Is it specific enough? What's missing?`
-      : `Help me think through the "${section.title}" section. What should I consider?`
-    // Auto-send the message
-    sendChatMsg(prompt)
-  }
+  // Export: create folder + doc or sync existing
+  const handleExport = async () => {
+    setExporting(true)
 
-  const sendChatMsg = async (msg: string) => {
-    if (!msg.trim() || aiLoading) return
-    const userMsg = msg.trim()
-    const newMsgs = [...chatMsgs, { role: 'user', content: userMsg }]
-    setChatMsgs(newMsgs)
-    setChatInput('')
-    setAiLoading(true)
-
-    const journalContext = buildJournalText(meta, sectionData)
-    const apiMessages = [
-      { role: 'user', content: `Here is the current state of my ShipIt Journal:\n\n${journalContext}\n\n---\n\nNow here is my question:` },
-      { role: 'assistant', content: "Got it. I've reviewed your journal. What would you like to work on?" },
-      ...newMsgs,
-    ]
-
-    try {
-      const res = await fetch('/api/ai', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: apiMessages,
-          campaignContext: { type: 'shipit_coach', systemOverride: AI_SYSTEM },
-        }),
+    // Scenario A: doc already linked
+    if (docId) {
+      const r = await googleCall('updateShipitDoc', {
+        docId, project: { name: meta.name, shipDate: meta.shipDate, description: meta.description, status: meta.status, sections: sectionData }
       })
-      const text = await res.text()
-      let data: any
-      try { data = JSON.parse(text) } catch { data = { content: 'Connection error. Please try again.' } }
-      const reply = data.content || data.error || 'No response.'
-      setChatMsgs([...newMsgs, { role: 'assistant', content: reply.replace(/\*\*/g, '').replace(/\u2014/g, ', ').replace(/\u2013/g, ', ') }])
-    } catch {
-      setChatMsgs([...newMsgs, { role: 'assistant', content: 'Connection error. Check that your API key is configured.' }])
+      setExporting(false)
+      setShowExport(false)
+      if (r?.success && docUrl) window.open(docUrl, '_blank')
+      return
     }
-    setAiLoading(false)
+
+    // Scenario B: Apps Script connected, create new
+    const folderR = await googleCall('createFolder', { folderName: 'ShipIt - ' + meta.name, parentType: 'shipit' })
+    if (folderR?.success) {
+      setFolderId(folderR.folderId); setFolderUrl(folderR.folderUrl)
+
+      const docR = await googleCall('createDoc', { docName: 'ShipIt Journal - ' + meta.name, folderId: folderR.folderId, template: 'shipit' })
+      if (docR?.success) {
+        setDocId(docR.docId); setDocUrl(docR.docUrl)
+
+        // Push content
+        await googleCall('updateShipitDoc', {
+          docId: docR.docId, project: { name: meta.name, shipDate: meta.shipDate, description: meta.description, status: meta.status, sections: sectionData }
+        })
+
+        // Save doc/folder refs to Supabase
+        if (currentId) {
+          await supabase.from('shipit_projects').update({
+            doc_url: docR.docUrl, doc_id: docR.docId,
+            folder_url: folderR.folderUrl, folder_id: folderR.folderId,
+          }).eq('id', currentId)
+        }
+
+        setExporting(false); setShowExport(false)
+        window.open(docR.docUrl, '_blank')
+        return
+      }
+    }
+
+    // Scenario C: Fallback HTML download
+    setExporting(false); setShowExport(false)
+    exportHTML()
   }
 
-  // Export HTML
+  // Sync from Doc (pull changes back)
+  const syncFromDoc = async () => {
+    if (!docId) return
+    setSyncing(true)
+    const r = await googleCall('getShipitDocContent', { docId })
+    if (r?.success && r.sections) {
+      const merged = { ...sectionData }
+      Object.entries(r.sections).forEach(([k, v]) => { if (v) merged[k] = v as string })
+      setSectionData(merged)
+      setSyncMsg('Pulled from Doc!')
+      setTimeout(() => setSyncMsg(''), 2500)
+    } else {
+      setSyncMsg('Sync failed')
+      setTimeout(() => setSyncMsg(''), 2500)
+    }
+    setSyncing(false)
+  }
+
+  // HTML fallback export
   const exportHTML = () => {
     let html = `<h1 style="color:#386797">ShipIt Journal: ${meta.name || 'Untitled'}</h1>`
     html += `<p><strong>Ship Date:</strong> ${meta.shipDate} | <strong>Status:</strong> ${meta.status}</p>`
@@ -236,6 +295,48 @@ export default function ShipItPage() {
     a.href = url; a.download = `ShipIt-${meta.name || 'Untitled'}.html`; a.click()
     URL.revokeObjectURL(url)
   }
+
+  // ── AI ──
+
+  const askAISection = (section: any) => {
+    const filled = section.fields.some((f: any) => sectionData[f.id]?.trim())
+    const prompt = filled
+      ? `Evaluate my "${section.title}" section. Is it specific enough? What's missing?`
+      : `Help me think through the "${section.title}" section. What should I consider?`
+    sendChatMsg(prompt)
+  }
+
+  const sendChatMsg = async (msg: string) => {
+    if (!msg.trim() || aiLoading) return
+    const newMsgs = [...chatMsgs, { role: 'user', content: msg.trim() }]
+    setChatMsgs(newMsgs)
+    setChatInput('')
+    setAiLoading(true)
+
+    const journalContext = buildJournalText(meta, sectionData)
+    const apiMessages = [
+      { role: 'user', content: `Here is the current state of my ShipIt Journal:\n\n${journalContext}\n\n---\n\nNow here is my question:` },
+      { role: 'assistant', content: "Got it. I've reviewed your journal. What would you like to work on?" },
+      ...newMsgs,
+    ]
+
+    try {
+      const res = await fetch('/api/ai', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: apiMessages, campaignContext: { type: 'shipit_coach', systemOverride: AI_SYSTEM } }),
+      })
+      const text = await res.text()
+      let data: any
+      try { data = JSON.parse(text) } catch { data = { content: 'Connection error. Please try again.' } }
+      const reply = data.content || data.error || 'No response.'
+      setChatMsgs([...newMsgs, { role: 'assistant', content: reply.replace(/\*\*/g, '').replace(/\u2014/g, ', ').replace(/\u2013/g, ', ') }])
+    } catch {
+      setChatMsgs([...newMsgs, { role: 'assistant', content: 'Connection error. Check that your API key is configured.' }])
+    }
+    setAiLoading(false)
+  }
+
+  const sendChat = async () => { await sendChatMsg(chatInput) }
 
   const toggleSection = (id: string) => setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   const filledCount = ALL_FIELD_IDS.filter(id => sectionData[id]?.trim()).length
@@ -262,7 +363,7 @@ export default function ShipItPage() {
           <div className="w-16 h-16 rounded-full bg-np-blue/10 flex items-center justify-center mx-auto mb-4"><Rocket className="w-7 h-7 text-np-blue" /></div>
           <h2 className="text-lg font-semibold text-np-dark mb-2">Ready to Ship Something?</h2>
           <p className="text-sm text-gray-500 mb-6 max-w-md mx-auto">The ShipIt Journal helps you identify what's blocking your project, name the fear, cut the thrash, and actually get it done.</p>
-          <button onClick={createProject} className="btn-primary text-sm py-2.5 px-5">Start Your First ShipIt</button>
+          <button onClick={createProject} className="bg-np-blue text-white text-sm py-2.5 px-5 rounded-lg font-medium">Start Your First ShipIt</button>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -282,7 +383,10 @@ export default function ShipItPage() {
                 {p.description && <p className="text-[11px] text-gray-500 truncate mb-2">{p.description}</p>}
                 <div className="flex items-center justify-between text-[10px] text-gray-400 mb-2">
                   {days !== null && <span className={days < 0 ? 'text-red-500 font-bold' : days <= 3 ? 'text-orange-500 font-bold' : ''}>{days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? 'Ship TODAY' : `${days}d left`}</span>}
-                  <span>{filled}/{ALL_FIELD_IDS.length} fields</span>
+                  <span className="flex items-center gap-1.5">
+                    {p.doc_id && <FileText className="w-3 h-3 text-green-500" />}
+                    {filled}/{ALL_FIELD_IDS.length} fields
+                  </span>
                 </div>
                 <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
                   <div className="h-full rounded-full transition-all" style={{ width: `${prog}%`, backgroundColor: st.color }} />
@@ -299,14 +403,23 @@ export default function ShipItPage() {
   return (
     <div className="h-[calc(100vh-72px)] flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-3">
           <button onClick={goBack} className="text-gray-400 hover:text-np-dark"><ArrowLeft className="w-4 h-4" /></button>
           <h1 className="text-base font-semibold text-np-dark">{currentId ? meta.name || 'ShipIt' : 'New ShipIt'}</h1>
           <span className="text-[10px] bg-np-blue/10 text-np-blue px-2 py-0.5 rounded font-bold">{progress}%</span>
+          {syncMsg && <span className="text-[9px] text-green-600 bg-green-50 px-2 py-0.5 rounded font-medium">{syncMsg}</span>}
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={exportHTML} className="text-[10px] font-medium text-gray-500 hover:text-np-blue flex items-center gap-1"><Download className="w-3 h-3" /> Export</button>
+          {docId && (
+            <button onClick={syncFromDoc} disabled={syncing}
+              className="text-[10px] font-medium text-teal-600 hover:text-teal-700 flex items-center gap-1 disabled:opacity-50">
+              {syncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />} Sync from Doc
+            </button>
+          )}
+          <button onClick={() => setShowExport(true)} className="text-[10px] font-medium text-gray-500 hover:text-np-blue flex items-center gap-1">
+            <Download className="w-3 h-3" /> {docId ? 'Sync to Doc' : 'Export'}
+          </button>
           {currentId && <button onClick={deleteProject} className="text-[10px] font-medium text-gray-400 hover:text-red-500 flex items-center gap-1"><Trash2 className="w-3 h-3" /></button>}
           <button onClick={saveProject} disabled={saving || !meta.name.trim() || !meta.shipDate}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-np-blue text-white rounded-lg text-[10px] font-bold disabled:opacity-40">
@@ -314,6 +427,67 @@ export default function ShipItPage() {
           </button>
         </div>
       </div>
+
+      {/* Quick Links Bar */}
+      {(docUrl || folderUrl) && (
+        <div className="flex items-center gap-3 mb-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-1.5">
+          <span className="text-[9px] font-bold text-blue-500 uppercase">Linked:</span>
+          {docUrl && (
+            <a href={docUrl} target="_blank" rel="noopener" className="text-[10px] text-np-blue hover:underline flex items-center gap-1">
+              <FileText className="w-3 h-3" /> Google Doc <ExternalLink className="w-2.5 h-2.5" />
+            </a>
+          )}
+          {folderUrl && (
+            <a href={folderUrl} target="_blank" rel="noopener" className="text-[10px] text-np-blue hover:underline flex items-center gap-1">
+              <FolderOpen className="w-3 h-3" /> Drive Folder <ExternalLink className="w-2.5 h-2.5" />
+            </a>
+          )}
+          <span className="text-[9px] text-gray-400 ml-auto">Edit the Doc directly, then use Sync from Doc to pull changes back</span>
+        </div>
+      )}
+
+      {/* Export Modal */}
+      {showExport && (
+        <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center" onClick={() => setShowExport(false)}>
+          <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 w-[440px]">
+            <h3 className="text-base font-bold text-np-dark mb-2">
+              {docId ? 'Sync to Google Doc' : 'Export to Google Docs'}
+            </h3>
+            <p className="text-xs text-gray-500 mb-4 leading-relaxed">
+              {docId
+                ? 'This project is linked to a Google Doc. Exporting will update it with your latest changes and open it.'
+                : 'This will create a Google Doc and project folder in your Drive, then sync your journal content.'}
+            </p>
+
+            <div className="bg-gray-50 border border-gray-100 rounded-lg p-3 mb-4 flex items-center gap-2">
+              <div className={`w-2 h-2 rounded-full flex-shrink-0 ${docId ? 'bg-green-500' : 'bg-green-500'}`} />
+              <span className="text-[10px] text-gray-600">
+                {docId ? 'Linked to existing Google Doc' : 'Google Drive connected via Apps Script'}
+              </span>
+            </div>
+
+            <div className="bg-gray-50 border border-gray-100 rounded-lg p-3 mb-4 text-[10px] text-gray-500 leading-relaxed">
+              <p className="font-bold text-gray-600 mb-1">What gets exported:</p>
+              <p>&#10003; Project details and ship date</p>
+              <p>&#10003; All 6 journal sections with your answers</p>
+              <p>&#10003; Formatted with Neuro Progeny branding</p>
+              <p>&#10003; Synced to Google Drive</p>
+            </div>
+
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setShowExport(false)} className="text-xs text-gray-500 px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50">Cancel</button>
+              <button onClick={() => { exportHTML(); setShowExport(false) }} className="text-xs text-gray-500 px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50">
+                Download HTML
+              </button>
+              <button onClick={handleExport} disabled={exporting}
+                className="text-xs font-bold text-white bg-np-blue px-4 py-1.5 rounded-lg hover:bg-np-blue/90 disabled:opacity-50 flex items-center gap-1.5">
+                {exporting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Globe className="w-3 h-3" />}
+                {docId ? 'Sync & Open' : 'Create Google Doc'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Split layout */}
       <div className="flex-1 grid grid-cols-[1fr_340px] gap-3 min-h-0">
@@ -416,9 +590,7 @@ export default function ShipItPage() {
             {chatMsgs.map((msg, i) => (
               <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div className={`max-w-[88%] px-3 py-2 rounded-xl text-[11px] leading-relaxed whitespace-pre-wrap ${
-                  msg.role === 'user'
-                    ? 'bg-np-blue text-white rounded-br-sm'
-                    : 'bg-gray-50 border border-gray-100 text-gray-700 rounded-bl-sm'
+                  msg.role === 'user' ? 'bg-np-blue text-white rounded-br-sm' : 'bg-gray-50 border border-gray-100 text-gray-700 rounded-bl-sm'
                 }`}>{msg.content}</div>
               </div>
             ))}

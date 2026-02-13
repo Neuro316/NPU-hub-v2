@@ -46,9 +46,10 @@ interface CardDetailPanelProps {
   onUpdate: (id: string, updates: Partial<JourneyCard>) => Promise<any>
   onDelete: (id: string) => Promise<any>
   onDuplicate?: (card: JourneyCard, targetPhaseId: string, targetRow: number) => Promise<any>
+  orgId?: string
 }
 
-export function CardDetailPanel({ card, phases, onClose, onUpdate, onDelete, onDuplicate }: CardDetailPanelProps) {
+export function CardDetailPanel({ card, phases, onClose, onUpdate, onDelete, onDuplicate, orgId }: CardDetailPanelProps) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [status, setStatus] = useState<JourneyCard['status']>('not_started')
@@ -213,6 +214,8 @@ export function CardDetailPanel({ card, phases, onClose, onUpdate, onDelete, onD
           cardName: card.title,
           senderName: 'Cameron Allen',
           senderEmail: 'cameron.allen@neuroprogeny.com',
+          orgId: orgId || '',
+          useSenderFromSettings: true,
         }),
       })
 
@@ -359,11 +362,28 @@ export function CardDetailPanel({ card, phases, onClose, onUpdate, onDelete, onD
                 <input value={fields.drive_folder || ''} onChange={e => saveFields({ drive_folder: e.target.value })}
                   placeholder="https://drive.google.com/drive/folders/..."
                   className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300" />
-                {fields.drive_folder && (
+                {fields.drive_folder ? (
                   <a href={fields.drive_folder} target="_blank" rel="noopener"
                     className="flex items-center gap-1 text-[10px] bg-np-blue text-white px-2.5 py-1.5 rounded-lg font-medium hover:bg-np-blue/90">
                     Open <ExternalLink className="w-3 h-3" />
                   </a>
+                ) : (
+                  <button
+                    onClick={async () => {
+                      try {
+                        const res = await fetch('/api/google', {
+                          method: 'POST', headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ orgId: orgId || '', action: 'createFolder', folderName: card.title, parentType: 'journey' }),
+                        })
+                        const data = await res.json()
+                        if (data?.success && data.folderUrl) {
+                          saveFields({ drive_folder: data.folderUrl })
+                        }
+                      } catch {}
+                    }}
+                    className="flex items-center gap-1 text-[10px] bg-green-500 text-white px-2.5 py-1.5 rounded-lg font-medium hover:bg-green-600 whitespace-nowrap">
+                    <Plus className="w-3 h-3" /> Create
+                  </button>
                 )}
               </div>
             </div>
