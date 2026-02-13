@@ -172,11 +172,25 @@ export default function ShipItPage() {
 
   // AI Send
   const sendChat = async () => {
-    if (!chatInput.trim() || aiLoading) return
-    const userMsg = chatInput.trim()
-    setChatInput('')
+    await sendChatMsg(chatInput)
+  }
+
+  // Ask AI about section
+  const askAISection = (section: any) => {
+    const filled = section.fields.some((f: any) => sectionData[f.id]?.trim())
+    const prompt = filled
+      ? `Evaluate my "${section.title}" section. Is it specific enough? What's missing?`
+      : `Help me think through the "${section.title}" section. What should I consider?`
+    // Auto-send the message
+    sendChatMsg(prompt)
+  }
+
+  const sendChatMsg = async (msg: string) => {
+    if (!msg.trim() || aiLoading) return
+    const userMsg = msg.trim()
     const newMsgs = [...chatMsgs, { role: 'user', content: userMsg }]
     setChatMsgs(newMsgs)
+    setChatInput('')
     setAiLoading(true)
 
     const journalContext = buildJournalText(meta, sectionData)
@@ -203,15 +217,6 @@ export default function ShipItPage() {
       setChatMsgs([...newMsgs, { role: 'assistant', content: 'Connection error. Check that your API key is configured.' }])
     }
     setAiLoading(false)
-  }
-
-  // Ask AI about section
-  const askAISection = (section: any) => {
-    const filled = section.fields.some((f: any) => sectionData[f.id]?.trim())
-    const prompt = filled
-      ? `Evaluate my "${section.title}" section. Is it specific enough? What's missing?`
-      : `Help me think through the "${section.title}" section. What should I consider?`
-    setChatInput(prompt)
   }
 
   // Export HTML
