@@ -26,6 +26,7 @@ import {
   TicketCheck,
   Activity,
   Image,
+  Rocket,
 } from 'lucide-react'
 
 const navItems = [
@@ -34,6 +35,7 @@ const navItems = [
   { label: 'Task Manager', href: '/tasks', icon: CheckSquare },
   { label: 'Campaigns', href: '/campaigns', icon: Megaphone },
   { label: 'Social Media', href: '/social', icon: Target },
+  { label: 'ShipIt Journal', href: '/shipit', icon: Rocket },
   { label: 'Media Library', href: '/media', icon: Image },
   { label: 'AI Advisory', href: '/advisory', icon: Brain },
   { label: 'SOPs', href: '/sops', icon: FileText },
