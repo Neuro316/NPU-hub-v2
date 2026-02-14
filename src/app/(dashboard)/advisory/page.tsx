@@ -6,7 +6,8 @@ import { createClient } from '@/lib/supabase-browser'
 import {
   Brain, Users, User, Compass, Plus, X, Trash2, Loader2, Send, Upload,
   Sparkles, FileText, Mic, Video, ChevronDown, MessageSquare, Settings, Wand2,
-  Route, CheckSquare, Rocket, Megaphone, Target, BarChart3, Mail, BookOpen
+  Route, CheckSquare, Rocket, Megaphone, Target, BarChart3, Mail, BookOpen,
+  Image as ImageIcon
 } from 'lucide-react'
 
 // ============================================================
@@ -100,11 +101,16 @@ export default function AdvisoryPage() {
   const [uploadingTo, setUploadingTo] = useState<string | null>(null)
   const [uploadText, setUploadText] = useState('')
   const [extracting, setExtracting] = useState(false)
+  const [gdocUrl, setGdocUrl] = useState('')
+  const [modalFiles, setModalFiles] = useState<{ name: string; type: string; preview?: string }[]>([])
+  const modalFileRef = useRef<HTMLInputElement>(null)
 
   // Cameron AI
   const [cameronChat, setCameronChat] = useState<ChatMsg[]>([])
   const [cameronInput, setCameronInput] = useState('')
   const [cameronLoading, setCameronLoading] = useState(false)
+  const [uploadFiles, setUploadFiles] = useState<{ name: string; type: string; preview?: string }[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Hub Guide
   const [guideChat, setGuideChat] = useState<ChatMsg[]>([])
@@ -286,6 +292,220 @@ RESPONSE RULES:
     setUploadText('')
   }
 
+  // Handle file uploads - extract text from docs/images
+  const handleFileUpload = async (files: FileList | null) => {
+    if (!files) return
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      const isImage = file.type.startsWith('image/')
+      const isText = file.type === 'text/plain' || file.name.endsWith('.txt') || file.name.endsWith('.md')
+      const isPdf = file.type === 'application/pdf' || file.name.endsWith('.pdf')
+      const isDoc = file.name.endsWith('.docx') || file.name.endsWith('.doc')
+      const isVideo = file.type.startsWith('video/') || /\.(mp4|mov|avi|webm|mkv)$/i.test(file.name)
+      const isAudio = file.type.startsWith('audio/') || /\.(mp3|m4a|wav|ogg|aac|flac)$/i.test(file.name)
+
+      if (isImage) {
+        // Convert image to base64 for preview + AI vision description
+        const reader = new FileReader()
+        reader.onload = async (e) => {
+          const base64 = e.target?.result as string
+          setUploadFiles(prev => [...prev, { name: file.name, type: 'image', preview: base64 }])
+
+          // Use AI to describe the image for knowledge extraction
+          setExtracting(true)
+          try {
+            const res = await fetch('/api/ai', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                messages: [{ role: 'user', content: [
+                  { type: 'image', source: { type: 'base64', media_type: file.type, data: base64.split(',')[1] } },
+                  { type: 'text', text: 'Describe this image in detail. What does it communicate about brand feel, aesthetic, style, tone, or visual identity? What mood, colors, textures, or design principles are at play? How might someone use this as inspiration for their brand or operating style? Be specific and thorough.' }
+                ] }],
+                campaignContext: { type: 'image_analysis', systemOverride: 'You are a brand and style analyst. Describe images in terms of visual identity, mood, aesthetic principles, and what they communicate about the person or brand\'s style and approach. Be specific about colors, composition, texture, and the feeling they create.' },
+              }),
+            })
+            const data = await res.json()
+            const description = (data.content || '').replace(/\*\*/g, '').replace(/\u2014/g, ', ').trim()
+            if (description) {
+              const updated = voices.map(v => {
+                if (v.id === 'cameron') {
+                  return {
+                    ...v,
+                    knowledge: (v.knowledge ? v.knowledge + '\n\n---\n\n' : '') + `[Source: Image - ${file.name}]\n[Visual Style Reference]\n${description}`,
+                    source_count: v.source_count + 1,
+                  }
+                }
+                return v
+              })
+              await saveVoices(updated)
+            }
+          } catch {}
+          setExtracting(false)
+        }
+        reader.readAsDataURL(file)
+      } else if (isText) {
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          const text = e.target?.result as string
+          setUploadText(prev => prev + (prev ? '\n\n' : '') + text)
+          setUploadFiles(prev => [...prev, { name: file.name, type: 'document' }])
+        }
+        reader.readAsText(file)
+      } else if (isPdf) {
+        // Read PDF as base64, send to AI for text extraction
+        const reader = new FileReader()
+        reader.onload = async (e) => {
+          const base64 = e.target?.result as string
+          setUploadFiles(prev => [...prev, { name: file.name, type: 'pdf' }])
+          setExtracting(true)
+          try {
+            const res = await fetch('/api/ai', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                messages: [{ role: 'user', content: [
+                  { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64.split(',')[1] } },
+                  { type: 'text', text: 'Extract all the text content from this PDF document. Preserve the structure and organization. Return the full text content.' }
+                ] }],
+                campaignContext: { type: 'pdf_extraction', systemOverride: 'You are a document text extraction system. Extract all readable text from the provided PDF, preserving headings, paragraphs, and structure. Return the complete text content.' },
+              }),
+            })
+            const data = await res.json()
+            const text = (data.content || '').trim()
+            if (text) setUploadText(prev => prev + (prev ? '\n\n' : '') + text)
+          } catch {}
+          setExtracting(false)
+        }
+        reader.readAsDataURL(file)
+      } else if (isDoc) {
+        // DOCX: read as text (basic extraction)
+        const reader = new FileReader()
+        reader.onload = async (e) => {
+          const arrayBuffer = e.target?.result as ArrayBuffer
+          // Extract raw text from docx XML
+          try {
+            const uint8 = new Uint8Array(arrayBuffer)
+            const text = new TextDecoder().decode(uint8)
+            // Try to extract text between XML tags
+            const stripped = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+            if (stripped.length > 100) {
+              setUploadText(prev => prev + (prev ? '\n\n' : '') + stripped)
+            } else {
+              setUploadText(prev => prev + (prev ? '\n\n' : '') + `[Uploaded: ${file.name} - Paste the document text here for best results]`)
+            }
+          } catch {
+            setUploadText(prev => prev + (prev ? '\n\n' : '') + `[Uploaded: ${file.name} - Paste the document text here for best results]`)
+          }
+          setUploadFiles(prev => [...prev, { name: file.name, type: 'document' }])
+        }
+        reader.readAsArrayBuffer(file)
+      } else if (isVideo || isAudio) {
+        // For video/audio, we note the file and prompt for transcript
+        setUploadFiles(prev => [...prev, { name: file.name, type: isVideo ? 'video' : 'audio' }])
+        setUploadText(prev => prev + (prev ? '\n\n' : '') + `[${isVideo ? 'Video' : 'Audio'} uploaded: ${file.name}]\nPaste the transcript below, or use YouTube URL for auto-extraction.`)
+      }
+    }
+  }
+
+  // Handle file upload for modal (Board Voices)
+  const handleModalFileUpload = async (files: FileList | null, targetVoiceId: string) => {
+    if (!files) return
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      const isImage = file.type.startsWith('image/')
+      const isText = file.type === 'text/plain' || file.name.endsWith('.txt') || file.name.endsWith('.md')
+      const isPdf = file.type === 'application/pdf' || file.name.endsWith('.pdf')
+
+      if (isImage) {
+        const reader = new FileReader()
+        reader.onload = async (e) => {
+          const base64 = e.target?.result as string
+          setModalFiles(prev => [...prev, { name: file.name, type: 'image', preview: base64 }])
+          setExtracting(true)
+          try {
+            const res = await fetch('/api/ai', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                messages: [{ role: 'user', content: [
+                  { type: 'image', source: { type: 'base64', media_type: file.type, data: base64.split(',')[1] } },
+                  { type: 'text', text: 'Describe this image in detail for knowledge extraction. What information, style, mood, or context does it convey?' }
+                ] }],
+                campaignContext: { type: 'image_analysis', systemOverride: 'Describe images thoroughly for knowledge extraction. Focus on content, context, style, and any information that would help emulate the perspective of the person who shared this.' },
+              }),
+            })
+            const data = await res.json()
+            const desc = (data.content || '').replace(/\*\*/g, '').trim()
+            if (desc) {
+              const updated = voices.map(v => v.id === targetVoiceId ? { ...v, knowledge: (v.knowledge ? v.knowledge + '\n\n---\n\n' : '') + `[Source: Image - ${file.name}]\n${desc}`, source_count: v.source_count + 1 } : v)
+              await saveVoices(updated)
+            }
+          } catch {}
+          setExtracting(false)
+        }
+        reader.readAsDataURL(file)
+      } else if (isText) {
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          setUploadText(prev => prev + (prev ? '\n\n' : '') + (e.target?.result as string))
+          setModalFiles(prev => [...prev, { name: file.name, type: 'document' }])
+        }
+        reader.readAsText(file)
+      } else if (isPdf) {
+        const reader = new FileReader()
+        reader.onload = async (e) => {
+          const base64 = e.target?.result as string
+          setModalFiles(prev => [...prev, { name: file.name, type: 'pdf' }])
+          setExtracting(true)
+          try {
+            const res = await fetch('/api/ai', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                messages: [{ role: 'user', content: [
+                  { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64.split(',')[1] } },
+                  { type: 'text', text: 'Extract all text content from this PDF.' }
+                ] }],
+                campaignContext: { type: 'pdf_extraction', systemOverride: 'Extract all readable text from the PDF. Return full text content.' },
+              }),
+            })
+            const data = await res.json()
+            if (data.content) setUploadText(prev => prev + (prev ? '\n\n' : '') + data.content.trim())
+          } catch {}
+          setExtracting(false)
+        }
+        reader.readAsDataURL(file)
+      }
+    }
+  }
+
+  // Fetch Google Doc content
+  const fetchGoogleDoc = async (url: string, targetVoiceId: string) => {
+    const docIdMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/)
+    if (!docIdMatch) return
+    setExtracting(true)
+    try {
+      // Use our Google API route to fetch the doc via Apps Script
+      const res = await fetch('/api/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orgId: currentOrg?.id, action: 'getDocContent', docId: docIdMatch[1] }),
+      })
+      const data = await res.json()
+      if (data.content) {
+        setUploadText(prev => prev + (prev ? '\n\n' : '') + data.content)
+        if (targetVoiceId === 'cameron') {
+          setUploadFiles(prev => [...prev, { name: `Google Doc`, type: 'gdoc' }])
+        } else {
+          setModalFiles(prev => [...prev, { name: `Google Doc`, type: 'gdoc' }])
+        }
+      }
+    } catch {}
+    setExtracting(false)
+    setGdocUrl('')
+  }
+
   // ============================================================
   // RENDER HELPERS
   // ============================================================
@@ -405,49 +625,186 @@ RESPONSE RULES:
       {/* ============================================================ */}
       {/* TAB: CAMERON AI */}
       {/* ============================================================ */}
-      {tab === 'cameron' && (
-        <div className="flex-1 flex flex-col bg-white border border-gray-100 rounded-2xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
+      {tab === 'cameron' && (() => {
+        const cameron = voices.find(v => v.id === 'cameron')
+        const sources = (cameron?.knowledge || '').split('\n\n---\n\n').filter(Boolean)
+        return (
+        <div className="flex-1 flex gap-4 min-h-0">
+          {/* Left: Chat */}
+          <div className="flex-1 bg-white border border-gray-100 rounded-2xl flex flex-col overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#386797] to-[#2a4f73] flex items-center justify-center text-white text-xs font-bold">CA</div>
               <div>
                 <h2 className="text-sm font-bold text-np-dark">Cameron AI</h2>
-                <p className="text-[10px] text-gray-400">Ask me anything. I'll answer the way Cameron would. {voices.find(v => v.id === 'cameron')?.source_count || 0} sources loaded.</p>
+                <p className="text-[10px] text-gray-400">Ask me anything. I'll answer the way Cameron would.</p>
               </div>
             </div>
-            <button onClick={() => { setEditingVoice(voices.find(v => v.id === 'cameron') || null); setUploadingTo('cameron') }}
-              className="flex items-center gap-1 text-[10px] text-np-blue font-medium px-2.5 py-1.5 rounded-lg border border-np-blue/20 hover:bg-np-blue/5">
-              <Upload className="w-3 h-3" /> Feed Knowledge
-            </button>
-          </div>
 
-          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5">
-            {cameronChat.length === 0 && (
-              <div className="py-6">
-                <p className="text-xs text-gray-400 text-center mb-4">I'm Cameron's AI. Ask me how Cameron would handle something, what his priorities are, or how he thinks about a problem.</p>
-                <QuickPrompts prompts={[
-                  'How would Cameron handle a participant who wants to quit after week 2?',
-                  'What are Cameron\'s priorities for Q1?',
-                  'How does Cameron think about pricing the Immersive Mastermind?',
-                  'What would Cameron say about adding a new feature to the platform?',
-                ]} onSelect={setCameronInput} />
-              </div>
-            )}
-            {cameronChat.map((msg, i) => <ChatBubble key={i} msg={msg} />)}
-            {cameronLoading && (
-              <div className="flex justify-start">
-                <div className="bg-gray-50 border border-gray-100 rounded-xl px-3 py-2 flex items-center gap-1.5">
-                  <Loader2 className="w-3 h-3 text-[#386797] animate-spin" />
-                  <span className="text-[10px] text-gray-400">Thinking like Cameron...</span>
+            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5">
+              {cameronChat.length === 0 && (
+                <div className="py-6">
+                  <p className="text-xs text-gray-400 text-center mb-4">I'm Cameron's AI. Ask me how Cameron would handle something, what his priorities are, or how he thinks about a problem.</p>
+                  <QuickPrompts prompts={[
+                    'How would Cameron handle a participant who wants to quit after week 2?',
+                    'What are Cameron\'s priorities for Q1?',
+                    'How does Cameron think about pricing the Immersive Mastermind?',
+                    'What would Cameron say about adding a new feature to the platform?',
+                  ]} onSelect={setCameronInput} />
                 </div>
-              </div>
-            )}
-            <div ref={chatEndRef} />
+              )}
+              {cameronChat.map((msg, i) => <ChatBubble key={i} msg={msg} />)}
+              {cameronLoading && (
+                <div className="flex justify-start">
+                  <div className="bg-gray-50 border border-gray-100 rounded-xl px-3 py-2 flex items-center gap-1.5">
+                    <Loader2 className="w-3 h-3 text-[#386797] animate-spin" />
+                    <span className="text-[10px] text-gray-400">Thinking like Cameron...</span>
+                  </div>
+                </div>
+              )}
+              <div ref={chatEndRef} />
+            </div>
+
+            <ChatInput value={cameronInput} onChange={setCameronInput} onSend={sendCameronChat} loading={cameronLoading} placeholder="Ask Cameron anything..." />
           </div>
 
-          <ChatInput value={cameronInput} onChange={setCameronInput} onSend={sendCameronChat} loading={cameronLoading} placeholder="Ask Cameron anything..." />
+          {/* Right: Knowledge Feed */}
+          <div className="w-80 flex-shrink-0 bg-white border border-gray-100 rounded-2xl flex flex-col overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Upload className="w-3.5 h-3.5 text-np-blue" />
+                  <h3 className="text-xs font-bold text-np-dark">Knowledge Feed</h3>
+                </div>
+                <span className="text-[9px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{cameron?.source_count || 0} sources</span>
+              </div>
+              <p className="text-[10px] text-gray-400 mt-1">Keep feeding info to make Cameron AI smarter</p>
+            </div>
+
+            {/* Upload area */}
+            <div className="px-3 py-3 border-b border-gray-100 space-y-2">
+              <input id="cameron-source-name" placeholder="Source name (e.g., ChatGPT Brain Dump)"
+                className="w-full text-[11px] border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300" />
+
+              {/* File drop zone */}
+              <div
+                onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('border-np-blue', 'bg-np-blue/5') }}
+                onDragLeave={e => { e.currentTarget.classList.remove('border-np-blue', 'bg-np-blue/5') }}
+                onDrop={e => { e.preventDefault(); e.currentTarget.classList.remove('border-np-blue', 'bg-np-blue/5'); handleFileUpload(e.dataTransfer.files) }}
+                onClick={() => fileInputRef.current?.click()}
+                className="border-2 border-dashed border-gray-200 rounded-xl px-3 py-2 text-center cursor-pointer hover:border-np-blue/40 hover:bg-np-blue/5 transition-all"
+              >
+                <input ref={fileInputRef} type="file" multiple accept=".txt,.md,.pdf,.docx,.doc,.png,.jpg,.jpeg,.webp,.gif,.mp3,.m4a,.wav,.mp4,.mov,.webm"
+                  onChange={e => handleFileUpload(e.target.files)} className="hidden" />
+                <div className="flex items-center justify-center gap-2">
+                  <div className="flex gap-1">
+                    <FileText className="w-3 h-3 text-gray-400" />
+                    <ImageIcon className="w-3 h-3 text-gray-400" />
+                    <Video className="w-3 h-3 text-gray-400" />
+                    <Mic className="w-3 h-3 text-gray-400" />
+                  </div>
+                  <span className="text-[10px] text-gray-400">Drop files or click to upload</span>
+                </div>
+                <p className="text-[8px] text-gray-300 mt-0.5">Docs, PDFs, images, video, audio</p>
+              </div>
+
+              {/* Google Doc link */}
+              <div className="flex gap-1.5">
+                <input value={gdocUrl} onChange={e => setGdocUrl(e.target.value)}
+                  placeholder="Paste Google Doc URL..."
+                  className="flex-1 text-[11px] border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300" />
+                <button onClick={() => fetchGoogleDoc(gdocUrl, 'cameron')}
+                  disabled={!gdocUrl.includes('docs.google.com') || extracting}
+                  className="text-[10px] font-bold text-np-blue px-2.5 py-1.5 rounded-lg border border-np-blue/20 hover:bg-np-blue/5 disabled:opacity-30 flex-shrink-0">
+                  {extracting ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Fetch'}
+                </button>
+              </div>
+
+              {/* Uploaded files preview */}
+              {uploadFiles.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {uploadFiles.map((f, i) => (
+                    <div key={i} className="flex items-center gap-1 bg-gray-50 border border-gray-100 rounded-lg px-2 py-1">
+                      {f.type === 'image' && f.preview ? (
+                        <img src={f.preview} alt="" className="w-5 h-5 rounded object-cover" />
+                      ) : f.type === 'video' ? (
+                        <Video className="w-3 h-3 text-purple-400" />
+                      ) : f.type === 'audio' ? (
+                        <Mic className="w-3 h-3 text-amber-400" />
+                      ) : f.type === 'pdf' ? (
+                        <FileText className="w-3 h-3 text-red-400" />
+                      ) : f.type === 'gdoc' ? (
+                        <FileText className="w-3 h-3 text-blue-400" />
+                      ) : (
+                        <FileText className="w-3 h-3 text-gray-400" />
+                      )}
+                      <span className="text-[9px] text-gray-600 max-w-[100px] truncate">{f.name}</span>
+                      <button onClick={() => setUploadFiles(prev => prev.filter((_, fi) => fi !== i))} className="text-gray-300 hover:text-red-400">
+                        <X className="w-2.5 h-2.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <textarea value={uploadText} onChange={e => setUploadText(e.target.value)}
+                placeholder="Paste transcript, brain dump, conversation, notes, decisions..."
+                rows={4}
+                className="w-full text-[11px] border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 resize-none font-mono leading-relaxed" />
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] text-gray-400">{uploadText.length > 0 ? `${uploadText.length.toLocaleString()} chars` : 'Paste or drop files'}</span>
+                <button onClick={() => {
+                  const name = (document.getElementById('cameron-source-name') as HTMLInputElement)?.value || 'Untitled'
+                  extractKnowledge('cameron', uploadText, name)
+                }} disabled={extracting || !uploadText.trim()}
+                  className="flex items-center gap-1 text-[10px] font-bold text-white bg-np-blue px-3 py-1.5 rounded-lg hover:bg-np-blue/90 disabled:opacity-40">
+                  {extracting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                  {extracting ? 'Extracting...' : 'Feed'}
+                </button>
+              </div>
+              {extracting && (
+                <div className="flex items-center gap-1.5 text-[10px] text-np-blue bg-np-blue/5 px-2.5 py-1.5 rounded-lg">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Extracting knowledge...
+                </div>
+              )}
+            </div>
+
+            {/* Sources list */}
+            <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5">
+              {sources.length === 0 ? (
+                <div className="text-center py-6">
+                  <Brain className="w-8 h-8 text-gray-200 mx-auto mb-2" />
+                  <p className="text-[10px] text-gray-400">No knowledge yet</p>
+                  <p className="text-[9px] text-gray-300 mt-0.5">Paste a ChatGPT or Claude brain dump to start</p>
+                </div>
+              ) : sources.map((src, i) => {
+                const lines = src.split('\n')
+                const sourceLine = lines.find(l => l.startsWith('[Source:'))
+                const name = sourceLine ? sourceLine.replace('[Source: ', '').replace(']', '') : `Source ${i + 1}`
+                const preview = lines.filter(l => !l.startsWith('[Source:')).join(' ').slice(0, 120)
+                return (
+                  <div key={i} className="bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="text-[10px] font-bold text-np-dark">{name}</span>
+                      <button onClick={() => {
+                        const updated = voices.map(v => {
+                          if (v.id === 'cameron') {
+                            const newSources = sources.filter((_, si) => si !== i)
+                            return { ...v, knowledge: newSources.join('\n\n---\n\n'), source_count: Math.max(0, v.source_count - 1) }
+                          }
+                          return v
+                        })
+                        saveVoices(updated)
+                      }} className="text-gray-300 hover:text-red-400 p-0.5"><X className="w-2.5 h-2.5" /></button>
+                    </div>
+                    <p className="text-[9px] text-gray-500 leading-relaxed">{preview}...</p>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
         </div>
-      )}
+        )
+      })()}
 
       {/* ============================================================ */}
       {/* TAB: ADVISORY BOARD VOICES */}
@@ -571,25 +928,66 @@ RESPONSE RULES:
                 <Upload className="w-4 h-4 text-purple-500" />
                 <h3 className="text-sm font-bold text-np-dark">Feed Knowledge to {voices.find(v => v.id === uploadingTo)?.name}</h3>
               </div>
-              <button onClick={() => !extracting && setUploadingTo(null)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+              <button onClick={() => !extracting && (setUploadingTo(null), setModalFiles([]))} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
             </div>
 
             <div className="px-5 py-4 space-y-3">
-              <p className="text-xs text-gray-500">Paste a transcript, meeting notes, or conversation text. AI will extract key insights, advice patterns, and communication style to build this voice's knowledge base.</p>
+              <p className="text-xs text-gray-500">Upload documents, images, audio, video, paste text, or link a Google Doc. AI will extract key insights to build this voice.</p>
 
-              <div className="flex gap-2">
-                {[
-                  { icon: FileText, label: 'Transcript', desc: 'Paste text' },
-                  { icon: Mic, label: 'Audio', desc: 'Coming soon' },
-                  { icon: Video, label: 'Video', desc: 'Coming soon' },
-                ].map(t => (
-                  <div key={t.label} className={`flex-1 border rounded-xl p-3 text-center ${t.label === 'Transcript' ? 'border-purple-200 bg-purple-50' : 'border-gray-200 bg-gray-50 opacity-50'}`}>
-                    <t.icon className={`w-5 h-5 mx-auto mb-1 ${t.label === 'Transcript' ? 'text-purple-500' : 'text-gray-400'}`} />
-                    <div className="text-[10px] font-bold text-gray-600">{t.label}</div>
-                    <div className="text-[8px] text-gray-400">{t.desc}</div>
-                  </div>
-                ))}
+              {/* File drop zone */}
+              <div
+                onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('border-purple-400', 'bg-purple-50') }}
+                onDragLeave={e => { e.currentTarget.classList.remove('border-purple-400', 'bg-purple-50') }}
+                onDrop={e => { e.preventDefault(); e.currentTarget.classList.remove('border-purple-400', 'bg-purple-50'); handleModalFileUpload(e.dataTransfer.files, uploadingTo) }}
+                onClick={() => modalFileRef.current?.click()}
+                className="border-2 border-dashed border-gray-200 rounded-xl px-4 py-4 text-center cursor-pointer hover:border-purple-300 hover:bg-purple-50/50 transition-all"
+              >
+                <input ref={modalFileRef} type="file" multiple accept=".txt,.md,.pdf,.docx,.doc,.png,.jpg,.jpeg,.webp,.gif,.mp3,.m4a,.wav,.mp4,.mov,.webm"
+                  onChange={e => handleModalFileUpload(e.target.files, uploadingTo)} className="hidden" />
+                <div className="flex items-center justify-center gap-3 mb-1.5">
+                  <FileText className="w-5 h-5 text-gray-400" />
+                  <ImageIcon className="w-5 h-5 text-gray-400" />
+                  <Video className="w-5 h-5 text-gray-400" />
+                  <Mic className="w-5 h-5 text-gray-400" />
+                </div>
+                <div className="text-xs text-gray-500 font-medium">Drop files or click to upload</div>
+                <p className="text-[10px] text-gray-400 mt-0.5">PDFs, documents, images, video, audio</p>
               </div>
+
+              {/* Google Doc link */}
+              <div className="flex gap-2">
+                <input value={gdocUrl} onChange={e => setGdocUrl(e.target.value)}
+                  placeholder="Paste Google Doc URL..."
+                  className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-purple-300/30 placeholder-gray-300" />
+                <button onClick={() => fetchGoogleDoc(gdocUrl, uploadingTo)}
+                  disabled={!gdocUrl.includes('docs.google.com') || extracting}
+                  className="text-xs font-bold text-purple-600 px-3 py-2 rounded-lg border border-purple-200 hover:bg-purple-50 disabled:opacity-30 flex-shrink-0">
+                  {extracting ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Fetch Doc'}
+                </button>
+              </div>
+
+              {/* Uploaded files preview */}
+              {modalFiles.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {modalFiles.map((f, i) => (
+                    <div key={i} className="flex items-center gap-1.5 bg-purple-50 border border-purple-100 rounded-lg px-2.5 py-1.5">
+                      {f.type === 'image' && f.preview ? (
+                        <img src={f.preview} alt="" className="w-5 h-5 rounded object-cover" />
+                      ) : f.type === 'pdf' ? (
+                        <FileText className="w-3.5 h-3.5 text-red-400" />
+                      ) : f.type === 'gdoc' ? (
+                        <FileText className="w-3.5 h-3.5 text-blue-400" />
+                      ) : (
+                        <FileText className="w-3.5 h-3.5 text-purple-400" />
+                      )}
+                      <span className="text-[10px] text-gray-600">{f.name}</span>
+                      <button onClick={() => setModalFiles(prev => prev.filter((_, fi) => fi !== i))} className="text-gray-300 hover:text-red-400">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div>
                 <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Source Name</label>
@@ -598,12 +996,12 @@ RESPONSE RULES:
               </div>
 
               <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Paste Transcript / Notes</label>
+                <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Paste Text / Transcript</label>
                 <textarea value={uploadText} onChange={e => setUploadText(e.target.value)}
-                  placeholder="Paste the full transcript, meeting notes, or conversation here..."
-                  rows={8}
+                  placeholder="Paste transcript, meeting notes, or conversation here..."
+                  rows={6}
                   className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-300/30 placeholder-gray-300 resize-none font-mono" />
-                <div className="text-[9px] text-gray-400 mt-1">{uploadText.length.toLocaleString()} characters · ~{Math.round(uploadText.length / 4).toLocaleString()} tokens</div>
+                <div className="text-[9px] text-gray-400 mt-1">{uploadText.length.toLocaleString()} characters</div>
               </div>
 
               {extracting && (

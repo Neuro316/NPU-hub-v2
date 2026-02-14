@@ -59,6 +59,7 @@ function doPost(e) {
       case 'createDoc':            result = handleCreateDoc(data); break;
       case 'updateShipitDoc':      result = handleUpdateShipitDoc(data); break;
       case 'getShipitDocContent':  result = handleGetShipitDocContent(data); break;
+      case 'getDocContent':        result = handleGetDocContent(data); break;
 
       // Sheets tracker
       case 'saveShipit':           result = handleSaveShipit(data); break;
@@ -83,7 +84,7 @@ function doGet(e) {
     status: 'ok',
     service: 'NPU Hub Apps Script',
     timestamp: new Date().toISOString(),
-    capabilities: ['sendResourceEmail', 'createFolder', 'createDoc', 'updateShipitDoc', 'getShipitDocContent', 'saveShipit', 'ping']
+    capabilities: ['sendResourceEmail', 'createFolder', 'createDoc', 'updateShipitDoc', 'getShipitDocContent', 'getDocContent', 'saveShipit', 'ping']
   })).setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -427,4 +428,28 @@ function testEmail() {
     senderEmail: CONFIG.senderEmail
   });
   console.log(JSON.stringify(result));
+}
+
+// ============================================================
+// GET GOOGLE DOC CONTENT (generic - for AI Advisory knowledge feed)
+// ============================================================
+function handleGetDocContent(data) {
+  const docId = data.docId;
+  if (!docId) return { success: false, error: 'docId required' };
+
+  try {
+    const doc = DocumentApp.openById(docId);
+    const body = doc.getBody();
+    const text = body.getText();
+    const title = doc.getName();
+
+    return {
+      success: true,
+      content: text,
+      title: title,
+      lastUpdated: doc.getLastUpdated().toISOString()
+    };
+  } catch (error) {
+    return { success: false, error: 'Could not access document: ' + error.message };
+  }
 }
