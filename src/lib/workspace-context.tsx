@@ -114,6 +114,38 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
             setOrganizations([allOrgs])
             setCurrentOrg(allOrgs)
+
+            // Auto-send team welcome email
+            try {
+              const { data: brandData } = await supabase
+                .from('brand_profiles')
+                .select('guidelines')
+                .eq('org_id', allOrgs.id)
+                .eq('brand_key', 'np')
+                .single()
+
+              const templates = brandData?.guidelines?.email_templates || []
+              const welcomeTmpl = templates.find((t: any) => t.trigger === 'team_join' && t.enabled)
+
+              if (welcomeTmpl && user.email) {
+                const recipientName = user.user_metadata?.full_name || user.email.split('@')[0] || 'there'
+                fetch('/api/send-resources', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    recipientName,
+                    recipientEmail: user.email,
+                    personalNote: welcomeTmpl.body
+                      .replace(/\{\{recipientName\}\}/g, recipientName)
+                      .replace(/\{\{senderName\}\}/g, 'Cameron Allen'),
+                    resources: [{ name: 'NPU Hub', url: 'https://hub.neuroprogeny.com', type: 'link' }],
+                    cardName: 'Team Welcome',
+                    orgId: allOrgs.id,
+                    useSenderFromSettings: true,
+                  }),
+                }).catch(() => {}) // fire and forget
+              }
+            } catch {} // non-blocking
           }
         }
       }
