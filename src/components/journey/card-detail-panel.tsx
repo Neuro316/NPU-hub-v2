@@ -77,6 +77,9 @@ export function CardDetailPanel({ card, phases, onClose, onUpdate, onDelete, onD
   const [emailTemplates, setEmailTemplates] = useState<Array<{ id: string; name: string; subject: string; body: string; cardType: string }>>([])
   const [selectedTemplate, setSelectedTemplate] = useState('')
   const [aiPolishing, setAiPolishing] = useState<string | null>(null)
+  const [emailChatMsgs, setEmailChatMsgs] = useState<Array<{ role: string; content: string }>>([])
+  const [emailChatInput, setEmailChatInput] = useState('')
+  const [showEmailChat, setShowEmailChat] = useState(false)
 
   useEffect(() => {
     if (card) {
@@ -138,6 +141,53 @@ export function CardDetailPanel({ card, phases, onClose, onUpdate, onDelete, onD
       const result = (data.content || '').replace(/\*\*/g, '').replace(/\u2014/g, ', ').replace(/\u2013/g, ', ').trim()
       if (result) setPersonalNote(result)
     } catch {}
+    setAiPolishing(null)
+  }
+
+  const sendEmailChat = async () => {
+    if (!emailChatInput.trim() || aiPolishing) return
+    const userMsg = emailChatInput.trim()
+    const newMsgs = [...emailChatMsgs, { role: 'user', content: userMsg }]
+    setEmailChatMsgs(newMsgs)
+    setEmailChatInput('')
+    setAiPolishing('chat')
+
+    const context = `You are an email copywriter helping draft an email for a Journey Card called "${card?.title || 'unknown'}".
+
+Current email body:
+${personalNote || '(empty - no draft yet)'}
+
+Recipient: ${recipientName || 'unknown'}
+Resources being sent: ${(fields.assets || []).filter((a: any) => a.selected && a.url).map((a: any) => a.name).join(', ') || 'none selected'}
+
+Brand: Neuro Progeny. Voice: warm, direct, empowering. No em dashes. Capacity over pathology.
+
+When the user asks you to write, rewrite, or change the email, return the full updated email body wrapped in <email> tags like <email>new body here</email>. Outside the tags, briefly explain what you did. If they just ask a question, answer conversationally.`
+
+    try {
+      const apiMsgs = [
+        { role: 'user', content: context },
+        { role: 'assistant', content: "I'm ready to help with this email. What would you like?" },
+        ...newMsgs,
+      ]
+      const res = await fetch('/api/ai', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: apiMsgs, campaignContext: { type: 'email_chat', systemOverride: context } }),
+      })
+      const data = await res.json()
+      let reply = (data.content || '').replace(/\*\*/g, '').replace(/\u2014/g, ', ').replace(/\u2013/g, ', ').trim()
+
+      const emailMatch = reply.match(/<email>([\s\S]*?)<\/email>/)
+      if (emailMatch) {
+        setPersonalNote(emailMatch[1].trim())
+        reply = reply.replace(/<email>[\s\S]*?<\/email>/, '').trim()
+        if (!reply) reply = 'Updated the email. Check the draft above.'
+      }
+
+      setEmailChatMsgs([...newMsgs, { role: 'assistant', content: reply }])
+    } catch {
+      setEmailChatMsgs([...newMsgs, { role: 'assistant', content: 'Connection error. Try again.' }])
+    }
     setAiPolishing(null)
   }
 
@@ -524,8 +574,12 @@ export function CardDetailPanel({ card, phases, onClose, onUpdate, onDelete, onD
                   {/* Personal note */}
                   <div>
                     <div className="flex items-center justify-between mb-0.5">
-                      <label className="text-[9px] font-bold text-gray-400 uppercase">Personal Note</label>
+                      <label className="text-[9px] font-bold text-gray-400 uppercase">Email Message</label>
                       <div className="flex gap-1">
+                        <button onClick={() => setShowEmailChat(!showEmailChat)}
+                          className={`flex items-center gap-0.5 text-[8px] font-medium px-1.5 py-0.5 rounded border ${showEmailChat ? 'bg-purple-100 text-purple-700 border-purple-300' : 'bg-purple-50 text-purple-600 border-purple-200 hover:bg-purple-100'}`}>
+                          <Sparkles className="w-2 h-2" /> AI Chat
+                        </button>
                         {(['revise', 'expand', 'polish'] as const).map(action => (
                           <button key={action} onClick={() => aiPolish(action)} disabled={!!aiPolishing || !personalNote.trim()}
                             className="flex items-center gap-0.5 text-[8px] font-medium px-1.5 py-0.5 rounded bg-purple-50 text-purple-600 border border-purple-200 hover:bg-purple-100 disabled:opacity-40">
@@ -549,9 +603,57 @@ export function CardDetailPanel({ card, phases, onClose, onUpdate, onDelete, onD
                     )}
 
                     <textarea value={personalNote} onChange={e => setPersonalNote(e.target.value)}
-                      placeholder="Here are the resources we discussed..."
+                      placeholder="Write your email message or use a template above..."
                       rows={4}
                       className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 resize-none" />
+
+                    {/* AI Chat Panel */}
+                    {showEmailChat && (
+                      <div className="mt-1.5 border border-purple-200 rounded-lg bg-purple-50/30 overflow-hidden">
+                        <div className="px-2.5 py-1.5 bg-purple-50 border-b border-purple-100 flex items-center gap-1.5">
+                          <Sparkles className="w-3 h-3 text-purple-500" />
+                          <span className="text-[9px] font-bold text-purple-700">AI Email Coach</span>
+                          <span className="text-[8px] text-purple-400 ml-auto">Tell me how to write or change the email</span>
+                        </div>
+                        <div className="max-h-36 overflow-y-auto px-2.5 py-2 space-y-1.5">
+                          {emailChatMsgs.length === 0 && (
+                            <div className="space-y-1">
+                              {['Write a warm follow-up for this card', 'Make the current draft shorter', 'Add a call to action', 'Rewrite in a more personal tone'].map(q => (
+                                <button key={q} onClick={() => setEmailChatInput(q)}
+                                  className="w-full text-left text-[9px] text-gray-500 bg-white border border-gray-100 rounded px-2 py-1 hover:bg-purple-50 hover:text-purple-600 hover:border-purple-200 transition-all">
+                                  {q}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          {emailChatMsgs.map((msg, i) => (
+                            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                              <div className={`max-w-[88%] px-2 py-1 rounded-lg text-[10px] leading-relaxed whitespace-pre-wrap ${
+                                msg.role === 'user' ? 'bg-np-blue text-white rounded-br-sm' : 'bg-white border border-gray-100 text-gray-700 rounded-bl-sm'
+                              }`}>{msg.content}</div>
+                            </div>
+                          ))}
+                          {aiPolishing === 'chat' && (
+                            <div className="flex justify-start">
+                              <div className="bg-white border border-gray-100 rounded-lg px-2.5 py-1 flex items-center gap-1">
+                                <Loader2 className="w-2.5 h-2.5 text-purple-500 animate-spin" />
+                                <span className="text-[9px] text-gray-400">Writing...</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <div className="px-2 py-1.5 border-t border-purple-100 flex gap-1.5">
+                          <input value={emailChatInput} onChange={e => setEmailChatInput(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendEmailChat() } }}
+                            placeholder="Tell AI what to write..."
+                            className="flex-1 text-[10px] border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-purple-300 placeholder-gray-300 bg-white" />
+                          <button onClick={sendEmailChat} disabled={aiPolishing === 'chat' || !emailChatInput.trim()}
+                            className="px-2 py-1 bg-purple-500 text-white rounded hover:bg-purple-600 disabled:opacity-40">
+                            <Send className="w-2.5 h-2.5" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Error message */}
