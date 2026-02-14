@@ -8,6 +8,8 @@ import {
   Save, ChevronDown, ChevronRight, Plus, X, Trash2, Loader2, Check, Sparkles, Mail, Wand2, Send
 } from 'lucide-react'
 
+interface EmailTemplate { id: string; name: string; subject: string; body: string; cardType: string; description: string; trigger: 'manual' | 'team_join' | 'module_access' | 'journey_complete'; enabled: boolean }
+
 interface BrandSettings {
   // Identity
   brand_name: string
@@ -85,16 +87,7 @@ interface BrandSettings {
   ai_email_prompt: string
 
   // Email Templates
-  email_templates: Array<{
-    id: string
-    name: string
-    subject: string
-    body: string
-    cardType: string
-    description: string
-    trigger: 'manual' | 'team_join' | 'module_access' | 'journey_complete'
-    enabled: boolean
-  }>
+  email_templates: EmailTemplate[]
 
   // Content Guardrails
   never_topics: string[]
@@ -339,8 +332,6 @@ Use Voss-style emotional labeling in objection-handling content.`,
 
 type SectionKey = 'identity' | 'voice' | 'vocabulary' | 'messaging' | 'value' | 'psychology' | 'visual' | 'platforms' | 'ai_prompts' | 'email_templates' | 'guardrails' | 'engagement'
 
-interface EmailTemplate { id: string; name: string; subject: string; body: string; cardType: string; description: string; trigger: string; enabled: boolean }
-
 const TRIGGER_OPTIONS = [
   { value: 'manual', label: 'Manual', desc: 'Send from Journey Cards or integrations' },
   { value: 'team_join', label: 'Auto: Team Join', desc: 'Sent when a new member joins the org' },
@@ -485,7 +476,7 @@ When the user asks you to rewrite or change the email, return the full updated e
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Trigger</label>
-                  <select value={template.trigger} onChange={e => onUpdate({ ...template, trigger: e.target.value })}
+                  <select value={template.trigger} onChange={e => onUpdate({ ...template, trigger: e.target.value as EmailTemplate['trigger'] })}
                     className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none">
                     {TRIGGER_OPTIONS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                   </select>
