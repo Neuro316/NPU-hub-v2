@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
 import {
   Settings, Palette, MessageSquare, Target, Megaphone, Brain, Shield,
-  Save, ChevronDown, ChevronRight, Plus, X, Trash2, Loader2, Check, Sparkles
+  Save, ChevronDown, ChevronRight, Plus, X, Trash2, Loader2, Check, Sparkles, Mail, Wand2
 } from 'lucide-react'
 
 interface BrandSettings {
@@ -83,6 +83,9 @@ interface BrandSettings {
   ai_social_prompt: string
   ai_quiz_prompt: string
   ai_email_prompt: string
+
+  // Email Templates
+  email_templates: Array<{ id: string; name: string; subject: string; body: string; cardType: string }>
 
   // Content Guardrails
   never_topics: string[]
@@ -299,6 +302,12 @@ Use Voss-style emotional labeling in objection-handling content.`,
 - Maintain warm authority tone
 - Reference specific HRV/capacity data when possible`,
 
+  email_templates: [
+    { id: 'discovery', name: 'Discovery Call Follow-Up', subject: 'Resources from our call, {{recipientName}}', cardType: 'Discovery Call', body: 'Hi {{recipientName}},\n\nGreat connecting with you today. Here are the resources we discussed.\n\nTake your time with them. When something sparks a question, just reply to this email.\n\nLooking forward to hearing what resonates.' },
+    { id: 'onboarding', name: 'Onboarding Welcome', subject: 'Welcome aboard. Your resources are ready.', cardType: 'Onboarding', body: 'Hi {{recipientName}},\n\nWelcome to the program. Below you will find everything you need to get started.\n\nThe most important first step is the nervous system assessment. It takes about 10 minutes and gives us a baseline for your training.\n\nReach out anytime.' },
+    { id: 'general', name: 'General Follow-Up', subject: 'Following up, {{recipientName}}', cardType: '', body: 'Hi {{recipientName}},\n\nWanted to share some resources that might be useful based on our conversation.\n\nNo pressure at all. Take a look when you have a moment and let me know what questions come up.' },
+  ],
+
   never_topics: ['Specific medical diagnoses', 'Medication recommendations', 'Anti-therapy messaging', 'Political content', 'Religious content'],
   sensitive_topics: ['Mental health crises', 'Trauma specifics', 'Eating disorders', 'Substance use', 'Suicidal ideation'],
   competitor_mentions: 'Never disparage competitors. Position as "different approach" not "better than".',
@@ -312,7 +321,113 @@ Use Voss-style emotional labeling in objection-handling content.`,
   ugc_guidelines: 'Encourage capacity-focused language. Provide templates. Always get permission before reposting.',
 }
 
-type SectionKey = 'identity' | 'voice' | 'vocabulary' | 'messaging' | 'value' | 'psychology' | 'visual' | 'platforms' | 'ai_prompts' | 'guardrails' | 'engagement'
+type SectionKey = 'identity' | 'voice' | 'vocabulary' | 'messaging' | 'value' | 'psychology' | 'visual' | 'platforms' | 'ai_prompts' | 'email_templates' | 'guardrails' | 'engagement'
+
+interface EmailTemplate { id: string; name: string; subject: string; body: string; cardType: string }
+
+function EmailTemplateEditor({ template, onUpdate, onDelete, brandSettings }: {
+  template: EmailTemplate
+  onUpdate: (t: EmailTemplate) => void
+  onDelete: () => void
+  brandSettings: BrandSettings
+}) {
+  const [open, setOpen] = useState(false)
+  const [aiLoading, setAiLoading] = useState<string | null>(null)
+
+  const aiAction = async (action: 'revise' | 'expand' | 'polish') => {
+    if (!template.body.trim()) return
+    setAiLoading(action)
+
+    const prompts: Record<string, string> = {
+      revise: `Rewrite this email to be clearer, more concise, and more engaging. Keep the same intent and tone. Brand voice: ${brandSettings.voice_description || 'warm, direct, empowering'}. Writing rules: no em dashes, capacity over pathology, forward-facing language. Return ONLY the revised email body text, no commentary.`,
+      expand: `Expand this email with more detail, warmth, and value. Add a second paragraph that builds rapport or offers a helpful insight. Brand voice: ${brandSettings.voice_description || 'warm, direct, empowering'}. Writing rules: no em dashes, capacity over pathology, forward-facing language. Keep it under 4 short paragraphs. Return ONLY the expanded email body text, no commentary.`,
+      polish: `Polish this email for grammar, flow, and professionalism. Keep the same structure and length. Make sure it sounds human, not corporate. Brand voice: ${brandSettings.voice_description || 'warm, direct, empowering'}. Writing rules: no em dashes, capacity over pathology, forward-facing language. Return ONLY the polished email body text, no commentary.`,
+    }
+
+    try {
+      const res = await fetch('/api/ai', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: `${prompts[action]}\n\nEmail to ${action}:\n\n${template.body}` }],
+          campaignContext: { type: 'email_template', systemOverride: `You are an email copywriter for ${brandSettings.brand_name || 'Neuro Progeny'}. ${brandSettings.ai_email_prompt || ''}` },
+        }),
+      })
+      const data = await res.json()
+      const result = (data.content || '').replace(/\*\*/g, '').replace(/\u2014/g, ', ').replace(/\u2013/g, ', ').trim()
+      if (result) onUpdate({ ...template, body: result })
+    } catch {}
+    setAiLoading(null)
+  }
+
+  return (
+    <div className="border border-gray-200 rounded-xl mb-3 overflow-hidden">
+      <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 text-left">
+        <div className="flex items-center gap-2.5">
+          <Mail className="w-4 h-4 text-red-400" />
+          <div>
+            <span className="text-sm font-semibold text-np-dark">{template.name || 'Untitled Template'}</span>
+            {template.cardType && <span className="ml-2 text-[9px] font-bold bg-np-blue/10 text-np-blue px-1.5 py-0.5 rounded">{template.cardType}</span>}
+          </div>
+        </div>
+        <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 space-y-3 border-t border-gray-100 pt-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Template Name</label>
+              <input value={template.name} onChange={e => onUpdate({ ...template, name: e.target.value })}
+                placeholder="e.g. Discovery Follow-Up"
+                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Journey Card Type</label>
+              <input value={template.cardType} onChange={e => onUpdate({ ...template, cardType: e.target.value })}
+                placeholder="e.g. Discovery Call, Onboarding (or leave blank for any)"
+                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Subject Line</label>
+            <input value={template.subject} onChange={e => onUpdate({ ...template, subject: e.target.value })}
+              placeholder="e.g. Resources from our call, {{recipientName}}"
+              className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[10px] font-bold text-gray-400 uppercase">Email Body</label>
+              <div className="flex gap-1">
+                {(['revise', 'expand', 'polish'] as const).map(action => (
+                  <button key={action} onClick={() => aiAction(action)} disabled={!!aiLoading || !template.body.trim()}
+                    className="flex items-center gap-1 text-[9px] font-medium px-2 py-1 rounded-md bg-purple-50 text-purple-600 border border-purple-200 hover:bg-purple-100 disabled:opacity-40">
+                    {aiLoading === action ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Wand2 className="w-2.5 h-2.5" />}
+                    {action.charAt(0).toUpperCase() + action.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <textarea value={template.body} onChange={e => onUpdate({ ...template, body: e.target.value })}
+              placeholder="Hi {{recipientName}},&#10;&#10;Write your email body here...&#10;&#10;Use {{recipientName}}, {{senderName}}, {{cardName}} as placeholders."
+              rows={6}
+              className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 resize-vertical font-mono leading-relaxed" />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="text-[9px] text-gray-400">
+              Placeholders: {'{{recipientName}}'} {'{{senderName}}'} {'{{cardName}}'}
+            </div>
+            <button onClick={onDelete} className="text-[10px] text-red-400 hover:text-red-600 flex items-center gap-1">
+              <Trash2 className="w-3 h-3" /> Delete
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function SettingsPage() {
   const { currentOrg, loading: orgLoading } = useWorkspace()
@@ -651,6 +766,39 @@ export default function SettingsPage() {
           <TextInput label="Social Content Prompt" value={settings.ai_social_prompt} onChange={v => updateField('ai_social_prompt', v)} multiline />
           <TextInput label="Quiz Builder Prompt" value={settings.ai_quiz_prompt} onChange={v => updateField('ai_quiz_prompt', v)} multiline />
           <TextInput label="Email Sequence Prompt" value={settings.ai_email_prompt} onChange={v => updateField('ai_email_prompt', v)} multiline />
+        </Section>
+
+        {/* Email Templates */}
+        <Section id="email_templates" icon={Mail} title="Email Templates" color="#EA4335">
+          <p className="text-xs text-gray-500 mb-3">
+            Create email templates for different journey card types. Use {'{{recipientName}}'}, {'{{senderName}}'}, and {'{{cardName}}'} as placeholders. Select a template when sending resources from Journey Cards.
+          </p>
+
+          {(settings.email_templates || []).map((tmpl, idx) => (
+            <EmailTemplateEditor
+              key={tmpl.id}
+              template={tmpl}
+              onUpdate={(updated) => {
+                const templates = [...(settings.email_templates || [])]
+                templates[idx] = updated
+                updateField('email_templates', templates)
+              }}
+              onDelete={() => {
+                const templates = (settings.email_templates || []).filter((_, i) => i !== idx)
+                updateField('email_templates', templates)
+              }}
+              brandSettings={settings}
+            />
+          ))}
+
+          <button onClick={() => {
+            const id = 'tmpl_' + Date.now()
+            const templates = [...(settings.email_templates || []), { id, name: 'New Template', subject: '', body: '', cardType: '' }]
+            updateField('email_templates', templates)
+          }}
+            className="flex items-center gap-1.5 text-xs font-medium text-np-blue bg-np-blue/10 px-3 py-2 rounded-lg hover:bg-np-blue/20 mt-2">
+            <Plus className="w-3.5 h-3.5" /> Add Email Template
+          </button>
         </Section>
 
         {/* Content Guardrails */}

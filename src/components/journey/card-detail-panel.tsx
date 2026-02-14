@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { createClient } from '@/lib/supabase-browser'
 import type { JourneyCard, JourneyPhase } from '@/lib/types/journey'
 import { STATUS_CONFIG } from '@/lib/types/journey'
-import { X, Plus, Trash2, Link2, FolderOpen, Mail, ExternalLink, FileText, Zap, Hand, RefreshCw, Copy, Link, Upload, Send, MessageSquare, Check, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
+import { X, Plus, Trash2, Link2, FolderOpen, Mail, ExternalLink, FileText, Zap, Hand, RefreshCw, Copy, Link, Upload, Send, MessageSquare, Check, Loader2, ChevronDown, ChevronUp, Wand2, Sparkles } from 'lucide-react'
 
 const SECTION_LABELS = [
   'Paid Traffic', 'Organic', 'Lead Magnet', 'Email', 'Landing Page',
@@ -73,6 +74,9 @@ export function CardDetailPanel({ card, phases, onClose, onUpdate, onDelete, onD
   const [sendingResources, setSendingResources] = useState(false)
   const [sendStatus, setSendStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle')
   const [sendError, setSendError] = useState('')
+  const [emailTemplates, setEmailTemplates] = useState<Array<{ id: string; name: string; subject: string; body: string; cardType: string }>>([])
+  const [selectedTemplate, setSelectedTemplate] = useState('')
+  const [aiPolishing, setAiPolishing] = useState<string | null>(null)
 
   useEffect(() => {
     if (card) {
@@ -86,8 +90,56 @@ export function CardDetailPanel({ card, phases, onClose, onUpdate, onDelete, onD
       setSlackSent(false)
       setShowSendResources(false)
       setSendStatus('idle')
+      setSelectedTemplate('')
     }
   }, [card])
+
+  // Fetch email templates from brand_profiles
+  useEffect(() => {
+    if (!orgId) return
+    const supabase = createClient()
+    supabase.from('brand_profiles').select('guidelines').eq('org_id', orgId).eq('brand_key', 'np').single()
+      .then(({ data }) => {
+        if (data?.guidelines?.email_templates) {
+          setEmailTemplates(data.guidelines.email_templates)
+        }
+      })
+  }, [orgId])
+
+  const applyTemplate = (templateId: string) => {
+    setSelectedTemplate(templateId)
+    const tmpl = emailTemplates.find(t => t.id === templateId)
+    if (tmpl) {
+      const body = tmpl.body
+        .replace(/\{\{recipientName\}\}/g, recipientName || '{{recipientName}}')
+        .replace(/\{\{senderName\}\}/g, 'Cameron Allen')
+        .replace(/\{\{cardName\}\}/g, card?.title || '')
+      setPersonalNote(body)
+    }
+  }
+
+  const aiPolish = async (action: 'revise' | 'expand' | 'polish') => {
+    if (!personalNote.trim()) return
+    setAiPolishing(action)
+    const prompts: Record<string, string> = {
+      revise: 'Rewrite this email note to be clearer and more concise. Keep the same intent. Warm, direct tone. No em dashes. Return ONLY the revised text.',
+      expand: 'Expand this email note with more warmth and detail. Add value. Keep under 4 short paragraphs. No em dashes. Return ONLY the expanded text.',
+      polish: 'Polish this for grammar, flow, and professionalism. Keep structure and length. Sound human, not corporate. No em dashes. Return ONLY the polished text.',
+    }
+    try {
+      const res = await fetch('/api/ai', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: `${prompts[action]}\n\nText:\n\n${personalNote}` }],
+          campaignContext: { type: 'email_polish', systemOverride: 'You are an email copywriter for Neuro Progeny. Write with warm authority. Capacity over pathology. Forward-facing language. No em dashes.' },
+        }),
+      })
+      const data = await res.json()
+      const result = (data.content || '').replace(/\*\*/g, '').replace(/\u2014/g, ', ').replace(/\u2013/g, ', ').trim()
+      if (result) setPersonalNote(result)
+    } catch {}
+    setAiPolishing(null)
+  }
 
   if (!card) return null
 
@@ -471,10 +523,34 @@ export function CardDetailPanel({ card, phases, onClose, onUpdate, onDelete, onD
 
                   {/* Personal note */}
                   <div>
-                    <label className="text-[9px] font-bold text-gray-400 uppercase block mb-0.5">Personal Note (optional)</label>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <label className="text-[9px] font-bold text-gray-400 uppercase">Personal Note</label>
+                      <div className="flex gap-1">
+                        {(['revise', 'expand', 'polish'] as const).map(action => (
+                          <button key={action} onClick={() => aiPolish(action)} disabled={!!aiPolishing || !personalNote.trim()}
+                            className="flex items-center gap-0.5 text-[8px] font-medium px-1.5 py-0.5 rounded bg-purple-50 text-purple-600 border border-purple-200 hover:bg-purple-100 disabled:opacity-40">
+                            {aiPolishing === action ? <Loader2 className="w-2 h-2 animate-spin" /> : <Wand2 className="w-2 h-2" />}
+                            {action.charAt(0).toUpperCase() + action.slice(1)}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Template dropdown */}
+                    {emailTemplates.length > 0 && (
+                      <select value={selectedTemplate}
+                        onChange={e => applyTemplate(e.target.value)}
+                        className="w-full text-[10px] border border-gray-200 rounded-lg px-2.5 py-1.5 mb-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30 text-gray-500">
+                        <option value="">Choose a template...</option>
+                        {emailTemplates.map(t => (
+                          <option key={t.id} value={t.id}>{t.name}{t.cardType ? ` (${t.cardType})` : ''}</option>
+                        ))}
+                      </select>
+                    )}
+
                     <textarea value={personalNote} onChange={e => setPersonalNote(e.target.value)}
                       placeholder="Here are the resources we discussed..."
-                      rows={2}
+                      rows={4}
                       className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 resize-none" />
                   </div>
 
