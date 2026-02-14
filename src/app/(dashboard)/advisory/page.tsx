@@ -405,49 +405,124 @@ RESPONSE RULES:
       {/* ============================================================ */}
       {/* TAB: CAMERON AI */}
       {/* ============================================================ */}
-      {tab === 'cameron' && (
-        <div className="flex-1 flex flex-col bg-white border border-gray-100 rounded-2xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
+      {tab === 'cameron' && (() => {
+        const cameron = voices.find(v => v.id === 'cameron')
+        const sources = (cameron?.knowledge || '').split('\n\n---\n\n').filter(Boolean)
+        return (
+        <div className="flex-1 flex gap-4 min-h-0">
+          {/* Left: Chat */}
+          <div className="flex-1 bg-white border border-gray-100 rounded-2xl flex flex-col overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#386797] to-[#2a4f73] flex items-center justify-center text-white text-xs font-bold">CA</div>
               <div>
                 <h2 className="text-sm font-bold text-np-dark">Cameron AI</h2>
-                <p className="text-[10px] text-gray-400">Ask me anything. I'll answer the way Cameron would. {voices.find(v => v.id === 'cameron')?.source_count || 0} sources loaded.</p>
+                <p className="text-[10px] text-gray-400">Ask me anything. I'll answer the way Cameron would.</p>
               </div>
             </div>
-            <button onClick={() => { setEditingVoice(voices.find(v => v.id === 'cameron') || null); setUploadingTo('cameron') }}
-              className="flex items-center gap-1 text-[10px] text-np-blue font-medium px-2.5 py-1.5 rounded-lg border border-np-blue/20 hover:bg-np-blue/5">
-              <Upload className="w-3 h-3" /> Feed Knowledge
-            </button>
-          </div>
 
-          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5">
-            {cameronChat.length === 0 && (
-              <div className="py-6">
-                <p className="text-xs text-gray-400 text-center mb-4">I'm Cameron's AI. Ask me how Cameron would handle something, what his priorities are, or how he thinks about a problem.</p>
-                <QuickPrompts prompts={[
-                  'How would Cameron handle a participant who wants to quit after week 2?',
-                  'What are Cameron\'s priorities for Q1?',
-                  'How does Cameron think about pricing the Immersive Mastermind?',
-                  'What would Cameron say about adding a new feature to the platform?',
-                ]} onSelect={setCameronInput} />
-              </div>
-            )}
-            {cameronChat.map((msg, i) => <ChatBubble key={i} msg={msg} />)}
-            {cameronLoading && (
-              <div className="flex justify-start">
-                <div className="bg-gray-50 border border-gray-100 rounded-xl px-3 py-2 flex items-center gap-1.5">
-                  <Loader2 className="w-3 h-3 text-[#386797] animate-spin" />
-                  <span className="text-[10px] text-gray-400">Thinking like Cameron...</span>
+            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5">
+              {cameronChat.length === 0 && (
+                <div className="py-6">
+                  <p className="text-xs text-gray-400 text-center mb-4">I'm Cameron's AI. Ask me how Cameron would handle something, what his priorities are, or how he thinks about a problem.</p>
+                  <QuickPrompts prompts={[
+                    'How would Cameron handle a participant who wants to quit after week 2?',
+                    'What are Cameron\'s priorities for Q1?',
+                    'How does Cameron think about pricing the Immersive Mastermind?',
+                    'What would Cameron say about adding a new feature to the platform?',
+                  ]} onSelect={setCameronInput} />
                 </div>
-              </div>
-            )}
-            <div ref={chatEndRef} />
+              )}
+              {cameronChat.map((msg, i) => <ChatBubble key={i} msg={msg} />)}
+              {cameronLoading && (
+                <div className="flex justify-start">
+                  <div className="bg-gray-50 border border-gray-100 rounded-xl px-3 py-2 flex items-center gap-1.5">
+                    <Loader2 className="w-3 h-3 text-[#386797] animate-spin" />
+                    <span className="text-[10px] text-gray-400">Thinking like Cameron...</span>
+                  </div>
+                </div>
+              )}
+              <div ref={chatEndRef} />
+            </div>
+
+            <ChatInput value={cameronInput} onChange={setCameronInput} onSend={sendCameronChat} loading={cameronLoading} placeholder="Ask Cameron anything..." />
           </div>
 
-          <ChatInput value={cameronInput} onChange={setCameronInput} onSend={sendCameronChat} loading={cameronLoading} placeholder="Ask Cameron anything..." />
+          {/* Right: Knowledge Feed */}
+          <div className="w-80 flex-shrink-0 bg-white border border-gray-100 rounded-2xl flex flex-col overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Upload className="w-3.5 h-3.5 text-np-blue" />
+                  <h3 className="text-xs font-bold text-np-dark">Knowledge Feed</h3>
+                </div>
+                <span className="text-[9px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{cameron?.source_count || 0} sources</span>
+              </div>
+              <p className="text-[10px] text-gray-400 mt-1">Keep feeding info to make Cameron AI smarter</p>
+            </div>
+
+            {/* Upload area */}
+            <div className="px-3 py-3 border-b border-gray-100 space-y-2">
+              <input id="cameron-source-name" placeholder="Source name (e.g., ChatGPT Brain Dump)"
+                className="w-full text-[11px] border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300" />
+              <textarea value={uploadText} onChange={e => setUploadText(e.target.value)}
+                placeholder="Paste transcript, brain dump, conversation, notes, decisions..."
+                rows={5}
+                className="w-full text-[11px] border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 resize-none font-mono leading-relaxed" />
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] text-gray-400">{uploadText.length > 0 ? `${uploadText.length.toLocaleString()} chars` : 'Paste anything'}</span>
+                <button onClick={() => {
+                  const name = (document.getElementById('cameron-source-name') as HTMLInputElement)?.value || 'Untitled'
+                  extractKnowledge('cameron', uploadText, name)
+                }} disabled={extracting || !uploadText.trim()}
+                  className="flex items-center gap-1 text-[10px] font-bold text-white bg-np-blue px-3 py-1.5 rounded-lg hover:bg-np-blue/90 disabled:opacity-40">
+                  {extracting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                  {extracting ? 'Extracting...' : 'Feed'}
+                </button>
+              </div>
+              {extracting && (
+                <div className="flex items-center gap-1.5 text-[10px] text-np-blue bg-np-blue/5 px-2.5 py-1.5 rounded-lg">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Extracting knowledge...
+                </div>
+              )}
+            </div>
+
+            {/* Sources list */}
+            <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5">
+              {sources.length === 0 ? (
+                <div className="text-center py-6">
+                  <Brain className="w-8 h-8 text-gray-200 mx-auto mb-2" />
+                  <p className="text-[10px] text-gray-400">No knowledge yet</p>
+                  <p className="text-[9px] text-gray-300 mt-0.5">Paste a ChatGPT or Claude brain dump to start</p>
+                </div>
+              ) : sources.map((src, i) => {
+                const lines = src.split('\n')
+                const sourceLine = lines.find(l => l.startsWith('[Source:'))
+                const name = sourceLine ? sourceLine.replace('[Source: ', '').replace(']', '') : `Source ${i + 1}`
+                const preview = lines.filter(l => !l.startsWith('[Source:')).join(' ').slice(0, 120)
+                return (
+                  <div key={i} className="bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="text-[10px] font-bold text-np-dark">{name}</span>
+                      <button onClick={() => {
+                        const updated = voices.map(v => {
+                          if (v.id === 'cameron') {
+                            const newSources = sources.filter((_, si) => si !== i)
+                            return { ...v, knowledge: newSources.join('\n\n---\n\n'), source_count: Math.max(0, v.source_count - 1) }
+                          }
+                          return v
+                        })
+                        saveVoices(updated)
+                      }} className="text-gray-300 hover:text-red-400 p-0.5"><X className="w-2.5 h-2.5" /></button>
+                    </div>
+                    <p className="text-[9px] text-gray-500 leading-relaxed">{preview}...</p>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
         </div>
-      )}
+        )
+      })()}
 
       {/* ============================================================ */}
       {/* TAB: ADVISORY BOARD VOICES */}
