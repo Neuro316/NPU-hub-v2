@@ -292,6 +292,34 @@ RESPONSE RULES:
     setUploadText('')
   }
 
+  // Helper: base64 to ArrayBuffer
+  const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
+    const binary = atob(base64)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+    return bytes.buffer
+  }
+
+  // Helper: extract text from DOCX (zip containing XML)
+  const extractDocxText = (uint8: Uint8Array): string => {
+    try {
+      const text = new TextDecoder('utf-8', { fatal: false }).decode(uint8)
+      // Find document.xml content within the zip by looking for w:t tags
+      const matches = text.match(/<w:t[^>]*>([^<]*)<\/w:t>/g)
+      if (matches && matches.length > 0) {
+        return matches
+          .map(m => m.replace(/<w:t[^>]*>/, '').replace(/<\/w:t>/, ''))
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+      }
+      // Fallback: strip all XML tags
+      return text.replace(/<[^>]+>/g, ' ').replace(/[^\x20-\x7E\n]/g, '').replace(/\s+/g, ' ').trim().slice(0, 15000)
+    } catch {
+      return ''
+    }
+  }
+
   // Handle file uploads - extract text from docs/images
   const handleFileUpload = async (files: FileList | null) => {
     if (!files) return
@@ -379,27 +407,28 @@ RESPONSE RULES:
         }
         reader.readAsDataURL(file)
       } else if (isDoc) {
-        // DOCX: read as text (basic extraction)
+        // DOCX: send as base64 to AI for text extraction (like PDF)
         const reader = new FileReader()
         reader.onload = async (e) => {
-          const arrayBuffer = e.target?.result as ArrayBuffer
-          // Extract raw text from docx XML
-          try {
-            const uint8 = new Uint8Array(arrayBuffer)
-            const text = new TextDecoder().decode(uint8)
-            // Try to extract text between XML tags
-            const stripped = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-            if (stripped.length > 100) {
-              setUploadText(prev => prev + (prev ? '\n\n' : '') + stripped)
-            } else {
-              setUploadText(prev => prev + (prev ? '\n\n' : '') + `[Uploaded: ${file.name} - Paste the document text here for best results]`)
-            }
-          } catch {
-            setUploadText(prev => prev + (prev ? '\n\n' : '') + `[Uploaded: ${file.name} - Paste the document text here for best results]`)
-          }
+          const base64 = e.target?.result as string
           setUploadFiles(prev => [...prev, { name: file.name, type: 'document' }])
+          setExtracting(true)
+          try {
+            const res = await fetch('/api/ai', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                messages: [{ role: 'user', content: `I have a .docx file named "${file.name}". The raw text content extracted from it is below. Please clean it up, remove any XML artifacts or encoding noise, and return just the readable text content preserving structure.\n\nRaw content:\n${extractDocxText(new Uint8Array(base64ToArrayBuffer(base64.split(',')[1])))}` }],
+                campaignContext: { type: 'docx_extraction', systemOverride: 'You are a document text cleaner. Take the raw extracted text from a .docx file and return clean, readable text. Remove any XML tags, encoding artifacts, or binary noise. Preserve headings, paragraphs, and structure.' },
+              }),
+            })
+            const data = await res.json()
+            const text = (data.content || '').trim()
+            if (text) setUploadText(prev => prev + (prev ? '\n\n' : '') + text)
+          } catch {}
+          setExtracting(false)
         }
-        reader.readAsArrayBuffer(file)
+        reader.readAsDataURL(file)
       } else if (isVideo || isAudio) {
         // For video/audio, we note the file and prompt for transcript
         setUploadFiles(prev => [...prev, { name: file.name, type: isVideo ? 'video' : 'audio' }])
@@ -769,37 +798,61 @@ RESPONSE RULES:
             </div>
 
             {/* Sources list */}
-            <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5">
-              {sources.length === 0 ? (
-                <div className="text-center py-6">
-                  <Brain className="w-8 h-8 text-gray-200 mx-auto mb-2" />
-                  <p className="text-[10px] text-gray-400">No knowledge yet</p>
-                  <p className="text-[9px] text-gray-300 mt-0.5">Paste a ChatGPT or Claude brain dump to start</p>
+            <div className="flex-1 overflow-y-auto">
+              {sources.length > 0 && (
+                <div className="px-3 pt-2 pb-1 flex items-center justify-between">
+                  <span className="text-[9px] text-gray-400">{sources.length} knowledge source{sources.length !== 1 ? 's' : ''}</span>
+                  <button onClick={() => {
+                    if (!confirm('Clear all knowledge from Cameron AI? This cannot be undone.')) return
+                    const updated = voices.map(v => v.id === 'cameron' ? { ...v, knowledge: '', source_count: 0 } : v)
+                    saveVoices(updated)
+                  }} className="text-[9px] text-red-400 hover:text-red-600 flex items-center gap-0.5">
+                    <Trash2 className="w-2.5 h-2.5" /> Clear All
+                  </button>
                 </div>
-              ) : sources.map((src, i) => {
-                const lines = src.split('\n')
-                const sourceLine = lines.find(l => l.startsWith('[Source:'))
-                const name = sourceLine ? sourceLine.replace('[Source: ', '').replace(']', '') : `Source ${i + 1}`
-                const preview = lines.filter(l => !l.startsWith('[Source:')).join(' ').slice(0, 120)
-                return (
-                  <div key={i} className="bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <span className="text-[10px] font-bold text-np-dark">{name}</span>
-                      <button onClick={() => {
-                        const updated = voices.map(v => {
-                          if (v.id === 'cameron') {
-                            const newSources = sources.filter((_, si) => si !== i)
-                            return { ...v, knowledge: newSources.join('\n\n---\n\n'), source_count: Math.max(0, v.source_count - 1) }
-                          }
-                          return v
-                        })
-                        saveVoices(updated)
-                      }} className="text-gray-300 hover:text-red-400 p-0.5"><X className="w-2.5 h-2.5" /></button>
-                    </div>
-                    <p className="text-[9px] text-gray-500 leading-relaxed">{preview}...</p>
+              )}
+              <div className="px-3 pb-2 space-y-1.5">
+                {sources.length === 0 ? (
+                  <div className="text-center py-6">
+                    <Brain className="w-8 h-8 text-gray-200 mx-auto mb-2" />
+                    <p className="text-[10px] text-gray-400">No knowledge yet</p>
+                    <p className="text-[9px] text-gray-300 mt-0.5">Upload docs, images, or paste a brain dump</p>
                   </div>
-                )
-              })}
+                ) : sources.map((src, i) => {
+                  const lines = src.split('\n')
+                  const sourceLine = lines.find(l => l.startsWith('[Source:'))
+                  const name = sourceLine ? sourceLine.replace('[Source: ', '').replace(']', '') : `Source ${i + 1}`
+                  const isImage = name.startsWith('Image -') || src.includes('[Visual Style Reference]')
+                  const isGdoc = name.startsWith('Google Doc')
+                  const preview = lines.filter(l => !l.startsWith('[Source:') && !l.startsWith('[Visual')).join(' ').slice(0, 100)
+                  return (
+                    <div key={i} className="bg-gray-50 border border-gray-100 rounded-xl px-3 py-2 group">
+                      <div className="flex items-center justify-between mb-0.5">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {isImage ? <ImageIcon className="w-3 h-3 text-purple-400 flex-shrink-0" /> :
+                           isGdoc ? <FileText className="w-3 h-3 text-blue-400 flex-shrink-0" /> :
+                           <FileText className="w-3 h-3 text-gray-400 flex-shrink-0" />}
+                          <span className="text-[10px] font-bold text-np-dark truncate">{name}</span>
+                        </div>
+                        <button onClick={() => {
+                          const updated = voices.map(v => {
+                            if (v.id === 'cameron') {
+                              const newSources = sources.filter((_, si) => si !== i)
+                              return { ...v, knowledge: newSources.join('\n\n---\n\n'), source_count: Math.max(0, v.source_count - 1) }
+                            }
+                            return v
+                          })
+                          saveVoices(updated)
+                        }} className="text-gray-300 hover:text-red-500 p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Delete this source">
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <p className="text-[9px] text-gray-500 leading-relaxed line-clamp-2">{preview}</p>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           </div>
         </div>
