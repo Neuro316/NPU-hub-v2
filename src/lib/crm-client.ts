@@ -19,11 +19,14 @@ export async function fetchContacts(params: ContactSearchParams = {}) {
   const sb = supabase()
   let query = sb
     .from('contacts')
-    .select('*, team_members!contacts_assigned_to_fkey(display_name, email)', { count: 'exact' })
+    .select('*', { count: 'exact' })
     .is('merged_into_id', null)
     .order('updated_at', { ascending: false })
 
-  if (params.q) query = query.textSearch('search_vector', params.q, { type: 'websearch' })
+  if (params.q) {
+    // Try ilike on name/email first (more reliable than search_vector which may not be populated)
+    query = query.or(`first_name.ilike.%${params.q}%,last_name.ilike.%${params.q}%,email.ilike.%${params.q}%,phone.ilike.%${params.q}%`)
+  }
   if (params.tags?.length) query = query.overlaps('tags', params.tags)
   if (params.pipeline_stage) query = query.eq('pipeline_stage', params.pipeline_stage)
   if (params.assigned_to) query = query.eq('assigned_to', params.assigned_to)
@@ -42,10 +45,10 @@ export async function fetchContacts(params: ContactSearchParams = {}) {
 export async function fetchContact(id: string) {
   const { data, error } = await supabase()
     .from('contacts')
-    .select('*, team_members!contacts_assigned_to_fkey(*)')
+    .select('*')
     .eq('id', id)
     .single()
-  if (error) throw error
+  if (error) { console.error('fetchContact error:', error); throw error }
   return data as CrmContact
 }
 
@@ -339,13 +342,20 @@ export async function fetchKanbanColumns(orgId: string) {
 
 // ─── Team Members ───
 
-export async function fetchTeamMembers() {
-  const { data, error } = await supabase()
+export async function fetchTeamMembers(orgId?: string) {
+  let query = supabase()
     .from('team_members')
     .select('*')
     .eq('is_active', true)
     .order('display_name')
-  if (error) throw error
+
+  if (orgId) query = query.eq('org_id', orgId)
+
+  const { data, error } = await query
+  if (error) {
+    console.error('fetchTeamMembers error:', error)
+    return [] as TeamMember[]
+  }
   return (data || []) as TeamMember[]
 }
 

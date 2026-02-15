@@ -99,7 +99,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
         .order('occurred_at', { ascending: false })
         .limit(50)
       setTimeline(tl || [])
-    } catch {}
+    } catch (e) { console.error('ContactDetail load error:', e) }
     setLoading(false)
   }, [contactId])
 
