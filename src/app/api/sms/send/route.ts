@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabase } from '@/lib/supabase';
-import { sendSms } from '@/lib/twilio';
+import { getOrgTwilioConfig, sendOrgSms } from '@/lib/twilio-org';
 import {
   isDNC, logActivity, emitWebhookEvent,
   updateLastContacted, getOrCreateConversation, recordResponseTime
@@ -38,8 +38,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Contact has no phone number' }, { status: 400 });
   }
 
-  // Send via Twilio
-  const twilioMsg = await sendSms(contact.phone, body);
+  // Get org-specific Twilio config (falls back to env vars)
+  const twilioConfig = await getOrgTwilioConfig(supabase, contact.org_id);
+  if (!twilioConfig.account_sid) {
+    return NextResponse.json({ error: 'Twilio not configured for this organization. Go to CRM Settings > Twilio to add credentials.' }, { status: 400 });
+  }
+
+  // Send via org Twilio (auto-picks number based on pipeline stage)
+  const twilioMsg = await sendOrgSms(twilioConfig, contact.phone, body, 'manual', contact.pipeline_stage);
 
   // Get or create conversation
   const conversation = await getOrCreateConversation(supabase, contact_id, 'sms');
@@ -68,7 +74,7 @@ export async function POST(request: NextRequest) {
   // Update last contacted
   await updateLastContacted(supabase, contact_id);
 
-  // Track response time (if replying to inbound)
+  // Track response time
   const { data: teamMember } = await supabase
     .from('team_members')
     .select('id')

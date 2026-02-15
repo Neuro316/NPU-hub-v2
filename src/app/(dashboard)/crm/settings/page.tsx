@@ -21,7 +21,15 @@ const SECTIONS: { id: Section; label: string; icon: any }[] = [
   { id: 'compliance', label: 'Compliance', icon: Shield },
 ]
 
-interface TwilioNumber { phone: string; nickname: string; purpose: 'sms' | 'voice' | 'both' }
+type NumberPurpose = 'outreach' | 'client_relations' | 'appointments' | 'inbound_main' | 'general'
+const NUMBER_PURPOSES: { value: NumberPurpose; label: string; desc: string }[] = [
+  { value: 'outreach', label: 'Outreach', desc: 'Cold outreach, campaigns, sequences' },
+  { value: 'client_relations', label: 'Client Relations', desc: 'Enrolled clients, support' },
+  { value: 'appointments', label: 'Appointments', desc: 'Reminders, scheduling' },
+  { value: 'inbound_main', label: 'Inbound Main Line', desc: 'Primary reception number' },
+  { value: 'general', label: 'General', desc: 'Fallback for everything' },
+]
+interface TwilioNumber { phone: string; nickname: string; purpose: NumberPurpose }
 
 export default function SettingsPage() {
   const { currentOrg } = useWorkspace()
@@ -32,7 +40,7 @@ export default function SettingsPage() {
   // Settings state
   const [email, setEmail] = useState({ sending_email: '', sending_name: '', daily_limit: 500, provider: 'gmail_workspace', warmup: true })
   const [twilio, setTwilio] = useState({ account_sid: '', auth_token: '', messaging_service_sid: '', api_key: '', api_secret: '', twiml_app_sid: '' })
-  const [twilioNumbers, setTwilioNumbers] = useState<TwilioNumber[]>([{ phone: '', nickname: 'Primary', purpose: 'both' }])
+  const [twilioNumbers, setTwilioNumbers] = useState<TwilioNumber[]>([{ phone: '', nickname: 'Primary', purpose: 'general' }])
   const [ai, setAi] = useState({
     anthropic_key: '', openai_key: '', gemini_key: '',
     call_summaries: true, smart_replies: true, sentiment: true, task_gen: true,
@@ -49,7 +57,21 @@ export default function SettingsPage() {
       .then(({ data }) => {
         if (data) setEmail({ sending_email: data.sending_email || '', sending_name: data.sending_name || '', daily_limit: data.daily_send_limit || 500, provider: data.provider || 'gmail_workspace', warmup: data.warmup_enabled ?? true })
       })
-    // Load other settings from a generic org_settings table or similar
+    // Load Twilio + other settings from org_settings
+    supabase.from('org_settings').select('setting_key, setting_value').eq('org_id', currentOrg.id)
+      .in('setting_key', ['crm_twilio', 'crm_ai', 'crm_compliance', 'crm_notifications'])
+      .then(({ data }) => {
+        data?.forEach(row => {
+          const v = row.setting_value
+          if (row.setting_key === 'crm_twilio' && v) {
+            setTwilio({ account_sid: v.account_sid || '', auth_token: v.auth_token || '', messaging_service_sid: v.messaging_service_sid || '', api_key: v.api_key || '', api_secret: v.api_secret || '', twiml_app_sid: v.twiml_app_sid || '' })
+            if (v.numbers?.length) setTwilioNumbers(v.numbers)
+          }
+          if (row.setting_key === 'crm_ai' && v) setAi(prev => ({ ...prev, ...v }))
+          if (row.setting_key === 'crm_compliance' && v) setCompliance(prev => ({ ...prev, ...v }))
+          if (row.setting_key === 'crm_notifications' && v) setNotifications(prev => ({ ...prev, ...v }))
+        })
+      })
   }, [currentOrg])
 
   const handleSave = async () => {
@@ -57,7 +79,6 @@ export default function SettingsPage() {
     setSaving(true)
     try {
       const supabase = createClient()
-      // Save based on active section
       if (active === 'email') {
         await supabase.from('org_email_configs').upsert({
           org_id: currentOrg.id, provider: email.provider,
@@ -66,12 +87,33 @@ export default function SettingsPage() {
           batch_size: 50, batch_delay_seconds: 10, is_verified: false,
         }, { onConflict: 'org_id' })
       }
+      if (active === 'twilio') {
+        await supabase.from('org_settings').upsert({
+          org_id: currentOrg.id, setting_key: 'crm_twilio',
+          setting_value: { ...twilio, numbers: twilioNumbers },
+        }, { onConflict: 'org_id,setting_key' })
+      }
+      if (active === 'ai') {
+        await supabase.from('org_settings').upsert({
+          org_id: currentOrg.id, setting_key: 'crm_ai', setting_value: ai,
+        }, { onConflict: 'org_id,setting_key' })
+      }
+      if (active === 'compliance') {
+        await supabase.from('org_settings').upsert({
+          org_id: currentOrg.id, setting_key: 'crm_compliance', setting_value: compliance,
+        }, { onConflict: 'org_id,setting_key' })
+      }
+      if (active === 'notifications') {
+        await supabase.from('org_settings').upsert({
+          org_id: currentOrg.id, setting_key: 'crm_notifications', setting_value: notifications,
+        }, { onConflict: 'org_id,setting_key' })
+      }
       setSaved(true); setTimeout(() => setSaved(false), 2000)
     } catch (e) { console.error(e); alert('Failed to save settings') }
     finally { setSaving(false) }
   }
 
-  const addTwilioNumber = () => setTwilioNumbers(prev => [...prev, { phone: '', nickname: '', purpose: 'sms' }])
+  const addTwilioNumber = () => setTwilioNumbers(prev => [...prev, { phone: '', nickname: '', purpose: 'general' as NumberPurpose }])
   const removeTwilioNumber = (i: number) => setTwilioNumbers(prev => prev.filter((_, idx) => idx !== i))
 
   return (
@@ -145,6 +187,7 @@ export default function SettingsPage() {
           {active === 'twilio' && (
             <div className="space-y-4">
               <h3 className="text-sm font-bold text-np-dark">Twilio Configuration</h3>
+              <p className="text-xs text-gray-400">Enter your Twilio credentials. Each organization can have its own account for complete separation.</p>
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Account SID</label>
                   <input value={twilio.account_sid} onChange={e => setTwilio(p=>({...p,account_sid:e.target.value}))} placeholder="AC..."
@@ -157,22 +200,40 @@ export default function SettingsPage() {
                 <input value={twilio.messaging_service_sid} onChange={e => setTwilio(p=>({...p,messaging_service_sid:e.target.value}))} placeholder="MG..."
                   className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
 
+              {/* Voice SDK */}
+              <div className="border-t border-gray-100 pt-4">
+                <h4 className="text-xs font-semibold text-np-dark mb-2">Voice (Browser Calling)</h4>
+                <p className="text-[10px] text-gray-400 mb-3">Required for making calls directly from the CRM. Create an API Key and TwiML App in your Twilio Console.</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">API Key SID</label>
+                    <input value={twilio.api_key} onChange={e => setTwilio(p=>({...p,api_key:e.target.value}))} placeholder="SK..."
+                      className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
+                  <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">API Secret</label>
+                    <input type="password" value={twilio.api_secret} onChange={e => setTwilio(p=>({...p,api_secret:e.target.value}))} placeholder="••••••"
+                      className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
+                </div>
+                <div className="mt-3"><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">TwiML App SID</label>
+                  <input value={twilio.twiml_app_sid} onChange={e => setTwilio(p=>({...p,twiml_app_sid:e.target.value}))} placeholder="AP..."
+                    className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
+              </div>
+
               {/* Phone Numbers */}
-              <div>
+              <div className="border-t border-gray-100 pt-4">
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Phone Numbers</label>
                   <button onClick={addTwilioNumber} className="flex items-center gap-1 text-[10px] text-np-blue font-medium hover:underline"><Plus size={10} /> Add Number</button>
                 </div>
+                <p className="text-[10px] text-gray-400 mb-2">Assign numbers for campaigns (outreach) or clients (relationship management).</p>
                 <div className="space-y-2">
                   {twilioNumbers.map((num, i) => (
                     <div key={i} className="flex items-center gap-2 p-2.5 rounded-lg border border-gray-100 bg-gray-50/50">
                       <input value={num.phone} onChange={e => setTwilioNumbers(prev => prev.map((n,idx) => idx===i ? {...n,phone:e.target.value} : n))}
-                        placeholder="+1 828 555 1234" className="flex-1 px-2 py-1.5 text-xs border border-gray-100 rounded-md bg-white" />
+                        placeholder="+18285551234" className="w-36 px-2 py-1.5 text-xs border border-gray-100 rounded-md bg-white font-mono" />
                       <input value={num.nickname} onChange={e => setTwilioNumbers(prev => prev.map((n,idx) => idx===i ? {...n,nickname:e.target.value} : n))}
                         placeholder="Nickname" className="w-28 px-2 py-1.5 text-xs border border-gray-100 rounded-md bg-white" />
-                      <select value={num.purpose} onChange={e => setTwilioNumbers(prev => prev.map((n,idx) => idx===i ? {...n,purpose:e.target.value as any} : n))}
-                        className="w-24 px-2 py-1.5 text-xs border border-gray-100 rounded-md bg-white">
-                        <option value="sms">SMS</option><option value="voice">Voice</option><option value="both">Both</option>
+                      <select value={num.purpose} onChange={e => setTwilioNumbers(prev => prev.map((n,idx) => idx===i ? {...n,purpose:e.target.value as NumberPurpose} : n))}
+                        className="flex-1 px-2 py-1.5 text-xs border border-gray-100 rounded-md bg-white">
+                        {NUMBER_PURPOSES.map(p => <option key={p.value} value={p.value}>{p.label} - {p.desc}</option>)}
                       </select>
                       {i > 0 && <button onClick={() => removeTwilioNumber(i)} className="p-1 text-gray-400 hover:text-red-500"><Trash2 size={12} /></button>}
                     </div>

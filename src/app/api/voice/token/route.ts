@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabase } from '@/lib/supabase';
-import { generateVoiceToken } from '@/lib/twilio';
+import { getOrgTwilioConfig, generateOrgVoiceToken, getVoiceCallerId } from '@/lib/twilio-org';
 import { getOrCreateConversation, logActivity, isDNC } from '@/lib/crm-server';
 
 export async function POST(request: NextRequest) {
@@ -24,8 +24,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Contact is on DNC list' }, { status: 403 });
   }
 
-  // Generate token
-  const token = generateVoiceToken(`user-${user.id}`);
+  // Get org-specific Twilio config
+  const twilioConfig = await getOrgTwilioConfig(supabase, contact.org_id);
+  if (!twilioConfig.account_sid) {
+    return NextResponse.json({ error: 'Twilio not configured for this organization' }, { status: 400 });
+  }
+  if (!twilioConfig.api_key || !twilioConfig.api_secret || !twilioConfig.twiml_app_sid) {
+    return NextResponse.json({ error: 'Voice calling not configured. Add API Key, Secret, and TwiML App SID in CRM Settings > Twilio.' }, { status: 400 });
+  }
+
+  // Generate token and pick caller ID based on pipeline stage
+  const token = generateOrgVoiceToken(twilioConfig, `user-${user.id}`);
+  const callerId = getVoiceCallerId(twilioConfig, 'manual', contact.pipeline_stage);
 
   // Create call log
   const conversation = await getOrCreateConversation(supabase, contact_id, 'voice');
@@ -47,7 +57,7 @@ export async function POST(request: NextRequest) {
     contact_id,
     org_id: contact.org_id,
     event_type: 'call_outbound',
-    event_data: { call_log_id: callLog?.id },
+    event_data: { call_log_id: callLog?.id, caller_id: callerId },
     ref_table: 'call_logs',
     ref_id: callLog?.id,
     actor_id: user.id,
@@ -57,5 +67,6 @@ export async function POST(request: NextRequest) {
     token,
     call_log_id: callLog?.id,
     contact_phone: contact.phone,
+    caller_id: callerId,
   });
 }
