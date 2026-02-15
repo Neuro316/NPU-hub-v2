@@ -261,17 +261,18 @@ export interface CrmTask {
   // Joined
   contact?: CrmContact | null
   assigned_member?: TeamMember | null
+  custom_fields?: Record<string, any>
 }
 
 // ─── Activity & Lifecycle ───
 
 export interface ContactNote {
-  org_id?: string
-  type?: string
   id: string
+  org_id?: string
   contact_id: string
   author_id: string
   body: string
+  type?: string
   is_pinned: boolean
   created_at: string
 }

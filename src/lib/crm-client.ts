@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase-browser'
 import type {
   CrmContact, Conversation, Message, CallLog, EmailCampaign,
   CrmTask, ContactNote, LifecycleEvent, ActivityLogEntry,
-  Sequence, SequenceEnrollment, ContactSearchParams, SavedFilter,
+  Sequence, SequenceStep, SequenceEnrollment, ContactSearchParams, SavedFilter,
   TeamMember, OrgEmailDailyStats
 } from '@/types/crm'
 
@@ -278,6 +278,26 @@ export async function fetchEnrollments(contactId?: string) {
   const { data, error } = await query
   if (error) throw error
   return (data || []) as SequenceEnrollment[]
+}
+
+export async function createSequence(seq: Partial<Sequence>) {
+  const { data, error } = await supabase()
+    .from('sequences')
+    .insert(seq)
+    .select()
+    .single()
+  if (error) throw error
+  return data as Sequence
+}
+
+export async function createSequenceStep(step: Partial<SequenceStep>) {
+  const { data, error } = await supabase()
+    .from('sequence_steps')
+    .insert(step)
+    .select()
+    .single()
+  if (error) throw error
+  return data as SequenceStep
 }
 
 // ─── Team Members ───
