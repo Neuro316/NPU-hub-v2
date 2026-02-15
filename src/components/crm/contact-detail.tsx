@@ -14,6 +14,7 @@ import {
   fetchCallLogs, fetchConversations, fetchMessages
 } from '@/lib/crm-client'
 import type { CrmContact, ContactNote, CrmTask, CallLog, ActivityLogEntry } from '@/types/crm'
+import { ContactCommsButtons } from '@/components/crm/twilio-comms'
 
 interface TimelineEvent {
   id: string
@@ -182,22 +183,9 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
 
               {/* Quick contacts */}
               <div className="flex gap-2 mt-3 flex-wrap">
-                {contact.phone && (
-                  <a href={`tel:${contact.phone}`} className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors">
-                    <Phone className="w-3 h-3" /> Call
-                  </a>
-                )}
-                {contact.phone && (
-                  <a href={`sms:${contact.phone}`} className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors">
-                    <MessageCircle className="w-3 h-3" /> Text
-                  </a>
-                )}
-                {contact.email && (
-                  <a href={`mailto:${contact.email}`} className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 transition-colors">
-                    <Mail className="w-3 h-3" /> Email
-                  </a>
-                )}
+                <ContactCommsButtons contact={contact} size="md" />
                 {contact.phone && <span className="text-[9px] text-gray-400 self-center">{contact.phone}</span>}
+                {contact.email && <span className="text-[9px] text-gray-400 self-center">{contact.email}</span>}
               </div>
 
               {/* Tags */}

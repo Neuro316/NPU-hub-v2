@@ -3,15 +3,16 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
-  Plus, MoreHorizontal, Phone, Mail, MessageCircle, ChevronDown, GripVertical,
-  X, DollarSign, Pencil, Trash2, Settings, BarChart3,
-  Clock, TrendingUp, Target, Percent, Save, Palette
+  Plus, MoreHorizontal, ChevronDown, GripVertical,
+  X, DollarSign, Trash2, Settings, BarChart3,
+  Clock, TrendingUp, Target, Percent, Save
 } from 'lucide-react'
 import { fetchContacts, updateContact } from '@/lib/crm-client'
 import type { CrmContact } from '@/types/crm'
 import { PIPELINE_STAGES, STAGE_COLORS } from '@/types/crm'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
+import { ContactCommsButtons } from '@/components/crm/twilio-comms'
 
 interface PipelineStageConfig {
   id: string; name: string; color: string; is_closed_won?: boolean; is_closed_lost?: boolean; position: number
@@ -77,10 +78,8 @@ function ContactCard({ contact, stages, onMove }: { contact: CrmContact; stages:
         {daysSince !== null && daysSince > 7 && <span className="text-[9px] text-orange-400">{daysSince}d</span>}
         {value && <span className="text-[10px] font-semibold text-green-600 flex items-center gap-0.5"><DollarSign size={9} />{(value/1000).toFixed(0)}k</span>}
       </div>
-      <div className="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-all">
-        {contact.phone && <a href={`tel:${contact.phone}`} onClick={e => e.stopPropagation()} className="p-1 rounded bg-gray-50 hover:bg-green-50 transition-colors" title={`Call ${contact.phone}`}><Phone size={10} className="text-green-600" /></a>}
-        {contact.phone && <a href={`sms:${contact.phone}`} onClick={e => e.stopPropagation()} className="p-1 rounded bg-gray-50 hover:bg-blue-50 transition-colors" title={`Text ${contact.phone}`}><MessageCircle size={10} className="text-blue-500" /></a>}
-        {contact.email && <a href={`mailto:${contact.email}`} onClick={e => e.stopPropagation()} className="p-1 rounded bg-gray-50 hover:bg-amber-50 transition-colors" title={`Email ${contact.email}`}><Mail size={10} className="text-amber-600" /></a>}
+      <div className="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-all" onClick={e => e.stopPropagation()}>
+        <ContactCommsButtons contact={contact} size="sm" />
       </div>
       {showMenu && (
         <div className="absolute right-0 top-8 z-20 w-36 bg-white rounded-lg shadow-xl border border-gray-100 py-1 animate-in fade-in zoom-in-95 duration-150">
