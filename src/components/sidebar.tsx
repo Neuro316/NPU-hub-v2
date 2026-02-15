@@ -27,6 +27,7 @@ import {
   Activity,
   Image,
   Rocket,
+  Contact2,
 } from 'lucide-react'
 
 const navItems = [
@@ -45,6 +46,7 @@ const navItems = [
   { label: 'Company Library', href: '/library', icon: BookOpen },
   { label: 'Media Appearances', href: '/media-appearances', icon: Mic },
   { label: 'Support Tickets', href: '/tickets', icon: TicketCheck },
+  { label: 'CRM', href: '/crm', icon: Contact2 },
   { label: 'Analytics', href: '/analytics', icon: BarChart3 },
   { label: 'Integrations', href: '/integrations', icon: Activity },
   { label: 'Team', href: '/team', icon: Users },

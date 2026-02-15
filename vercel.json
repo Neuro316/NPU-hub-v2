@@ -1,0 +1,11 @@
+{
+  "crons": [
+    { "path": "/api/sequences/process-step", "schedule": "*/5 * * * *" },
+    { "path": "/api/sms/process-scheduled", "schedule": "* * * * *" },
+    { "path": "/api/email/campaign/process-queue", "schedule": "* * * * *" },
+    { "path": "/api/webhooks/dispatch", "schedule": "* * * * *" },
+    { "path": "/api/inbox/process-unsnooze", "schedule": "*/5 * * * *" },
+    { "path": "/api/stats/daily-rollup", "schedule": "0 1 * * *" },
+    { "path": "/api/maintenance/cleanup-recordings", "schedule": "0 3 * * *" }
+  ]
+}

@@ -76,6 +76,26 @@ MEDIA APPEARANCES (/media-appearances) - Track podcast/media appearances.
 SUPPORT TICKETS (/tickets) - Cross-app support ticket management.
 ANALYTICS (/analytics) - Platform analytics and metrics.
 AI ADVISORY (/advisory) - This page. Advisory board voices, Cameron AI, Hub Guide.
+
+CRM (/crm) - Full customer relationship management with unified identity tracking across the entire customer journey.
+- Dashboard: KPIs, pipeline funnel, acquisition funnel visualization, Mastermind lifecycle tracking
+- Contacts (/crm/contacts): Contact rolodex with 360-degree detail drawer (overview, timeline, tasks, notes, comms). Click any row to open.
+- Pipelines (/crm/pipelines): Kanban board for deal stages, drag contacts between stages
+- Analytics (/crm/analytics): Full analytics with charts for contacts, calls, emails, pipeline
+- Dialer (/crm/dialer): Call log, browser-based calling via Twilio, AI transcription
+- Messages (/crm/messages): SMS inbox with conversations and smart replies
+- Campaigns (/crm/campaigns): Email campaign builder with templates
+- Sequences (/crm/sequences): Drip sequence builder with multi-step automation
+- Tasks (/crm/tasks): CRM task management with AI extraction from call transcripts
+- Settings (/crm/settings): CRM configuration panels, Twilio, email, pipeline stages
+IDENTITY GRAPH: Tracks people from ad impression through quiz completion, nurture, enrollment, program metrics, and 6-month follow-up outcomes.
+- Quiz completions auto-link to CRM contacts via email identity resolution
+- Mastermind enrollment connects CRM contact to platform user account
+- Program data (NSCI scores, VR sessions) flows back to contact timeline
+- Sensorium EHR integration point is built in for future clinical data
+- "How do I add a contact?" → Go to CRM > Contacts, click Add Contact
+- "How do I move someone through the pipeline?" → CRM > Pipelines, drag their card between stages
+- "How do I set up SMS?" → CRM > Settings, configure Twilio credentials
 `
 
 const DEFAULT_VOICES: AdvisoryVoice[] = [
@@ -292,34 +312,6 @@ RESPONSE RULES:
     setUploadText('')
   }
 
-  // Helper: base64 to ArrayBuffer
-  const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
-    const binary = atob(base64)
-    const bytes = new Uint8Array(binary.length)
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-    return bytes.buffer
-  }
-
-  // Helper: extract text from DOCX (zip containing XML)
-  const extractDocxText = (uint8: Uint8Array): string => {
-    try {
-      const text = new TextDecoder('utf-8', { fatal: false }).decode(uint8)
-      // Find document.xml content within the zip by looking for w:t tags
-      const matches = text.match(/<w:t[^>]*>([^<]*)<\/w:t>/g)
-      if (matches && matches.length > 0) {
-        return matches
-          .map(m => m.replace(/<w:t[^>]*>/, '').replace(/<\/w:t>/, ''))
-          .join(' ')
-          .replace(/\s+/g, ' ')
-          .trim()
-      }
-      // Fallback: strip all XML tags
-      return text.replace(/<[^>]+>/g, ' ').replace(/[^\x20-\x7E\n]/g, '').replace(/\s+/g, ' ').trim().slice(0, 15000)
-    } catch {
-      return ''
-    }
-  }
-
   // Handle file uploads - extract text from docs/images
   const handleFileUpload = async (files: FileList | null) => {
     if (!files) return
@@ -407,7 +399,7 @@ RESPONSE RULES:
         }
         reader.readAsDataURL(file)
       } else if (isDoc) {
-        // DOCX: send as base64 to AI for text extraction (like PDF)
+        // DOCX: send as base64 document to AI (Claude supports DOCX natively)
         const reader = new FileReader()
         reader.onload = async (e) => {
           const base64 = e.target?.result as string
@@ -418,8 +410,11 @@ RESPONSE RULES:
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                messages: [{ role: 'user', content: `I have a .docx file named "${file.name}". The raw text content extracted from it is below. Please clean it up, remove any XML artifacts or encoding noise, and return just the readable text content preserving structure.\n\nRaw content:\n${extractDocxText(new Uint8Array(base64ToArrayBuffer(base64.split(',')[1])))}` }],
-                campaignContext: { type: 'docx_extraction', systemOverride: 'You are a document text cleaner. Take the raw extracted text from a .docx file and return clean, readable text. Remove any XML tags, encoding artifacts, or binary noise. Preserve headings, paragraphs, and structure.' },
+                messages: [{ role: 'user', content: [
+                  { type: 'document', source: { type: 'base64', media_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', data: base64.split(',')[1] } },
+                  { type: 'text', text: 'Extract all the text content from this document. Preserve the structure, headings, paragraphs, and organization. Return the full text content.' }
+                ] }],
+                campaignContext: { type: 'docx_extraction', systemOverride: 'You are a document text extraction system. Extract all readable text from the provided document, preserving headings, paragraphs, and structure. Return the complete text content.' },
               }),
             })
             const data = await res.json()
