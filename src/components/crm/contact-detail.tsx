@@ -78,27 +78,27 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
     if (!contactId) return
     setLoading(true)
     try {
-      const [c, n, t, cl] = await Promise.all([
-        fetchContact(contactId),
-        fetchNotes(contactId),
-        fetchTasks({ contact_id: contactId }),
-        fetchCallLogs(contactId, 10),
-      ])
+      // Load contact first - this is required
+      const c = await fetchContact(contactId)
       setContact(c)
-      setNotes(n)
-      setTasks(t)
-      setCalls(cl)
 
-      // Fetch timeline from contact_timeline table
-      const { createClient } = await import('@/lib/supabase-browser')
-      const sb = createClient()
-      const { data: tl } = await sb
-        .from('contact_timeline')
-        .select('*')
-        .eq('contact_id', contactId)
-        .order('occurred_at', { ascending: false })
-        .limit(50)
-      setTimeline(tl || [])
+      // Load supplemental data independently - don't block on failures
+      fetchNotes(contactId).then(setNotes).catch(e => console.warn('Notes load skipped:', e))
+      fetchTasks({ contact_id: contactId }).then(setTasks).catch(e => console.warn('Tasks load skipped:', e))
+      fetchCallLogs(contactId, 10).then(setCalls).catch(e => console.warn('Calls load skipped:', e))
+
+      // Timeline
+      try {
+        const { createClient } = await import('@/lib/supabase-browser')
+        const sb = createClient()
+        const { data } = await sb
+          .from('contact_timeline')
+          .select('*')
+          .eq('contact_id', contactId)
+          .order('occurred_at', { ascending: false })
+          .limit(50)
+        setTimeline(data || [])
+      } catch (e) { console.warn('Timeline load skipped:', e) }
     } catch (e) { console.error('ContactDetail load error:', e) }
     setLoading(false)
   }, [contactId])
