@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
-  Plus, MoreHorizontal, Phone, Mail, ChevronDown, GripVertical,
+  Plus, MoreHorizontal, Phone, Mail, MessageCircle, ChevronDown, GripVertical,
   X, DollarSign, Pencil, Trash2, Settings, BarChart3,
   Clock, TrendingUp, Target, Percent, Save, Palette
 } from 'lucide-react'
@@ -58,7 +58,11 @@ function ContactCard({ contact, stages, onMove }: { contact: CrmContact; stages:
   const daysSince = contact.last_contacted_at ? Math.floor((Date.now() - new Date(contact.last_contacted_at).getTime()) / 86400000) : null
 
   return (
-    <div className="group relative bg-white rounded-lg border border-gray-100/60 p-3 hover:shadow-md hover:border-np-blue/30 transition-all cursor-pointer">
+    <div
+      draggable
+      onDragStart={e => { e.dataTransfer.setData('contactId', contact.id); e.dataTransfer.effectAllowed = 'move' }}
+      className="group relative bg-white rounded-lg border border-gray-100/60 p-3 hover:shadow-md hover:border-np-blue/30 transition-all cursor-grab active:cursor-grabbing active:opacity-70"
+    >
       <div className="flex items-start gap-2.5">
         <div className="w-7 h-7 rounded-full bg-gradient-to-br from-teal/80 to-np-dark/80 flex items-center justify-center text-[9px] font-bold text-white flex-shrink-0">{initials}</div>
         <div className="flex-1 min-w-0">
@@ -74,8 +78,9 @@ function ContactCard({ contact, stages, onMove }: { contact: CrmContact; stages:
         {value && <span className="text-[10px] font-semibold text-green-600 flex items-center gap-0.5"><DollarSign size={9} />{(value/1000).toFixed(0)}k</span>}
       </div>
       <div className="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-all">
-        <button className="p-1 rounded bg-gray-50 hover:bg-np-blue/10 transition-colors"><Phone size={10} className="text-gray-400" /></button>
-        <button className="p-1 rounded bg-gray-50 hover:bg-np-blue/10 transition-colors"><Mail size={10} className="text-gray-400" /></button>
+        {contact.phone && <a href={`tel:${contact.phone}`} onClick={e => e.stopPropagation()} className="p-1 rounded bg-gray-50 hover:bg-green-50 transition-colors" title={`Call ${contact.phone}`}><Phone size={10} className="text-green-600" /></a>}
+        {contact.phone && <a href={`sms:${contact.phone}`} onClick={e => e.stopPropagation()} className="p-1 rounded bg-gray-50 hover:bg-blue-50 transition-colors" title={`Text ${contact.phone}`}><MessageCircle size={10} className="text-blue-500" /></a>}
+        {contact.email && <a href={`mailto:${contact.email}`} onClick={e => e.stopPropagation()} className="p-1 rounded bg-gray-50 hover:bg-amber-50 transition-colors" title={`Email ${contact.email}`}><Mail size={10} className="text-amber-600" /></a>}
       </div>
       {showMenu && (
         <div className="absolute right-0 top-8 z-20 w-36 bg-white rounded-lg shadow-xl border border-gray-100 py-1 animate-in fade-in zoom-in-95 duration-150">
@@ -304,7 +309,12 @@ export default function PipelinesPage() {
                 <div className="flex-1" />
                 {sv > 0 && <span className="text-[10px] font-medium text-green-600">${(sv/1000).toFixed(0)}k</span>}
               </div>
-              <div className="space-y-2 min-h-[200px] rounded-xl bg-gray-50/50 p-2 border border-gray-100/30">
+              <div
+                className="space-y-2 min-h-[200px] rounded-xl bg-gray-50/50 p-2 border border-gray-100/30 transition-colors"
+                onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('bg-np-blue/5', 'border-np-blue/30'); e.currentTarget.classList.remove('bg-gray-50/50', 'border-gray-100/30') }}
+                onDragLeave={e => { e.currentTarget.classList.remove('bg-np-blue/5', 'border-np-blue/30'); e.currentTarget.classList.add('bg-gray-50/50', 'border-gray-100/30') }}
+                onDrop={e => { e.preventDefault(); e.currentTarget.classList.remove('bg-np-blue/5', 'border-np-blue/30'); e.currentTarget.classList.add('bg-gray-50/50', 'border-gray-100/30'); const cid = e.dataTransfer.getData('contactId'); if (cid) moveContact(cid, stage.name) }}
+              >
                 {sc.map(c => <ContactCard key={c.id} contact={c} stages={activePipeline.stages} onMove={s => moveContact(c.id, s)} />)}
                 {sc.length === 0 && <div className="text-center py-8 text-[10px] text-gray-400">No contacts</div>}
               </div>
