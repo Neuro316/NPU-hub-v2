@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Phone, PhoneOff, MessageCircle, Send, X, Mic, MicOff, Volume2 } from 'lucide-react'
+import { Phone, PhoneOff, MessageCircle, Send, X, Mic, MicOff, Volume2, Plus } from 'lucide-react'
 import type { CrmContact } from '@/types/crm'
+import { updateContact } from '@/lib/crm-client'
 
 // ── SMS Compose Modal ──
 
@@ -84,6 +85,54 @@ export function SmsCompose({ contact, onClose, onSent }: {
   )
 }
 
+// ── No Phone Prompt ──
+
+function NoPhonePrompt({ contact, onClose, onSaved }: {
+  contact: CrmContact
+  onClose: () => void
+  onSaved?: (phone: string) => void
+}) {
+  const [phone, setPhone] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const handleSave = async () => {
+    if (!phone.trim()) return
+    setSaving(true)
+    try {
+      await updateContact(contact.id, { phone: phone.trim() })
+      onSaved?.(phone.trim())
+      onClose()
+    } catch { alert('Failed to save phone number') }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
+      <div className="w-full max-w-xs bg-white rounded-xl shadow-2xl border border-gray-100 p-4 animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-2 mb-3">
+          <Phone size={14} className="text-green-500" />
+          <h3 className="text-sm font-bold text-np-dark">Add Phone Number</h3>
+        </div>
+        <p className="text-xs text-gray-400 mb-3">{contact.first_name} {contact.last_name} doesn't have a phone number yet.</p>
+        <input
+          value={phone} onChange={e => setPhone(e.target.value)}
+          placeholder="+1 (828) 555-1234"
+          className="w-full px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-green-300"
+          autoFocus
+          onKeyDown={e => { if (e.key === 'Enter') handleSave() }}
+        />
+        <div className="flex justify-end gap-2 mt-3">
+          <button onClick={onClose} className="px-3 py-1.5 text-xs text-gray-400">Cancel</button>
+          <button onClick={handleSave} disabled={saving || !phone.trim()}
+            className="px-3 py-1.5 bg-green-500 text-white text-xs font-medium rounded-lg disabled:opacity-40 hover:bg-green-600 transition-colors">
+            {saving ? 'Saving...' : 'Save & Continue'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── VoIP Call Interface ──
 
 type CallState = 'idle' | 'connecting' | 'ringing' | 'connected' | 'ended' | 'error'
@@ -105,7 +154,6 @@ export function VoipCall({ contact, onClose, onEnded }: {
     setCallState('connecting')
     setError('')
     try {
-      // Get token from API
       const res = await fetch('/api/voice/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -114,7 +162,6 @@ export function VoipCall({ contact, onClose, onEnded }: {
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'Failed to connect'); setCallState('error'); return }
 
-      // Dynamic import of Twilio Voice SDK
       const { Device } = await import('@twilio/voice-sdk')
 
       const device = new Device(data.token, {
@@ -124,15 +171,8 @@ export function VoipCall({ contact, onClose, onEnded }: {
 
       deviceRef.current = device
 
-      device.on('registered', () => {
-        console.log('Twilio device registered')
-      })
-
-      // Connect call
       const call = await device.connect({
-        params: {
-          To: data.contact_phone,
-        }
+        params: { To: data.contact_phone }
       })
 
       callRef.current = call
@@ -178,12 +218,8 @@ export function VoipCall({ contact, onClose, onEnded }: {
   }, [startCall])
 
   const handleHangup = () => {
-    if (callRef.current) {
-      try { callRef.current.disconnect() } catch {}
-    }
-    if (deviceRef.current) {
-      try { deviceRef.current.destroy() } catch {}
-    }
+    if (callRef.current) try { callRef.current.disconnect() } catch {}
+    if (deviceRef.current) try { deviceRef.current.destroy() } catch {}
     setCallState('ended')
     if (timerRef.current) clearInterval(timerRef.current)
     onEnded?.()
@@ -216,7 +252,6 @@ export function VoipCall({ contact, onClose, onEnded }: {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="w-72 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden animate-in zoom-in-95 duration-200">
-        {/* Header */}
         <div className="px-6 pt-6 pb-4 text-center" style={{ background: cfg.color + '08' }}>
           <div className={`w-16 h-16 mx-auto rounded-full flex items-center justify-center mb-3 ${cfg.pulse ? 'animate-pulse' : ''}`}
             style={{ background: cfg.color + '20' }}>
@@ -227,11 +262,8 @@ export function VoipCall({ contact, onClose, onEnded }: {
           <p className="text-xs font-medium mt-2" style={{ color: cfg.color }}>{cfg.label}</p>
         </div>
 
-        {error && (
-          <div className="px-4 py-2 bg-red-50 text-[10px] text-red-600 text-center">{error}</div>
-        )}
+        {error && <div className="px-4 py-2 bg-red-50 text-[10px] text-red-600 text-center">{error}</div>}
 
-        {/* Controls */}
         <div className="flex items-center justify-center gap-4 p-5">
           {callState === 'connected' && (
             <button onClick={toggleMute}
@@ -265,40 +297,86 @@ export function VoipCall({ contact, onClose, onEnded }: {
   )
 }
 
-// ── Inline Action Buttons (for use in cards, lists, etc.) ──
+// ── Inline Action Buttons (always visible) ──
 
-export function ContactCommsButtons({ contact, size = 'sm' }: {
+export function ContactCommsButtons({ contact, size = 'sm', onContactUpdated }: {
   contact: CrmContact
   size?: 'sm' | 'md'
+  onContactUpdated?: (updated: Partial<CrmContact>) => void
 }) {
   const [showSms, setShowSms] = useState(false)
   const [showCall, setShowCall] = useState(false)
+  const [showAddPhone, setShowAddPhone] = useState(false)
+  const [localPhone, setLocalPhone] = useState(contact.phone || '')
 
-  const px = size === 'sm' ? 'p-1' : 'p-1.5'
+  const hasPhone = !!(localPhone || contact.phone)
+  const px = size === 'sm' ? 'p-1' : 'px-2.5 py-1.5'
   const iconSize = size === 'sm' ? 10 : 13
+  const labelClass = size === 'md' ? 'text-[10px] font-medium' : ''
+
+  const handlePhoneSaved = (phone: string) => {
+    setLocalPhone(phone)
+    onContactUpdated?.({ phone })
+  }
 
   return (
     <>
       <div className="flex gap-1" onClick={e => e.stopPropagation()}>
-        {contact.phone && (
-          <button onClick={() => setShowCall(true)} className={`${px} rounded bg-green-50 hover:bg-green-100 transition-colors`} title={`Call ${contact.phone}`}>
-            <Phone size={iconSize} className="text-green-600" />
-          </button>
-        )}
-        {contact.phone && (
-          <button onClick={() => setShowSms(true)} className={`${px} rounded bg-blue-50 hover:bg-blue-100 transition-colors`} title={`Text ${contact.phone}`}>
-            <MessageCircle size={iconSize} className="text-blue-500" />
-          </button>
-        )}
-        {contact.email && (
-          <a href={`mailto:${contact.email}`} className={`${px} rounded bg-amber-50 hover:bg-amber-100 transition-colors`} title={`Email ${contact.email}`}>
+        {/* Call */}
+        <button
+          onClick={() => hasPhone ? setShowCall(true) : setShowAddPhone(true)}
+          className={`${px} rounded flex items-center gap-1 transition-colors ${hasPhone ? 'bg-green-50 hover:bg-green-100' : 'bg-gray-50 hover:bg-gray-100'}`}
+          title={hasPhone ? `Call ${localPhone || contact.phone}` : 'Add phone to call'}
+        >
+          <Phone size={iconSize} className={hasPhone ? 'text-green-600' : 'text-gray-400'} />
+          {size === 'md' && <span className={`${labelClass} ${hasPhone ? 'text-green-700' : 'text-gray-400'}`}>Call</span>}
+        </button>
+
+        {/* Text */}
+        <button
+          onClick={() => hasPhone ? setShowSms(true) : setShowAddPhone(true)}
+          className={`${px} rounded flex items-center gap-1 transition-colors ${hasPhone ? 'bg-blue-50 hover:bg-blue-100' : 'bg-gray-50 hover:bg-gray-100'}`}
+          title={hasPhone ? `Text ${localPhone || contact.phone}` : 'Add phone to text'}
+        >
+          <MessageCircle size={iconSize} className={hasPhone ? 'text-blue-500' : 'text-gray-400'} />
+          {size === 'md' && <span className={`${labelClass} ${hasPhone ? 'text-blue-700' : 'text-gray-400'}`}>Text</span>}
+        </button>
+
+        {/* Email */}
+        {contact.email ? (
+          <a href={`mailto:${contact.email}`}
+            className={`${px} rounded flex items-center gap-1 bg-amber-50 hover:bg-amber-100 transition-colors`}
+            title={`Email ${contact.email}`}>
             <Send size={iconSize} className="text-amber-600" />
+            {size === 'md' && <span className={`${labelClass} text-amber-700`}>Email</span>}
           </a>
+        ) : (
+          <span className={`${px} rounded flex items-center gap-1 bg-gray-50 cursor-default`} title="No email">
+            <Send size={iconSize} className="text-gray-300" />
+            {size === 'md' && <span className={`${labelClass} text-gray-400`}>Email</span>}
+          </span>
         )}
       </div>
 
-      {showSms && <SmsCompose contact={contact} onClose={() => setShowSms(false)} />}
-      {showCall && <VoipCall contact={contact} onClose={() => setShowCall(false)} />}
+      {showAddPhone && (
+        <NoPhonePrompt
+          contact={{ ...contact, phone: localPhone || contact.phone }}
+          onClose={() => setShowAddPhone(false)}
+          onSaved={handlePhoneSaved}
+        />
+      )}
+      {showSms && hasPhone && (
+        <SmsCompose
+          contact={{ ...contact, phone: localPhone || contact.phone }}
+          onClose={() => setShowSms(false)}
+        />
+      )}
+      {showCall && hasPhone && (
+        <VoipCall
+          contact={{ ...contact, phone: localPhone || contact.phone }}
+          onClose={() => setShowCall(false)}
+        />
+      )}
     </>
   )
 }

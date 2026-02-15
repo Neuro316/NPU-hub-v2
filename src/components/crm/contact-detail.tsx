@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import {
   fetchContact, updateContact, fetchNotes, createNote,
-  fetchActivityLog, fetchTasks, createTask, fetchLifecycleEvents,
+  fetchActivityLog, fetchTasks, createTask, updateTask, fetchLifecycleEvents,
   fetchCallLogs, fetchConversations, fetchMessages
 } from '@/lib/crm-client'
 import type { CrmContact, ContactNote, CrmTask, CallLog, ActivityLogEntry } from '@/types/crm'
@@ -74,6 +74,9 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
   const [newTag, setNewTag] = useState('')
   const [editing, setEditing] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [showTaskCreate, setShowTaskCreate] = useState(false)
+  const [taskCreating, setTaskCreating] = useState(false)
+  const [taskForm, setTaskForm] = useState({ title: '', description: '', priority: 'medium', due_date: '', kanban_column: '' })
 
   const load = useCallback(async () => {
     if (!contactId) return
@@ -133,6 +136,40 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
     await updateContact(contact.id, { tags })
     load()
     onUpdate?.()
+  }
+
+  const handleCreateTask = async () => {
+    if (!taskForm.title.trim() || !contact) return
+    setTaskCreating(true)
+    try {
+      const customFields: Record<string, any> = {}
+      if (taskForm.kanban_column) customFields.kanban_column = taskForm.kanban_column
+      const created = await createTask({
+        org_id: contact.org_id, title: taskForm.title, description: taskForm.description || undefined,
+        priority: taskForm.priority as any, status: 'todo', due_date: taskForm.due_date || undefined,
+        contact_id: contact.id, source: 'manual', created_by: contact.org_id,
+        custom_fields: Object.keys(customFields).length ? customFields : undefined,
+      })
+      setTasks(prev => [created, ...prev])
+      setTaskForm({ title: '', description: '', priority: 'medium', due_date: '', kanban_column: '' })
+      setShowTaskCreate(false)
+    } catch (e) { console.error(e); alert('Failed to create task') }
+    finally { setTaskCreating(false) }
+  }
+
+  const handleToggleTask = async (task: CrmTask) => {
+    const newStatus = task.status === 'done' ? 'todo' : 'done'
+    try {
+      await updateTask(task.id, { status: newStatus })
+      setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t))
+    } catch (e) { console.error(e) }
+  }
+
+  const handleChangeTaskStatus = async (taskId: string, status: string) => {
+    try {
+      await updateTask(taskId, { status: status as any })
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: status as any } : t))
+    } catch (e) { console.error(e) }
   }
 
   const TABS = [
@@ -369,30 +406,86 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
               {/* TASKS TAB */}
               {tab === 'tasks' && (
                 <>
-                  <div className="space-y-1.5">
-                    {tasks.map(task => (
-                      <div key={task.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-100 ${task.status === 'done' ? 'opacity-50' : ''}`}>
-                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${
-                          task.status === 'done' ? 'border-green-500 bg-green-500' : 'border-gray-300'
-                        }`}>
-                          {task.status === 'done' && <CheckCircle2 className="w-2.5 h-2.5 text-white" />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className={`text-[11px] font-medium ${task.status === 'done' ? 'line-through text-gray-400' : 'text-np-dark'}`}>{task.title}</p>
-                          {task.due_date && (
-                            <p className="text-[9px] text-gray-400 flex items-center gap-0.5">
-                              <Calendar className="w-2.5 h-2.5" /> {new Date(task.due_date).toLocaleDateString()}
-                            </p>
-                          )}
-                        </div>
-                        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${
-                          task.priority === 'high' ? 'bg-red-50 text-red-600' :
-                          task.priority === 'medium' ? 'bg-amber-50 text-amber-600' : 'bg-gray-50 text-gray-500'
-                        }`}>{task.priority}</span>
+                  {/* Create Task */}
+                  {showTaskCreate ? (
+                    <div className="border border-gray-100 rounded-lg p-3 mb-3 bg-gray-50/50">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">New Task</p>
+                        <button onClick={() => setShowTaskCreate(false)} className="p-0.5 hover:bg-gray-100 rounded"><X className="w-3 h-3 text-gray-400" /></button>
                       </div>
-                    ))}
+                      <input value={taskForm.title} onChange={e => setTaskForm(p => ({ ...p, title: e.target.value }))}
+                        placeholder="Task title..." autoFocus
+                        className="w-full px-2.5 py-1.5 text-xs border border-gray-100 rounded-md mb-2 focus:outline-none focus:ring-1 focus:ring-teal/30" />
+                      <textarea value={taskForm.description} onChange={e => setTaskForm(p => ({ ...p, description: e.target.value }))}
+                        rows={2} placeholder="Description (optional)"
+                        className="w-full px-2.5 py-1.5 text-xs border border-gray-100 rounded-md mb-2 focus:outline-none focus:ring-1 focus:ring-teal/30" />
+                      <div className="grid grid-cols-3 gap-2 mb-2">
+                        <select value={taskForm.priority} onChange={e => setTaskForm(p => ({ ...p, priority: e.target.value }))}
+                          className="px-2 py-1.5 text-[10px] border border-gray-100 rounded-md">
+                          <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option>
+                        </select>
+                        <input type="date" value={taskForm.due_date} onChange={e => setTaskForm(p => ({ ...p, due_date: e.target.value }))}
+                          className="px-2 py-1.5 text-[10px] border border-gray-100 rounded-md" />
+                        <select value={taskForm.kanban_column} onChange={e => setTaskForm(p => ({ ...p, kanban_column: e.target.value }))}
+                          className="px-2 py-1.5 text-[10px] border border-gray-100 rounded-md">
+                          <option value="">No Column</option><option value="To Do">To Do</option><option value="In Progress">In Progress</option><option value="Review">Review</option><option value="Done">Done</option>
+                        </select>
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <button onClick={() => setShowTaskCreate(false)} className="px-2 py-1 text-[10px] text-gray-400">Cancel</button>
+                        <button onClick={handleCreateTask} disabled={!taskForm.title.trim() || taskCreating}
+                          className="px-3 py-1.5 bg-np-blue text-white text-[10px] font-medium rounded-md disabled:opacity-40 hover:bg-np-dark transition-colors">
+                          {taskCreating ? 'Creating...' : 'Create'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => setShowTaskCreate(true)}
+                      className="flex items-center gap-1.5 px-3 py-2 w-full border border-dashed border-gray-200 rounded-lg text-[10px] text-gray-400 hover:border-np-blue hover:text-np-blue transition-colors mb-3">
+                      <Plus className="w-3 h-3" /> Add Task
+                    </button>
+                  )}
+
+                  {/* Task List */}
+                  <div className="space-y-1.5">
+                    {tasks.map(task => {
+                      const isOverdue = task.due_date && task.status !== 'done' && new Date(task.due_date) < new Date()
+                      const priColors: Record<string,string> = { urgent: '#dc2626', high: '#d97706', medium: '#2563eb', low: '#6b7280' }
+                      const raci = task.custom_fields?.raci as Record<string,string> | undefined
+                      const kanban = task.custom_fields?.kanban_column as string | undefined
+                      const files = (task.custom_fields?.files as any[]) || []
+                      return (
+                        <div key={task.id} className={`px-3 py-2.5 rounded-lg border border-gray-100 hover:border-np-blue/20 transition-all ${task.status === 'done' ? 'opacity-50' : ''}`}>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => handleToggleTask(task)}
+                              className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${task.status === 'done' ? 'border-green-500 bg-green-500' : 'border-gray-300 hover:border-np-blue'}`}>
+                              {task.status === 'done' && <CheckCircle2 className="w-2.5 h-2.5 text-white" />}
+                            </button>
+                            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: priColors[task.priority] || '#6b7280' }} />
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-[11px] font-medium ${task.status === 'done' ? 'line-through text-gray-400' : 'text-np-dark'}`}>{task.title}</p>
+                              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                {task.due_date && (
+                                  <span className={`text-[9px] flex items-center gap-0.5 ${isOverdue ? 'text-red-500 font-semibold' : 'text-gray-400'}`}>
+                                    <Calendar className="w-2.5 h-2.5" /> {new Date(task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}{isOverdue && ' !'}
+                                  </span>
+                                )}
+                                {kanban && <span className="text-[8px] px-1 py-0.5 rounded bg-purple-50 text-purple-600 font-medium">{kanban}</span>}
+                                {raci?.responsible && <span className="text-[8px] px-1 py-0.5 rounded bg-teal/10 text-teal font-medium">R: {raci.responsible.slice(0,8)}</span>}
+                                {files.length > 0 && <span className="text-[8px] px-1 py-0.5 rounded bg-gray-50 text-gray-400">{files.length} file{files.length>1?'s':''}</span>}
+                              </div>
+                            </div>
+                            <select value={task.status} onChange={e => handleChangeTaskStatus(task.id, e.target.value)}
+                              className="text-[9px] bg-gray-50 border-none rounded px-1.5 py-0.5 font-medium text-gray-500">
+                              <option value="todo">To Do</option><option value="in_progress">In Progress</option><option value="done">Done</option><option value="cancelled">Cancelled</option>
+                            </select>
+                          </div>
+                          {task.description && <p className="text-[10px] text-gray-400 mt-1 ml-8">{task.description}</p>}
+                        </div>
+                      )
+                    })}
                   </div>
-                  {tasks.length === 0 && <p className="text-center text-[10px] text-gray-400 py-8">No tasks</p>}
+                  {tasks.length === 0 && !showTaskCreate && <p className="text-center text-[10px] text-gray-400 py-8">No tasks for this contact</p>}
                 </>
               )}
 

@@ -36,6 +36,7 @@ export default function SettingsPage() {
   const [active, setActive] = useState<Section>('general')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [twilioTest, setTwilioTest] = useState<{ loading: boolean; result: any | null }>({ loading: false, result: null })
 
   // Settings state
   const [email, setEmail] = useState({ sending_email: '', sending_name: '', daily_limit: 500, provider: 'gmail_workspace', warmup: true })
@@ -151,6 +152,20 @@ export default function SettingsPage() {
                   <option value="America/Los_Angeles">Pacific (PT)</option>
                 </select>
               </div>
+
+              {/* Data Backup */}
+              <div className="border-t border-gray-100 pt-4">
+                <h4 className="text-xs font-semibold text-np-dark mb-1">Data Backup</h4>
+                <p className="text-[10px] text-gray-400 mb-3">Download a full backup of all CRM data: contacts, tasks, calls, messages, campaigns, settings, and more. Your data in Supabase is safe across deployments, but regular backups are recommended.</p>
+                <a
+                  href="/api/backup"
+                  download
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark transition-colors"
+                >
+                  <Save size={13} /> Download Full Backup
+                </a>
+                <p className="text-[9px] text-gray-400 mt-2">Exports as JSON. Sensitive keys (Twilio tokens) are automatically redacted.</p>
+              </div>
             </div>
           )}
 
@@ -239,6 +254,64 @@ export default function SettingsPage() {
                     </div>
                   ))}
                 </div>
+              </div>
+
+              {/* Test Connection */}
+              <div className="border-t border-gray-100 pt-4">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={async () => {
+                      if (!currentOrg) return
+                      setTwilioTest({ loading: true, result: null })
+                      try {
+                        const res = await fetch('/api/twilio/test', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ org_id: currentOrg.id }),
+                        })
+                        const data = await res.json()
+                        setTwilioTest({ loading: false, result: data })
+                      } catch (e) {
+                        setTwilioTest({ loading: false, result: { success: false, error: 'Network error' } })
+                      }
+                    }}
+                    disabled={twilioTest.loading}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark disabled:opacity-50 transition-colors"
+                  >
+                    {twilioTest.loading ? 'Testing...' : 'Test Connection'}
+                  </button>
+                  <p className="text-[10px] text-gray-400">Save first, then test to verify credentials</p>
+                </div>
+
+                {twilioTest.result && (
+                  <div className={`mt-3 rounded-lg border p-3 ${twilioTest.result.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                    <p className={`text-xs font-semibold mb-2 ${twilioTest.result.success ? 'text-green-700' : 'text-red-700'}`}>
+                      {twilioTest.result.success ? '✓ Connected successfully' : '✗ ' + twilioTest.result.error}
+                    </p>
+                    {twilioTest.result.checks && (
+                      <div className="space-y-1">
+                        {Object.entries(twilioTest.result.checks).map(([key, val]) => {
+                          if (key.startsWith('account_') || key.startsWith('messaging_name') || key.startsWith('number_details')) return null
+                          const isOk = val === true
+                          const isFail = val === false
+                          const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+                          return (
+                            <div key={key} className="flex items-center gap-2 text-[10px]">
+                              <span className={isOk ? 'text-green-600' : isFail ? 'text-red-500' : 'text-amber-500'}>
+                                {isOk ? '✓' : isFail ? '✗' : '⚠'}
+                              </span>
+                              <span className="text-gray-600 font-medium">{label}:</span>
+                              <span className="text-gray-500">{typeof val === 'string' ? val : isOk ? 'OK' : 'Not configured'}</span>
+                            </div>
+                          )
+                        })}
+                        {twilioTest.result.checks.account_name && (
+                          <p className="text-[9px] text-gray-400 mt-1">Account: {twilioTest.result.checks.account_name}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           )}
