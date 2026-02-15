@@ -1,10 +1,18 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+<<<<<<< ours
 import { Plus, Mail, MessageCircle, Send, Pause, Play, Eye, Copy, BarChart3, Clock, CheckCircle2, AlertTriangle, Search, X } from 'lucide-react'
 import { useWorkspace } from '@/lib/workspace-context'
+=======
+import {
+  Plus, Mail, Send, Pause, Clock, CheckCircle2, AlertTriangle,
+  Search, Eye, Copy, BarChart3, MessageCircle, Calendar
+} from 'lucide-react'
+>>>>>>> theirs
 import { fetchCampaigns, createCampaign } from '@/lib/crm-client'
 import type { EmailCampaign, CampaignStatus } from '@/types/crm'
+import { useWorkspace } from '@/lib/workspace-context'
 
 const STATUS_CONFIG: Record<CampaignStatus, { label: string; color: string; bg: string; icon: any }> = {
   draft: { label: 'Draft', color: '#6b7280', bg: '#f3f4f6', icon: Mail },
@@ -18,11 +26,17 @@ const STATUS_CONFIG: Record<CampaignStatus, { label: string; color: string; bg: 
 function CampaignCard({ campaign }: { campaign: EmailCampaign }) {
   const config = STATUS_CONFIG[campaign.status]
   const Icon = config.icon
+<<<<<<< ours
   const channelIcon = (campaign as any).channel === 'sms' ? MessageCircle : Mail
+=======
+  const channel = (campaign.filter_criteria as any)?.channel || 'email'
+  const ChannelIcon = channel === 'sms' ? MessageCircle : Mail
+>>>>>>> theirs
 
   return (
     <div className="rounded-xl border border-gray-100 bg-white p-4 hover:shadow-md hover:border-np-blue/20 transition-all cursor-pointer">
       <div className="flex items-start justify-between mb-3">
+<<<<<<< ours
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
             {(campaign as any).channel === 'sms'
@@ -34,6 +48,19 @@ function CampaignCard({ campaign }: { campaign: EmailCampaign }) {
           <p className="text-[10px] text-gray-400 mt-0.5 truncate">{campaign.subject}</p>
         </div>
         <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold flex-shrink-0" style={{ color: config.color, background: config.bg }}>
+=======
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${channel === 'sms' ? 'bg-green-50 text-green-500' : 'bg-blue-50 text-blue-500'}`}>
+            <ChannelIcon size={14} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h4 className="text-sm font-semibold text-np-dark truncate">{campaign.name}</h4>
+            <p className="text-[10px] text-gray-400 mt-0.5 truncate">{campaign.subject}</p>
+          </div>
+        </div>
+        <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold flex-shrink-0"
+          style={{ color: config.color, background: config.bg }}>
+>>>>>>> theirs
           <Icon size={10} /> {config.label}
         </span>
       </div>
@@ -45,9 +72,15 @@ function CampaignCard({ campaign }: { campaign: EmailCampaign }) {
       <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100/50">
         <span className="text-[10px] text-gray-400">{campaign.created_at ? new Date(campaign.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : ''}</span>
         <div className="flex gap-1">
+<<<<<<< ours
           <button className="p-1 rounded hover:bg-gray-50" title="Preview"><Eye size={12} className="text-gray-400" /></button>
           <button className="p-1 rounded hover:bg-gray-50" title="Duplicate"><Copy size={12} className="text-gray-400" /></button>
           <button className="p-1 rounded hover:bg-gray-50" title="Stats"><BarChart3 size={12} className="text-gray-400" /></button>
+=======
+          <button className="p-1 rounded hover:bg-gray-50 transition-colors" title="Preview"><Eye size={12} className="text-gray-400" /></button>
+          <button className="p-1 rounded hover:bg-gray-50 transition-colors" title="Duplicate"><Copy size={12} className="text-gray-400" /></button>
+          <button className="p-1 rounded hover:bg-gray-50 transition-colors" title="Stats"><BarChart3 size={12} className="text-gray-400" /></button>
+>>>>>>> theirs
         </div>
       </div>
     </div>
@@ -57,14 +90,26 @@ function CampaignCard({ campaign }: { campaign: EmailCampaign }) {
 const EMPTY = { name: '', subject: '', body_html: '', channel: 'email' as 'email' | 'sms', scheduled_at: '' }
 
 export default function CampaignsPage() {
+<<<<<<< ours
   const { currentOrg } = useWorkspace()
+=======
+  const { currentOrg, user } = useWorkspace()
+>>>>>>> theirs
   const [campaigns, setCampaigns] = useState<EmailCampaign[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('')
   const [search, setSearch] = useState('')
   const [showCreate, setShowCreate] = useState(false)
+<<<<<<< ours
   const [form, setForm] = useState(EMPTY)
   const [saving, setSaving] = useState(false)
+=======
+  const [creating, setCreating] = useState(false)
+  const [form, setForm] = useState({
+    name: '', subject: '', body_html: '', channel: 'email' as 'email' | 'sms',
+    scheduled_at: '',
+  })
+>>>>>>> theirs
 
   useEffect(() => {
     fetchCampaigns().then(setCampaigns).catch(console.error).finally(() => setLoading(false))
@@ -77,30 +122,56 @@ export default function CampaignsPage() {
   })
 
   const handleCreate = async () => {
+<<<<<<< ours
     if (!form.name || !form.subject || !currentOrg) return
     setSaving(true)
+=======
+    if (!form.name || !currentOrg) return
+    if (form.channel === 'email' && !form.subject) return
+    setCreating(true)
+>>>>>>> theirs
     try {
       const created = await createCampaign({
         org_id: currentOrg.id,
         name: form.name,
+<<<<<<< ours
         subject: form.subject,
+=======
+        subject: form.channel === 'email' ? form.subject : form.name,
+>>>>>>> theirs
         body_html: form.body_html,
         status: 'draft',
         sent_count: 0,
         failed_count: 0,
+<<<<<<< ours
         scheduled_at: form.scheduled_at || null,
         filter_criteria: { channel: form.channel },
       } as any)
       setCampaigns(prev => [created, ...prev])
       setShowCreate(false); setForm(EMPTY)
     } catch (e) { console.error(e); alert('Failed to create campaign') } finally { setSaving(false) }
+=======
+        created_by: user?.id,
+        filter_criteria: { channel: form.channel },
+        scheduled_at: form.scheduled_at || undefined,
+      })
+      setCampaigns(prev => [created, ...prev])
+      setShowCreate(false)
+      setForm({ name: '', subject: '', body_html: '', channel: 'email', scheduled_at: '' })
+    } catch (e) { console.error(e); alert('Failed to create campaign') }
+    finally { setCreating(false) }
+>>>>>>> theirs
   }
+
+  const smsCharCount = form.body_html.length
+  const smsSegments = Math.ceil(smsCharCount / 160) || 0
 
   return (
     <div className="space-y-4 animate-in fade-in duration-300">
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[200px]">
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+<<<<<<< ours
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search campaigns..." className="w-full pl-8 pr-3 py-2 text-xs bg-white border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" />
         </div>
         <div className="flex gap-1">
@@ -109,12 +180,31 @@ export default function CampaignsPage() {
           ))}
         </div>
         <button onClick={() => setShowCreate(true)} className="flex items-center gap-1.5 px-3 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark transition-colors">
+=======
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search campaigns..."
+            className="w-full pl-8 pr-3 py-2 text-xs bg-white border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" />
+        </div>
+        <div className="flex gap-1">
+          {['','draft','sending','completed','scheduled'].map(s => (
+            <button key={s} onClick={() => setStatusFilter(s)}
+              className={`px-2 py-1.5 text-[10px] font-medium rounded-md transition-all ${statusFilter===s ? 'bg-np-blue text-white' : 'bg-gray-50 text-gray-400 hover:text-gray-600'}`}>
+              {s || 'All'}
+            </button>
+          ))}
+        </div>
+        <button onClick={() => setShowCreate(true)}
+          className="flex items-center gap-1.5 px-3 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark transition-colors">
+>>>>>>> theirs
           <Plus size={13} /> New Campaign
         </button>
       </div>
 
+<<<<<<< ours
+=======
+      {/* Stats */}
+>>>>>>> theirs
       <div className="flex gap-3">
-        {(['draft', 'sending', 'completed'] as CampaignStatus[]).map(s => {
+        {(['draft','sending','completed'] as CampaignStatus[]).map(s => {
           const count = campaigns.filter(c => c.status === s).length
           const cfg = STATUS_CONFIG[s]
           return (
@@ -127,18 +217,20 @@ export default function CampaignsPage() {
         })}
       </div>
 
+<<<<<<< ours
+=======
+      {/* Campaign Grid */}
+>>>>>>> theirs
       {loading ? <div className="text-center py-12 text-xs text-gray-400">Loading campaigns...</div> : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map(c => <CampaignCard key={c.id} campaign={c} />)}
           {filtered.length === 0 && (
-            <div className="col-span-full text-center py-12">
-              <Mail size={32} className="mx-auto text-gray-400/30 mb-3" />
-              <p className="text-sm text-gray-400">No campaigns found</p>
-            </div>
+            <div className="col-span-full text-center py-12"><Mail size={32} className="mx-auto text-gray-400/30 mb-3" /><p className="text-sm text-gray-400">No campaigns found</p></div>
           )}
         </div>
       )}
 
+<<<<<<< ours
       {/* ═══ Create Campaign Modal ═══ */}
       {showCreate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
@@ -147,6 +239,30 @@ export default function CampaignsPage() {
               <h3 className="text-base font-bold text-np-dark">New Campaign</h3>
               <button onClick={() => { setShowCreate(false); setForm(EMPTY) }} className="p-1 rounded hover:bg-gray-50"><X size={14} /></button>
             </div>
+=======
+      {/* ── Create Campaign Modal ── */}
+      {showCreate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-lg bg-white rounded-xl shadow-2xl border border-gray-100 p-5 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-bold text-np-dark">New Campaign</h3>
+              <button onClick={() => setShowCreate(false)} className="p-1 rounded hover:bg-gray-50"><MessageCircle size={14} /></button>
+            </div>
+
+            {/* Channel Toggle */}
+            <div className="flex gap-1 mb-4 p-1 bg-gray-50 rounded-lg">
+              {(['email','sms'] as const).map(ch => (
+                <button key={ch} onClick={() => setForm(p => ({ ...p, channel: ch }))}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-xs font-medium transition-all ${
+                    form.channel === ch ? 'bg-white shadow-sm text-np-dark' : 'text-gray-400 hover:text-gray-600'
+                  }`}>
+                  {ch === 'email' ? <Mail size={12} /> : <MessageCircle size={12} />}
+                  {ch === 'email' ? 'Email' : 'SMS'}
+                </button>
+              ))}
+            </div>
+
+>>>>>>> theirs
             <div className="space-y-3">
               {/* Channel Toggle */}
               <div>
@@ -166,15 +282,47 @@ export default function CampaignsPage() {
                 <input value={form.name} onChange={e => setForm(p=>({...p,name:e.target.value}))} placeholder="Q1 Mastermind Outreach" className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" />
               </div>
               <div>
+<<<<<<< ours
                 <label className="text-[10px] font-semibold uppercase text-gray-400">{form.channel === 'email' ? 'Subject Line *' : 'Message Preview *'}</label>
                 <input value={form.subject} onChange={e => setForm(p=>({...p,subject:e.target.value}))} placeholder={form.channel === 'email' ? 'Your nervous system is ready for more' : 'Hey {{first_name}}, quick update...'} className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" />
+=======
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Campaign Name *</label>
+                <input value={form.name} onChange={e => setForm(p=>({...p,name:e.target.value}))} placeholder="Q1 Mastermind Outreach"
+                  className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" />
+>>>>>>> theirs
               </div>
+
+              {form.channel === 'email' && (
+                <div>
+                  <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Subject Line *</label>
+                  <input value={form.subject} onChange={e => setForm(p=>({...p,subject:e.target.value}))} placeholder="Your nervous system is ready for more"
+                    className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" />
+                </div>
+              )}
+
               <div>
+<<<<<<< ours
                 <label className="text-[10px] font-semibold uppercase text-gray-400">{form.channel === 'email' ? 'Body (HTML)' : 'Message Body'}</label>
                 <textarea value={form.body_html} onChange={e => setForm(p=>({...p,body_html:e.target.value}))} placeholder={form.channel === 'email' ? '<p>Hi {{first_name}},</p>' : 'Hi {{first_name}}, ...'} rows={form.channel === 'email' ? 6 : 4} className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30 font-mono" />
                 {form.channel === 'sms' && <p className="text-[9px] text-gray-400 mt-1">{form.body_html.length}/160 characters (1 SMS segment)</p>}
+=======
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                  {form.channel === 'email' ? 'Body (HTML)' : 'Message Body'}
+                </label>
+                <textarea value={form.body_html} onChange={e => setForm(p=>({...p,body_html:e.target.value}))}
+                  placeholder={form.channel === 'email' ? '<p>Hi {{first_name}},</p>' : 'Hi {{first_name}}, ...'}
+                  rows={form.channel === 'email' ? 6 : 3}
+                  className={`w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30 ${form.channel === 'email' ? 'font-mono' : ''}`} />
+                {form.channel === 'sms' && (
+                  <p className="text-[9px] text-gray-400 mt-1">
+                    {smsCharCount} characters / {smsSegments} segment{smsSegments !== 1 ? 's' : ''} (160 per segment)
+                  </p>
+                )}
+>>>>>>> theirs
               </div>
+
               <div>
+<<<<<<< ours
                 <label className="text-[10px] font-semibold uppercase text-gray-400">Schedule (optional)</label>
                 <input type="datetime-local" value={form.scheduled_at} onChange={e => setForm(p=>({...p,scheduled_at:e.target.value}))} className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" />
               </div>
@@ -183,6 +331,22 @@ export default function CampaignsPage() {
               <button onClick={() => { setShowCreate(false); setForm(EMPTY) }} className="px-3 py-2 text-xs text-gray-400">Cancel</button>
               <button onClick={handleCreate} disabled={!form.name||!form.subject||saving} className="px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark disabled:opacity-40 transition-colors">
                 {saving ? 'Saving...' : 'Save Draft'}
+=======
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 flex items-center gap-1">
+                  <Calendar size={9} /> Schedule (optional)
+                </label>
+                <input type="datetime-local" value={form.scheduled_at} onChange={e => setForm(p=>({...p,scheduled_at:e.target.value}))}
+                  className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-4">
+              <button onClick={() => setShowCreate(false)} className="px-3 py-2 text-xs text-gray-400 hover:text-np-dark">Cancel</button>
+              <button onClick={handleCreate}
+                disabled={!form.name || (form.channel === 'email' && !form.subject) || creating}
+                className="px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark disabled:opacity-40 transition-colors">
+                {creating ? 'Creating...' : 'Save Draft'}
+>>>>>>> theirs
               </button>
             </div>
           </div>

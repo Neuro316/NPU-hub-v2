@@ -1,0 +1,2671 @@
+diff --git a/package-lock.json b/package-lock.json
+index daae975..775a7e1 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -624,7 +624,6 @@
+       "resolved": "https://registry.npmjs.org/@supabase/supabase-js/-/supabase-js-2.95.3.tgz",
+       "integrity": "sha512-Fukw1cUTQ6xdLiHDJhKKPu6svEPaCEDvThqCne3OaQyZvuq2qjhJAd91kJu3PXLG18aooCgYBaB6qQz35hhABg==",
+       "license": "MIT",
+-      "peer": true,
+       "dependencies": {
+         "@supabase/auth-js": "2.95.3",
+         "@supabase/functions-js": "2.95.3",
+@@ -742,7 +741,6 @@
+       "integrity": "sha512-z9VXpC7MWrhfWipitjNdgCauoMLRdIILQsAEV+ZesIzBq/oUlxk0m3ApZuMFCXdnS4U7KrI+l3WRUEGQ8K1QKw==",
+       "dev": true,
+       "license": "MIT",
+-      "peer": true,
+       "dependencies": {
+         "@types/prop-types": "*",
+         "csstype": "^3.2.2"
+@@ -812,7 +810,6 @@
+       "integrity": "sha512-4z2nCSBfVIMnbuu8uinj+f0o4qOeggYJLbjpPHka3KH1om7e+H9yLKTYgksTaHcGco+NClhhY2vyO3HsMH1RGw==",
+       "dev": true,
+       "license": "MIT",
+-      "peer": true,
+       "dependencies": {
+         "@typescript-eslint/scope-manager": "8.55.0",
+         "@typescript-eslint/types": "8.55.0",
+@@ -1319,7 +1316,6 @@
+       "integrity": "sha512-NZyJarBfL7nWwIq+FDL6Zp/yHEhePMNnnJ0y3qfieCrmNvYct8uvtiV41UvlSe6apAfk0fY1FbWx+NwfmpvtTg==",
+       "dev": true,
+       "license": "MIT",
+-      "peer": true,
+       "bin": {
+         "acorn": "bin/acorn"
+       },
+@@ -1778,7 +1774,6 @@
+         }
+       ],
+       "license": "MIT",
+-      "peer": true,
+       "dependencies": {
+         "baseline-browser-mapping": "^2.9.0",
+         "caniuse-lite": "^1.0.30001759",
+@@ -2462,7 +2457,6 @@
+       "deprecated": "This version is no longer supported. Please see https://eslint.org/version-support for other options.",
+       "dev": true,
+       "license": "MIT",
+-      "peer": true,
+       "dependencies": {
+         "@eslint-community/eslint-utils": "^4.2.0",
+         "@eslint-community/regexpp": "^4.6.1",
+@@ -2632,7 +2626,6 @@
+       "integrity": "sha512-whOE1HFo/qJDyX4SnXzP4N6zOWn79WhnCUY/iDR0mPfQZO8wcYE4JClzI2oZrhBnnMUCBCHZhO6VQyoBU95mZA==",
+       "dev": true,
+       "license": "MIT",
+-      "peer": true,
+       "dependencies": {
+         "@rtsao/scc": "^1.1.0",
+         "array-includes": "^3.1.9",
+@@ -4060,7 +4053,6 @@
+       "integrity": "sha512-/imKNG4EbWNrVjoNC/1H5/9GFy+tqjGBHCaSsN+P2RnPqjsLmv6UD3Ej+Kj8nBWaRAwyk7kK5ZUc+OEatnTR3A==",
+       "dev": true,
+       "license": "MIT",
+-      "peer": true,
+       "bin": {
+         "jiti": "bin/jiti.js"
+       }
+@@ -4953,7 +4945,6 @@
+         }
+       ],
+       "license": "MIT",
+-      "peer": true,
+       "dependencies": {
+         "nanoid": "^3.3.11",
+         "picocolors": "^1.1.1",
+@@ -5176,7 +5167,6 @@
+       "resolved": "https://registry.npmjs.org/react/-/react-18.3.1.tgz",
+       "integrity": "sha512-wS+hAgJShR0KhEvPJArfuPVN1+Hz1t0Y6n5jLrGQbkb4urgPE/0Rve+1kMB1v/oWgHgm4WIcV+i7F2pTVj+2iQ==",
+       "license": "MIT",
+-      "peer": true,
+       "dependencies": {
+         "loose-envify": "^1.1.0"
+       },
+@@ -5189,7 +5179,6 @@
+       "resolved": "https://registry.npmjs.org/react-dom/-/react-dom-18.3.1.tgz",
+       "integrity": "sha512-5m4nQKp+rZRb09LNH59GM4BxTh9251/ylbKIbpe7TpGxfJ+9kv6BLkLBXIjjspbgbnIBNqlI23tRnTWT0snUIw==",
+       "license": "MIT",
+-      "peer": true,
+       "dependencies": {
+         "loose-envify": "^1.1.0",
+         "scheduler": "^0.23.2"
+@@ -6099,7 +6088,6 @@
+       "integrity": "sha512-5gTmgEY/sqK6gFXLIsQNH19lWb4ebPDLA4SdLP7dsWkIXHWlG66oPuVvXSGFPppYZz8ZDZq0dYYrbHfBCVUb1Q==",
+       "dev": true,
+       "license": "MIT",
+-      "peer": true,
+       "engines": {
+         "node": ">=12"
+       },
+@@ -6293,7 +6281,6 @@
+       "integrity": "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==",
+       "dev": true,
+       "license": "Apache-2.0",
+-      "peer": true,
+       "bin": {
+         "tsc": "bin/tsc",
+         "tsserver": "bin/tsserver"
+@@ -6681,7 +6668,6 @@
+       "resolved": "https://registry.npmjs.org/zod/-/zod-4.3.6.tgz",
+       "integrity": "sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg==",
+       "license": "MIT",
+-      "peer": true,
+       "funding": {
+         "url": "https://github.com/sponsors/colinhacks"
+       }
+diff --git a/src/app/(dashboard)/crm/campaigns/page.tsx b/src/app/(dashboard)/crm/campaigns/page.tsx
+index 6ff155b..0167436 100644
+--- a/src/app/(dashboard)/crm/campaigns/page.tsx
++++ b/src/app/(dashboard)/crm/campaigns/page.tsx
+@@ -1,17 +1,13 @@
+ 'use client'
+ 
+-// ═══════════════════════════════════════════════════════════════
+-// CRM Campaigns — Email campaign builder
+-// Route: /crm/campaigns
+-// ═══════════════════════════════════════════════════════════════
+-
+ import { useEffect, useState } from 'react'
+ import {
+-  Plus, Mail, Send, Pause, Play, Eye, Copy, BarChart3,
+-  Users, Clock, CheckCircle2, AlertTriangle, Search
++  Plus, Mail, Send, Pause, Clock, CheckCircle2, AlertTriangle,
++  Search, Eye, Copy, BarChart3, MessageCircle, Calendar
+ } from 'lucide-react'
+ import { fetchCampaigns, createCampaign } from '@/lib/crm-client'
+ import type { EmailCampaign, CampaignStatus } from '@/types/crm'
++import { useWorkspace } from '@/lib/workspace-context'
+ 
+ const STATUS_CONFIG: Record<CampaignStatus, { label: string; color: string; bg: string; icon: any }> = {
+   draft: { label: 'Draft', color: '#6b7280', bg: '#f3f4f6', icon: Mail },
+@@ -25,54 +21,37 @@ const STATUS_CONFIG: Record<CampaignStatus, { label: string; color: string; bg:
+ function CampaignCard({ campaign }: { campaign: EmailCampaign }) {
+   const config = STATUS_CONFIG[campaign.status]
+   const Icon = config.icon
+-  const openRate = campaign.total_recipients && campaign.sent_count > 0
+-    ? Math.round((campaign.sent_count / campaign.total_recipients) * 100)
+-    : null
++  const channel = (campaign.filter_criteria as any)?.channel || 'email'
++  const ChannelIcon = channel === 'sms' ? MessageCircle : Mail
+ 
+   return (
+     <div className="rounded-xl border border-gray-100 bg-white p-4 hover:shadow-md hover:border-np-blue/20 transition-all cursor-pointer">
+       <div className="flex items-start justify-between mb-3">
+-        <div className="flex-1 min-w-0">
+-          <h4 className="text-sm font-semibold text-np-dark truncate">{campaign.name}</h4>
+-          <p className="text-[10px] text-gray-400 mt-0.5 truncate">{campaign.subject}</p>
++        <div className="flex items-center gap-2 flex-1 min-w-0">
++          <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${channel === 'sms' ? 'bg-green-50 text-green-500' : 'bg-blue-50 text-blue-500'}`}>
++            <ChannelIcon size={14} />
++          </div>
++          <div className="flex-1 min-w-0">
++            <h4 className="text-sm font-semibold text-np-dark truncate">{campaign.name}</h4>
++            <p className="text-[10px] text-gray-400 mt-0.5 truncate">{campaign.subject}</p>
++          </div>
+         </div>
+-        <span
+-          className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold flex-shrink-0"
+-          style={{ color: config.color, background: config.bg }}
+-        >
++        <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold flex-shrink-0"
++          style={{ color: config.color, background: config.bg }}>
+           <Icon size={10} /> {config.label}
+         </span>
+       </div>
+-
+       <div className="grid grid-cols-3 gap-2">
+-        <div className="text-center p-2 rounded-lg bg-gray-50/50">
+-          <p className="text-lg font-bold text-np-dark">{campaign.total_recipients || 0}</p>
+-          <p className="text-[9px] text-gray-400">Recipients</p>
+-        </div>
+-        <div className="text-center p-2 rounded-lg bg-gray-50/50">
+-          <p className="text-lg font-bold text-np-dark">{campaign.sent_count}</p>
+-          <p className="text-[9px] text-gray-400">Sent</p>
+-        </div>
+-        <div className="text-center p-2 rounded-lg bg-gray-50/50">
+-          <p className="text-lg font-bold text-np-dark">{campaign.failed_count}</p>
+-          <p className="text-[9px] text-gray-400">Failed</p>
+-        </div>
++        <div className="text-center p-2 rounded-lg bg-gray-50/50"><p className="text-lg font-bold text-np-dark">{campaign.total_recipients || 0}</p><p className="text-[9px] text-gray-400">Recipients</p></div>
++        <div className="text-center p-2 rounded-lg bg-gray-50/50"><p className="text-lg font-bold text-np-dark">{campaign.sent_count}</p><p className="text-[9px] text-gray-400">Sent</p></div>
++        <div className="text-center p-2 rounded-lg bg-gray-50/50"><p className="text-lg font-bold text-np-dark">{campaign.failed_count}</p><p className="text-[9px] text-gray-400">Failed</p></div>
+       </div>
+-
+       <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100/50">
+-        <span className="text-[10px] text-gray-400">
+-          {campaign.created_at ? new Date(campaign.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
+-        </span>
++        <span className="text-[10px] text-gray-400">{campaign.created_at ? new Date(campaign.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : ''}</span>
+         <div className="flex gap-1">
+-          <button className="p-1 rounded hover:bg-gray-50 transition-colors" title="Preview">
+-            <Eye size={12} className="text-gray-400" />
+-          </button>
+-          <button className="p-1 rounded hover:bg-gray-50 transition-colors" title="Duplicate">
+-            <Copy size={12} className="text-gray-400" />
+-          </button>
+-          <button className="p-1 rounded hover:bg-gray-50 transition-colors" title="Stats">
+-            <BarChart3 size={12} className="text-gray-400" />
+-          </button>
++          <button className="p-1 rounded hover:bg-gray-50 transition-colors" title="Preview"><Eye size={12} className="text-gray-400" /></button>
++          <button className="p-1 rounded hover:bg-gray-50 transition-colors" title="Duplicate"><Copy size={12} className="text-gray-400" /></button>
++          <button className="p-1 rounded hover:bg-gray-50 transition-colors" title="Stats"><BarChart3 size={12} className="text-gray-400" /></button>
+         </div>
+       </div>
+     </div>
+@@ -80,12 +59,17 @@ function CampaignCard({ campaign }: { campaign: EmailCampaign }) {
+ }
+ 
+ export default function CampaignsPage() {
++  const { currentOrg, user } = useWorkspace()
+   const [campaigns, setCampaigns] = useState<EmailCampaign[]>([])
+   const [loading, setLoading] = useState(true)
+-  const [statusFilter, setStatusFilter] = useState<string>('')
++  const [statusFilter, setStatusFilter] = useState('')
+   const [search, setSearch] = useState('')
+   const [showCreate, setShowCreate] = useState(false)
+-  const [newCampaign, setNewCampaign] = useState({ name: '', subject: '', body_html: '' })
++  const [creating, setCreating] = useState(false)
++  const [form, setForm] = useState({
++    name: '', subject: '', body_html: '', channel: 'email' as 'email' | 'sms',
++    scheduled_at: '',
++  })
+ 
+   useEffect(() => {
+     fetchCampaigns().then(setCampaigns).catch(console.error).finally(() => setLoading(false))
+@@ -98,59 +82,58 @@ export default function CampaignsPage() {
+   })
+ 
+   const handleCreate = async () => {
+-    if (!newCampaign.name || !newCampaign.subject) return
++    if (!form.name || !currentOrg) return
++    if (form.channel === 'email' && !form.subject) return
++    setCreating(true)
+     try {
+       const created = await createCampaign({
+-        ...newCampaign,
++        org_id: currentOrg.id,
++        name: form.name,
++        subject: form.channel === 'email' ? form.subject : form.name,
++        body_html: form.body_html,
+         status: 'draft',
+         sent_count: 0,
+         failed_count: 0,
++        created_by: user?.id,
++        filter_criteria: { channel: form.channel },
++        scheduled_at: form.scheduled_at || undefined,
+       })
+       setCampaigns(prev => [created, ...prev])
+       setShowCreate(false)
+-      setNewCampaign({ name: '', subject: '', body_html: '' })
+-    } catch (e) {
+-      console.error(e)
+-    }
++      setForm({ name: '', subject: '', body_html: '', channel: 'email', scheduled_at: '' })
++    } catch (e) { console.error(e); alert('Failed to create campaign') }
++    finally { setCreating(false) }
+   }
+ 
++  const smsCharCount = form.body_html.length
++  const smsSegments = Math.ceil(smsCharCount / 160) || 0
++
+   return (
+     <div className="space-y-4 animate-in fade-in duration-300">
+       {/* Header */}
+       <div className="flex flex-wrap items-center gap-3">
+         <div className="relative flex-1 min-w-[200px]">
+           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+-          <input
+-            value={search}
+-            onChange={e => setSearch(e.target.value)}
+-            placeholder="Search campaigns..."
+-            className="w-full pl-8 pr-3 py-2 text-xs bg-white border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30"
+-          />
++          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search campaigns..."
++            className="w-full pl-8 pr-3 py-2 text-xs bg-white border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" />
+         </div>
+         <div className="flex gap-1">
+-          {['', 'draft', 'sending', 'completed', 'scheduled'].map(s => (
+-            <button
+-              key={s}
+-              onClick={() => setStatusFilter(s)}
+-              className={`px-2 py-1.5 text-[10px] font-medium rounded-md transition-all ${
+-                statusFilter === s ? 'bg-np-blue text-white' : 'bg-gray-50 text-gray-400 hover:text-gray-600'
+-              }`}
+-            >
++          {['','draft','sending','completed','scheduled'].map(s => (
++            <button key={s} onClick={() => setStatusFilter(s)}
++              className={`px-2 py-1.5 text-[10px] font-medium rounded-md transition-all ${statusFilter===s ? 'bg-np-blue text-white' : 'bg-gray-50 text-gray-400 hover:text-gray-600'}`}>
+               {s || 'All'}
+             </button>
+           ))}
+         </div>
+-        <button
+-          onClick={() => setShowCreate(true)}
+-          className="flex items-center gap-1.5 px-3 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark transition-colors"
+-        >
++        <button onClick={() => setShowCreate(true)}
++          className="flex items-center gap-1.5 px-3 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark transition-colors">
+           <Plus size={13} /> New Campaign
+         </button>
+       </div>
+ 
+-      {/* Stats Row */}
++      {/* Stats */}
+       <div className="flex gap-3">
+-        {(['draft', 'sending', 'completed'] as CampaignStatus[]).map(s => {
++        {(['draft','sending','completed'] as CampaignStatus[]).map(s => {
+           const count = campaigns.filter(c => c.status === s).length
+           const cfg = STATUS_CONFIG[s]
+           return (
+@@ -164,65 +147,82 @@ export default function CampaignsPage() {
+       </div>
+ 
+       {/* Campaign Grid */}
+-      {loading ? (
+-        <div className="text-center py-12 text-xs text-gray-400">Loading campaigns...</div>
+-      ) : (
++      {loading ? <div className="text-center py-12 text-xs text-gray-400">Loading campaigns...</div> : (
+         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+           {filtered.map(c => <CampaignCard key={c.id} campaign={c} />)}
+           {filtered.length === 0 && (
+-            <div className="col-span-full text-center py-12">
+-              <Mail size={32} className="mx-auto text-gray-400/30 mb-3" />
+-              <p className="text-sm text-gray-400">No campaigns found</p>
+-            </div>
++            <div className="col-span-full text-center py-12"><Mail size={32} className="mx-auto text-gray-400/30 mb-3" /><p className="text-sm text-gray-400">No campaigns found</p></div>
+           )}
+         </div>
+       )}
+ 
+-      {/* Create Modal */}
++      {/* ── Create Campaign Modal ── */}
+       {showCreate && (
+         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+-          <div className="w-full max-w-lg bg-white rounded-xl shadow-2xl border border-gray-100 p-5 animate-in zoom-in-95 duration-200">
+-            <h3 className="text-base font-bold text-np-dark mb-4">New Email Campaign</h3>
++          <div className="w-full max-w-lg bg-white rounded-xl shadow-2xl border border-gray-100 p-5 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
++            <div className="flex items-center justify-between mb-4">
++              <h3 className="text-base font-bold text-np-dark">New Campaign</h3>
++              <button onClick={() => setShowCreate(false)} className="p-1 rounded hover:bg-gray-50"><MessageCircle size={14} /></button>
++            </div>
++
++            {/* Channel Toggle */}
++            <div className="flex gap-1 mb-4 p-1 bg-gray-50 rounded-lg">
++              {(['email','sms'] as const).map(ch => (
++                <button key={ch} onClick={() => setForm(p => ({ ...p, channel: ch }))}
++                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-xs font-medium transition-all ${
++                    form.channel === ch ? 'bg-white shadow-sm text-np-dark' : 'text-gray-400 hover:text-gray-600'
++                  }`}>
++                  {ch === 'email' ? <Mail size={12} /> : <MessageCircle size={12} />}
++                  {ch === 'email' ? 'Email' : 'SMS'}
++                </button>
++              ))}
++            </div>
++
+             <div className="space-y-3">
+               <div>
+-                <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Campaign Name</label>
+-                <input
+-                  value={newCampaign.name}
+-                  onChange={e => setNewCampaign(p => ({ ...p, name: e.target.value }))}
+-                  placeholder="Q1 Mastermind Outreach"
+-                  className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30"
+-                />
++                <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Campaign Name *</label>
++                <input value={form.name} onChange={e => setForm(p=>({...p,name:e.target.value}))} placeholder="Q1 Mastermind Outreach"
++                  className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" />
+               </div>
++
++              {form.channel === 'email' && (
++                <div>
++                  <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Subject Line *</label>
++                  <input value={form.subject} onChange={e => setForm(p=>({...p,subject:e.target.value}))} placeholder="Your nervous system is ready for more"
++                    className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" />
++                </div>
++              )}
++
+               <div>
+-                <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Subject Line</label>
+-                <input
+-                  value={newCampaign.subject}
+-                  onChange={e => setNewCampaign(p => ({ ...p, subject: e.target.value }))}
+-                  placeholder="Your nervous system is ready for more"
+-                  className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30"
+-                />
++                <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
++                  {form.channel === 'email' ? 'Body (HTML)' : 'Message Body'}
++                </label>
++                <textarea value={form.body_html} onChange={e => setForm(p=>({...p,body_html:e.target.value}))}
++                  placeholder={form.channel === 'email' ? '<p>Hi {{first_name}},</p>' : 'Hi {{first_name}}, ...'}
++                  rows={form.channel === 'email' ? 6 : 3}
++                  className={`w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30 ${form.channel === 'email' ? 'font-mono' : ''}`} />
++                {form.channel === 'sms' && (
++                  <p className="text-[9px] text-gray-400 mt-1">
++                    {smsCharCount} characters / {smsSegments} segment{smsSegments !== 1 ? 's' : ''} (160 per segment)
++                  </p>
++                )}
+               </div>
++
+               <div>
+-                <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Body (HTML)</label>
+-                <textarea
+-                  value={newCampaign.body_html}
+-                  onChange={e => setNewCampaign(p => ({ ...p, body_html: e.target.value }))}
+-                  placeholder="<p>Hi {{first_name}},</p>"
+-                  rows={6}
+-                  className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30 font-mono"
+-                />
++                <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 flex items-center gap-1">
++                  <Calendar size={9} /> Schedule (optional)
++                </label>
++                <input type="datetime-local" value={form.scheduled_at} onChange={e => setForm(p=>({...p,scheduled_at:e.target.value}))}
++                  className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" />
+               </div>
+             </div>
++
+             <div className="flex justify-end gap-2 mt-4">
+-              <button onClick={() => setShowCreate(false)} className="px-3 py-2 text-xs text-gray-400 hover:text-np-dark transition-colors">
+-                Cancel
+-              </button>
+-              <button
+-                onClick={handleCreate}
+-                disabled={!newCampaign.name || !newCampaign.subject}
+-                className="px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark disabled:opacity-40 transition-colors"
+-              >
+-                Create Draft
++              <button onClick={() => setShowCreate(false)} className="px-3 py-2 text-xs text-gray-400 hover:text-np-dark">Cancel</button>
++              <button onClick={handleCreate}
++                disabled={!form.name || (form.channel === 'email' && !form.subject) || creating}
++                className="px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark disabled:opacity-40 transition-colors">
++                {creating ? 'Creating...' : 'Save Draft'}
+               </button>
+             </div>
+           </div>
+diff --git a/src/app/(dashboard)/crm/contacts/page.tsx b/src/app/(dashboard)/crm/contacts/page.tsx
+index 2d57000..a23c1db 100644
+--- a/src/app/(dashboard)/crm/contacts/page.tsx
++++ b/src/app/(dashboard)/crm/contacts/page.tsx
+@@ -1,50 +1,51 @@
+ 'use client'
+ 
+-// ═══════════════════════════════════════════════════════════════
+-// CRM Contacts — Rolodex with search, filters, table, bulk actions
+-// Route: /crm/contacts
+-// ═══════════════════════════════════════════════════════════════
+-
+ import { useEffect, useState, useMemo, useCallback } from 'react'
+-import Link from 'next/link'
+ import {
+-  Search, Plus, Filter, Download, Upload, MoreHorizontal,
+-  Star, Tag, ChevronDown, X, Check, Users
++  Search, Plus, Tag, X
+ } from 'lucide-react'
+-import { fetchContacts, bulkUpdateContacts } from '@/lib/crm-client'
+-import type { CrmContact, ContactSearchParams, PipelineStage } from '@/types/crm'
++import { fetchContacts, bulkUpdateContacts, createContact, fetchTeamMembers } from '@/lib/crm-client'
++import type { CrmContact, ContactSearchParams, TeamMember } from '@/types/crm'
+ import { PIPELINE_STAGES, STAGE_COLORS } from '@/types/crm'
+ import ContactDetail from '@/components/crm/contact-detail'
++import { useWorkspace } from '@/lib/workspace-context'
+ 
+ const TAG_COLORS: Record<string, string> = {
+   VIP: '#FBBF24', 'Hot Lead': '#F87171', Partner: '#34D399', Referral: '#2A9D8F',
+   Practitioner: '#9CAF88', Investor: '#A78BFA', Speaker: '#E76F51', Collaborator: '#228DC4',
+ }
++const SOURCE_OPTIONS = ['Website','Referral','Social Media','Event','Cold Outreach','Podcast','Workshop','Mastermind Alumni','Partner','Other']
+ 
+ function ContactTag({ tag }: { tag: string }) {
+   const color = TAG_COLORS[tag] || '#94a3b8'
+-  return (
+-    <span
+-      className="inline-flex px-1.5 py-0.5 rounded-full text-[9px] font-semibold"
+-      style={{ background: color + '18', color }}
+-    >
+-      {tag}
+-    </span>
+-  )
++  return <span className="inline-flex px-1.5 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: color + '18', color }}>{tag}</span>
+ }
+ 
++interface NewContactForm {
++  first_name: string; last_name: string; email: string; phone: string
++  company: string; source: string; pipeline_stage: string; assigned_to: string
++  tags: string[]; newTag: string
++}
++const emptyForm: NewContactForm = { first_name:'', last_name:'', email:'', phone:'', company:'', source:'', pipeline_stage:'', assigned_to:'', tags:[], newTag:'' }
++
+ export default function ContactsPage() {
++  const { currentOrg } = useWorkspace()
+   const [contacts, setContacts] = useState<CrmContact[]>([])
+   const [total, setTotal] = useState(0)
+   const [loading, setLoading] = useState(true)
+   const [search, setSearch] = useState('')
+   const [selectedContactId, setSelectedContactId] = useState<string | null>(null)
+   const [selected, setSelected] = useState<Set<string>>(new Set())
+-  const [stageFilter, setStageFilter] = useState<string>('')
+-  const [tagFilter, setTagFilter] = useState<string>('')
+-  const [sortBy, setSortBy] = useState<'updated_at' | 'last_name' | 'last_contacted_at'>('updated_at')
++  const [stageFilter, setStageFilter] = useState('')
++  const [tagFilter, setTagFilter] = useState('')
+   const [page, setPage] = useState(0)
+   const limit = 50
++  const [showCreate, setShowCreate] = useState(false)
++  const [form, setForm] = useState<NewContactForm>(emptyForm)
++  const [creating, setCreating] = useState(false)
++  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
++
++  useEffect(() => { fetchTeamMembers().then(setTeamMembers).catch(console.error) }, [])
+ 
+   const load = useCallback(async () => {
+     setLoading(true)
+@@ -54,126 +55,89 @@ export default function ContactsPage() {
+       if (stageFilter) params.pipeline_stage = stageFilter
+       if (tagFilter) params.tags = [tagFilter]
+       const res = await fetchContacts(params)
+-      setContacts(res.contacts)
+-      setTotal(res.total)
+-    } catch (e) {
+-      console.error('Contact load error:', e)
+-    } finally {
+-      setLoading(false)
+-    }
++      setContacts(res.contacts); setTotal(res.total)
++    } catch (e) { console.error('Contact load error:', e) }
++    finally { setLoading(false) }
+   }, [search, stageFilter, tagFilter, page])
+ 
+   useEffect(() => { load() }, [load])
+ 
+-  const toggleSelect = (id: string) => {
+-    setSelected(prev => {
+-      const next = new Set(prev)
+-      next.has(id) ? next.delete(id) : next.add(id)
+-      return next
+-    })
+-  }
++  const toggleSelect = (id: string) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
++  const toggleAll = () => selected.size === contacts.length ? setSelected(new Set()) : setSelected(new Set(contacts.map(c => c.id)))
+ 
+-  const toggleAll = () => {
+-    if (selected.size === contacts.length) setSelected(new Set())
+-    else setSelected(new Set(contacts.map(c => c.id)))
++  const handleBulkAction = async (action: string, params: Record<string, unknown>) => {
++    if (!selected.size) return
++    try { await bulkUpdateContacts(Array.from(selected), action, params); setSelected(new Set()); load() }
++    catch (e) { console.error('Bulk action error:', e) }
+   }
+ 
+-  const handleBulkAction = async (action: string, params: Record<string, unknown>) => {
+-    if (selected.size === 0) return
++  const handleCreate = async () => {
++    if (!form.first_name || !form.email || !currentOrg) return
++    setCreating(true)
+     try {
+-      await bulkUpdateContacts(Array.from(selected), action, params)
+-      setSelected(new Set())
+-      load()
+-    } catch (e) {
+-      console.error('Bulk action error:', e)
+-    }
++      await createContact({
++        org_id: currentOrg.id, first_name: form.first_name, last_name: form.last_name,
++        email: form.email, phone: form.phone || undefined, source: form.source || undefined,
++        pipeline_stage: form.pipeline_stage || 'New Lead', assigned_to: form.assigned_to || undefined,
++        tags: form.tags, custom_fields: form.company ? { company: form.company } : undefined,
++        sms_consent: false, email_consent: true, do_not_contact: false,
++      })
++      setShowCreate(false); setForm(emptyForm); load()
++    } catch (e) { console.error(e); alert('Failed to create contact') }
++    finally { setCreating(false) }
+   }
+ 
+-  // Get all unique tags for filter dropdown
++  const addTag = () => { const t = form.newTag.trim(); if (t && !form.tags.includes(t)) setForm(p => ({ ...p, tags: [...p.tags, t], newTag: '' })) }
++  const removeTag = (t: string) => setForm(p => ({ ...p, tags: p.tags.filter(x => x !== t) }))
++
+   const allTags = useMemo(() => {
+-    const tags = new Set<string>()
+-    contacts.forEach(c => c.tags?.forEach(t => tags.add(t)))
+-    return Array.from(tags).sort()
++    const tags = new Set<string>(); contacts.forEach(c => c.tags?.forEach(t => tags.add(t))); return Array.from(tags).sort()
+   }, [contacts])
+ 
+   return (
+     <div className="space-y-4 animate-in fade-in duration-300">
+       {/* Header */}
+       <div className="flex flex-wrap items-center gap-3">
+-        {/* Search */}
+         <div className="relative flex-1 min-w-[200px]">
+           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+-          <input
+-            value={search}
+-            onChange={e => { setSearch(e.target.value); setPage(0) }}
++          <input value={search} onChange={e => { setSearch(e.target.value); setPage(0) }}
+             placeholder="Search contacts, companies, tags..."
+-            className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30 focus:border-np-blue placeholder:text-gray-400"
+-          />
++            className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30 placeholder:text-gray-400" />
+         </div>
+-
+-        {/* Stage Filter */}
+-        <select
+-          value={stageFilter}
+-          onChange={e => { setStageFilter(e.target.value); setPage(0) }}
+-          className="text-xs bg-white border border-gray-100 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-teal/30"
+-        >
++        <select value={stageFilter} onChange={e => { setStageFilter(e.target.value); setPage(0) }}
++          className="text-xs bg-white border border-gray-100 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-teal/30">
+           <option value="">All Stages</option>
+           {PIPELINE_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+         </select>
+-
+-        {/* Tag Filter */}
+-        <select
+-          value={tagFilter}
+-          onChange={e => { setTagFilter(e.target.value); setPage(0) }}
+-          className="text-xs bg-white border border-gray-100 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-teal/30"
+-        >
++        <select value={tagFilter} onChange={e => { setTagFilter(e.target.value); setPage(0) }}
++          className="text-xs bg-white border border-gray-100 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-teal/30">
+           <option value="">All Tags</option>
+           {allTags.map(t => <option key={t} value={t}>{t}</option>)}
+         </select>
+-
+-        {/* Actions */}
+-        <Link
+-          href="/crm/contacts?new=true"
+-          className="flex items-center gap-1.5 px-3 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark transition-colors"
+-        >
++        <button onClick={() => setShowCreate(true)}
++          className="flex items-center gap-1.5 px-3 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark transition-colors">
+           <Plus size={13} /> Add Contact
+-        </Link>
++        </button>
+       </div>
+ 
+-      {/* Bulk Actions Bar */}
++      {/* Bulk Actions */}
+       {selected.size > 0 && (
+-        <div className="flex items-center gap-2 px-4 py-2 bg-np-blue/5 border border-np-blue/20 rounded-lg animate-in slide-in-from-top duration-200">
++        <div className="flex items-center gap-2 px-4 py-2 bg-np-blue/5 border border-np-blue/20 rounded-lg">
+           <span className="text-xs font-semibold text-np-blue">{selected.size} selected</span>
+           <div className="flex gap-1 ml-auto">
+-            <button
+-              onClick={() => handleBulkAction('add_tags', { tags: ['VIP'] })}
+-              className="px-2 py-1 text-[10px] font-medium bg-white border border-gray-100 rounded-md hover:bg-gray-50"
+-            >
++            <button onClick={() => { const t = prompt('Tag name:'); if (t) handleBulkAction('add_tags', { tags: [t] }) }}
++              className="px-2 py-1 text-[10px] font-medium bg-white border border-gray-100 rounded-md hover:bg-gray-50">
+               <Tag size={10} className="inline mr-0.5" /> Add Tag
+             </button>
+-            <button
+-              onClick={() => {
+-                const stage = prompt('Enter pipeline stage:')
+-                if (stage) handleBulkAction('set_pipeline_stage', { pipeline_stage: stage })
+-              }}
+-              className="px-2 py-1 text-[10px] font-medium bg-white border border-gray-100 rounded-md hover:bg-gray-50"
+-            >
+-              Set Stage
+-            </button>
+-            <button
+-              onClick={() => handleBulkAction('add_to_dnc', {})}
+-              className="px-2 py-1 text-[10px] font-medium bg-red-50 border border-red-200 text-red-600 rounded-md hover:bg-red-100"
+-            >
+-              DNC
+-            </button>
+-            <button onClick={() => setSelected(new Set())} className="px-2 py-1 text-[10px] text-gray-400 hover:text-np-dark">
+-              <X size={12} />
+-            </button>
++            <button onClick={() => { const s = prompt('Pipeline stage:'); if (s) handleBulkAction('set_pipeline_stage', { pipeline_stage: s }) }}
++              className="px-2 py-1 text-[10px] font-medium bg-white border border-gray-100 rounded-md hover:bg-gray-50">Set Stage</button>
++            <button onClick={() => handleBulkAction('add_to_dnc', {})}
++              className="px-2 py-1 text-[10px] font-medium bg-red-50 border border-red-200 text-red-600 rounded-md hover:bg-red-100">DNC</button>
++            <button onClick={() => setSelected(new Set())} className="px-2 py-1 text-[10px] text-gray-400 hover:text-np-dark"><X size={12} /></button>
+           </div>
+         </div>
+       )}
+ 
+-      {/* Count */}
+       <p className="text-[10px] text-gray-400">{total} contacts</p>
+ 
+       {/* Table */}
+@@ -182,90 +146,45 @@ export default function ContactsPage() {
+           <table className="w-full text-left">
+             <thead>
+               <tr className="border-b border-gray-100 bg-gray-50/50">
+-                <th className="w-8 py-2 px-3">
+-                  <input
+-                    type="checkbox"
+-                    checked={selected.size === contacts.length && contacts.length > 0}
+-                    onChange={toggleAll}
+-                    className="accent-teal w-3 h-3"
+-                  />
+-                </th>
+-                <th className="py-2 px-3 text-[9px] font-semibold uppercase tracking-wider text-gray-400">Name</th>
+-                <th className="py-2 px-3 text-[9px] font-semibold uppercase tracking-wider text-gray-400">Company</th>
+-                <th className="py-2 px-3 text-[9px] font-semibold uppercase tracking-wider text-gray-400">Source</th>
+-                <th className="py-2 px-3 text-[9px] font-semibold uppercase tracking-wider text-gray-400">Stage</th>
+-                <th className="py-2 px-3 text-[9px] font-semibold uppercase tracking-wider text-gray-400">Tags</th>
+-                <th className="py-2 px-3 text-[9px] font-semibold uppercase tracking-wider text-gray-400">Last Contact</th>
+-                <th className="py-2 px-3 text-[9px] font-semibold uppercase tracking-wider text-gray-400">Assigned</th>
++                <th className="w-8 py-2 px-3"><input type="checkbox" checked={selected.size === contacts.length && contacts.length > 0} onChange={toggleAll} className="accent-teal w-3 h-3" /></th>
++                {['Name','Company','Source','Stage','Tags','Last Contact','Assigned'].map(h =>
++                  <th key={h} className="py-2 px-3 text-[9px] font-semibold uppercase tracking-wider text-gray-400">{h}</th>
++                )}
+               </tr>
+             </thead>
+             <tbody>
+               {contacts.map(c => {
+                 const initials = `${c.first_name?.[0] || ''}${c.last_name?.[0] || ''}`.toUpperCase()
+-                const stageColor = STAGE_COLORS[c.pipeline_stage || ''] || '#94a3b8'
++                const sc = STAGE_COLORS[c.pipeline_stage || ''] || '#94a3b8'
+                 return (
+-                  <tr
+-                    key={c.id}
+-                    onClick={() => setSelectedContactId(c.id)}
+-                    className="border-b border-gray-100/30 hover:bg-gray-50/30 transition-colors cursor-pointer"
+-                  >
++                  <tr key={c.id} onClick={() => setSelectedContactId(c.id)} className="border-b border-gray-100/30 hover:bg-gray-50/30 transition-colors cursor-pointer">
+                     <td className="py-2 px-3" onClick={e => e.stopPropagation()}>
+-                      <input
+-                        type="checkbox"
+-                        checked={selected.has(c.id)}
+-                        onChange={() => toggleSelect(c.id)}
+-                        className="accent-teal w-3 h-3"
+-                      />
++                      <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleSelect(c.id)} className="accent-teal w-3 h-3" />
+                     </td>
+                     <td className="py-2 px-3">
+-                      <Link href={`/crm/contacts?id=${c.id}`} className="flex items-center gap-2">
+-                        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-teal to-np-dark flex items-center justify-center text-[9px] font-bold text-white flex-shrink-0">
+-                          {initials}
+-                        </div>
+-                        <div>
+-                          <p className="text-xs font-semibold text-np-dark">{c.first_name} {c.last_name}</p>
+-                          <p className="text-[10px] text-gray-400">{c.email}</p>
+-                        </div>
+-                      </Link>
++                      <div className="flex items-center gap-2">
++                        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-teal to-np-dark flex items-center justify-center text-[9px] font-bold text-white flex-shrink-0">{initials}</div>
++                        <div><p className="text-xs font-semibold text-np-dark">{c.first_name} {c.last_name}</p><p className="text-[10px] text-gray-400">{c.email}</p></div>
++                      </div>
+                     </td>
+                     <td className="py-2 px-3 text-xs text-gray-600">{c.custom_fields?.company as string || '--'}</td>
++                    <td className="py-2 px-3"><span className="text-[10px] px-1.5 py-0.5 bg-np-blue/8 text-np-blue rounded-full font-medium">{c.source || '--'}</span></td>
+                     <td className="py-2 px-3">
+-                      <span className="text-[10px] px-1.5 py-0.5 bg-np-blue-muted text-np-blue rounded-full font-medium">
+-                        {c.source || '--'}
+-                      </span>
+-                    </td>
+-                    <td className="py-2 px-3">
+-                      {c.pipeline_stage ? (
+-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: stageColor + '18', color: stageColor }}>
+-                          {c.pipeline_stage}
+-                        </span>
+-                      ) : <span className="text-[10px] text-gray-400">--</span>}
++                      {c.pipeline_stage ? <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: sc + '18', color: sc }}>{c.pipeline_stage}</span> : <span className="text-[10px] text-gray-400">--</span>}
+                     </td>
+                     <td className="py-2 px-3">
+                       <div className="flex gap-0.5 flex-wrap">
+-                        {c.tags?.slice(0, 2).map(t => <ContactTag key={t} tag={t} />)}
+-                        {(c.tags?.length || 0) > 2 && (
+-                          <span className="text-[9px] text-gray-400">+{c.tags!.length - 2}</span>
+-                        )}
++                        {c.tags?.slice(0,2).map(t => <ContactTag key={t} tag={t} />)}
++                        {(c.tags?.length||0)>2 && <span className="text-[9px] text-gray-400">+{c.tags!.length-2}</span>}
+                       </div>
+                     </td>
+-                    <td className="py-2 px-3 text-[10px] text-gray-400">
+-                      {c.last_contacted_at
+-                        ? new Date(c.last_contacted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+-                        : 'Never'}
+-                    </td>
+-                    <td className="py-2 px-3 text-[10px] text-gray-600">
+-                      {(c.assigned_member as any)?.display_name || '--'}
+-                    </td>
++                    <td className="py-2 px-3 text-[10px] text-gray-400">{c.last_contacted_at ? new Date(c.last_contacted_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : 'Never'}</td>
++                    <td className="py-2 px-3 text-[10px] text-gray-600">{(c.assigned_member as any)?.display_name || '--'}</td>
+                   </tr>
+                 )
+               })}
+-              {contacts.length === 0 && !loading && (
+-                <tr><td colSpan={8} className="py-12 text-center text-xs text-gray-400">No contacts found</td></tr>
+-              )}
+-              {loading && (
+-                <tr><td colSpan={8} className="py-12 text-center text-xs text-gray-400">Loading...</td></tr>
+-              )}
++              {contacts.length === 0 && !loading && <tr><td colSpan={8} className="py-12 text-center text-xs text-gray-400">No contacts found</td></tr>}
++              {loading && <tr><td colSpan={8} className="py-12 text-center text-xs text-gray-400">Loading...</td></tr>}
+             </tbody>
+           </table>
+         </div>
+@@ -274,33 +193,74 @@ export default function ContactsPage() {
+       {/* Pagination */}
+       {total > limit && (
+         <div className="flex items-center justify-between">
+-          <p className="text-[10px] text-gray-400">
+-            Showing {page * limit + 1}–{Math.min((page + 1) * limit, total)} of {total}
+-          </p>
++          <p className="text-[10px] text-gray-400">Showing {page*limit+1}–{Math.min((page+1)*limit,total)} of {total}</p>
+           <div className="flex gap-1">
+-            <button
+-              disabled={page === 0}
+-              onClick={() => setPage(p => p - 1)}
+-              className="px-3 py-1 text-xs border border-gray-100 rounded-md disabled:opacity-30 hover:bg-gray-50"
+-            >
+-              Prev
+-            </button>
+-            <button
+-              disabled={(page + 1) * limit >= total}
+-              onClick={() => setPage(p => p + 1)}
+-              className="px-3 py-1 text-xs border border-gray-100 rounded-md disabled:opacity-30 hover:bg-gray-50"
+-            >
+-              Next
+-            </button>
++            <button disabled={page===0} onClick={() => setPage(p=>p-1)} className="px-3 py-1 text-xs border border-gray-100 rounded-md disabled:opacity-30 hover:bg-gray-50">Prev</button>
++            <button disabled={(page+1)*limit>=total} onClick={() => setPage(p=>p+1)} className="px-3 py-1 text-xs border border-gray-100 rounded-md disabled:opacity-30 hover:bg-gray-50">Next</button>
++          </div>
++        </div>
++      )}
++
++      <ContactDetail contactId={selectedContactId} onClose={() => setSelectedContactId(null)} onUpdate={load} />
++
++      {/* ── Create Contact Modal ── */}
++      {showCreate && (
++        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
++          <div className="w-full max-w-lg bg-white rounded-xl shadow-2xl border border-gray-100 p-5 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
++            <div className="flex items-center justify-between mb-4">
++              <h3 className="text-base font-bold text-np-dark">New Contact</h3>
++              <button onClick={() => { setShowCreate(false); setForm(emptyForm) }} className="p-1 rounded hover:bg-gray-50"><X size={14} /></button>
++            </div>
++            <div className="space-y-3">
++              <div className="grid grid-cols-2 gap-3">
++                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">First Name *</label>
++                  <input value={form.first_name} onChange={e => setForm(p=>({...p,first_name:e.target.value}))} placeholder="Jane" className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
++                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Last Name</label>
++                  <input value={form.last_name} onChange={e => setForm(p=>({...p,last_name:e.target.value}))} placeholder="Smith" className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
++              </div>
++              <div className="grid grid-cols-2 gap-3">
++                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Email *</label>
++                  <input type="email" value={form.email} onChange={e => setForm(p=>({...p,email:e.target.value}))} placeholder="jane@example.com" className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
++                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Phone</label>
++                  <input type="tel" value={form.phone} onChange={e => setForm(p=>({...p,phone:e.target.value}))} placeholder="+1 828 555 1234" className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
++              </div>
++              <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Company</label>
++                <input value={form.company} onChange={e => setForm(p=>({...p,company:e.target.value}))} placeholder="Acme Corp" className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
++              <div className="grid grid-cols-2 gap-3">
++                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Source</label>
++                  <select value={form.source} onChange={e => setForm(p=>({...p,source:e.target.value}))} className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30">
++                    <option value="">Select source</option>{SOURCE_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
++                  </select></div>
++                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Pipeline Stage</label>
++                  <select value={form.pipeline_stage} onChange={e => setForm(p=>({...p,pipeline_stage:e.target.value}))} className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30">
++                    <option value="">Select stage</option>{PIPELINE_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
++                  </select></div>
++              </div>
++              <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Assigned To</label>
++                <select value={form.assigned_to} onChange={e => setForm(p=>({...p,assigned_to:e.target.value}))} className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30">
++                  <option value="">Unassigned</option>{teamMembers.map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
++                </select></div>
++              <div>
++                <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Tags</label>
++                <div className="flex gap-1 flex-wrap mt-1 mb-1.5">
++                  {form.tags.map(t => <span key={t} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-teal/10 text-teal">{t}<button onClick={() => removeTag(t)} className="hover:text-red-500"><X size={8} /></button></span>)}
++                </div>
++                <div className="flex gap-1">
++                  <input value={form.newTag} onChange={e => setForm(p=>({...p,newTag:e.target.value}))} onKeyDown={e => e.key==='Enter' && (e.preventDefault(),addTag())} placeholder="Add tag..." className="flex-1 px-3 py-1.5 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" />
++                  <button onClick={addTag} className="px-2 py-1.5 text-xs bg-gray-50 border border-gray-100 rounded-lg hover:bg-gray-100">Add</button>
++                </div>
++              </div>
++            </div>
++            <div className="flex justify-end gap-2 mt-5">
++              <button onClick={() => { setShowCreate(false); setForm(emptyForm) }} className="px-3 py-2 text-xs text-gray-400 hover:text-np-dark">Cancel</button>
++              <button onClick={handleCreate} disabled={!form.first_name || !form.email || creating}
++                className="px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark disabled:opacity-40 transition-colors">
++                {creating ? 'Creating...' : 'Create Contact'}
++              </button>
++            </div>
+           </div>
+         </div>
+       )}
+-      {/* Contact Detail Drawer */}
+-      <ContactDetail
+-        contactId={selectedContactId}
+-        onClose={() => setSelectedContactId(null)}
+-        onUpdate={load}
+-      />
+     </div>
+   )
+ }
+diff --git a/src/app/(dashboard)/crm/messages/page.tsx b/src/app/(dashboard)/crm/messages/page.tsx
+index 7b50ead..2245dfe 100644
+--- a/src/app/(dashboard)/crm/messages/page.tsx
++++ b/src/app/(dashboard)/crm/messages/page.tsx
+@@ -1,17 +1,13 @@
+ 'use client'
+ 
+-// ═══════════════════════════════════════════════════════════════
+-// CRM Messages — SMS inbox, conversation view, smart replies
+-// Route: /crm/messages
+-// ═══════════════════════════════════════════════════════════════
+-
+ import { useEffect, useState, useRef } from 'react'
+ import {
+-  Search, Send, Clock, Sparkles, X, Paperclip,
+-  MessageCircle, Archive, BellOff
++  Search, Send, Clock, Sparkles, X, Plus,
++  MessageCircle, Archive, BellOff, Users
+ } from 'lucide-react'
+-import { fetchConversations, fetchMessages, sendMessage } from '@/lib/crm-client'
++import { fetchConversations, fetchMessages, sendMessage, fetchContacts, createConversation } from '@/lib/crm-client'
+ import type { Conversation, Message, CrmContact } from '@/types/crm'
++import { useWorkspace } from '@/lib/workspace-context'
+ 
+ function ConversationItem({ conv, isActive, onClick }: {
+   conv: Conversation & { contacts: CrmContact }; isActive: boolean; onClick: () => void
+@@ -19,33 +15,24 @@ function ConversationItem({ conv, isActive, onClick }: {
+   const c = conv.contacts
+   const initials = `${c.first_name?.[0] || ''}${c.last_name?.[0] || ''}`.toUpperCase()
+   return (
+-    <button
+-      onClick={onClick}
+-      className={`w-full text-left p-3 rounded-lg transition-all ${
+-        isActive ? 'bg-np-blue/8 border border-np-blue/20' : 'hover:bg-gray-50/50 border border-transparent'
+-      }`}
+-    >
++    <button onClick={onClick}
++      className={`w-full text-left p-3 rounded-lg transition-all ${isActive ? 'bg-np-blue/8 border border-np-blue/20' : 'hover:bg-gray-50/50 border border-transparent'}`}>
+       <div className="flex items-center gap-2.5">
+         <div className="relative">
+-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-teal/70 to-np-dark/70 flex items-center justify-center text-[10px] font-bold text-white">
+-            {initials}
+-          </div>
+-          {conv.unread_count > 0 && (
+-            <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-orange-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
+-              {conv.unread_count > 9 ? '9+' : conv.unread_count}
+-            </span>
+-          )}
++          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-teal/70 to-np-dark/70 flex items-center justify-center text-[10px] font-bold text-white">{initials}</div>
++          {conv.unread_count > 0 && <div className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-red-500 rounded-full text-[7px] font-bold text-white flex items-center justify-center">{conv.unread_count}</div>}
+         </div>
+         <div className="flex-1 min-w-0">
+-          <div className="flex items-center justify-between">
+-            <p className={`text-xs truncate ${conv.unread_count > 0 ? 'font-bold text-np-dark' : 'font-medium text-gray-600'}`}>
+-              {c.first_name} {c.last_name}
+-            </p>
+-            <span className="text-[9px] text-gray-400 flex-shrink-0">
+-              {conv.last_message_at ? new Date(conv.last_message_at).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit' }) : ''}
++          <p className="text-xs font-semibold text-np-dark truncate">{c.first_name} {c.last_name}</p>
++          <p className="text-[10px] text-gray-400 truncate">{c.phone || c.email}</p>
++        </div>
++        <div className="text-right flex-shrink-0">
++          <p className="text-[9px] text-gray-400">{conv.last_message_at ? new Date(conv.last_message_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : ''}</p>
++          <div className="flex items-center gap-0.5 mt-0.5 justify-end">
++            <span className={`text-[8px] px-1 py-0 rounded ${conv.channel==='sms' ? 'bg-green-50 text-green-600' : conv.channel==='email' ? 'bg-blue-50 text-blue-600' : 'bg-purple-50 text-purple-600'}`}>
++              {conv.channel.toUpperCase()}
+             </span>
+           </div>
+-          <p className="text-[10px] text-gray-400 truncate">{c.phone || c.email}</p>
+         </div>
+       </div>
+     </button>
+@@ -56,21 +43,17 @@ function MessageBubble({ msg }: { msg: Message }) {
+   const isOut = msg.direction === 'outbound'
+   return (
+     <div className={`flex ${isOut ? 'justify-end' : 'justify-start'} mb-2`}>
+-      <div className={`max-w-[75%] px-3 py-2 rounded-xl text-xs leading-relaxed ${
+-        isOut
+-          ? 'bg-np-blue text-white rounded-br-sm'
+-          : 'bg-white border border-gray-100 text-np-dark rounded-bl-sm'
++      <div className={`max-w-[75%] px-3 py-2 rounded-2xl text-xs ${
++        isOut ? 'bg-np-blue text-white rounded-br-md' : 'bg-gray-100 text-np-dark rounded-bl-md'
+       }`}>
+-        <p>{msg.body}</p>
++        <p className="whitespace-pre-wrap">{msg.body}</p>
+         <div className={`flex items-center gap-1 mt-1 ${isOut ? 'justify-end' : ''}`}>
+           <span className={`text-[9px] ${isOut ? 'text-white/60' : 'text-gray-400'}`}>
+-            {msg.sent_at ? new Date(msg.sent_at).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit' }) : ''}
++            {msg.sent_at ? new Date(msg.sent_at).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}) : ''}
+           </span>
+-          {isOut && (
+-            <span className={`text-[8px] ${msg.status === 'delivered' ? 'text-white/80' : 'text-white/40'}`}>
+-              {msg.status === 'delivered' ? '✓✓' : msg.status === 'sent' ? '✓' : '⏳'}
+-            </span>
+-          )}
++          {isOut && <span className={`text-[8px] ${msg.status==='delivered' ? 'text-green-300' : msg.status==='failed' ? 'text-red-300' : 'text-white/40'}`}>
++            {msg.status==='delivered' ? '✓✓' : msg.status==='sent' ? '✓' : msg.status==='failed' ? '✗' : '◷'}
++          </span>}
+         </div>
+       </div>
+     </div>
+@@ -78,161 +61,208 @@ function MessageBubble({ msg }: { msg: Message }) {
+ }
+ 
+ export default function MessagesPage() {
++  const { currentOrg, user } = useWorkspace()
+   const [conversations, setConversations] = useState<(Conversation & { contacts: CrmContact })[]>([])
++  const [activeConv, setActiveConv] = useState<string | null>(null)
+   const [messages, setMessages] = useState<Message[]>([])
+-  const [activeConv, setActiveConv] = useState<(Conversation & { contacts: CrmContact }) | null>(null)
+-  const [draft, setDraft] = useState('')
+-  const [search, setSearch] = useState('')
++  const [newMsg, setNewMsg] = useState('')
+   const [loading, setLoading] = useState(true)
+   const [sending, setSending] = useState(false)
+-  const [channelFilter, setChannelFilter] = useState<string>('')
+-  const bottomRef = useRef<HTMLDivElement>(null)
++  const [channelFilter, setChannelFilter] = useState('')
++  const [search, setSearch] = useState('')
++  const [showNewConv, setShowNewConv] = useState(false)
++  const [contactSearch, setContactSearch] = useState('')
++  const [contactResults, setContactResults] = useState<CrmContact[]>([])
++  const [searchingContacts, setSearchingContacts] = useState(false)
++  const messagesEndRef = useRef<HTMLDivElement>(null)
+ 
++  // Load conversations
+   useEffect(() => {
+     fetchConversations(channelFilter || undefined)
+-      .then(setConversations)
+-      .catch(console.error)
+-      .finally(() => setLoading(false))
++      .then(setConversations).catch(console.error).finally(() => setLoading(false))
+   }, [channelFilter])
+ 
++  // Load messages when conversation changes
+   useEffect(() => {
+-    if (!activeConv) return
+-    fetchMessages(activeConv.id).then(msgs => {
+-      setMessages(msgs)
+-      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
+-    }).catch(console.error)
++    if (activeConv) {
++      fetchMessages(activeConv).then(m => { setMessages(m); setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior:'smooth' }),100) }).catch(console.error)
++    }
+   }, [activeConv])
+ 
+   const handleSend = async () => {
+-    if (!draft.trim() || !activeConv || sending) return
++    if (!newMsg.trim() || !activeConv || !user) return
+     setSending(true)
+     try {
+-      const msg = await sendMessage(activeConv.id, draft, 'current-user-id')
++      const msg = await sendMessage(activeConv, newMsg.trim(), user.id)
+       setMessages(prev => [...prev, msg])
+-      setDraft('')
+-      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
+-    } catch (e) {
+-      console.error('Send failed:', e)
+-    } finally {
+-      setSending(false)
+-    }
++      setNewMsg('')
++      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
++      // Also trigger SMS send via API
++      const conv = conversations.find(c => c.id === activeConv)
++      if (conv?.channel === 'sms' && conv.contacts?.phone) {
++        fetch('/api/sms/send', {
++          method: 'POST', headers: { 'Content-Type':'application/json' },
++          body: JSON.stringify({ to: conv.contacts.phone, body: newMsg.trim(), message_id: msg.id }),
++        }).catch(console.error)
++      }
++    } catch (e) { console.error(e) }
++    finally { setSending(false) }
+   }
+ 
+-  const filtered = conversations.filter(c => {
+-    if (!search) return true
+-    const name = `${c.contacts.first_name} ${c.contacts.last_name} ${c.contacts.phone || ''} ${c.contacts.email || ''}`.toLowerCase()
+-    return name.includes(search.toLowerCase())
++  // Contact search for new conversation
++  const searchContacts = async (q: string) => {
++    setContactSearch(q)
++    if (q.length < 2) { setContactResults([]); return }
++    setSearchingContacts(true)
++    try {
++      const res = await fetchContacts({ q, limit: 10 })
++      setContactResults(res.contacts)
++    } catch (e) { console.error(e) }
++    finally { setSearchingContacts(false) }
++  }
++
++  const startConversation = async (contact: CrmContact) => {
++    if (!currentOrg) return
++    try {
++      const convId = await createConversation(contact.id, 'sms', currentOrg.id)
++      setShowNewConv(false)
++      setContactSearch('')
++      setContactResults([])
++      // Reload conversations and select the new one
++      const convs = await fetchConversations()
++      setConversations(convs)
++      setActiveConv(convId)
++    } catch (e) { console.error(e); alert('Failed to start conversation') }
++  }
++
++  const activeConvData = conversations.find(c => c.id === activeConv)
++
++  const filteredConvs = conversations.filter(c => {
++    if (search) {
++      const name = `${c.contacts.first_name} ${c.contacts.last_name}`.toLowerCase()
++      if (!name.includes(search.toLowerCase())) return false
++    }
++    return true
+   })
+ 
+   return (
+-    <div className="flex gap-0 h-[calc(100vh-200px)] animate-in fade-in duration-300 rounded-xl border border-gray-100 bg-white overflow-hidden">
+-      {/* Conversation List */}
+-      <div className="w-80 flex-shrink-0 border-r border-gray-100 flex flex-col bg-white">
+-        <div className="p-3 border-b border-gray-100">
+-          <div className="relative mb-2">
+-            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+-            <input
+-              value={search}
+-              onChange={e => setSearch(e.target.value)}
+-              placeholder="Search conversations..."
+-              className="w-full pl-8 pr-3 py-2 text-xs bg-gray-50 border border-gray-100/50 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30"
+-            />
++    <div className="flex h-[calc(100vh-160px)] rounded-xl border border-gray-100 bg-white overflow-hidden animate-in fade-in duration-300">
++      {/* Sidebar */}
++      <div className="w-80 border-r border-gray-100 flex flex-col">
++        <div className="p-3 border-b border-gray-100 space-y-2">
++          <div className="flex items-center gap-2">
++            <div className="relative flex-1">
++              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
++              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search conversations..."
++                className="w-full pl-7 pr-3 py-1.5 text-[11px] bg-gray-50 border-none rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" />
++            </div>
++            <button onClick={() => setShowNewConv(true)} title="New conversation"
++              className="p-1.5 bg-np-blue text-white rounded-lg hover:bg-np-dark transition-colors">
++              <Plus size={14} />
++            </button>
+           </div>
+           <div className="flex gap-1">
+-            {['', 'sms', 'email', 'voice'].map(ch => (
+-              <button
+-                key={ch}
+-                onClick={() => setChannelFilter(ch)}
+-                className={`px-2 py-1 text-[10px] font-medium rounded-md transition-all ${
+-                  channelFilter === ch ? 'bg-np-blue text-white' : 'bg-gray-50 text-gray-400 hover:text-gray-600'
+-                }`}
+-              >
+-                {ch || 'All'}
++            {['','sms','email','voice'].map(ch => (
++              <button key={ch} onClick={() => setChannelFilter(ch)}
++                className={`px-2 py-1 text-[9px] font-semibold rounded-md transition-all ${channelFilter===ch ? 'bg-np-blue text-white' : 'bg-gray-50 text-gray-400'}`}>
++                {ch ? ch.toUpperCase() : 'All'}
+               </button>
+             ))}
+           </div>
+         </div>
+-        <div className="flex-1 overflow-auto p-2 space-y-0.5">
+-          {loading && <p className="text-xs text-gray-400 text-center py-8">Loading...</p>}
+-          {filtered.map(c => (
+-            <ConversationItem key={c.id} conv={c} isActive={activeConv?.id === c.id} onClick={() => setActiveConv(c)} />
+-          ))}
+-          {!loading && filtered.length === 0 && (
+-            <div className="text-center py-8">
+-              <MessageCircle size={24} className="mx-auto text-gray-400/30 mb-2" />
+-              <p className="text-xs text-gray-400">No conversations</p>
+-            </div>
+-          )}
++        <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
++          {loading ? <div className="text-center py-8 text-[10px] text-gray-400">Loading...</div>
++          : filteredConvs.length === 0 ? <div className="text-center py-8 text-[10px] text-gray-400">No conversations</div>
++          : filteredConvs.map(c => <ConversationItem key={c.id} conv={c} isActive={activeConv===c.id} onClick={() => setActiveConv(c.id)} />)}
+         </div>
+       </div>
+ 
+-      {/* Message Thread */}
+-      {activeConv ? (
+-        <div className="flex-1 flex flex-col">
+-          {/* Header */}
+-          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+-            <div>
+-              <p className="text-sm font-semibold text-np-dark">
+-                {activeConv.contacts.first_name} {activeConv.contacts.last_name}
+-              </p>
+-              <p className="text-[10px] text-gray-400">{activeConv.contacts.phone || activeConv.contacts.email} · {activeConv.channel}</p>
++      {/* Thread */}
++      <div className="flex-1 flex flex-col">
++        {activeConvData ? (
++          <>
++            {/* Header */}
++            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
++              <div className="flex items-center gap-2.5">
++                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-teal/70 to-np-dark/70 flex items-center justify-center text-[10px] font-bold text-white">
++                  {`${activeConvData.contacts.first_name?.[0]||''}${activeConvData.contacts.last_name?.[0]||''}`.toUpperCase()}
++                </div>
++                <div>
++                  <p className="text-sm font-semibold text-np-dark">{activeConvData.contacts.first_name} {activeConvData.contacts.last_name}</p>
++                  <p className="text-[10px] text-gray-400">{activeConvData.contacts.phone || activeConvData.contacts.email}</p>
++                </div>
++              </div>
++              <div className="flex gap-1">
++                <button className="p-1.5 rounded-lg hover:bg-gray-50"><BellOff size={14} className="text-gray-400" /></button>
++                <button className="p-1.5 rounded-lg hover:bg-gray-50"><Archive size={14} className="text-gray-400" /></button>
++              </div>
+             </div>
+-            <div className="flex gap-1">
+-              <button className="p-1.5 rounded-lg hover:bg-gray-50 transition-colors" title="Snooze">
+-                <BellOff size={14} className="text-gray-400" />
+-              </button>
+-              <button className="p-1.5 rounded-lg hover:bg-gray-50 transition-colors" title="Archive">
+-                <Archive size={14} className="text-gray-400" />
+-              </button>
++
++            {/* Messages */}
++            <div className="flex-1 overflow-y-auto px-4 py-3">
++              {messages.map(m => <MessageBubble key={m.id} msg={m} />)}
++              <div ref={messagesEndRef} />
+             </div>
+-          </div>
+ 
+-          {/* Messages */}
+-          <div className="flex-1 overflow-auto p-4 bg-gray-50/30">
+-            {messages.map(m => <MessageBubble key={m.id} msg={m} />)}
+-            <div ref={bottomRef} />
++            {/* Compose */}
++            <div className="px-4 py-3 border-t border-gray-100">
++              <div className="flex items-end gap-2">
++                <textarea value={newMsg} onChange={e => setNewMsg(e.target.value)}
++                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
++                  placeholder="Type a message..." rows={1}
++                  className="flex-1 px-3 py-2 text-xs bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:ring-1 focus:ring-teal/30 resize-none" />
++                <button onClick={handleSend} disabled={!newMsg.trim() || sending}
++                  className="p-2.5 bg-np-blue text-white rounded-xl hover:bg-np-dark disabled:opacity-40 transition-colors">
++                  <Send size={14} />
++                </button>
++              </div>
++            </div>
++          </>
++        ) : (
++          <div className="flex-1 flex items-center justify-center">
++            <div className="text-center">
++              <MessageCircle size={40} className="mx-auto text-gray-400/20 mb-3" />
++              <p className="text-sm text-gray-400">Select a conversation</p>
++              <p className="text-[10px] text-gray-400 mt-1">or start a new one</p>
++            </div>
+           </div>
++        )}
++      </div>
+ 
+-          {/* Compose */}
+-          <div className="p-3 border-t border-gray-100 bg-white">
+-            {/* Smart Reply Chips */}
+-            <div className="flex gap-1.5 mb-2">
+-              {['Thanks for reaching out!', 'Let me check on that', 'Would you like to schedule a call?'].map(reply => (
+-                <button
+-                  key={reply}
+-                  onClick={() => setDraft(reply)}
+-                  className="px-2 py-1 text-[9px] font-medium bg-np-blue/5 text-np-blue border border-np-blue/15 rounded-full hover:bg-np-blue/10 transition-colors flex items-center gap-0.5"
+-                >
+-                  <Sparkles size={8} /> {reply}
++      {/* ── New Conversation Modal ── */}
++      {showNewConv && (
++        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
++          <div className="w-full max-w-sm bg-white rounded-xl shadow-2xl border border-gray-100 p-5 animate-in zoom-in-95 duration-200">
++            <div className="flex items-center justify-between mb-4">
++              <h3 className="text-base font-bold text-np-dark">New Conversation</h3>
++              <button onClick={() => { setShowNewConv(false); setContactSearch(''); setContactResults([]) }} className="p-1 rounded hover:bg-gray-50"><X size={14} /></button>
++            </div>
++            <div>
++              <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Search Contact</label>
++              <div className="relative mt-1">
++                <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
++                <input value={contactSearch} onChange={e => searchContacts(e.target.value)} placeholder="Name, email, or phone..."
++                  className="w-full pl-8 pr-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" />
++              </div>
++            </div>
++            <div className="mt-2 max-h-60 overflow-y-auto space-y-1">
++              {searchingContacts && <p className="text-[10px] text-gray-400 text-center py-3">Searching...</p>}
++              {contactResults.map(c => (
++                <button key={c.id} onClick={() => startConversation(c)}
++                  className="w-full flex items-center gap-2.5 p-2.5 rounded-lg hover:bg-gray-50 text-left transition-colors">
++                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-teal to-np-dark flex items-center justify-center text-[9px] font-bold text-white">
++                    {`${c.first_name?.[0]||''}${c.last_name?.[0]||''}`.toUpperCase()}
++                  </div>
++                  <div>
++                    <p className="text-xs font-semibold text-np-dark">{c.first_name} {c.last_name}</p>
++                    <p className="text-[10px] text-gray-400">{c.phone || c.email}</p>
++                  </div>
+                 </button>
+               ))}
++              {contactSearch.length >= 2 && !searchingContacts && contactResults.length === 0 && (
++                <p className="text-[10px] text-gray-400 text-center py-3">No contacts found</p>
++              )}
+             </div>
+-            <div className="flex gap-2">
+-              <input
+-                value={draft}
+-                onChange={e => setDraft(e.target.value)}
+-                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
+-                placeholder="Type a message..."
+-                className="flex-1 px-3 py-2.5 text-xs bg-gray-50 border border-gray-100/50 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30"
+-              />
+-              <button className="p-2.5 rounded-lg bg-gray-50 hover:bg-gray-50/80 transition-colors" title="Schedule">
+-                <Clock size={14} className="text-gray-400" />
+-              </button>
+-              <button
+-                onClick={handleSend}
+-                disabled={!draft.trim() || sending}
+-                className="px-4 py-2.5 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark disabled:opacity-40 transition-colors flex items-center gap-1"
+-              >
+-                <Send size={12} /> Send
+-              </button>
+-            </div>
+-          </div>
+-        </div>
+-      ) : (
+-        <div className="flex-1 flex items-center justify-center">
+-          <div className="text-center">
+-            <MessageCircle size={32} className="mx-auto text-gray-400/30 mb-3" />
+-            <p className="text-sm text-gray-400">Select a conversation</p>
+           </div>
+         </div>
+       )}
+diff --git a/src/app/(dashboard)/crm/sequences/page.tsx b/src/app/(dashboard)/crm/sequences/page.tsx
+index 71f84b6..4a752e2 100644
+--- a/src/app/(dashboard)/crm/sequences/page.tsx
++++ b/src/app/(dashboard)/crm/sequences/page.tsx
+@@ -1,34 +1,39 @@
+ 'use client'
+ 
+-// ═══════════════════════════════════════════════════════════════
+-// CRM Sequences — Drip sequence builder
+-// Route: /crm/sequences
+-// ═══════════════════════════════════════════════════════════════
+-
+ import { useEffect, useState } from 'react'
+ import {
+   Plus, Workflow, Mail, MessageCircle, Clock, Play, Pause,
+-  ChevronRight, Users, MoreHorizontal, Trash2, ArrowDown
++  ChevronRight, Users, X, ArrowDown
+ } from 'lucide-react'
+-import { fetchSequences, fetchEnrollments } from '@/lib/crm-client'
++import { fetchSequences, fetchEnrollments, createSequence, createSequenceStep } from '@/lib/crm-client'
+ import type { Sequence, SequenceStep, SequenceEnrollment } from '@/types/crm'
++import { useWorkspace } from '@/lib/workspace-context'
++
++const TRIGGER_TYPES = [
++  { value: 'manual', label: 'Manual enrollment' },
++  { value: 'tag_added', label: 'Tag added' },
++  { value: 'pipeline_change', label: 'Pipeline stage change' },
++  { value: 'form_submit', label: 'Form submission' },
++  { value: 'lifecycle_event', label: 'Lifecycle event' },
++]
++const DELAY_UNITS = [
++  { value: 1, label: 'Minutes' },
++  { value: 60, label: 'Hours' },
++  { value: 1440, label: 'Days' },
++]
+ 
+ function StepCard({ step, index }: { step: SequenceStep; index: number }) {
+   const isEmail = step.channel === 'email'
+-  const delayText = step.delay_minutes < 60
+-    ? `${step.delay_minutes}min`
+-    : step.delay_minutes < 1440
+-      ? `${Math.round(step.delay_minutes / 60)}hr`
+-      : `${Math.round(step.delay_minutes / 1440)}d`
++  const delayText = step.delay_minutes < 60 ? `${step.delay_minutes}min`
++    : step.delay_minutes < 1440 ? `${Math.round(step.delay_minutes/60)}hr`
++    : `${Math.round(step.delay_minutes/1440)}d`
+ 
+   return (
+     <div className="relative">
+       {index > 0 && (
+         <div className="flex flex-col items-center mb-2">
+           <ArrowDown size={14} className="text-gray-400" />
+-          <span className="text-[9px] font-medium text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+-            <Clock size={8} /> {delayText}
+-          </span>
++          <span className="text-[9px] font-medium text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><Clock size={8} /> {delayText}</span>
+         </div>
+       )}
+       <div className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 bg-white hover:shadow-sm transition-all">
+@@ -41,48 +46,40 @@ function StepCard({ step, index }: { step: SequenceStep; index: number }) {
+             <span className="text-[10px] font-semibold text-np-dark capitalize">{step.channel}</span>
+           </div>
+           {step.subject && <p className="text-[10px] text-gray-600 truncate mt-0.5">{step.subject}</p>}
+-          <p className="text-[10px] text-gray-400 truncate">{step.body.substring(0, 60)}...</p>
++          <p className="text-[10px] text-gray-400 truncate">{step.body.substring(0,60)}...</p>
+         </div>
+       </div>
+     </div>
+   )
+ }
+ 
+-function SequenceCard({ seq, enrollmentCount, onClick }: { seq: Sequence; enrollmentCount: number; onClick: () => void }) {
++function SequenceCard({ seq, enrollCount, onClick }: { seq: Sequence; enrollCount: number; onClick: () => void }) {
+   const stepCount = seq.steps?.length || 0
+   return (
+-    <button
+-      onClick={onClick}
+-      className="w-full text-left rounded-xl border border-gray-100 bg-white p-4 hover:shadow-md hover:border-np-blue/20 transition-all"
+-    >
++    <button onClick={onClick} className="w-full text-left rounded-xl border border-gray-100 bg-white p-4 hover:shadow-md hover:border-np-blue/20 transition-all">
+       <div className="flex items-start justify-between mb-2">
+-        <div className="flex-1">
+-          <h4 className="text-sm font-semibold text-np-dark">{seq.name}</h4>
+-          {seq.description && <p className="text-[10px] text-gray-400 mt-0.5">{seq.description}</p>}
+-        </div>
++        <div className="flex-1"><h4 className="text-sm font-semibold text-np-dark">{seq.name}</h4>
++          {seq.description && <p className="text-[10px] text-gray-400 mt-0.5">{seq.description}</p>}</div>
+         <span className={`text-[9px] font-semibold px-2 py-0.5 rounded-full ${seq.is_active ? 'bg-green-50 text-green-600' : 'bg-gray-50 text-gray-500'}`}>
+           {seq.is_active ? '● Active' : '○ Inactive'}
+         </span>
+       </div>
+-
+       <div className="flex items-center gap-4 text-[10px] text-gray-400">
+         <span className="flex items-center gap-1"><Workflow size={10} /> {stepCount} steps</span>
+-        <span className="flex items-center gap-1"><Users size={10} /> {enrollmentCount} enrolled</span>
+-        <span className="capitalize">{seq.trigger_type.replace('_', ' ')}</span>
++        <span className="flex items-center gap-1"><Users size={10} /> {enrollCount} enrolled</span>
++        <span className="capitalize">{seq.trigger_type.replace('_',' ')}</span>
+       </div>
+-
+-      {/* Mini step preview */}
+       {seq.steps && seq.steps.length > 0 && (
+         <div className="flex items-center gap-1.5 mt-3 overflow-hidden">
+-          {seq.steps.slice(0, 5).map((s, i) => (
++          {seq.steps.slice(0,5).map((s,i) => (
+             <div key={s.id} className="flex items-center gap-1">
+               {i > 0 && <ChevronRight size={8} className="text-gray-400" />}
+-              <div className={`w-5 h-5 rounded flex items-center justify-center ${s.channel === 'email' ? 'bg-blue-50 text-blue-500' : 'bg-green-50 text-green-500'}`}>
+-                {s.channel === 'email' ? <Mail size={9} /> : <MessageCircle size={9} />}
++              <div className={`w-5 h-5 rounded flex items-center justify-center ${s.channel==='email' ? 'bg-blue-50 text-blue-500' : 'bg-green-50 text-green-500'}`}>
++                {s.channel==='email' ? <Mail size={9} /> : <MessageCircle size={9} />}
+               </div>
+             </div>
+           ))}
+-          {seq.steps.length > 5 && <span className="text-[9px] text-gray-400">+{seq.steps.length - 5}</span>}
++          {seq.steps.length > 5 && <span className="text-[9px] text-gray-400">+{seq.steps.length-5}</span>}
+         </div>
+       )}
+     </button>
+@@ -90,26 +87,80 @@ function SequenceCard({ seq, enrollmentCount, onClick }: { seq: Sequence; enroll
+ }
+ 
+ export default function SequencesPage() {
++  const { currentOrg, user } = useWorkspace()
+   const [sequences, setSequences] = useState<Sequence[]>([])
+   const [enrollments, setEnrollments] = useState<SequenceEnrollment[]>([])
+   const [loading, setLoading] = useState(true)
+   const [activeSeq, setActiveSeq] = useState<Sequence | null>(null)
++  const [showCreate, setShowCreate] = useState(false)
++  const [showAddStep, setShowAddStep] = useState(false)
++  const [creating, setCreating] = useState(false)
++
++  const [seqForm, setSeqForm] = useState({ name: '', description: '', trigger_type: 'manual' })
++  const [stepForm, setStepForm] = useState({
++    channel: 'email' as 'email' | 'sms', delayAmount: 1, delayUnit: 1440,
++    subject: '', body: '',
++  })
++
++  const reload = async () => {
++    try {
++      const [seqs, enrolls] = await Promise.all([fetchSequences(), fetchEnrollments()])
++      setSequences(seqs); setEnrollments(enrolls)
++    } catch (e) { console.error(e) }
++    finally { setLoading(false) }
++  }
++
++  useEffect(() => { reload() }, [])
+ 
+-  useEffect(() => {
+-    Promise.all([fetchSequences(), fetchEnrollments()])
+-      .then(([seqs, enrolls]) => { setSequences(seqs); setEnrollments(enrolls) })
+-      .catch(console.error)
+-      .finally(() => setLoading(false))
+-  }, [])
++  const enrollCount = (id: string) => enrollments.filter(e => e.sequence_id === id && e.status === 'active').length
+ 
+-  const enrollmentCount = (seqId: string) => enrollments.filter(e => e.sequence_id === seqId && e.status === 'active').length
++  const handleCreateSequence = async () => {
++    if (!seqForm.name || !currentOrg) return
++    setCreating(true)
++    try {
++      const created = await createSequence({
++        org_id: currentOrg.id, name: seqForm.name,
++        description: seqForm.description || undefined,
++        trigger_type: seqForm.trigger_type as any,
++        is_active: false, created_by: user?.id,
++      })
++      const full = { ...created, steps: [] } as Sequence
++      setSequences(prev => [full, ...prev])
++      setShowCreate(false)
++      setActiveSeq(full)
++      setSeqForm({ name:'', description:'', trigger_type:'manual' })
++    } catch (e) { console.error(e); alert('Failed to create sequence') }
++    finally { setCreating(false) }
++  }
++
++  const handleAddStep = async () => {
++    if (!activeSeq || !stepForm.body) return
++    setCreating(true)
++    try {
++      const currentSteps = activeSeq.steps?.length || 0
++      const step = await createSequenceStep({
++        sequence_id: activeSeq.id,
++        step_order: currentSteps + 1,
++        channel: stepForm.channel,
++        delay_minutes: stepForm.delayAmount * stepForm.delayUnit,
++        subject: stepForm.channel === 'email' ? stepForm.subject : undefined,
++        body: stepForm.body,
++      })
++      const updated = { ...activeSeq, steps: [...(activeSeq.steps || []), step] }
++      setActiveSeq(updated)
++      setSequences(prev => prev.map(s => s.id === updated.id ? updated : s))
++      setShowAddStep(false)
++      setStepForm({ channel:'email', delayAmount:1, delayUnit:1440, subject:'', body:'' })
++    } catch (e) { console.error(e); alert('Failed to add step') }
++    finally { setCreating(false) }
++  }
+ 
+   if (loading) return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 rounded-lg bg-np-blue/20 animate-pulse" /></div>
+ 
+   return (
+     <div className="animate-in fade-in duration-300">
+       {activeSeq ? (
+-        /* Sequence Detail View */
++        /* Sequence Detail */
+         <div className="space-y-4">
+           <div className="flex items-center justify-between">
+             <div>
+@@ -121,66 +172,53 @@ export default function SequencesPage() {
+               <span className={`text-xs font-semibold px-3 py-1.5 rounded-full ${activeSeq.is_active ? 'bg-green-50 text-green-600' : 'bg-gray-50 text-gray-500'}`}>
+                 {activeSeq.is_active ? '● Active' : '○ Inactive'}
+               </span>
+-              <button className="px-3 py-1.5 text-xs font-medium border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
+-                Edit Sequence
+-              </button>
+             </div>
+           </div>
+-
+           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+-            {/* Steps */}
+             <div className="lg:col-span-2 space-y-0">
+               <h3 className="text-sm font-semibold text-np-dark mb-3">Steps</h3>
+-              {activeSeq.steps?.sort((a, b) => a.step_order - b.step_order).map((step, i) => (
+-                <StepCard key={step.id} step={step} index={i} />
+-              ))}
+-              {(!activeSeq.steps || activeSeq.steps.length === 0) && (
+-                <p className="text-xs text-gray-400 text-center py-8">No steps configured</p>
+-              )}
+-              <button className="mt-3 w-full py-3 border-2 border-dashed border-gray-100 rounded-lg text-xs text-gray-400 hover:text-np-blue hover:border-np-blue/30 transition-colors">
++              {activeSeq.steps?.sort((a,b) => a.step_order - b.step_order).map((step,i) => <StepCard key={step.id} step={step} index={i} />)}
++              {(!activeSeq.steps || activeSeq.steps.length === 0) && <p className="text-xs text-gray-400 text-center py-8">No steps configured</p>}
++              <button onClick={() => setShowAddStep(true)}
++                className="mt-3 w-full py-3 border-2 border-dashed border-gray-100 rounded-lg text-xs text-gray-400 hover:text-np-blue hover:border-np-blue/30 transition-colors">
+                 <Plus size={14} className="inline mr-1" /> Add Step
+               </button>
+             </div>
+-
+-            {/* Enrollment sidebar */}
+             <div>
+               <h3 className="text-sm font-semibold text-np-dark mb-3">Enrollments</h3>
+               <div className="space-y-2">
+-                {enrollments
+-                  .filter(e => e.sequence_id === activeSeq.id)
+-                  .slice(0, 10)
+-                  .map(e => (
+-                    <div key={e.id} className="p-2.5 rounded-lg border border-gray-100 bg-white">
+-                      <p className="text-[11px] font-medium text-np-dark">{e.contact_id.slice(0, 8)}...</p>
+-                      <div className="flex items-center gap-2 mt-1">
+-                        <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${
+-                          e.status === 'active' ? 'bg-green-50 text-green-600' :
+-                          e.status === 'completed' ? 'bg-blue-50 text-blue-600' :
+-                          'bg-gray-50 text-gray-500'
+-                        }`}>
+-                          {e.status}
+-                        </span>
+-                        <span className="text-[9px] text-gray-400">Step {e.current_step}</span>
+-                      </div>
++                {enrollments.filter(e => e.sequence_id === activeSeq.id).slice(0,10).map(e => (
++                  <div key={e.id} className="p-2.5 rounded-lg border border-gray-100 bg-white">
++                    <p className="text-[11px] font-medium text-np-dark">
++                      {(e as any).contacts ? `${(e as any).contacts.first_name} ${(e as any).contacts.last_name}` : e.contact_id.slice(0,8) + '...'}
++                    </p>
++                    <div className="flex items-center gap-2 mt-1">
++                      <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${
++                        e.status==='active' ? 'bg-green-50 text-green-600' : e.status==='completed' ? 'bg-blue-50 text-blue-600' : 'bg-gray-50 text-gray-500'
++                      }`}>{e.status}</span>
++                      <span className="text-[9px] text-gray-400">Step {e.current_step}</span>
+                     </div>
+-                  ))}
++                  </div>
++                ))}
++                {enrollments.filter(e => e.sequence_id === activeSeq.id).length === 0 && (
++                  <p className="text-[10px] text-gray-400 text-center py-4">No enrollments yet</p>
++                )}
+               </div>
+             </div>
+           </div>
+         </div>
+       ) : (
+-        /* Sequence List View */
++        /* Sequence List */
+         <div className="space-y-4">
+           <div className="flex items-center justify-between">
+             <h2 className="text-lg font-bold text-np-dark">Sequences</h2>
+-            <button className="flex items-center gap-1.5 px-3 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark transition-colors">
++            <button onClick={() => setShowCreate(true)}
++              className="flex items-center gap-1.5 px-3 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark transition-colors">
+               <Plus size={13} /> New Sequence
+             </button>
+           </div>
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+-            {sequences.map(s => (
+-              <SequenceCard key={s.id} seq={s} enrollmentCount={enrollmentCount(s.id)} onClick={() => setActiveSeq(s)} />
+-            ))}
++            {sequences.map(s => <SequenceCard key={s.id} seq={s} enrollCount={enrollCount(s.id)} onClick={() => setActiveSeq(s)} />)}
+             {sequences.length === 0 && (
+               <div className="col-span-full text-center py-12">
+                 <Workflow size={32} className="mx-auto text-gray-400/30 mb-3" />
+@@ -191,6 +229,98 @@ export default function SequencesPage() {
+           </div>
+         </div>
+       )}
++
++      {/* ── Create Sequence Modal ── */}
++      {showCreate && (
++        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
++          <div className="w-full max-w-md bg-white rounded-xl shadow-2xl border border-gray-100 p-5 animate-in zoom-in-95 duration-200">
++            <div className="flex items-center justify-between mb-4">
++              <h3 className="text-base font-bold text-np-dark">New Sequence</h3>
++              <button onClick={() => setShowCreate(false)} className="p-1 rounded hover:bg-gray-50"><X size={14} /></button>
++            </div>
++            <div className="space-y-3">
++              <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Name *</label>
++                <input value={seqForm.name} onChange={e => setSeqForm(p=>({...p,name:e.target.value}))} placeholder="New Client Onboarding"
++                  className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
++              <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Description</label>
++                <textarea value={seqForm.description} onChange={e => setSeqForm(p=>({...p,description:e.target.value}))} rows={2} placeholder="Automated onboarding flow..."
++                  className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
++              <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Trigger</label>
++                <select value={seqForm.trigger_type} onChange={e => setSeqForm(p=>({...p,trigger_type:e.target.value}))}
++                  className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg">
++                  {TRIGGER_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
++                </select></div>
++            </div>
++            <div className="flex justify-end gap-2 mt-4">
++              <button onClick={() => setShowCreate(false)} className="px-3 py-2 text-xs text-gray-400">Cancel</button>
++              <button onClick={handleCreateSequence} disabled={!seqForm.name || creating}
++                className="px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg disabled:opacity-40 hover:bg-np-dark transition-colors">
++                {creating ? 'Creating...' : 'Create Sequence'}
++              </button>
++            </div>
++          </div>
++        </div>
++      )}
++
++      {/* ── Add Step Modal ── */}
++      {showAddStep && (
++        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
++          <div className="w-full max-w-md bg-white rounded-xl shadow-2xl border border-gray-100 p-5 animate-in zoom-in-95 duration-200">
++            <div className="flex items-center justify-between mb-4">
++              <h3 className="text-base font-bold text-np-dark">Add Step</h3>
++              <button onClick={() => setShowAddStep(false)} className="p-1 rounded hover:bg-gray-50"><X size={14} /></button>
++            </div>
++            <div className="space-y-3">
++              {/* Channel toggle */}
++              <div className="flex gap-1 p-1 bg-gray-50 rounded-lg">
++                {(['email','sms'] as const).map(ch => (
++                  <button key={ch} onClick={() => setStepForm(p => ({ ...p, channel: ch }))}
++                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-xs font-medium transition-all ${
++                      stepForm.channel === ch ? 'bg-white shadow-sm text-np-dark' : 'text-gray-400'
++                    }`}>
++                    {ch==='email' ? <Mail size={12} /> : <MessageCircle size={12} />}
++                    {ch==='email' ? 'Email' : 'SMS'}
++                  </button>
++                ))}
++              </div>
++              {/* Delay */}
++              <div>
++                <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Delay Before This Step</label>
++                <div className="flex gap-2 mt-1">
++                  <input type="number" min={0} value={stepForm.delayAmount} onChange={e => setStepForm(p=>({...p,delayAmount:parseInt(e.target.value)||0}))}
++                    className="w-20 px-3 py-2 text-xs border border-gray-100 rounded-lg" />
++                  <div className="flex gap-0.5 p-0.5 bg-gray-50 rounded-lg">
++                    {DELAY_UNITS.map(u => (
++                      <button key={u.value} onClick={() => setStepForm(p=>({...p,delayUnit:u.value}))}
++                        className={`px-2 py-1.5 text-[10px] font-medium rounded-md transition-all ${
++                          stepForm.delayUnit===u.value ? 'bg-white shadow-sm text-np-dark' : 'text-gray-400'
++                        }`}>{u.label}</button>
++                    ))}
++                  </div>
++                </div>
++              </div>
++              {/* Subject (email only) */}
++              {stepForm.channel === 'email' && (
++                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Subject</label>
++                  <input value={stepForm.subject} onChange={e => setStepForm(p=>({...p,subject:e.target.value}))} placeholder="Follow-up: {{first_name}}"
++                    className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
++              )}
++              {/* Body */}
++              <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Message Body *</label>
++                <textarea value={stepForm.body} onChange={e => setStepForm(p=>({...p,body:e.target.value}))} rows={4}
++                  placeholder={stepForm.channel === 'email' ? '<p>Hi {{first_name}},</p>' : 'Hi {{first_name}}, ...'}
++                  className={`w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30 ${stepForm.channel==='email' ? 'font-mono' : ''}`} /></div>
++            </div>
++            <div className="flex justify-end gap-2 mt-4">
++              <button onClick={() => setShowAddStep(false)} className="px-3 py-2 text-xs text-gray-400">Cancel</button>
++              <button onClick={handleAddStep} disabled={!stepForm.body || creating}
++                className="px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg disabled:opacity-40 hover:bg-np-dark transition-colors">
++                {creating ? 'Adding...' : 'Add Step'}
++              </button>
++            </div>
++          </div>
++        </div>
++      )}
+     </div>
+   )
+ }
+diff --git a/src/app/(dashboard)/crm/settings/page.tsx b/src/app/(dashboard)/crm/settings/page.tsx
+index 3a48322..2c64589 100644
+--- a/src/app/(dashboard)/crm/settings/page.tsx
++++ b/src/app/(dashboard)/crm/settings/page.tsx
+@@ -1,140 +1,302 @@
+ 'use client'
+ 
+-// ═══════════════════════════════════════════════════════════════
+-// CRM Settings — Configuration, team, email, DNC, webhooks
+-// Route: /crm/settings
+-// ═══════════════════════════════════════════════════════════════
+-
+-import { useState } from 'react'
++import { useEffect, useState } from 'react'
+ import {
+-  Users, Mail, Shield, Webhook, Bell, Database,
+-  Phone, Bot, ChevronRight
++  Mail, Phone, Brain, Shield, Bell, Users, Sliders,
++  Save, Plus, X, Trash2, CheckCircle2, AlertTriangle
+ } from 'lucide-react'
++import { useWorkspace } from '@/lib/workspace-context'
++import { createClient } from '@/lib/supabase-browser'
++
++type Section = 'email' | 'twilio' | 'ai' | 'pipeline' | 'team' | 'notifications' | 'compliance' | 'general'
+ 
+-const SETTINGS_SECTIONS = [
+-  { id: 'team', label: 'Team Members', icon: Users, desc: 'Manage team roles, assignments, and round-robin rules' },
+-  { id: 'email', label: 'Email Configuration', icon: Mail, desc: 'Gmail Workspace integration, sending limits, warmup' },
+-  { id: 'twilio', label: 'Twilio / Phone', icon: Phone, desc: 'Phone number, messaging service, TwiML app' },
+-  { id: 'ai', label: 'AI Integration', icon: Bot, desc: 'Claude API for summaries, tasks, smart replies, sentiment' },
+-  { id: 'dnc', label: 'Do Not Contact', icon: Shield, desc: 'Org-level blocklist management' },
+-  { id: 'webhooks', label: 'Webhooks', icon: Webhook, desc: 'Outbound webhook subscriptions and event routing' },
+-  { id: 'notifications', label: 'Notifications', icon: Bell, desc: 'Alert thresholds for deliverability, response times' },
+-  { id: 'data', label: 'Data Management', icon: Database, desc: 'Import contacts, export data, merge tool, saved filters' },
++const SECTIONS: { id: Section; label: string; icon: any }[] = [
++  { id: 'general', label: 'General', icon: Sliders },
++  { id: 'email', label: 'Email', icon: Mail },
++  { id: 'twilio', label: 'Twilio / SMS', icon: Phone },
++  { id: 'ai', label: 'AI Integration', icon: Brain },
++  { id: 'pipeline', label: 'Pipeline', icon: Sliders },
++  { id: 'team', label: 'Team', icon: Users },
++  { id: 'notifications', label: 'Notifications', icon: Bell },
++  { id: 'compliance', label: 'Compliance', icon: Shield },
+ ]
+ 
++interface TwilioNumber { phone: string; nickname: string; purpose: 'sms' | 'voice' | 'both' }
++
+ export default function SettingsPage() {
+-  const [activeSection, setActiveSection] = useState<string | null>(null)
++  const { currentOrg } = useWorkspace()
++  const [active, setActive] = useState<Section>('general')
++  const [saving, setSaving] = useState(false)
++  const [saved, setSaved] = useState(false)
++
++  // Settings state
++  const [email, setEmail] = useState({ sending_email: '', sending_name: '', daily_limit: 500, provider: 'gmail_workspace', warmup: true })
++  const [twilio, setTwilio] = useState({ account_sid: '', auth_token: '', messaging_service_sid: '', api_key: '', api_secret: '', twiml_app_sid: '' })
++  const [twilioNumbers, setTwilioNumbers] = useState<TwilioNumber[]>([{ phone: '', nickname: 'Primary', purpose: 'both' }])
++  const [ai, setAi] = useState({
++    anthropic_key: '', openai_key: '', gemini_key: '',
++    call_summaries: true, smart_replies: true, sentiment: true, task_gen: true,
++  })
++  const [pipeline, setPipeline] = useState({ stages: 'New Lead,Contacted,Qualified,Proposal,Negotiation,Won,Lost' })
++  const [compliance, setCompliance] = useState({ double_optin: false, auto_dnc_unsubscribe: true, retention_days: 365 })
++  const [notifications, setNotifications] = useState({ new_lead: true, missed_call: true, task_overdue: true, campaign_complete: true })
++
++  // Load settings from Supabase
++  useEffect(() => {
++    if (!currentOrg) return
++    const supabase = createClient()
++    supabase.from('org_email_configs').select('*').eq('org_id', currentOrg.id).maybeSingle()
++      .then(({ data }) => {
++        if (data) setEmail({ sending_email: data.sending_email || '', sending_name: data.sending_name || '', daily_limit: data.daily_send_limit || 500, provider: data.provider || 'gmail_workspace', warmup: data.warmup_enabled ?? true })
++      })
++    // Load other settings from a generic org_settings table or similar
++  }, [currentOrg])
++
++  const handleSave = async () => {
++    if (!currentOrg) return
++    setSaving(true)
++    try {
++      const supabase = createClient()
++      // Save based on active section
++      if (active === 'email') {
++        await supabase.from('org_email_configs').upsert({
++          org_id: currentOrg.id, provider: email.provider,
++          sending_email: email.sending_email, sending_name: email.sending_name,
++          daily_send_limit: email.daily_limit, warmup_enabled: email.warmup,
++          batch_size: 50, batch_delay_seconds: 10, is_verified: false,
++        }, { onConflict: 'org_id' })
++      }
++      setSaved(true); setTimeout(() => setSaved(false), 2000)
++    } catch (e) { console.error(e); alert('Failed to save settings') }
++    finally { setSaving(false) }
++  }
++
++  const addTwilioNumber = () => setTwilioNumbers(prev => [...prev, { phone: '', nickname: '', purpose: 'sms' }])
++  const removeTwilioNumber = (i: number) => setTwilioNumbers(prev => prev.filter((_, idx) => idx !== i))
+ 
+   return (
+-    <div className="space-y-4 animate-in fade-in duration-300">
+-      <h2 className="text-lg font-bold text-np-dark">CRM Settings</h2>
+-
+-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+-        {SETTINGS_SECTIONS.map(section => {
+-          const Icon = section.icon
+-          return (
+-            <button
+-              key={section.id}
+-              onClick={() => setActiveSection(section.id)}
+-              className="flex items-center gap-4 p-4 rounded-xl border border-gray-100 bg-white hover:shadow-md hover:border-np-blue/20 transition-all text-left"
+-            >
+-              <div className="w-10 h-10 rounded-lg bg-np-blue/8 flex items-center justify-center flex-shrink-0">
+-                <Icon size={18} className="text-np-blue" />
+-              </div>
+-              <div className="flex-1 min-w-0">
+-                <p className="text-sm font-semibold text-np-dark">{section.label}</p>
+-                <p className="text-[10px] text-gray-400 mt-0.5">{section.desc}</p>
+-              </div>
+-              <ChevronRight size={14} className="text-gray-400 flex-shrink-0" />
+-            </button>
+-          )
+-        })}
++    <div className="flex gap-6 animate-in fade-in duration-300">
++      {/* Section Nav */}
++      <div className="w-48 flex-shrink-0 space-y-0.5">
++        {SECTIONS.map(s => (
++          <button key={s.id} onClick={() => setActive(s.id)}
++            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
++              active === s.id ? 'bg-np-blue/8 text-np-blue border border-np-blue/20' : 'text-gray-500 hover:bg-gray-50 border border-transparent'
++            }`}>
++            <s.icon size={14} />{s.label}
++          </button>
++        ))}
+       </div>
+ 
+-      {/* Placeholder content when a section is selected */}
+-      {activeSection && (
++      {/* Content */}
++      <div className="flex-1 max-w-2xl">
+         <div className="rounded-xl border border-gray-100 bg-white p-6">
+-          <div className="flex items-center justify-between mb-4">
+-            <h3 className="text-base font-bold text-np-dark capitalize">
+-              {SETTINGS_SECTIONS.find(s => s.id === activeSection)?.label}
+-            </h3>
+-            <button onClick={() => setActiveSection(null)} className="text-xs text-np-blue hover:underline">
+-              ← Back
+-            </button>
+-          </div>
++          {/* General */}
++          {active === 'general' && (
++            <div className="space-y-4">
++              <h3 className="text-sm font-bold text-np-dark">General Settings</h3>
++              <p className="text-xs text-gray-400">Organization-level CRM configuration.</p>
++              <div>
++                <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Organization Name</label>
++                <input value={currentOrg?.name || ''} disabled className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg bg-gray-50" />
++              </div>
++              <div>
++                <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Default Timezone</label>
++                <select className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg">
++                  <option value="America/New_York">Eastern (ET)</option>
++                  <option value="America/Chicago">Central (CT)</option>
++                  <option value="America/Denver">Mountain (MT)</option>
++                  <option value="America/Los_Angeles">Pacific (PT)</option>
++                </select>
++              </div>
++            </div>
++          )}
+ 
+-          {activeSection === 'email' && (
++          {/* Email */}
++          {active === 'email' && (
+             <div className="space-y-4">
+-              <div className="grid grid-cols-2 gap-4">
+-                <div>
+-                  <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Provider</label>
+-                  <select className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg">
+-                    <option>Gmail Workspace</option>
+-                    <option>Resend</option>
+-                    <option>SMTP</option>
+-                  </select>
+-                </div>
+-                <div>
+-                  <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Sending Email</label>
+-                  <input defaultValue="admin@neuroprogeny.com" className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg" />
+-                </div>
+-                <div>
+-                  <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Daily Send Limit</label>
+-                  <input type="number" defaultValue={500} className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg" />
++              <h3 className="text-sm font-bold text-np-dark">Email Configuration</h3>
++              <div className="grid grid-cols-2 gap-3">
++                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Sending Email</label>
++                  <input value={email.sending_email} onChange={e => setEmail(p=>({...p,sending_email:e.target.value}))} placeholder="hello@neuroprogeny.com"
++                    className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
++                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Sending Name</label>
++                  <input value={email.sending_name} onChange={e => setEmail(p=>({...p,sending_name:e.target.value}))} placeholder="Cameron Allen"
++                    className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
++              </div>
++              <div className="grid grid-cols-2 gap-3">
++                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Provider</label>
++                  <select value={email.provider} onChange={e => setEmail(p=>({...p,provider:e.target.value}))}
++                    className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg">
++                    <option value="gmail_workspace">Gmail Workspace</option><option value="resend">Resend</option><option value="smtp">SMTP</option>
++                  </select></div>
++                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Daily Send Limit</label>
++                  <input type="number" value={email.daily_limit} onChange={e => setEmail(p=>({...p,daily_limit:parseInt(e.target.value)||0}))}
++                    className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg" /></div>
++              </div>
++              <label className="flex items-center gap-2 text-xs">
++                <input type="checkbox" checked={email.warmup} onChange={e => setEmail(p=>({...p,warmup:e.target.checked}))} className="accent-teal w-3 h-3" />
++                Enable warmup (gradually increase daily sends)
++              </label>
++            </div>
++          )}
++
++          {/* Twilio */}
++          {active === 'twilio' && (
++            <div className="space-y-4">
++              <h3 className="text-sm font-bold text-np-dark">Twilio Configuration</h3>
++              <div className="grid grid-cols-2 gap-3">
++                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Account SID</label>
++                  <input value={twilio.account_sid} onChange={e => setTwilio(p=>({...p,account_sid:e.target.value}))} placeholder="AC..."
++                    className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
++                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Auth Token</label>
++                  <input type="password" value={twilio.auth_token} onChange={e => setTwilio(p=>({...p,auth_token:e.target.value}))} placeholder="••••••"
++                    className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
++              </div>
++              <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Messaging Service SID</label>
++                <input value={twilio.messaging_service_sid} onChange={e => setTwilio(p=>({...p,messaging_service_sid:e.target.value}))} placeholder="MG..."
++                  className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
++
++              {/* Phone Numbers */}
++              <div>
++                <div className="flex items-center justify-between mb-2">
++                  <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Phone Numbers</label>
++                  <button onClick={addTwilioNumber} className="flex items-center gap-1 text-[10px] text-np-blue font-medium hover:underline"><Plus size={10} /> Add Number</button>
+                 </div>
+-                <div>
+-                  <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Batch Size</label>
+-                  <input type="number" defaultValue={50} className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg" />
++                <div className="space-y-2">
++                  {twilioNumbers.map((num, i) => (
++                    <div key={i} className="flex items-center gap-2 p-2.5 rounded-lg border border-gray-100 bg-gray-50/50">
++                      <input value={num.phone} onChange={e => setTwilioNumbers(prev => prev.map((n,idx) => idx===i ? {...n,phone:e.target.value} : n))}
++                        placeholder="+1 828 555 1234" className="flex-1 px-2 py-1.5 text-xs border border-gray-100 rounded-md bg-white" />
++                      <input value={num.nickname} onChange={e => setTwilioNumbers(prev => prev.map((n,idx) => idx===i ? {...n,nickname:e.target.value} : n))}
++                        placeholder="Nickname" className="w-28 px-2 py-1.5 text-xs border border-gray-100 rounded-md bg-white" />
++                      <select value={num.purpose} onChange={e => setTwilioNumbers(prev => prev.map((n,idx) => idx===i ? {...n,purpose:e.target.value as any} : n))}
++                        className="w-24 px-2 py-1.5 text-xs border border-gray-100 rounded-md bg-white">
++                        <option value="sms">SMS</option><option value="voice">Voice</option><option value="both">Both</option>
++                      </select>
++                      {i > 0 && <button onClick={() => removeTwilioNumber(i)} className="p-1 text-gray-400 hover:text-red-500"><Trash2 size={12} /></button>}
++                    </div>
++                  ))}
+                 </div>
+               </div>
+-              <div className="flex items-center gap-2">
+-                <input type="checkbox" defaultChecked className="accent-teal" />
+-                <span className="text-xs text-gray-600">Enable warmup (starts at 50/day, doubles daily)</span>
++            </div>
++          )}
++
++          {/* AI Integration */}
++          {active === 'ai' && (
++            <div className="space-y-4">
++              <h3 className="text-sm font-bold text-np-dark">AI Integration</h3>
++              <p className="text-xs text-gray-400">Configure AI providers and feature toggles for the entire platform.</p>
++              <div>
++                <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Claude API Key (Anthropic)</label>
++                <input type="password" value={ai.anthropic_key} onChange={e => setAi(p=>({...p,anthropic_key:e.target.value}))} placeholder="sk-ant-..."
++                  className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-teal/30" />
++              </div>
++              <div className="grid grid-cols-2 gap-3">
++                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">OpenAI / ChatGPT Key</label>
++                  <input type="password" value={ai.openai_key} onChange={e => setAi(p=>({...p,openai_key:e.target.value}))} placeholder="sk-..."
++                    className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
++                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Gemini API Key</label>
++                  <input type="password" value={ai.gemini_key} onChange={e => setAi(p=>({...p,gemini_key:e.target.value}))} placeholder="AI..."
++                    className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
+               </div>
+               <div>
+-                <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Apps Script Webhook URL</label>
+-                <input placeholder="https://script.google.com/macros/s/..." className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg font-mono" />
++                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">AI Features</p>
++                <div className="space-y-2">
++                  {([
++                    ['call_summaries', 'Call Summaries', 'Auto-generate summaries after calls end'],
++                    ['smart_replies', 'Smart Replies', 'AI-suggested responses in messaging'],
++                    ['sentiment', 'Sentiment Analysis', 'Track contact sentiment across interactions'],
++                    ['task_gen', 'Auto Task Generation', 'Create follow-up tasks from call summaries'],
++                  ] as const).map(([key, label, desc]) => (
++                    <label key={key} className="flex items-start gap-2.5 p-2.5 rounded-lg border border-gray-100 hover:bg-gray-50/50 cursor-pointer">
++                      <input type="checkbox" checked={(ai as any)[key]} onChange={e => setAi(p => ({ ...p, [key]: e.target.checked }))}
++                        className="accent-teal w-3 h-3 mt-0.5" />
++                      <div><p className="text-xs font-medium text-np-dark">{label}</p><p className="text-[10px] text-gray-400">{desc}</p></div>
++                    </label>
++                  ))}
++                </div>
+               </div>
+-              <button className="px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark transition-colors">
+-                Save Email Configuration
+-              </button>
+             </div>
+           )}
+ 
+-          {activeSection === 'twilio' && (
++          {/* Pipeline */}
++          {active === 'pipeline' && (
+             <div className="space-y-4">
+-              <div className="grid grid-cols-2 gap-4">
+-                <div>
+-                  <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Account SID</label>
+-                  <input placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg font-mono" />
+-                </div>
+-                <div>
+-                  <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Auth Token</label>
+-                  <input type="password" placeholder="••••••••••••••••" className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg font-mono" />
+-                </div>
+-                <div>
+-                  <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Phone Number</label>
+-                  <input placeholder="+1XXXXXXXXXX" className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg" />
+-                </div>
+-                <div>
+-                  <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Messaging Service SID</label>
+-                  <input placeholder="MGxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg font-mono" />
+-                </div>
++              <h3 className="text-sm font-bold text-np-dark">Pipeline Stages</h3>
++              <p className="text-xs text-gray-400">Comma-separated list of pipeline stages for your contacts.</p>
++              <textarea value={pipeline.stages} onChange={e => setPipeline({ stages: e.target.value })} rows={3}
++                className="w-full px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" />
++              <div className="flex flex-wrap gap-1">
++                {pipeline.stages.split(',').filter(Boolean).map(s => (
++                  <span key={s} className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-np-blue/8 text-np-blue">{s.trim()}</span>
++                ))}
++              </div>
++            </div>
++          )}
++
++          {/* Team */}
++          {active === 'team' && (
++            <div className="space-y-4">
++              <h3 className="text-sm font-bold text-np-dark">Team Management</h3>
++              <p className="text-xs text-gray-400">Team members are managed from the main hub Team page. CRM team assignment uses the team_members table.</p>
++              <a href="/team" className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-np-blue border border-np-blue/20 rounded-lg hover:bg-np-blue/5">
++                <Users size={12} /> Go to Team Settings
++              </a>
++            </div>
++          )}
++
++          {/* Notifications */}
++          {active === 'notifications' && (
++            <div className="space-y-4">
++              <h3 className="text-sm font-bold text-np-dark">Notification Preferences</h3>
++              <div className="space-y-2">
++                {([
++                  ['new_lead', 'New lead created'],
++                  ['missed_call', 'Missed inbound call'],
++                  ['task_overdue', 'Task past due date'],
++                  ['campaign_complete', 'Campaign finished sending'],
++                ] as const).map(([key, label]) => (
++                  <label key={key} className="flex items-center gap-2.5 p-2.5 rounded-lg border border-gray-100 hover:bg-gray-50/50 cursor-pointer">
++                    <input type="checkbox" checked={(notifications as any)[key]} onChange={e => setNotifications(p => ({ ...p, [key]: e.target.checked }))}
++                      className="accent-teal w-3 h-3" />
++                    <span className="text-xs text-np-dark">{label}</span>
++                  </label>
++                ))}
+               </div>
+-              <button className="px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark transition-colors">
+-                Save Twilio Configuration
+-              </button>
+             </div>
+           )}
+ 
+-          {activeSection !== 'email' && activeSection !== 'twilio' && (
+-            <div className="text-center py-8">
+-              <p className="text-xs text-gray-400">Configuration panel for {activeSection} coming with backend integration.</p>
+-              <p className="text-[10px] text-gray-400 mt-1">The API routes and database tables are already in place.</p>
++          {/* Compliance */}
++          {active === 'compliance' && (
++            <div className="space-y-4">
++              <h3 className="text-sm font-bold text-np-dark">Compliance & Data</h3>
++              <label className="flex items-center gap-2.5 p-2.5 rounded-lg border border-gray-100">
++                <input type="checkbox" checked={compliance.double_optin} onChange={e => setCompliance(p=>({...p,double_optin:e.target.checked}))} className="accent-teal w-3 h-3" />
++                <div><p className="text-xs font-medium text-np-dark">Double opt-in for email</p><p className="text-[10px] text-gray-400">Require confirmation before adding to email list</p></div>
++              </label>
++              <label className="flex items-center gap-2.5 p-2.5 rounded-lg border border-gray-100">
++                <input type="checkbox" checked={compliance.auto_dnc_unsubscribe} onChange={e => setCompliance(p=>({...p,auto_dnc_unsubscribe:e.target.checked}))} className="accent-teal w-3 h-3" />
++                <div><p className="text-xs font-medium text-np-dark">Auto-DNC on unsubscribe</p><p className="text-[10px] text-gray-400">Automatically add to Do Not Contact list when someone unsubscribes</p></div>
++              </label>
++              <div>
++                <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Data Retention (days)</label>
++                <input type="number" value={compliance.retention_days} onChange={e => setCompliance(p=>({...p,retention_days:parseInt(e.target.value)||365}))}
++                  className="w-32 mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg" />
++              </div>
+             </div>
+           )}
++
++          {/* Save Button */}
++          <div className="flex items-center justify-end gap-2 mt-6 pt-4 border-t border-gray-100">
++            {saved && <span className="flex items-center gap-1 text-[10px] text-green-600 font-medium"><CheckCircle2 size={12} /> Saved</span>}
++            <button onClick={handleSave} disabled={saving}
++              className="flex items-center gap-1.5 px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark disabled:opacity-40 transition-colors">
++              <Save size={12} /> {saving ? 'Saving...' : 'Save Settings'}
++            </button>
++          </div>
+         </div>
+-      )}
++      </div>
+     </div>
+   )
+ }
+diff --git a/src/app/(dashboard)/crm/tasks/page.tsx b/src/app/(dashboard)/crm/tasks/page.tsx
+index 4fd4e21..1b91c05 100644
+--- a/src/app/(dashboard)/crm/tasks/page.tsx
++++ b/src/app/(dashboard)/crm/tasks/page.tsx
+@@ -1,18 +1,14 @@
+ 'use client'
+ 
+-// ═══════════════════════════════════════════════════════════════
+-// CRM Tasks — Task management with team assignment
+-// Route: /crm/tasks
+-// ═══════════════════════════════════════════════════════════════
+-
+ import { useEffect, useState } from 'react'
+ import Link from 'next/link'
+ import {
+   Plus, CheckCircle2, Clock, AlertTriangle, Users,
+-  Filter, Search, Calendar, Brain, X
++  Search, Brain, X, Columns, Paperclip
+ } from 'lucide-react'
+-import { fetchTasks, createTask, updateTask } from '@/lib/crm-client'
+-import type { CrmTask } from '@/types/crm'
++import { fetchTasks, createTask, updateTask, fetchTeamMembers, fetchKanbanColumns } from '@/lib/crm-client'
++import type { CrmTask, TeamMember } from '@/types/crm'
++import { useWorkspace } from '@/lib/workspace-context'
+ 
+ const PRIORITY_CONFIG = {
+   urgent: { color: '#dc2626', bg: '#fef2f2', label: 'Urgent' },
+@@ -20,7 +16,6 @@ const PRIORITY_CONFIG = {
+   medium: { color: '#2563eb', bg: '#eff6ff', label: 'Medium' },
+   low: { color: '#6b7280', bg: '#f3f4f6', label: 'Low' },
+ }
+-
+ const STATUS_CONFIG = {
+   todo: { color: '#6b7280', label: 'To Do' },
+   in_progress: { color: '#2563eb', label: 'In Progress' },
+@@ -29,86 +24,66 @@ const STATUS_CONFIG = {
+ }
+ 
+ function TaskRow({ task, onComplete, onStatusChange }: {
+-  task: CrmTask; onComplete: () => void; onStatusChange: (status: string) => void
++  task: CrmTask; onComplete: () => void; onStatusChange: (s: string) => void
+ }) {
+   const pri = PRIORITY_CONFIG[task.priority]
+   const sta = STATUS_CONFIG[task.status as keyof typeof STATUS_CONFIG]
+-  const contactName = task.contact
+-    ? `${(task.contact as any).first_name} ${(task.contact as any).last_name}`
+-    : null
++  const contactName = task.contact ? `${(task.contact as any).first_name} ${(task.contact as any).last_name}` : null
+   const isOverdue = task.due_date && task.status !== 'done' && new Date(task.due_date) < new Date()
++  const raci = task.custom_fields?.raci as Record<string, string> | undefined
++  const kanbanCol = task.custom_fields?.kanban_column as string | undefined
+ 
+   return (
+     <div className={`flex items-center gap-3 px-4 py-3 border-b border-gray-100/30 hover:bg-gray-50/30 transition-colors ${task.status === 'done' ? 'opacity-50' : ''}`}>
+-      {/* Checkbox */}
+-      <button
+-        onClick={onComplete}
+-        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+-          task.status === 'done' ? 'bg-green-500 border-green-500' : 'border-gray-100 hover:border-np-blue'
+-        }`}
+-      >
++      <button onClick={onComplete}
++        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${task.status === 'done' ? 'bg-green-500 border-green-500' : 'border-gray-100 hover:border-np-blue'}`}>
+         {task.status === 'done' && <CheckCircle2 size={12} className="text-white" />}
+       </button>
+-
+-      {/* Priority dot */}
+       <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: pri.color }} title={pri.label} />
+-
+-      {/* Content */}
+       <div className="flex-1 min-w-0">
+-        <p className={`text-xs font-medium ${task.status === 'done' ? 'line-through text-gray-400' : 'text-np-dark'}`}>
+-          {task.title}
+-        </p>
+-        <div className="flex items-center gap-2 mt-0.5">
+-          {contactName && (
+-            <Link href={`/crm/contacts?id=${task.contact_id}`} className="text-[10px] text-np-blue hover:underline">
+-              {contactName}
+-            </Link>
+-          )}
+-          {task.source !== 'manual' && (
+-            <span className="text-[9px] px-1 py-0.5 rounded bg-np-blue/8 text-np-blue font-medium flex items-center gap-0.5">
+-              <Brain size={7} /> {task.source}
+-            </span>
+-          )}
++        <p className={`text-xs font-medium ${task.status === 'done' ? 'line-through text-gray-400' : 'text-np-dark'}`}>{task.title}</p>
++        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
++          {contactName && <Link href={`/crm/contacts?id=${task.contact_id}`} className="text-[10px] text-np-blue hover:underline">{contactName}</Link>}
++          {task.source !== 'manual' && <span className="text-[9px] px-1 py-0.5 rounded bg-np-blue/8 text-np-blue font-medium flex items-center gap-0.5"><Brain size={7} /> {task.source}</span>}
++          {kanbanCol && <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-600 font-medium flex items-center gap-0.5"><Columns size={7} /> {kanbanCol}</span>}
++          {raci?.responsible && <span className="text-[9px] px-1 py-0.5 rounded bg-teal/10 text-teal font-medium">R: {raci.responsible.slice(0,8)}</span>}
+         </div>
+       </div>
+-
+-      {/* Status */}
+-      <select
+-        value={task.status}
+-        onChange={e => onStatusChange(e.target.value)}
+-        className="text-[10px] bg-gray-50 border-none rounded-md px-2 py-1 font-medium"
+-        style={{ color: sta.color }}
+-      >
+-        <option value="todo">To Do</option>
+-        <option value="in_progress">In Progress</option>
+-        <option value="done">Done</option>
+-        <option value="cancelled">Cancelled</option>
++      <select value={task.status} onChange={e => onStatusChange(e.target.value)}
++        className="text-[10px] bg-gray-50 border-none rounded-md px-2 py-1 font-medium" style={{ color: sta.color }}>
++        <option value="todo">To Do</option><option value="in_progress">In Progress</option>
++        <option value="done">Done</option><option value="cancelled">Cancelled</option>
+       </select>
+-
+-      {/* Assigned */}
+-      <span className="text-[10px] text-gray-400 w-24 truncate text-right">
+-        {(task.assigned_member as any)?.display_name || '--'}
+-      </span>
+-
+-      {/* Due date */}
++      <span className="text-[10px] text-gray-400 w-24 truncate text-right">{(task.assigned_member as any)?.display_name || '--'}</span>
+       <span className={`text-[10px] w-20 text-right ${isOverdue ? 'text-red-500 font-semibold' : 'text-gray-400'}`}>
+-        {task.due_date
+-          ? new Date(task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+-          : '--'}
+-        {isOverdue && ' ⚠'}
++        {task.due_date ? new Date(task.due_date).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '--'}{isOverdue && ' !'}
+       </span>
+     </div>
+   )
+ }
+ 
+ export default function TasksPage() {
++  const { currentOrg, user } = useWorkspace()
+   const [tasks, setTasks] = useState<CrmTask[]>([])
+   const [loading, setLoading] = useState(true)
+-  const [statusFilter, setStatusFilter] = useState<string>('')
+-  const [priorityFilter, setPriorityFilter] = useState<string>('')
++  const [statusFilter, setStatusFilter] = useState('')
++  const [priorityFilter, setPriorityFilter] = useState('')
+   const [search, setSearch] = useState('')
+   const [showCreate, setShowCreate] = useState(false)
+-  const [newTask, setNewTask] = useState({ title: '', description: '', priority: 'medium' as const, due_date: '' })
++  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
++  const [kanbanCols, setKanbanCols] = useState<{id:string;name:string}[]>([])
++  const [creating, setCreating] = useState(false)
++
++  const [form, setForm] = useState({
++    title: '', description: '', priority: 'medium' as const, due_date: '',
++    assigned_to: '', kanban_column: '',
++    raci_responsible: '', raci_accountable: '', raci_consulted: '', raci_informed: '',
++  })
++
++  useEffect(() => {
++    fetchTeamMembers().then(setTeamMembers).catch(console.error)
++    if (currentOrg) fetchKanbanColumns(currentOrg.id).then(setKanbanCols).catch(console.error)
++  }, [currentOrg])
+ 
+   useEffect(() => {
+     const filters: any = {}
+@@ -117,18 +92,43 @@ export default function TasksPage() {
+   }, [statusFilter])
+ 
+   const handleComplete = async (task: CrmTask) => {
+-    const newStatus = task.status === 'done' ? 'todo' : 'done'
+-    try {
+-      await updateTask(task.id, { status: newStatus })
+-      setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t))
+-    } catch (e) { console.error(e) }
++    const s = task.status === 'done' ? 'todo' : 'done'
++    try { await updateTask(task.id, { status: s }); setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: s } : t)) } catch (e) { console.error(e) }
++  }
++  const handleStatusChange = async (id: string, status: string) => {
++    try { await updateTask(id, { status: status as any }); setTasks(prev => prev.map(t => t.id === id ? { ...t, status: status as any } : t)) } catch (e) { console.error(e) }
+   }
+ 
+-  const handleStatusChange = async (taskId: string, status: string) => {
++  const handleCreate = async () => {
++    if (!form.title || !currentOrg) return
++    setCreating(true)
+     try {
+-      await updateTask(taskId, { status: status as any })
+-      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: status as any } : t))
+-    } catch (e) { console.error(e) }
++      const customFields: Record<string,any> = {}
++      if (form.kanban_column) customFields.kanban_column = form.kanban_column
++      const raci: Record<string,string> = {}
++      if (form.raci_responsible) raci.responsible = form.raci_responsible
++      if (form.raci_accountable) raci.accountable = form.raci_accountable
++      if (form.raci_consulted) raci.consulted = form.raci_consulted
++      if (form.raci_informed) raci.informed = form.raci_informed
++      if (Object.keys(raci).length) customFields.raci = raci
++
++      const created = await createTask({
++        org_id: currentOrg.id,
++        title: form.title,
++        description: form.description || undefined,
++        priority: form.priority,
++        status: 'todo',
++        due_date: form.due_date || undefined,
++        assigned_to: form.assigned_to || user?.id || '',
++        source: 'manual',
++        created_by: user?.id,
++        custom_fields: Object.keys(customFields).length ? customFields : undefined,
++      })
++      setTasks(prev => [created, ...prev])
++      setShowCreate(false)
++      setForm({ title:'', description:'', priority:'medium', due_date:'', assigned_to:'', kanban_column:'', raci_responsible:'', raci_accountable:'', raci_consulted:'', raci_informed:'' })
++    } catch (e) { console.error(e); alert('Failed to create task') }
++    finally { setCreating(false) }
+   }
+ 
+   const filtered = tasks.filter(t => {
+@@ -136,7 +136,6 @@ export default function TasksPage() {
+     if (search && !t.title.toLowerCase().includes(search.toLowerCase())) return false
+     return true
+   })
+-
+   const overdue = filtered.filter(t => t.due_date && t.status !== 'done' && new Date(t.due_date) < new Date())
+ 
+   return (
+@@ -145,51 +144,31 @@ export default function TasksPage() {
+       <div className="flex flex-wrap items-center gap-3">
+         <div className="relative flex-1 min-w-[180px]">
+           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+-          <input
+-            value={search}
+-            onChange={e => setSearch(e.target.value)}
+-            placeholder="Search tasks..."
+-            className="w-full pl-8 pr-3 py-2 text-xs bg-white border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30"
+-          />
++          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search tasks..."
++            className="w-full pl-8 pr-3 py-2 text-xs bg-white border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" />
+         </div>
+-
+         <div className="flex gap-1">
+-          {['', 'todo', 'in_progress', 'done'].map(s => (
+-            <button
+-              key={s}
+-              onClick={() => setStatusFilter(s)}
+-              className={`px-2 py-1.5 text-[10px] font-medium rounded-md transition-all ${
+-                statusFilter === s ? 'bg-np-blue text-white' : 'bg-gray-50 text-gray-400'
+-              }`}
+-            >
++          {['','todo','in_progress','done'].map(s => (
++            <button key={s} onClick={() => setStatusFilter(s)}
++              className={`px-2 py-1.5 text-[10px] font-medium rounded-md transition-all ${statusFilter===s ? 'bg-np-blue text-white' : 'bg-gray-50 text-gray-400'}`}>
+               {s ? STATUS_CONFIG[s as keyof typeof STATUS_CONFIG]?.label : 'All'}
+             </button>
+           ))}
+         </div>
+-
+         <div className="flex gap-1">
+-          {['', 'urgent', 'high', 'medium', 'low'].map(p => (
+-            <button
+-              key={p}
+-              onClick={() => setPriorityFilter(p)}
+-              className={`px-2 py-1.5 text-[10px] font-medium rounded-md transition-all ${
+-                priorityFilter === p ? 'bg-np-blue text-white' : 'bg-gray-50 text-gray-400'
+-              }`}
+-            >
++          {['','urgent','high','medium','low'].map(p => (
++            <button key={p} onClick={() => setPriorityFilter(p)}
++              className={`px-2 py-1.5 text-[10px] font-medium rounded-md transition-all ${priorityFilter===p ? 'bg-np-blue text-white' : 'bg-gray-50 text-gray-400'}`}>
+               {p || 'Priority'}
+             </button>
+           ))}
+         </div>
+-
+-        <button
+-          onClick={() => setShowCreate(true)}
+-          className="flex items-center gap-1.5 px-3 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark transition-colors"
+-        >
++        <button onClick={() => setShowCreate(true)}
++          className="flex items-center gap-1.5 px-3 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark transition-colors">
+           <Plus size={13} /> Add Task
+         </button>
+       </div>
+ 
+-      {/* Overdue alert */}
+       {overdue.length > 0 && (
+         <div className="flex items-center gap-2 px-4 py-2 bg-red-50 border border-red-200 rounded-lg">
+           <AlertTriangle size={14} className="text-red-500" />
+@@ -197,106 +176,88 @@ export default function TasksPage() {
+         </div>
+       )}
+ 
+-      {/* Stats */}
+       <div className="flex gap-3">
+-        <div className="px-3 py-2 rounded-lg border border-gray-100 bg-white text-xs">
+-          <span className="text-gray-400">Open: </span>
+-          <span className="font-bold text-np-dark">{filtered.filter(t => t.status === 'todo' || t.status === 'in_progress').length}</span>
+-        </div>
+-        <div className="px-3 py-2 rounded-lg border border-gray-100 bg-white text-xs">
+-          <span className="text-gray-400">Done: </span>
+-          <span className="font-bold text-green-600">{filtered.filter(t => t.status === 'done').length}</span>
+-        </div>
+-        <div className="px-3 py-2 rounded-lg border border-gray-100 bg-white text-xs">
+-          <span className="text-gray-400">AI-Created: </span>
+-          <span className="font-bold text-np-blue">{filtered.filter(t => t.source !== 'manual').length}</span>
+-        </div>
++        <div className="px-3 py-2 rounded-lg border border-gray-100 bg-white text-xs"><span className="text-gray-400">Open: </span><span className="font-bold text-np-dark">{filtered.filter(t => t.status==='todo'||t.status==='in_progress').length}</span></div>
++        <div className="px-3 py-2 rounded-lg border border-gray-100 bg-white text-xs"><span className="text-gray-400">Done: </span><span className="font-bold text-green-600">{filtered.filter(t => t.status==='done').length}</span></div>
++        <div className="px-3 py-2 rounded-lg border border-gray-100 bg-white text-xs"><span className="text-gray-400">AI-Created: </span><span className="font-bold text-np-blue">{filtered.filter(t => t.source!=='manual').length}</span></div>
+       </div>
+ 
+       {/* Task List */}
+       <div className="rounded-xl border border-gray-100 bg-white overflow-hidden">
+-        {/* Header */}
+         <div className="flex items-center gap-3 px-4 py-2 border-b border-gray-100 bg-gray-50/50">
+-          <div className="w-5" />
+-          <div className="w-2" />
++          <div className="w-5" /><div className="w-2" />
+           <span className="flex-1 text-[9px] font-semibold uppercase tracking-wider text-gray-400">Task</span>
+           <span className="w-24 text-[9px] font-semibold uppercase tracking-wider text-gray-400">Status</span>
+           <span className="w-24 text-[9px] font-semibold uppercase tracking-wider text-gray-400 text-right">Assigned</span>
+           <span className="w-20 text-[9px] font-semibold uppercase tracking-wider text-gray-400 text-right">Due</span>
+         </div>
+-        {loading ? (
+-          <div className="py-8 text-center text-xs text-gray-400">Loading tasks...</div>
+-        ) : filtered.length === 0 ? (
+-          <div className="py-12 text-center">
+-            <CheckCircle2 size={32} className="mx-auto text-gray-400/30 mb-3" />
+-            <p className="text-sm text-gray-400">No tasks found</p>
+-          </div>
+-        ) : (
+-          filtered.map(t => (
+-            <TaskRow
+-              key={t.id}
+-              task={t}
+-              onComplete={() => handleComplete(t)}
+-              onStatusChange={s => handleStatusChange(t.id, s)}
+-            />
+-          ))
+-        )}
++        {loading ? <div className="py-8 text-center text-xs text-gray-400">Loading tasks...</div>
++        : filtered.length === 0 ? <div className="py-12 text-center"><CheckCircle2 size={32} className="mx-auto text-gray-400/30 mb-3" /><p className="text-sm text-gray-400">No tasks found</p></div>
++        : filtered.map(t => <TaskRow key={t.id} task={t} onComplete={() => handleComplete(t)} onStatusChange={s => handleStatusChange(t.id, s)} />)}
+       </div>
+ 
+-      {/* Create Modal */}
++      {/* ── Create Task Modal ── */}
+       {showCreate && (
+         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+-          <div className="w-full max-w-md bg-white rounded-xl shadow-2xl border border-gray-100 p-5 animate-in zoom-in-95 duration-200">
++          <div className="w-full max-w-lg bg-white rounded-xl shadow-2xl border border-gray-100 p-5 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+             <div className="flex items-center justify-between mb-4">
+               <h3 className="text-base font-bold text-np-dark">New Task</h3>
+               <button onClick={() => setShowCreate(false)} className="p-1 rounded hover:bg-gray-50"><X size={14} /></button>
+             </div>
+             <div className="space-y-3">
+-              <input
+-                value={newTask.title}
+-                onChange={e => setNewTask(p => ({ ...p, title: e.target.value }))}
+-                placeholder="Task title"
+-                className="w-full px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30"
+-              />
+-              <textarea
+-                value={newTask.description}
+-                onChange={e => setNewTask(p => ({ ...p, description: e.target.value }))}
+-                placeholder="Description (optional)"
+-                rows={3}
+-                className="w-full px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30"
+-              />
+-              <div className="grid grid-cols-2 gap-3">
+-                <div>
+-                  <label className="text-[10px] font-semibold text-gray-400">Priority</label>
+-                  <select
+-                    value={newTask.priority}
+-                    onChange={e => setNewTask(p => ({ ...p, priority: e.target.value as any }))}
+-                    className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg"
+-                  >
+-                    <option value="low">Low</option>
+-                    <option value="medium">Medium</option>
+-                    <option value="high">High</option>
+-                    <option value="urgent">Urgent</option>
+-                  </select>
+-                </div>
+-                <div>
+-                  <label className="text-[10px] font-semibold text-gray-400">Due Date</label>
+-                  <input
+-                    type="date"
+-                    value={newTask.due_date}
+-                    onChange={e => setNewTask(p => ({ ...p, due_date: e.target.value }))}
+-                    className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg"
+-                  />
++              <div>
++                <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Title *</label>
++                <input value={form.title} onChange={e => setForm(p=>({...p,title:e.target.value}))} placeholder="Follow up with lead"
++                  className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" />
++              </div>
++              <div>
++                <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Description</label>
++                <textarea value={form.description} onChange={e => setForm(p=>({...p,description:e.target.value}))} rows={2} placeholder="Optional details..."
++                  className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" />
++              </div>
++              <div className="grid grid-cols-3 gap-3">
++                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Priority</label>
++                  <select value={form.priority} onChange={e => setForm(p=>({...p,priority:e.target.value as any}))}
++                    className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg">
++                    <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option>
++                  </select></div>
++                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Due Date</label>
++                  <input type="date" value={form.due_date} onChange={e => setForm(p=>({...p,due_date:e.target.value}))}
++                    className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg" /></div>
++                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Assigned To</label>
++                  <select value={form.assigned_to} onChange={e => setForm(p=>({...p,assigned_to:e.target.value}))}
++                    className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg">
++                    <option value="">Self</option>{teamMembers.map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
++                  </select></div>
++              </div>
++              <div>
++                <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Kanban Column</label>
++                <select value={form.kanban_column} onChange={e => setForm(p=>({...p,kanban_column:e.target.value}))}
++                  className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg">
++                  <option value="">None</option>{kanbanCols.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
++                </select>
++              </div>
++              {/* RACI */}
++              <div>
++                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">RACI Roles</p>
++                <div className="grid grid-cols-2 gap-2">
++                  {([['raci_responsible','Responsible'],['raci_accountable','Accountable'],['raci_consulted','Consulted'],['raci_informed','Informed']] as const).map(([key, label]) => (
++                    <div key={key}>
++                      <label className="text-[9px] font-medium text-gray-400">{label}</label>
++                      <select value={(form as any)[key]} onChange={e => setForm(p=>({...p,[key]:e.target.value}))}
++                        className="w-full mt-0.5 px-2 py-1.5 text-[11px] border border-gray-100 rounded-lg">
++                        <option value="">None</option>{teamMembers.map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
++                      </select>
++                    </div>
++                  ))}
+                 </div>
+               </div>
+             </div>
+             <div className="flex justify-end gap-2 mt-4">
+               <button onClick={() => setShowCreate(false)} className="px-3 py-2 text-xs text-gray-400">Cancel</button>
+-              <button
+-                disabled={!newTask.title}
+-                className="px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg disabled:opacity-40 transition-colors"
+-              >
+-                Create Task
++              <button onClick={handleCreate} disabled={!form.title || creating}
++                className="px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg disabled:opacity-40 hover:bg-np-dark transition-colors">
++                {creating ? 'Creating...' : 'Create Task'}
+               </button>
+             </div>
+           </div>
+diff --git a/src/lib/crm-client.ts b/src/lib/crm-client.ts
+index 909b378..df0c13c 100644
+--- a/src/lib/crm-client.ts
++++ b/src/lib/crm-client.ts
+@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase-browser'
+ import type {
+   CrmContact, Conversation, Message, CallLog, EmailCampaign,
+   CrmTask, ContactNote, LifecycleEvent, ActivityLogEntry,
+-  Sequence, SequenceEnrollment, ContactSearchParams, SavedFilter,
++  Sequence, SequenceStep, SequenceEnrollment, ContactSearchParams, SavedFilter,
+   TeamMember, OrgEmailDailyStats
+ } from '@/types/crm'
+ 
+@@ -280,6 +280,65 @@ export async function fetchEnrollments(contactId?: string) {
+   return (data || []) as SequenceEnrollment[]
+ }
+ 
++export async function createSequence(seq: Partial<Sequence>) {
++  const { data, error } = await supabase()
++    .from('sequences')
++    .insert(seq)
++    .select()
++    .single()
++  if (error) throw error
++  return data as Sequence
++}
++
++export async function createSequenceStep(step: Partial<SequenceStep>) {
++  const { data, error } = await supabase()
++    .from('sequence_steps')
++    .insert(step)
++    .select()
++    .single()
++  if (error) throw error
++  return data as SequenceStep
++}
++
++export async function createConversation(contactId: string, channel: 'sms' | 'voice' | 'email', orgId: string) {
++  // Check for existing conversation
++  const { data: existing } = await supabase()
++    .from('conversations')
++    .select('id')
++    .eq('contact_id', contactId)
++    .eq('channel', channel)
++    .maybeSingle()
++
++  if (existing) return existing.id as string
++
++  const { data, error } = await supabase()
++    .from('conversations')
++    .insert({ contact_id: contactId, channel, org_id: orgId, unread_count: 0 })
++    .select()
++    .single()
++  if (error) throw error
++  return data.id as string
++}
++
++export async function fetchKanbanColumns(orgId: string) {
++  const { data, error } = await supabase()
++    .from('kanban_columns')
++    .select('*')
++    .eq('org_id', orgId)
++    .order('position')
++  if (error) {
++    // Table might not exist yet, return defaults
++    return [
++      { id: 'backlog', name: 'Backlog' },
++      { id: 'todo', name: 'To Do' },
++      { id: 'in_progress', name: 'In Progress' },
++      { id: 'review', name: 'Review' },
++      { id: 'done', name: 'Done' },
++    ]
++  }
++  return data || []
++}
++
+ // ─── Team Members ───
+ 
+ export async function fetchTeamMembers() {
+diff --git a/src/types/crm.ts b/src/types/crm.ts
+index 1a6795e..9bc2397 100644
+--- a/src/types/crm.ts
++++ b/src/types/crm.ts
+@@ -261,6 +261,7 @@ export interface CrmTask {
+   // Joined
+   contact?: CrmContact | null
+   assigned_member?: TeamMember | null
++  custom_fields?: Record<string, any>
+ }
+ 
+ // ─── Activity & Lifecycle ───

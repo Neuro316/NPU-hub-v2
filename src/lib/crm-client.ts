@@ -300,6 +300,48 @@ export async function createSequenceStep(step: Partial<SequenceStep>) {
   return data as SequenceStep
 }
 
+<<<<<<< ours
+=======
+export async function createConversation(contactId: string, channel: 'sms' | 'voice' | 'email', orgId: string) {
+  // Check for existing conversation
+  const { data: existing } = await supabase()
+    .from('conversations')
+    .select('id')
+    .eq('contact_id', contactId)
+    .eq('channel', channel)
+    .maybeSingle()
+
+  if (existing) return existing.id as string
+
+  const { data, error } = await supabase()
+    .from('conversations')
+    .insert({ contact_id: contactId, channel, org_id: orgId, unread_count: 0 })
+    .select()
+    .single()
+  if (error) throw error
+  return data.id as string
+}
+
+export async function fetchKanbanColumns(orgId: string) {
+  const { data, error } = await supabase()
+    .from('kanban_columns')
+    .select('*')
+    .eq('org_id', orgId)
+    .order('position')
+  if (error) {
+    // Table might not exist yet, return defaults
+    return [
+      { id: 'backlog', name: 'Backlog' },
+      { id: 'todo', name: 'To Do' },
+      { id: 'in_progress', name: 'In Progress' },
+      { id: 'review', name: 'Review' },
+      { id: 'done', name: 'Done' },
+    ]
+  }
+  return data || []
+}
+
+>>>>>>> theirs
 // ─── Team Members ───
 
 export async function fetchTeamMembers() {
