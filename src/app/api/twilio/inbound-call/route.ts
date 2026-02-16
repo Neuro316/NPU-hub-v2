@@ -3,27 +3,34 @@ import { createAdminSupabase } from '@/lib/supabase';
 import twilio from 'twilio';
 
 export async function POST(request: NextRequest) {
+  const VoiceResponse = twilio.twiml.VoiceResponse;
+
   try {
-    const formData = await request.formData();
-    const params: Record<string, string> = {};
-    formData.forEach((val, key) => { params[key] = val.toString(); });
+    // Parse form data - Twilio sends application/x-www-form-urlencoded
+    let params: Record<string, string> = {};
+    try {
+      const text = await request.text();
+      const searchParams = new URLSearchParams(text);
+      searchParams.forEach((val, key) => { params[key] = val; });
+    } catch (e) {
+      console.error('Failed to parse request body:', e);
+    }
 
-    const to = params.To;
-    const from = params.From;
-    const direction = params.Direction; // "inbound" or "outbound-api" or "outbound-dial"
+    console.log('Inbound call params:', JSON.stringify(params));
 
-    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const to = params.To || '';
+    const from = params.From || '';
+
     const response = new VoiceResponse();
 
-    // OUTBOUND: Browser is calling a phone number
-    // The Voice SDK sends the "To" param as the number to dial
-    if (to && /^\+?\d{7,15}$/.test(to.replace(/\s/g, ''))) {
-      // Look up a caller ID from org config
-      const supabase = createAdminSupabase();
-      let callerId = from || '';
+    // OUTBOUND: Browser calling a phone number
+    // Voice SDK passes the number as "To" parameter
+    if (to && !to.startsWith('client:') && to.match(/^\+?\d{7,15}$/)) {
+      let callerId = '';
 
-      // Try to find the org's Twilio number to use as caller ID
+      // Get org's Twilio number for caller ID
       try {
+        const supabase = createAdminSupabase();
         const { data: settings } = await supabase
           .from('org_settings')
           .select('setting_value')
@@ -34,27 +41,37 @@ export async function POST(request: NextRequest) {
         if (settings?.setting_value?.numbers?.length) {
           callerId = settings.setting_value.numbers[0].phone;
         }
-      } catch { /* use default */ }
+      } catch (e) {
+        console.warn('Could not load org caller ID:', e);
+      }
 
-      const dial = response.dial({ callerId });
-      dial.number(to);
+      if (!callerId) {
+        callerId = process.env.TWILIO_PHONE_NUMBER || '';
+      }
+
+      console.log('Outbound call - To:', to, 'CallerID:', callerId);
+
+      if (callerId) {
+        const dial = response.dial({ callerId });
+        dial.number(to);
+      } else {
+        // No caller ID available, just try dialing
+        const dial = response.dial();
+        dial.number(to);
+      }
 
       return new NextResponse(response.toString(), {
         headers: { 'Content-Type': 'text/xml' },
       });
     }
 
-    // INBOUND: Someone calling your Twilio number, ring the browser
+    // INBOUND: Someone calling your Twilio number
+    console.log('Inbound call from:', from);
     response.say({ voice: 'Polly.Joanna' }, 'Please hold while we connect you.');
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '');
-    const dial = response.dial({
-      timeout: 30,
-      ...(appUrl ? { action: `${appUrl}/api/twilio/call-status` } : {}),
-    });
+    const dial = response.dial({ timeout: 30 });
     dial.client('crm-browser-client');
 
-    // Voicemail if no answer
     response.say({ voice: 'Polly.Joanna' }, 'No one is available. Please leave a message after the beep.');
     response.record({ maxLength: 120, transcribe: false });
 
@@ -62,13 +79,21 @@ export async function POST(request: NextRequest) {
       headers: { 'Content-Type': 'text/xml' },
     });
   } catch (e: any) {
-    console.error('Inbound call error:', e);
-    // Return valid TwiML even on error
-    const VoiceResponse = twilio.twiml.VoiceResponse;
+    console.error('Inbound call route CRASH:', e);
     const response = new VoiceResponse();
-    response.say({ voice: 'Polly.Joanna' }, 'An error occurred. Please try again later.');
+    response.say('We are sorry, please try again later.');
     return new NextResponse(response.toString(), {
       headers: { 'Content-Type': 'text/xml' },
     });
   }
+}
+
+// Also handle GET in case Twilio sends GET
+export async function GET() {
+  const VoiceResponse = twilio.twiml.VoiceResponse;
+  const response = new VoiceResponse();
+  response.say('This endpoint only accepts POST requests.');
+  return new NextResponse(response.toString(), {
+    headers: { 'Content-Type': 'text/xml' },
+  });
 }
