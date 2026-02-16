@@ -99,7 +99,6 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
       // Load team members for RACI
       supabase.from('team_members').select('*').eq('org_id', c.org_id).eq('is_active', true)
         .then(({ data }) => { if (data) setTeamMembers(data as TeamMember[]) })
-        .catch(() => {})
 
       // Timeline
       try {
