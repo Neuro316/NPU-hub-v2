@@ -3,20 +3,21 @@
 // ═══════════════════════════════════════════════════════════════
 // NPU CRM Layout — Sub-navigation within the hub dashboard
 // This wraps all /crm/* routes
+// UPDATED: Added Conversations tab
 // ═══════════════════════════════════════════════════════════════
 
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import {
   Users, BarChart3, Phone, MessageCircle, Mail, Workflow,
-  CheckSquare, Settings, LayoutDashboard, Target
+  CheckSquare, Settings, LayoutDashboard, Target, MessagesSquare
 } from 'lucide-react'
 
 const CRM_NAV = [
   { href: '/crm', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/crm/contacts', label: 'Contacts', icon: Users },
   { href: '/crm/pipelines', label: 'Pipelines', icon: Target },
-  { href: '/crm/analytics', label: 'Analytics', icon: BarChart3 },
+  { href: '/crm/conversations', label: 'Conversations', icon: MessagesSquare },
   { href: '/crm/dialer', label: 'Dialer', icon: Phone },
   { href: '/crm/messages', label: 'Messages', icon: MessageCircle },
   { href: '/crm/campaigns', label: 'Campaigns', icon: Mail },
