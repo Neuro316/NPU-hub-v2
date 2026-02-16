@@ -6,7 +6,7 @@ import {
   X, Phone, Mail, MessageCircle, Tag, Clock, CheckCircle2, AlertTriangle,
   TrendingUp, Send, Pencil, Trash2, Plus, User, Activity, Brain,
   Route, Target, Calendar, FileText, Sparkles, ChevronRight, Heart,
-  ArrowRightLeft, GraduationCap, BarChart3
+  ArrowRightLeft, GraduationCap, BarChart3, Shield
 } from 'lucide-react'
 import {
   fetchContact, updateContact, fetchNotes, createNote,
@@ -366,6 +366,45 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
                       {contact.last_contacted_at && (
                         <span> · Last contact {new Date(contact.last_contacted_at).toLocaleDateString()}</span>
                       )}
+                    </div>
+                  </div>
+
+                  {/* Compliance */}
+                  <div className="space-y-2">
+                    <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                      <Shield className="w-3 h-3" /> Compliance
+                    </h4>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between p-2.5 rounded-lg border border-gray-100 bg-gray-50/50">
+                        <div>
+                          <p className="text-[11px] font-medium text-np-dark">SMS Consent</p>
+                          <p className="text-[9px] text-gray-400">{contact.sms_consent ? 'Can receive text messages' : 'No consent to text'}</p>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            await updateContact(contact.id, { sms_consent: !contact.sms_consent })
+                            load(); onUpdate?.()
+                          }}
+                          className={`relative w-9 h-5 rounded-full transition-colors ${contact.sms_consent ? 'bg-green-500' : 'bg-gray-300'}`}
+                        >
+                          <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${contact.sms_consent ? 'left-[18px]' : 'left-0.5'}`} />
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between p-2.5 rounded-lg border border-gray-100 bg-gray-50/50">
+                        <div>
+                          <p className="text-[11px] font-medium text-np-dark">Do Not Contact</p>
+                          <p className="text-[9px] text-gray-400">{contact.do_not_contact ? 'Blocked from all outreach' : 'Available for contact'}</p>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            await updateContact(contact.id, { do_not_contact: !contact.do_not_contact })
+                            load(); onUpdate?.()
+                          }}
+                          className={`relative w-9 h-5 rounded-full transition-colors ${contact.do_not_contact ? 'bg-red-500' : 'bg-gray-300'}`}
+                        >
+                          <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${contact.do_not_contact ? 'left-[18px]' : 'left-0.5'}`} />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </>

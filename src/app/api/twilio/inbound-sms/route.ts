@@ -22,6 +22,43 @@ export async function POST(request: NextRequest) {
   const from = params.From;
   const body = params.Body;
 
+  // Handle STOP/START/UNSUBSCRIBE keywords (TCPA compliance)
+  const keyword = (body || '').trim().toUpperCase();
+  const STOP_KEYWORDS = ['STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT'];
+  const START_KEYWORDS = ['START', 'YES', 'UNSTOP', 'SUBSCRIBE'];
+
+  if (STOP_KEYWORDS.includes(keyword) || START_KEYWORDS.includes(keyword)) {
+    const isStop = STOP_KEYWORDS.includes(keyword);
+
+    // Find the contact by phone across all orgs
+    const { data: contacts } = await supabase
+      .from('contacts')
+      .select('id, org_id')
+      .eq('phone', from);
+
+    if (contacts?.length) {
+      for (const c of contacts) {
+        await supabase.from('contacts').update({
+          sms_consent: !isStop,
+          ...(isStop ? { do_not_contact: true } : {}),
+        }).eq('id', c.id);
+
+        await supabase.from('crm_activity_log').insert({
+          contact_id: c.id,
+          org_id: c.org_id,
+          event_type: isStop ? 'sms_opt_out' : 'sms_opt_in',
+          event_data: { keyword, phone: from },
+          created_at: new Date().toISOString(),
+        });
+      }
+    }
+
+    // Twilio auto-responds to STOP/START, so return empty TwiML
+    return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
+      headers: { 'Content-Type': 'text/xml' },
+    });
+  }
+
   // Look up which org owns this Twilio number
   // For multi-org, you'd look this up by the To number. For now, use first org.
   const { data: orgConfig } = await supabase
