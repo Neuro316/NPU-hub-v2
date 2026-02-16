@@ -86,7 +86,7 @@ export default function DialerPage() {
         .or(`first_name.ilike.%${searchQuery}%,last_name.ilike.%${searchQuery}%,phone.ilike.%${searchQuery}%,email.ilike.%${searchQuery}%`)
         .is('do_not_contact', false)
         .limit(20)
-      setContacts((data || []) as CrmContact[])
+      setContacts((data || []) as unknown as CrmContact[])
       setLoading(false)
     }, 300)
     return () => clearTimeout(t)
