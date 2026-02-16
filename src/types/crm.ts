@@ -493,3 +493,4 @@ export interface ContactSearchParams {
   limit?: number
   offset?: number
 }
+
