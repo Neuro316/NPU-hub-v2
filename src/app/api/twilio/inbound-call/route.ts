@@ -1,96 +1,74 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminSupabase } from '@/lib/supabase';
-import { validateTwilioSignature, generateInboundCallTwiml } from '@/lib/twilio';
-import {
-  findContactByPhone, getOrCreateConversation, logActivity,
-  emitWebhookEvent, trackInboundForResponseTime
-} from '@/lib/crm-server';
+import twilio from 'twilio';
 
 export async function POST(request: NextRequest) {
-  const formData = await request.formData();
-  const params: Record<string, string> = {};
-  formData.forEach((val, key) => { params[key] = val.toString(); });
+  try {
+    const formData = await request.formData();
+    const params: Record<string, string> = {};
+    formData.forEach((val, key) => { params[key] = val.toString(); });
 
-  const signature = request.headers.get('x-twilio-signature') || '';
-  const url = `${process.env.NEXT_PUBLIC_APP_URL}/api/twilio/inbound-call`;
-  if (!validateTwilioSignature(url, params, signature)) {
-    return NextResponse.json({ error: 'Invalid signature' }, { status: 403 });
-  }
+    const to = params.To;
+    const from = params.From;
+    const direction = params.Direction; // "inbound" or "outbound-api" or "outbound-dial"
 
-  const supabase = createAdminSupabase();
-  const from = params.From;
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const response = new VoiceResponse();
 
-  // Find org (same pattern as inbound-sms)
-  const { data: orgConfig } = await supabase
-    .from('org_email_config')
-    .select('org_id')
-    .limit(1)
-    .single();
-  const orgId = orgConfig?.org_id;
+    // OUTBOUND: Browser is calling a phone number
+    // The Voice SDK sends the "To" param as the number to dial
+    if (to && /^\+?\d{7,15}$/.test(to.replace(/\s/g, ''))) {
+      // Look up a caller ID from org config
+      const supabase = createAdminSupabase();
+      let callerId = from || '';
 
-  let contact = orgId ? await findContactByPhone(supabase, orgId, from) : null;
+      // Try to find the org's Twilio number to use as caller ID
+      try {
+        const { data: settings } = await supabase
+          .from('org_settings')
+          .select('setting_value')
+          .eq('setting_key', 'crm_twilio')
+          .limit(1)
+          .single();
 
-  // Create contact if new
-  if (!contact && orgId) {
-    const { data: newContact } = await supabase
-      .from('contacts')
-      .insert({
-        org_id: orgId,
-        first_name: 'Unknown',
-        last_name: from,
-        phone: from,
-        source: 'inbound_call',
-      })
-      .select()
-      .single();
-    contact = newContact;
-  }
+        if (settings?.setting_value?.numbers?.length) {
+          callerId = settings.setting_value.numbers[0].phone;
+        }
+      } catch { /* use default */ }
 
-  if (contact && orgId) {
-    const conversation = await getOrCreateConversation(supabase, contact.id, 'voice');
+      const dial = response.dial({ callerId });
+      dial.number(to);
 
-    // Insert call log
-    const { data: callLog } = await supabase
-      .from('call_logs')
-      .insert({
-        conversation_id: conversation.id,
-        contact_id: contact.id,
-        direction: 'inbound',
-        status: 'ringing',
-        started_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
-
-    // Track for response time
-    if (callLog) {
-      await trackInboundForResponseTime(supabase, orgId, contact.id, 'voice', callLog.id);
+      return new NextResponse(response.toString(), {
+        headers: { 'Content-Type': 'text/xml' },
+      });
     }
 
-    // Log activity
-    await logActivity(supabase, {
-      contact_id: contact.id,
-      org_id: orgId,
-      event_type: 'call_inbound',
-      event_data: { from, call_log_id: callLog?.id },
-      ref_table: 'call_logs',
-      ref_id: callLog?.id,
-    });
+    // INBOUND: Someone calling your Twilio number, ring the browser
+    response.say({ voice: 'Polly.Joanna' }, 'Please hold while we connect you.');
 
-    // Emit webhook
-    await emitWebhookEvent(supabase, orgId, 'call.started', {
-      call_log_id: callLog?.id,
-      contact_id: contact.id,
-      direction: 'inbound',
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '');
+    const dial = response.dial({
+      timeout: 30,
+      ...(appUrl ? { action: `${appUrl}/api/twilio/call-status` } : {}),
+    });
+    dial.client('crm-browser-client');
+
+    // Voicemail if no answer
+    response.say({ voice: 'Polly.Joanna' }, 'No one is available. Please leave a message after the beep.');
+    response.record({ maxLength: 120, transcribe: false });
+
+    return new NextResponse(response.toString(), {
+      headers: { 'Content-Type': 'text/xml' },
+    });
+  } catch (e: any) {
+    console.error('Inbound call error:', e);
+    // Return valid TwiML even on error
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const response = new VoiceResponse();
+    response.say({ voice: 'Polly.Joanna' }, 'An error occurred. Please try again later.');
+    return new NextResponse(response.toString(), {
+      headers: { 'Content-Type': 'text/xml' },
     });
   }
-
-  // Return TwiML (ring browser, fallback to voicemail)
-  // The client identity is the org's primary admin user — in production,
-  // this would be looked up from the org config
-  const twiml = generateInboundCallTwiml('crm-browser-client');
-
-  return new NextResponse(twiml, {
-    headers: { 'Content-Type': 'text/xml' },
-  });
 }
