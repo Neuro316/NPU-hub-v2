@@ -32,6 +32,19 @@ export interface CrmContact {
   health_tier?: HealthTier | null
   // v3 extended fields (custom JSONB or additional columns)
   custom_fields?: Record<string, any>
+  // CRM enhancements
+  raci_responsible?: string[]
+  raci_accountable?: string | null
+  raci_consulted?: string[]
+  raci_informed?: string[]
+  kanban_column?: string
+  kanban_order?: number
+  hub_task_id?: string | null
+  labels?: string[]
+  checklist?: any[]
+  estimated_minutes?: number | null
+  actual_minutes?: number | null
+  last_synced_at?: string | null
   // Identity graph + attribution
   identity_id?: string | null
   acquisition_source?: string | null
@@ -262,6 +275,19 @@ export interface CrmTask {
   contact?: CrmContact | null
   assigned_member?: TeamMember | null
   custom_fields?: Record<string, any>
+  // CRM enhancements
+  raci_responsible?: string[]
+  raci_accountable?: string | null
+  raci_consulted?: string[]
+  raci_informed?: string[]
+  kanban_column?: string
+  kanban_order?: number
+  hub_task_id?: string | null
+  labels?: string[]
+  checklist?: any[]
+  estimated_minutes?: number | null
+  actual_minutes?: number | null
+  last_synced_at?: string | null
 }
 
 // ─── Activity & Lifecycle ───
