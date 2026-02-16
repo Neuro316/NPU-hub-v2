@@ -1,5 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import twilio from 'twilio'
+import { createAdminSupabase } from '@/lib/supabase'
 
 export type NumberPurpose = 'outreach' | 'client_relations' | 'appointments' | 'inbound_main' | 'general'
 
@@ -47,10 +48,12 @@ const CLIENT_STAGES = ['Won', 'Enrolled', 'Fully Enrolled', 'Active', 'Completed
  * Get Twilio config for an org. Falls back to env vars if org has no config.
  */
 export async function getOrgTwilioConfig(
-  supabase: SupabaseClient,
+  _supabase: SupabaseClient,
   orgId: string
 ): Promise<OrgTwilioConfig> {
-  const { data } = await supabase
+  // Use admin client to bypass RLS on org_settings
+  const admin = createAdminSupabase()
+  const { data } = await admin
     .from('org_settings')
     .select('setting_value')
     .eq('org_id', orgId)
@@ -139,7 +142,10 @@ export async function sendOrgSms(
     params.from = fromNumber
   }
 
-  params.statusCallback = `${process.env.NEXT_PUBLIC_APP_URL}/api/twilio/message-status`
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '')
+  if (appUrl) {
+    params.statusCallback = `${appUrl}/api/twilio/message-status`
+  }
 
   return client.messages.create(params)
 }
