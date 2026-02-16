@@ -1,12 +1,33 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { createAdminSupabase } from '@/lib/supabase';
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
-});
+// Get Anthropic client - checks org settings first, falls back to env var
+async function getAnthropicClient(orgId?: string): Promise<Anthropic> {
+  if (orgId) {
+    try {
+      const supabase = createAdminSupabase();
+      const { data } = await supabase
+        .from('org_settings')
+        .select('setting_value')
+        .eq('org_id', orgId)
+        .eq('setting_key', 'crm_ai')
+        .maybeSingle();
+
+      if (data?.setting_value?.anthropic_key) {
+        return new Anthropic({ apiKey: data.setting_value.anthropic_key });
+      }
+    } catch (e) {
+      console.warn('Failed to load org AI config, using env:', e);
+    }
+  }
+
+  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+}
 
 // ─── Call Summary ───
-export async function generateCallSummary(transcription: string): Promise<string> {
-  const response = await anthropic.messages.create({
+export async function generateCallSummary(transcription: string, orgId?: string): Promise<string> {
+  const client = await getAnthropicClient(orgId);
+  const response = await client.messages.create({
     model: 'claude-sonnet-4-5-20250514',
     max_tokens: 300,
     messages: [{
@@ -21,9 +42,10 @@ export async function generateCallSummary(transcription: string): Promise<string
 
 // ─── Sentiment Analysis ───
 export async function analyzeSentiment(
-  text: string
+  text: string, orgId?: string
 ): Promise<'positive' | 'neutral' | 'negative' | 'concerned'> {
-  const response = await anthropic.messages.create({
+  const client = await getAnthropicClient(orgId);
+  const response = await client.messages.create({
     model: 'claude-sonnet-4-5-20250514',
     max_tokens: 50,
     messages: [{
@@ -47,8 +69,9 @@ export interface ExtractedTask {
   suggested_role: string;
 }
 
-export async function extractTasks(text: string): Promise<ExtractedTask[]> {
-  const response = await anthropic.messages.create({
+export async function extractTasks(text: string, orgId?: string): Promise<ExtractedTask[]> {
+  const client = await getAnthropicClient(orgId);
+  const response = await client.messages.create({
     model: 'claude-sonnet-4-5-20250514',
     max_tokens: 1000,
     messages: [{
@@ -68,10 +91,11 @@ export async function extractTasks(text: string): Promise<ExtractedTask[]> {
 }
 
 // ─── Smart Reply Suggestions ───
-export async function generateSmartReplies(messages: string[]): Promise<string[]> {
+export async function generateSmartReplies(messages: string[], orgId?: string): Promise<string[]> {
   const thread = messages.map((m, i) => `${i % 2 === 0 ? 'Contact' : 'You'}: ${m}`).join('\n');
+  const client = await getAnthropicClient(orgId);
 
-  const response = await anthropic.messages.create({
+  const response = await client.messages.create({
     model: 'claude-sonnet-4-5-20250514',
     max_tokens: 500,
     messages: [{
@@ -92,9 +116,11 @@ export async function generateSmartReplies(messages: string[]): Promise<string[]
 
 // ─── Duplicate Detection Scoring ───
 export async function scoreDuplicates(
-  pairs: Array<{ a: { name: string; phone?: string; email?: string }; b: { name: string; phone?: string; email?: string } }>
+  pairs: Array<{ a: { name: string; phone?: string; email?: string }; b: { name: string; phone?: string; email?: string } }>,
+  orgId?: string
 ): Promise<Array<{ index: number; confidence: number; reason: string }>> {
-  const response = await anthropic.messages.create({
+  const client = await getAnthropicClient(orgId);
+  const response = await client.messages.create({
     model: 'claude-sonnet-4-5-20250514',
     max_tokens: 1000,
     messages: [{

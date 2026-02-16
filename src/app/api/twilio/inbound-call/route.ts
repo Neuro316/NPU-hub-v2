@@ -51,12 +51,18 @@ export async function POST(request: NextRequest) {
 
       console.log('Outbound call - To:', to, 'CallerID:', callerId);
 
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '');
+
       if (callerId) {
-        const dial = response.dial({ callerId });
+        const dial = response.dial({
+          callerId,
+          ...(appUrl ? { action: `${appUrl}/api/twilio/call-status` } : {}),
+        });
         dial.number(to);
       } else {
-        // No caller ID available, just try dialing
-        const dial = response.dial();
+        const dial = response.dial({
+          ...(appUrl ? { action: `${appUrl}/api/twilio/call-status` } : {}),
+        });
         dial.number(to);
       }
 

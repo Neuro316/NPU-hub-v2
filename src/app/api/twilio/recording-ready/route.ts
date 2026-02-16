@@ -5,9 +5,14 @@ import { generateCallSummary, analyzeSentiment, extractTasks } from '@/lib/crm-a
 import { logActivity } from '@/lib/crm-server';
 
 export async function POST(request: NextRequest) {
-  const formData = await request.formData();
-  const params: Record<string, string> = {};
-  formData.forEach((val, key) => { params[key] = val.toString(); });
+  let params: Record<string, string> = {};
+  try {
+    const text = await request.text();
+    const searchParams = new URLSearchParams(text);
+    searchParams.forEach((val, key) => { params[key] = val; });
+  } catch (e) {
+    console.error('recording-ready parse error:', e);
+  }
 
   const supabase = createAdminSupabase();
   const recordingUrl = params.RecordingUrl;
@@ -46,10 +51,10 @@ export async function POST(request: NextRequest) {
     const transcription = await transcribeRecording(`${recordingUrl}.mp3`);
 
     // 2. AI Summary
-    const aiSummary = transcription ? await generateCallSummary(transcription) : null;
+    const aiSummary = transcription ? await generateCallSummary(transcription, orgId) : null;
 
     // 3. Sentiment
-    const sentiment = transcription ? await analyzeSentiment(transcription) : null;
+    const sentiment = transcription ? await analyzeSentiment(transcription, orgId) : null;
 
     // 4. Update call log
     await supabase
@@ -63,7 +68,7 @@ export async function POST(request: NextRequest) {
 
     // 5. Extract tasks (store for review — don't auto-create)
     if (transcription) {
-      const tasks = await extractTasks(transcription);
+      const tasks = await extractTasks(transcription, orgId);
       if (tasks.length > 0 && orgId) {
         // Store extracted tasks in activity log for the review modal to pick up
         await logActivity(supabase, {

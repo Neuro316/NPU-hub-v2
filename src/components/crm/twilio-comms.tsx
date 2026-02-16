@@ -31,6 +31,7 @@ export function SmsCompose({ contact, onClose, onSent }: {
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'Failed to send'); setSending(false); return }
+      if (data.log_warning) console.warn('SMS log warning:', data.log_warning)
       onSent?.()
       onClose()
     } catch {
@@ -162,6 +163,10 @@ export function VoipCall({ contact, onClose, onEnded }: {
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'Failed to connect'); setCallState('error'); return }
 
+      // Log any warnings from the server (e.g. call log failed)
+      if (data.log_warning) console.warn('Call log warning:', data.log_warning)
+      if (data.log_warning) console.warn('Voice log warning:', data.log_warning)
+
       const { Device } = await import('@twilio/voice-sdk')
 
       const device = new Device(data.token, {
@@ -197,13 +202,14 @@ export function VoipCall({ contact, onClose, onEnded }: {
 
       call.on('error', (err: any) => {
         console.error('Call error:', err)
-        setError(err.message || 'Call failed')
+        const msg = err?.message || err?.twilioError?.message || String(err) || 'Call failed'
+        setError(msg)
         setCallState('error')
         if (timerRef.current) clearInterval(timerRef.current)
       })
     } catch (e: any) {
       console.error('Call setup error:', e)
-      setError(e.message || 'Failed to set up call')
+      setError(e?.message || String(e) || 'Failed to set up call')
       setCallState('error')
     }
   }, [contact.id, onEnded])
