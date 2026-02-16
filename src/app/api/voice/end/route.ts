@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
         body: notes.trim(),
         type: 'call_note',
         is_pinned: false,
-      }).catch(e => console.warn('Note insert skipped:', e))
+      }).then(({ error: e }) => { if (e) console.warn('Note insert skipped:', e) })
     }
 
     // Activity log
