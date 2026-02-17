@@ -346,7 +346,7 @@ export async function fetchTeamMembers(orgId?: string) {
   let query = supabase()
     .from('team_members')
     .select('*')
-    .eq('is_active', true)
+    .eq('status', 'active')
     .order('display_name')
 
   if (orgId) query = query.eq('org_id', orgId)

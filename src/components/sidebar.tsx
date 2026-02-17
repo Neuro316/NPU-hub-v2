@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useWorkspace } from '@/lib/workspace-context'
+import { usePermissions } from '@/lib/hooks/use-permissions'
 import { createClient } from '@/lib/supabase-browser'
 import {
   LayoutDashboard,
@@ -30,32 +31,34 @@ import {
   Contact2,
 } from 'lucide-react'
 
+// moduleKey must match the keys in member-detail.tsx MODULES array
 const navItems = [
-  { label: 'Dashboard', href: '/', icon: LayoutDashboard },
-  { label: 'Journey Builder', href: '/journeys', icon: Route },
-  { label: 'Task Manager', href: '/tasks', icon: CheckSquare },
-  { label: 'Campaigns', href: '/campaigns', icon: Megaphone },
-  { label: 'Social Media', href: '/social', icon: Target },
-  { label: 'ShipIt Journal', href: '/shipit', icon: Rocket },
-  { label: 'Media Library', href: '/media', icon: Image },
-  { label: 'AI Advisory', href: '/advisory', icon: Brain },
-  { label: 'SOPs', href: '/sops', icon: FileText },
-  { label: 'Ideas', href: '/ideas', icon: Lightbulb },
-  { label: 'ICP Profiles', href: '/icps', icon: Users },
-  { label: 'Calendar', href: '/calendar', icon: Calendar },
-  { label: 'Company Library', href: '/library', icon: BookOpen },
-  { label: 'Media Appearances', href: '/media-appearances', icon: Mic },
-  { label: 'Support Tickets', href: '/tickets', icon: TicketCheck },
-  { label: 'CRM', href: '/crm', icon: Contact2 },
-  { label: 'Analytics', href: '/analytics', icon: BarChart3 },
-  { label: 'Integrations', href: '/integrations', icon: Activity },
-  { label: 'Team', href: '/team', icon: Users },
-  { label: 'Settings', href: '/settings', icon: Settings },
+  { label: 'Dashboard', href: '/', icon: LayoutDashboard, moduleKey: 'dashboard' },
+  { label: 'Journey Builder', href: '/journeys', icon: Route, moduleKey: 'journeys' },
+  { label: 'Task Manager', href: '/tasks', icon: CheckSquare, moduleKey: 'tasks' },
+  { label: 'Campaigns', href: '/campaigns', icon: Megaphone, moduleKey: 'campaigns' },
+  { label: 'Social Media', href: '/social', icon: Target, moduleKey: 'social' },
+  { label: 'ShipIt Journal', href: '/shipit', icon: Rocket, moduleKey: 'shipit' },
+  { label: 'Media Library', href: '/media', icon: Image, moduleKey: 'media' },
+  { label: 'AI Advisory', href: '/advisory', icon: Brain, moduleKey: 'advisory' },
+  { label: 'SOPs', href: '/sops', icon: FileText, moduleKey: 'sops' },
+  { label: 'Ideas', href: '/ideas', icon: Lightbulb, moduleKey: 'ideas' },
+  { label: 'ICP Profiles', href: '/icps', icon: Users, moduleKey: 'icps' },
+  { label: 'Calendar', href: '/calendar', icon: Calendar, moduleKey: 'calendar' },
+  { label: 'Company Library', href: '/library', icon: BookOpen, moduleKey: 'library' },
+  { label: 'Media Appearances', href: '/media-appearances', icon: Mic, moduleKey: 'media_appearances' },
+  { label: 'Support Tickets', href: '/tickets', icon: TicketCheck, moduleKey: 'tickets' },
+  { label: 'CRM', href: '/crm', icon: Contact2, moduleKey: 'crm' },
+  { label: 'Analytics', href: '/analytics', icon: BarChart3, moduleKey: 'analytics' },
+  { label: 'Integrations', href: '/integrations', icon: Activity, moduleKey: 'integrations' },
+  { label: 'Team', href: '/team', icon: Users, moduleKey: 'team' },
+  { label: 'Settings', href: '/settings', icon: Settings, moduleKey: 'settings' },
 ]
 
 export function Sidebar() {
   const pathname = usePathname()
   const { user, organizations, currentOrg, switchOrg } = useWorkspace()
+  const { canView, loading: permsLoading } = usePermissions()
   const [orgDropdownOpen, setOrgDropdownOpen] = useState(false)
 
   const handleSignOut = async () => {
@@ -63,6 +66,9 @@ export function Sidebar() {
     await supabase.auth.signOut()
     window.location.href = '/login'
   }
+
+  // Filter nav items based on permissions
+  const visibleItems = navItems.filter(item => canView(item.moduleKey))
 
   return (
     <aside className="w-64 h-screen bg-white border-r border-gray-100 flex flex-col fixed left-0 top-0">
@@ -121,7 +127,7 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-2 px-3">
         <div className="space-y-0.5">
-          {navItems.map((item) => {
+          {visibleItems.map((item) => {
             const Icon = item.icon
             const isActive = pathname === item.href || 
               (item.href !== '/' && pathname.startsWith(item.href))
