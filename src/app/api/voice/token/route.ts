@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerSupabase } from '@/lib/supabase';
+import { createServerSupabase, createAdminSupabase } from '@/lib/supabase';
 import { getOrgTwilioConfig, generateOrgVoiceToken, getVoiceCallerId } from '@/lib/twilio-org';
 import { getOrCreateConversation, logActivity, isDNC } from '@/lib/crm-server';
 
 export async function POST(request: NextRequest) {
   try {
     const supabase = createServerSupabase();
+    const admin = createAdminSupabase();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -66,6 +67,25 @@ export async function POST(request: NextRequest) {
         ref_table: 'call_logs', ref_id: callLogId, actor_id: user.id,
       });
     } catch (e: any) { console.warn('Call log failed, proceeding:', e.message); }
+
+    // ── Direct counter increment (admin bypasses RLS) ──
+    try {
+      const now = new Date().toISOString()
+      const { data: cur } = await admin
+        .from('contacts')
+        .select('total_calls, total_outbound_calls')
+        .eq('id', contact_id)
+        .single()
+
+      if (cur) {
+        await admin.from('contacts').update({
+          total_calls: (cur.total_calls || 0) + 1,
+          total_outbound_calls: (cur.total_outbound_calls || 0) + 1,
+          last_call_at: now,
+          last_contacted_at: now,
+        }).eq('id', contact_id)
+      }
+    } catch (e) { console.warn('Call counter increment skipped:', e) }
 
     return NextResponse.json({
       token, call_log_id: callLogId, contact_phone: contact.phone, caller_id: callerId,
