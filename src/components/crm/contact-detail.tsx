@@ -6,7 +6,7 @@ import {
   X, Phone, Mail, MessageCircle, Tag, Clock, CheckCircle2, AlertTriangle,
   TrendingUp, Send, Pencil, Trash2, Plus, User, Activity, Brain,
   Route, Target, Calendar, FileText, Sparkles, ChevronRight, Heart,
-  ArrowRightLeft, GraduationCap, BarChart3, Shield, ExternalLink
+  ArrowRightLeft, GraduationCap, BarChart3, Shield, ExternalLink, Paperclip
 } from 'lucide-react'
 import {
   fetchContact, updateContact, fetchNotes, createNote,
@@ -17,6 +17,7 @@ import type { CrmContact, ContactNote, CrmTask, CallLog, ActivityLogEntry, TeamM
 import { ContactCommsButtons } from '@/components/crm/twilio-comms'
 import { CrmTaskCard, CrmTaskDetail } from '@/components/crm/crm-task-card'
 import ContactCommPanel from '@/components/crm/contact-comm-panel'
+import EmailComposer from '@/components/crm/email-composer'
 import { createClient } from '@/lib/supabase-browser'
 
 interface TimelineEvent {
@@ -75,6 +76,8 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
   const [tasks, setTasks] = useState<CrmTask[]>([])
   const [calls, setCalls] = useState<CallLog[]>([])
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
+  const [pipelineResources, setPipelineResources] = useState<any[]>([])
+  const [emailResourceAttach, setEmailResourceAttach] = useState<any | null>(null)
   const [newNote, setNewNote] = useState('')
   const [newTag, setNewTag] = useState('')
   const [editing, setEditing] = useState(false)
@@ -83,6 +86,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
   const [taskCreating, setTaskCreating] = useState(false)
   const [taskForm, setTaskForm] = useState({ title: '', description: '', priority: 'medium', due_date: '', kanban_column: '', assigned_to: '', raci_accountable: '', raci_responsible: [] as string[], labels: '' })
   const [selectedTask, setSelectedTask] = useState<CrmTask | null>(null)
+  const [showEmailComposer, setShowEmailComposer] = useState(false)
 
   const load = useCallback(async () => {
     if (!contactId) return
@@ -99,6 +103,10 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
       // Load team members for RACI
       supabase.from('team_members').select('*').eq('org_id', c.org_id)
         .then(({ data }) => { if (data) setTeamMembers(data as TeamMember[]) })
+
+      // Load pipeline resources for this contact's stage
+      supabase.from('pipeline_resources').select('*').eq('org_id', c.org_id).eq('is_active', true).order('sort_order')
+        .then(({ data }) => { if (data) setPipelineResources(data) })
 
       // Timeline
       try {
@@ -249,7 +257,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
 
               {/* Quick contacts */}
               <div className="flex gap-2 mt-3 flex-wrap">
-                <ContactCommsButtons contact={contact} size="md" />
+                <ContactCommsButtons contact={contact} size="md" onEmailClick={() => setShowEmailComposer(true)} />
                 {contact.phone && <span className="text-[9px] text-gray-400 self-center">{contact.phone}</span>}
                 {contact.email && <span className="text-[9px] text-gray-400 self-center">{contact.email}</span>}
               </div>
@@ -622,8 +630,64 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
 
               {/* COMMS TAB */}
               {tab === 'comms' && (
-                <div className="space-y-2">
-                  {calls.map(call => (
+                <div className="space-y-4">
+                  {/* Quick Compose */}
+                  {contact.email && (
+                    <button onClick={() => setShowEmailComposer(true)}
+                      className="flex items-center gap-2 w-full px-3 py-2.5 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-100 rounded-lg hover:from-amber-100 hover:to-orange-100 transition-all">
+                      <Send className="w-4 h-4 text-amber-600" />
+                      <span className="text-[11px] font-medium text-amber-700">Compose Email to {contact.first_name}</span>
+                      <Sparkles className="w-3 h-3 text-amber-400 ml-auto" />
+                    </button>
+                  )}
+
+                  {/* Pipeline Resources */}
+                  {(() => {
+                    const stageRes = pipelineResources.filter((r: any) => r.pipeline_stage === contact.pipeline_stage)
+                    if (stageRes.length === 0) return null
+                    return (
+                      <div>
+                        <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                          <Paperclip className="w-3 h-3" /> {contact.pipeline_stage} Resources
+                        </h4>
+                        <div className="space-y-1.5">
+                          {stageRes.map((r: any) => (
+                            <div key={r.id} className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg group">
+                              <FileText className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[11px] font-medium text-np-dark truncate">{r.name}</p>
+                                {r.description && <p className="text-[9px] text-gray-400 truncate">{r.description}</p>}
+                              </div>
+                              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                {r.file_url && (
+                                  <a href={r.file_url} target="_blank" rel="noopener noreferrer"
+                                    className="px-2 py-0.5 bg-white border border-gray-200 rounded text-[9px] text-gray-500 hover:text-np-blue">
+                                    View
+                                  </a>
+                                )}
+                                {contact.email && (
+                                  <button onClick={() => { setEmailResourceAttach(r); setShowEmailComposer(true) }}
+                                    className="px-2 py-0.5 bg-np-blue text-white rounded text-[9px] hover:bg-np-dark">
+                                    Send
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })()}
+
+                  {/* Call History */}
+                  <div>
+                    {calls.length > 0 && (
+                      <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                        <Phone className="w-3 h-3" /> Call History
+                      </h4>
+                    )}
+                    <div className="space-y-2">
+                    {calls.map(call => (
                     <div key={call.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-gray-50">
                       <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
                         call.direction === 'inbound' ? 'bg-green-100' : 'bg-blue-100'
@@ -647,7 +711,9 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
                       )}
                     </div>
                   ))}
-                  {calls.length === 0 && <p className="text-center text-[10px] text-gray-400 py-8">No communications yet</p>}
+                  {calls.length === 0 && !pipelineResources.length && <p className="text-center text-[10px] text-gray-400 py-8">No communications yet</p>}
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -671,6 +737,16 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
           teamMembers={teamMembers}
           onUpdate={handleTaskUpdate}
           onClose={() => setSelectedTask(null)}
+        />
+      )}
+
+      {/* Email Composer */}
+      {showEmailComposer && contact && (
+        <EmailComposer
+          contact={contact}
+          onClose={() => { setShowEmailComposer(false); setEmailResourceAttach(null) }}
+          onSent={() => { load(); onUpdate?.() }}
+          attachResource={emailResourceAttach}
         />
       )}
     </div>

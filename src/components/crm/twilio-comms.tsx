@@ -305,10 +305,11 @@ export function VoipCall({ contact, onClose, onEnded }: {
 
 // ── Inline Action Buttons (always visible) ──
 
-export function ContactCommsButtons({ contact, size = 'sm', onContactUpdated }: {
+export function ContactCommsButtons({ contact, size = 'sm', onContactUpdated, onEmailClick }: {
   contact: CrmContact
   size?: 'sm' | 'md'
   onContactUpdated?: (updated: Partial<CrmContact>) => void
+  onEmailClick?: () => void
 }) {
   const [showSms, setShowSms] = useState(false)
   const [showCall, setShowCall] = useState(false)
@@ -350,12 +351,13 @@ export function ContactCommsButtons({ contact, size = 'sm', onContactUpdated }: 
 
         {/* Email */}
         {contact.email ? (
-          <a href={`mailto:${contact.email}`}
+          <button
+            onClick={() => onEmailClick ? onEmailClick() : window.open(`mailto:${contact.email}`)}
             className={`${px} rounded flex items-center gap-1 bg-amber-50 hover:bg-amber-100 transition-colors`}
             title={`Email ${contact.email}`}>
             <Send size={iconSize} className="text-amber-600" />
             {size === 'md' && <span className={`${labelClass} text-amber-700`}>Email</span>}
-          </a>
+          </button>
         ) : (
           <span className={`${px} rounded flex items-center gap-1 bg-gray-50 cursor-default`} title="No email">
             <Send size={iconSize} className="text-gray-300" />

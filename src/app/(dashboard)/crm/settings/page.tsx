@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
+import PipelineResourcesManager from '@/components/crm/pipeline-resources'
 
 type Section = 'email' | 'twilio' | 'ai' | 'pipeline' | 'team' | 'notifications' | 'compliance' | 'general'
 
@@ -434,3 +435,4 @@ export default function SettingsPage() {
     </div>
   )
 }
+
