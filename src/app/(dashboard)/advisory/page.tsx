@@ -28,6 +28,43 @@ interface AdvisoryVoice {
 
 interface ChatMsg { role: 'user' | 'assistant'; content: string }
 
+// Stable sub-components — MUST be outside the page component to avoid re-creation on every render
+const ChatBubble = ({ msg }: { msg: ChatMsg }) => (
+  <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+    <div className={`max-w-[85%] px-3 py-2 rounded-xl text-xs leading-relaxed whitespace-pre-wrap ${
+      msg.role === 'user'
+        ? 'bg-np-blue text-white rounded-br-sm'
+        : 'bg-gray-50 border border-gray-100 text-gray-700 rounded-bl-sm'
+    }`}>{msg.content}</div>
+  </div>
+)
+
+const ChatInput = ({ value, onChange, onSend, loading, placeholder }: {
+  value: string; onChange: (v: string) => void; onSend: () => void; loading: boolean; placeholder: string
+}) => (
+  <div className="px-3 py-2.5 border-t border-gray-100 flex gap-2">
+    <input value={value} onChange={(e) => onChange(e.target.value)}
+      onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend() } }}
+      placeholder={placeholder}
+      className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-np-blue/20 placeholder-gray-300" />
+    <button onClick={onSend} disabled={loading || !value.trim()}
+      className="px-3 py-2 bg-np-blue text-white rounded-lg hover:bg-np-blue/90 disabled:opacity-40">
+      {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+    </button>
+  </div>
+)
+
+const QuickPrompts = ({ prompts, onSelect }: { prompts: string[]; onSelect: (s: string) => void }) => (
+  <div className="space-y-1.5 px-1">
+    {prompts.map(q => (
+      <button key={q} onClick={() => onSelect(q)}
+        className="w-full text-left text-[11px] text-gray-600 bg-white border border-gray-100 rounded-lg px-3 py-2 hover:bg-np-blue/5 hover:border-np-blue/20 hover:text-np-blue transition-all">
+        {q}
+      </button>
+    ))}
+  </div>
+)
+
 // ============================================================
 // HUB MAP - every feature and how to get there
 // ============================================================
@@ -531,41 +568,8 @@ RESPONSE RULES:
   }
 
   // ============================================================
-  // RENDER HELPERS
+  // RENDER HELPERS — moved to stable refs to prevent input focus loss
   // ============================================================
-  const ChatBubble = ({ msg }: { msg: ChatMsg }) => (
-    <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-      <div className={`max-w-[85%] px-3 py-2 rounded-xl text-xs leading-relaxed whitespace-pre-wrap ${
-        msg.role === 'user'
-          ? 'bg-np-blue text-white rounded-br-sm'
-          : 'bg-gray-50 border border-gray-100 text-gray-700 rounded-bl-sm'
-      }`}>{msg.content}</div>
-    </div>
-  )
-
-  const ChatInput = ({ value, onChange, onSend, loading, placeholder }: any) => (
-    <div className="px-3 py-2.5 border-t border-gray-100 flex gap-2">
-      <input value={value} onChange={(e: any) => onChange(e.target.value)}
-        onKeyDown={(e: any) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend() } }}
-        placeholder={placeholder}
-        className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-np-blue/20 placeholder-gray-300" />
-      <button onClick={onSend} disabled={loading || !value.trim()}
-        className="px-3 py-2 bg-np-blue text-white rounded-lg hover:bg-np-blue/90 disabled:opacity-40">
-        {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-      </button>
-    </div>
-  )
-
-  const QuickPrompts = ({ prompts, onSelect }: { prompts: string[]; onSelect: (s: string) => void }) => (
-    <div className="space-y-1.5 px-1">
-      {prompts.map(q => (
-        <button key={q} onClick={() => onSelect(q)}
-          className="w-full text-left text-[11px] text-gray-600 bg-white border border-gray-100 rounded-lg px-3 py-2 hover:bg-np-blue/5 hover:border-np-blue/20 hover:text-np-blue transition-all">
-          {q}
-        </button>
-      ))}
-    </div>
-  )
 
   if (orgLoading) return <div className="flex items-center justify-center h-64"><div className="animate-pulse text-gray-400">Loading...</div></div>
 

@@ -1,14 +1,15 @@
 'use client'
 
 // ═══════════════════════════════════════════════════════════════
-// CRM Task Card + Detail — RACI dropdowns, checklist, file upload
-// Import: { CrmTaskCard, CrmTaskDetail } from '@/components/crm/crm-task-card'
+// CRM Task Card + Detail — RACI, checklist, labels, file upload,
+// media library, sendable resources
 // ═══════════════════════════════════════════════════════════════
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   Clock, CheckSquare, Square, X, Plus, ExternalLink, Timer,
-  Upload, FileText, Trash2, Loader2, Paperclip, Download
+  Upload, FileText, Trash2, Loader2, Paperclip, Download,
+  Image as ImageIcon, FolderOpen, Send, Check
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase-browser'
 import { PRIORITY_CONFIG } from '@/lib/types/tasks'
@@ -17,7 +18,12 @@ import type { CrmTask, TeamMember } from '@/types/crm'
 interface ChecklistItem { id: string; text: string; done: boolean }
 interface TaskAttachment {
   id: string; name: string; file_url: string;
-  file_type?: string; file_size?: number; uploaded_at?: string
+  file_type?: string; file_size?: number; uploaded_at?: string;
+  sendable?: boolean
+}
+interface MediaAsset {
+  id: string; name: string; url: string; mime_type: string | null;
+  file_size: number | null; thumbnail_url: string | null
 }
 
 const RACI_LABELS = {
@@ -133,15 +139,48 @@ export function CrmTaskDetail(props: CrmTaskDetailProps) {
   // Attachments
   const [attachments, setAttachments] = useState<TaskAttachment[]>(((task as any)?.attachments as TaskAttachment[]) || [])
   const [uploading, setUploading] = useState(false)
+  const [sending, setSending] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // Media library browser
+  const [showMediaLib, setShowMediaLib] = useState(false)
+  const [mediaAssets, setMediaAssets] = useState<MediaAsset[]>([])
+  const [mediaLoading, setMediaLoading] = useState(false)
+  const [mediaSearch, setMediaSearch] = useState('')
+
+  // Refs for focus
+  const checkInputRef = useRef<HTMLInputElement>(null)
+  const labelInputRef = useRef<HTMLInputElement>(null)
+
+  const orgId = isCreate ? props.orgId : task?.org_id
 
   const toggleMulti = (arr: string[], setArr: (fn: (p: string[]) => string[]) => void, id: string) => {
     setArr(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id])
   }
 
+  // Load media library
+  const loadMediaLibrary = useCallback(async () => {
+    if (!orgId) return
+    setMediaLoading(true)
+    const { data } = await supabase.from('media_assets')
+      .select('id, name, url, mime_type, file_size, thumbnail_url')
+      .eq('org_id', orgId)
+      .order('created_at', { ascending: false })
+      .limit(50)
+    setMediaAssets(data || [])
+    setMediaLoading(false)
+  }, [orgId])
+
+  useEffect(() => {
+    if (showMediaLib) loadMediaLibrary()
+  }, [showMediaLib, loadMediaLibrary])
+
+  const filteredMedia = mediaSearch
+    ? mediaAssets.filter(a => a.name.toLowerCase().includes(mediaSearch.toLowerCase()))
+    : mediaAssets
+
   async function handleFileUpload(file: File) {
     setUploading(true)
-    const orgId = isCreate ? props.orgId : task?.org_id
     const path = `tasks/${orgId}/${Date.now()}-${file.name}`
     const { error } = await supabase.storage.from('pipeline-resources').upload(path, file)
     if (error) { console.error('Upload error:', error); setUploading(false); return }
@@ -149,14 +188,69 @@ export function CrmTaskDetail(props: CrmTaskDetailProps) {
     setAttachments(prev => [...prev, {
       id: `att-${Date.now()}`, name: file.name, file_url: urlData.publicUrl,
       file_type: file.type, file_size: file.size, uploaded_at: new Date().toISOString(),
+      sendable: false,
     }])
     setUploading(false)
+  }
+
+  function attachFromMediaLibrary(asset: MediaAsset) {
+    if (attachments.some(a => a.file_url === asset.url)) return
+    setAttachments(prev => [...prev, {
+      id: `media-${asset.id}`, name: asset.name, file_url: asset.url,
+      file_type: asset.mime_type || undefined, file_size: asset.file_size || undefined,
+      uploaded_at: new Date().toISOString(), sendable: false,
+    }])
+    setShowMediaLib(false)
+  }
+
+  function toggleSendable(id: string) {
+    setAttachments(prev => prev.map(a => a.id === id ? { ...a, sendable: !a.sendable } : a))
+  }
+
+  async function sendSelectedResources() {
+    const selected = attachments.filter(a => a.sendable)
+    if (selected.length === 0) return
+    setSending(true)
+    // TODO: hook into your email send API - for now, placeholder
+    try {
+      await fetch('/api/email/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: '', // filled by contact email
+          from_email: 'cameron.allen@gmail.com',
+          subject: `Resources: ${title || 'Task'}`,
+          body_html: `<p>Here are the resources for your reference:</p><ul>${
+            selected.map(a => `<li><a href="${a.file_url}">${a.name}</a></li>`).join('')
+          }</ul>`,
+          contact_id: isCreate ? props.contactId : task?.contact_id,
+          org_id: orgId,
+        }),
+      })
+      // Uncheck after send
+      setAttachments(prev => prev.map(a => ({ ...a, sendable: false })))
+    } catch (e) { console.error('Send error:', e) }
+    setSending(false)
   }
 
   const formatSize = (bytes?: number) => {
     if (!bytes) return ''
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)}KB`
     return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
+  }
+
+  function addChecklistItem() {
+    if (!newCheck.trim()) return
+    setChecklist(p => [...p, { id: `chk-${Date.now()}`, text: newCheck.trim(), done: false }])
+    setNewCheck('')
+    setTimeout(() => checkInputRef.current?.focus(), 50)
+  }
+
+  function addLabel() {
+    if (!newLabel.trim()) return
+    setLabels(p => [...p, newLabel.trim()])
+    setNewLabel('')
+    setTimeout(() => labelInputRef.current?.focus(), 50)
   }
 
   async function save() {
@@ -196,11 +290,12 @@ export function CrmTaskDetail(props: CrmTaskDetailProps) {
 
   const priority = PRIORITY_CONFIG[pri] || PRIORITY_CONFIG.medium
   const checkDone = checklist.filter(c => c.done).length
+  const selectedCount = attachments.filter(a => a.sendable).length
 
   return (
-    <div className="fixed inset-0 bg-black/30 z-[55] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl max-h-[85vh] overflow-y-auto animate-in zoom-in-95 duration-200"
-        onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/30 z-[55] flex items-center justify-center p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl max-h-[85vh] overflow-y-auto animate-in zoom-in-95 duration-200">
 
         {/* Header */}
         <div className="flex items-start justify-between p-5 pb-3 border-b border-gray-100 sticky top-0 bg-white z-10">
@@ -277,11 +372,11 @@ export function CrmTaskDetail(props: CrmTaskDetailProps) {
             ) : <p className="text-xs text-gray-600 whitespace-pre-wrap">{description || 'No description'}</p>}
           </div>
 
-          {/* RACI — Dropdown style */}
+          {/* RACI */}
           <div>
             <label className="text-[8px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">RACI Assignments</label>
             <div className="space-y-2.5">
-              {/* Accountable (A) — single select dropdown */}
+              {/* Accountable (A) */}
               <div className="flex items-start gap-3">
                 <div className="flex items-center gap-1.5 w-28 pt-1.5 flex-shrink-0">
                   <span className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold"
@@ -300,7 +395,7 @@ export function CrmTaskDetail(props: CrmTaskDetailProps) {
                 ) : <span className="text-xs text-gray-600 pt-1.5">{teamMembers.find(m => m.id === accountable)?.display_name || 'Unassigned'}</span>}
               </div>
 
-              {/* Responsible (R) — multi chip select */}
+              {/* R, C, I — multi chip select */}
               {([
                 { key: 'responsible' as const, state: responsible, setter: setResponsible, cfg: RACI_LABELS.responsible, activeColor: 'border-teal-300 bg-teal-50 text-teal-700' },
                 { key: 'consulted' as const, state: consulted, setter: setConsulted, cfg: RACI_LABELS.consulted, activeColor: 'border-amber-300 bg-amber-50 text-amber-700' },
@@ -345,16 +440,29 @@ export function CrmTaskDetail(props: CrmTaskDetailProps) {
           {/* Labels */}
           <div>
             <label className="text-[8px] font-semibold text-gray-400 uppercase tracking-wider block mb-1.5">Labels</label>
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-wrap items-center gap-1">
               {labels.map(l => (
                 <span key={l} className="flex items-center gap-0.5 px-1.5 py-0.5 bg-gray-50 text-[9px] font-medium text-gray-500 rounded">
-                  {l}{editing && <button onClick={() => setLabels(p => p.filter(x => x !== l))}><X size={8} className="text-gray-400" /></button>}
+                  {l}{editing && <button type="button" onClick={() => setLabels(p => p.filter(x => x !== l))}><X size={8} className="text-gray-400" /></button>}
                 </span>
               ))}
               {editing && (
-                <input value={newLabel} onChange={e => setNewLabel(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && newLabel.trim()) { setLabels(p => [...p, newLabel.trim()]); setNewLabel('') } }}
-                  placeholder="+ label" className="w-24 px-1.5 py-0.5 text-[9px] border border-dashed border-gray-200 rounded bg-white focus:outline-none" />
+                <div className="flex items-center gap-1">
+                  <input
+                    ref={labelInputRef}
+                    type="text"
+                    value={newLabel}
+                    onChange={e => setNewLabel(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addLabel() } }}
+                    placeholder="+ label"
+                    className="w-20 px-1.5 py-1 text-[9px] border border-dashed border-gray-300 rounded bg-white focus:outline-none focus:border-np-blue focus:ring-1 focus:ring-np-blue/20 cursor-text"
+                  />
+                  {newLabel.trim() && (
+                    <button type="button" onClick={addLabel} className="p-0.5 rounded hover:bg-gray-100">
+                      <Plus size={10} className="text-np-blue" />
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -372,31 +480,60 @@ export function CrmTaskDetail(props: CrmTaskDetailProps) {
             <div className="space-y-1">
               {checklist.map(item => (
                 <div key={item.id} className="flex items-center gap-1.5 group">
-                  <button onClick={() => editing && setChecklist(p => p.map(c => c.id === item.id ? { ...c, done: !c.done } : c))}>
+                  <button type="button" onClick={() => editing && setChecklist(p => p.map(c => c.id === item.id ? { ...c, done: !c.done } : c))}>
                     {item.done ? <CheckSquare size={14} className="text-green-500" /> : <Square size={14} className="text-gray-300" />}
                   </button>
                   <span className={`flex-1 text-[10px] ${item.done ? 'text-gray-400 line-through' : 'text-np-dark'}`}>{item.text}</span>
-                  {editing && <button onClick={() => setChecklist(p => p.filter(c => c.id !== item.id))} className="opacity-0 group-hover:opacity-100"><X size={10} className="text-gray-400" /></button>}
+                  {editing && <button type="button" onClick={() => setChecklist(p => p.filter(c => c.id !== item.id))} className="opacity-0 group-hover:opacity-100"><X size={10} className="text-gray-400" /></button>}
                 </div>
               ))}
               {editing && (
                 <div className="flex items-center gap-1.5 mt-1">
-                  <Plus size={14} className="text-gray-300" />
-                  <input value={newCheck} onChange={e => setNewCheck(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter' && newCheck.trim()) { setChecklist(p => [...p, { id: `chk-${Date.now()}`, text: newCheck.trim(), done: false }]); setNewCheck('') } }}
-                    placeholder="Add checklist item..." className="flex-1 text-[10px] bg-transparent border-b border-dashed border-gray-200 py-0.5 focus:outline-none focus:border-np-blue" />
+                  <button type="button" onClick={() => checkInputRef.current?.focus()}>
+                    <Plus size={14} className="text-gray-400" />
+                  </button>
+                  <input
+                    ref={checkInputRef}
+                    type="text"
+                    value={newCheck}
+                    onChange={e => setNewCheck(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addChecklistItem() } }}
+                    placeholder="Add checklist item..."
+                    className="flex-1 text-[10px] bg-white border border-dashed border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:border-np-blue focus:ring-1 focus:ring-np-blue/20 placeholder-gray-300 cursor-text"
+                  />
+                  {newCheck.trim() && (
+                    <button type="button" onClick={addChecklistItem} className="p-0.5 rounded hover:bg-gray-100">
+                      <Plus size={10} className="text-np-blue" />
+                    </button>
+                  )}
                 </div>
               )}
             </div>
           </div>
 
-          {/* Attachments */}
+          {/* Attachments & Resources */}
           <div>
-            <label className="text-[8px] font-semibold text-gray-400 uppercase tracking-wider block mb-1.5">Attachments & Resources</label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-[8px] font-semibold text-gray-400 uppercase tracking-wider">Attachments & Resources</label>
+              {selectedCount > 0 && (
+                <button type="button" onClick={sendSelectedResources} disabled={sending}
+                  className="flex items-center gap-1 px-2 py-0.5 text-[9px] font-medium text-white bg-np-blue rounded-md hover:bg-np-dark disabled:opacity-40">
+                  {sending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                  Send {selectedCount} to Contact
+                </button>
+              )}
+            </div>
+
             {attachments.length > 0 && (
               <div className="space-y-1.5 mb-2">
                 {attachments.map(att => (
                   <div key={att.id} className="flex items-center gap-2 px-2.5 py-2 bg-gray-50 rounded-lg group">
+                    {/* Sendable checkbox */}
+                    <button type="button" onClick={() => toggleSendable(att.id)}
+                      className="flex-shrink-0 w-4 h-4 rounded border border-gray-300 flex items-center justify-center hover:border-np-blue transition-colors"
+                      title="Select to send to contact">
+                      {att.sendable && <Check className="w-3 h-3 text-np-blue" />}
+                    </button>
                     <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-[10px] font-medium text-np-dark truncate">{att.name}</p>
@@ -404,22 +541,81 @@ export function CrmTaskDetail(props: CrmTaskDetailProps) {
                     </div>
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       {att.file_url && <a href={att.file_url} target="_blank" rel="noopener noreferrer" className="p-1 rounded hover:bg-white"><Download className="w-3 h-3 text-gray-400" /></a>}
-                      {editing && <button onClick={() => setAttachments(p => p.filter(a => a.id !== att.id))} className="p-1 rounded hover:bg-red-50"><Trash2 className="w-3 h-3 text-gray-400 hover:text-red-500" /></button>}
+                      {editing && <button type="button" onClick={() => setAttachments(p => p.filter(a => a.id !== att.id))} className="p-1 rounded hover:bg-red-50"><Trash2 className="w-3 h-3 text-gray-400 hover:text-red-500" /></button>}
                     </div>
                   </div>
                 ))}
               </div>
             )}
+
             {editing && (
-              <>
+              <div className="space-y-2">
                 <input ref={fileRef} type="file" className="hidden" multiple
                   accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.mp4,.zip,.csv,.txt"
                   onChange={e => { Array.from(e.target.files || []).forEach(f => handleFileUpload(f)); e.target.value = '' }} />
-                <button onClick={() => fileRef.current?.click()} disabled={uploading}
-                  className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 border border-dashed border-gray-300 rounded-lg text-[10px] text-gray-500 hover:border-np-blue hover:text-np-blue transition-colors disabled:opacity-40">
-                  {uploading ? <><Loader2 className="w-3 h-3 animate-spin" /> Uploading...</> : <><Upload className="w-3.5 h-3.5" /> Upload from Computer</>}
-                </button>
-              </>
+
+                <div className="flex gap-2">
+                  {/* Upload from Computer */}
+                  <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 border border-dashed border-gray-300 rounded-lg text-[10px] text-gray-500 hover:border-np-blue hover:text-np-blue transition-colors disabled:opacity-40">
+                    {uploading ? <><Loader2 className="w-3 h-3 animate-spin" /> Uploading...</> : <><Upload className="w-3.5 h-3.5" /> From Computer</>}
+                  </button>
+
+                  {/* Attach from Media Library */}
+                  <button type="button" onClick={() => setShowMediaLib(!showMediaLib)}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 border border-dashed border-gray-300 rounded-lg text-[10px] text-gray-500 hover:border-np-blue hover:text-np-blue transition-colors">
+                    <FolderOpen className="w-3.5 h-3.5" /> Media Library
+                  </button>
+                </div>
+
+                {/* Media Library Browser */}
+                {showMediaLib && (
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                      <span className="text-[9px] font-semibold text-gray-500 uppercase">Media Library</span>
+                      <button type="button" onClick={() => setShowMediaLib(false)}><X size={12} className="text-gray-400" /></button>
+                    </div>
+                    <div className="px-2 py-1.5">
+                      <input type="text" value={mediaSearch} onChange={e => setMediaSearch(e.target.value)}
+                        placeholder="Search media..."
+                        className="w-full px-2 py-1 text-[10px] border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-np-blue/20" />
+                    </div>
+                    <div className="max-h-40 overflow-y-auto">
+                      {mediaLoading ? (
+                        <div className="flex items-center justify-center py-4"><Loader2 className="w-4 h-4 animate-spin text-gray-300" /></div>
+                      ) : filteredMedia.length === 0 ? (
+                        <p className="text-center text-[10px] text-gray-400 py-4">No media found</p>
+                      ) : (
+                        <div className="space-y-0.5 px-1 pb-1">
+                          {filteredMedia.map(asset => {
+                            const alreadyAttached = attachments.some(a => a.file_url === asset.url)
+                            return (
+                              <button key={asset.id} type="button" onClick={() => !alreadyAttached && attachFromMediaLibrary(asset)}
+                                disabled={alreadyAttached}
+                                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors ${
+                                  alreadyAttached ? 'bg-green-50 opacity-60' : 'hover:bg-np-blue/5'
+                                }`}>
+                                {asset.thumbnail_url ? (
+                                  <img src={asset.thumbnail_url} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />
+                                ) : (
+                                  <div className="w-8 h-8 rounded bg-gray-100 flex items-center justify-center flex-shrink-0">
+                                    {asset.mime_type?.startsWith('image') ? <ImageIcon className="w-4 h-4 text-gray-400" /> : <FileText className="w-4 h-4 text-gray-400" />}
+                                  </div>
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-[10px] font-medium text-np-dark truncate">{asset.name}</p>
+                                  <p className="text-[8px] text-gray-400">{asset.mime_type?.split('/').pop()}{asset.file_size ? ` · ${formatSize(asset.file_size)}` : ''}</p>
+                                </div>
+                                {alreadyAttached && <Check className="w-3 h-3 text-green-500 flex-shrink-0" />}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
@@ -432,7 +628,7 @@ export function CrmTaskDetail(props: CrmTaskDetailProps) {
                   {task.hub_task_id ? `Synced · ${task.last_synced_at ? new Date(task.last_synced_at as string).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}` : 'Not synced to Hub Board'}
                 </span>
               </div>
-              <button onClick={syncToHub} className="px-2.5 py-1 text-[9px] font-medium text-np-blue border border-np-blue/30 rounded-md hover:bg-np-blue/5">
+              <button type="button" onClick={syncToHub} className="px-2.5 py-1 text-[9px] font-medium text-np-blue border border-np-blue/30 rounded-md hover:bg-np-blue/5">
                 {task.hub_task_id ? 'Re-sync' : 'Sync to Hub'}
               </button>
             </div>
