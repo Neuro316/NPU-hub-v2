@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerSupabase } from '@/lib/supabase';
+import { createServerSupabase, createAdminSupabase } from '@/lib/supabase';
 import { getOrgTwilioConfig, sendOrgSms } from '@/lib/twilio-org';
 import {
   isDNC, logActivity, emitWebhookEvent,
@@ -9,6 +9,7 @@ import {
 export async function POST(request: NextRequest) {
   try {
     const supabase = createServerSupabase();
+    const admin = createAdminSupabase();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -85,6 +86,25 @@ export async function POST(request: NextRequest) {
         message_id: messageId, contact_id, channel: 'sms', direction: 'outbound',
       });
     } catch (e: any) { console.warn('SMS logging failed:', e.message); }
+
+    // ── Direct counter increment (admin bypasses RLS) ──
+    try {
+      const now = new Date().toISOString()
+      const { data: cur } = await admin
+        .from('contacts')
+        .select('total_texts, total_outbound_texts')
+        .eq('id', contact_id)
+        .single()
+
+      if (cur) {
+        await admin.from('contacts').update({
+          total_texts: (cur.total_texts || 0) + 1,
+          total_outbound_texts: (cur.total_outbound_texts || 0) + 1,
+          last_text_at: now,
+          last_contacted_at: now,
+        }).eq('id', contact_id)
+      }
+    } catch (e) { console.warn('Counter increment skipped:', e) }
 
     return NextResponse.json({ success: true, message_id: messageId });
   } catch (e: any) {

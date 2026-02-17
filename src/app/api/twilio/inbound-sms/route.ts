@@ -23,7 +23,6 @@ export async function POST(request: NextRequest) {
     const url = `${appUrl}/api/twilio/inbound-sms`;
     if (!validateTwilioSignature(url, params, signature)) {
       console.warn('Twilio signature validation failed for inbound SMS');
-      // Don't reject - signature might fail due to URL mismatch
     }
   }
 
@@ -39,7 +38,6 @@ export async function POST(request: NextRequest) {
   if (STOP_KEYWORDS.includes(keyword) || START_KEYWORDS.includes(keyword)) {
     const isStop = STOP_KEYWORDS.includes(keyword);
 
-    // Find the contact by phone across all orgs
     const { data: contacts } = await supabase
       .from('contacts')
       .select('id, org_id')
@@ -62,14 +60,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Twilio auto-responds to STOP/START, so return empty TwiML
     return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
       headers: { 'Content-Type': 'text/xml' },
     });
   }
 
-  // Look up which org owns this Twilio number
-  // For multi-org, you'd look this up by the To number. For now, use first org.
   const { data: orgConfig } = await supabase
     .from('org_email_config')
     .select('org_id')
@@ -83,10 +78,8 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  // Find or create contact
   let contact = await findContactByPhone(supabase, orgId, from);
   if (!contact) {
-    // Auto-assign new contact
     const assignedTo = await applyAutoAssignment(supabase, orgId, { source: 'inbound_sms' });
 
     const { data: newContact } = await supabase
@@ -97,7 +90,7 @@ export async function POST(request: NextRequest) {
         last_name: from,
         phone: from,
         source: 'inbound_sms',
-        sms_consent: true, // They texted us
+        sms_consent: true,
         assigned_to: assignedTo,
       })
       .select()
@@ -121,17 +114,14 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  // Check DNC
   if (contact.do_not_contact) {
     return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
       headers: { 'Content-Type': 'text/xml' },
     });
   }
 
-  // Get or create conversation
   const conversation = await getOrCreateConversation(supabase, contact.id, 'sms');
 
-  // Insert message
   const { data: message } = await supabase
     .from('crm_messages')
     .insert({
@@ -145,7 +135,6 @@ export async function POST(request: NextRequest) {
     .select()
     .single();
 
-  // Update conversation
   await supabase
     .from('conversations')
     .update({
@@ -154,12 +143,10 @@ export async function POST(request: NextRequest) {
     })
     .eq('id', conversation.id);
 
-  // Track for response time
   if (message) {
     await trackInboundForResponseTime(supabase, orgId, contact.id, 'sms', message.id);
   }
 
-  // Log activity
   await logActivity(supabase, {
     contact_id: contact.id,
     org_id: orgId,
@@ -169,7 +156,6 @@ export async function POST(request: NextRequest) {
     ref_id: message?.id,
   });
 
-  // Emit webhook
   await emitWebhookEvent(supabase, orgId, 'message.received', {
     message_id: message?.id,
     contact_id: contact.id,
@@ -178,7 +164,25 @@ export async function POST(request: NextRequest) {
     body: body.substring(0, 100),
   });
 
-  // Return empty TwiML
+  // ── Direct counter increment (admin bypasses RLS) ──
+  try {
+    const now = new Date().toISOString()
+    const { data: cur } = await supabase
+      .from('contacts')
+      .select('total_texts, total_inbound_texts')
+      .eq('id', contact.id)
+      .single()
+
+    if (cur) {
+      await supabase.from('contacts').update({
+        total_texts: (cur.total_texts || 0) + 1,
+        total_inbound_texts: (cur.total_inbound_texts || 0) + 1,
+        last_text_at: now,
+        last_contacted_at: now,
+      }).eq('id', contact.id)
+    }
+  } catch (e) { console.warn('Counter increment skipped:', e) }
+
   return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
     headers: { 'Content-Type': 'text/xml' },
   });

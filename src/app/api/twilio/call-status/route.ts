@@ -48,6 +48,31 @@ export async function POST(request: NextRequest) {
 
       await supabase.from('call_logs').update(updates).eq('id', callLog.id);
 
+      // ── Increment call counter when call completes ──
+      if (mappedStatus === 'completed') {
+        try {
+          const dir = callLog.direction || 'outbound'
+          const now = new Date().toISOString()
+
+          const { data: cur } = await supabase
+            .from('contacts')
+            .select('total_calls, total_inbound_calls, total_outbound_calls, total_call_duration_seconds')
+            .eq('id', callLog.contact_id)
+            .single()
+
+          if (cur) {
+            await supabase.from('contacts').update({
+              total_calls: (cur.total_calls || 0) + 1,
+              total_inbound_calls: (cur.total_inbound_calls || 0) + (dir === 'inbound' ? 1 : 0),
+              total_outbound_calls: (cur.total_outbound_calls || 0) + (dir === 'outbound' ? 1 : 0),
+              total_call_duration_seconds: (cur.total_call_duration_seconds || 0) + (duration || 0),
+              last_call_at: now,
+              last_contacted_at: now,
+            }).eq('id', callLog.contact_id)
+          }
+        } catch (e) { console.warn('Call counter increment skipped:', e) }
+      }
+
       const orgId = (callLog as any).contacts?.org_id;
       if (orgId) {
         await logActivity(supabase, {
