@@ -108,52 +108,113 @@ export function CrmTaskCard({ task, teamMembers, onClick, onDragStart }: {
 }
 
 // ─── Detail Modal — with full RACI matrix ───
+// Supports both EDIT and CREATE modes:
+//   Edit: pass task + onUpdate
+//   Create: pass createMode + onCreate + contactId + orgId
 
-export function CrmTaskDetail({ task, teamMembers, onUpdate, onClose }: {
+interface CrmTaskDetailEditProps {
   task: CrmTask
   teamMembers: TeamMember[]
   onUpdate: (id: string, updates: Partial<CrmTask>) => void
   onClose: () => void
-}) {
+  createMode?: false
+  onCreate?: never
+  contactId?: never
+  orgId?: never
+  createdBy?: never
+}
+
+interface CrmTaskDetailCreateProps {
+  task?: never
+  teamMembers: TeamMember[]
+  onUpdate?: never
+  onClose: () => void
+  createMode: true
+  onCreate: (task: CrmTask) => void
+  contactId: string
+  orgId: string
+  createdBy: string
+}
+
+type CrmTaskDetailProps = CrmTaskDetailEditProps | CrmTaskDetailCreateProps
+
+export function CrmTaskDetail(props: CrmTaskDetailProps) {
+  const { teamMembers, onClose } = props
+  const isCreate = props.createMode === true
+  const task = isCreate ? null : props.task
+
   const supabase = createClient()
-  const [editing, setEditing] = useState(false)
-  const [title, setTitle] = useState(task.title)
-  const [description, setDescription] = useState(task.description || '')
-  const [pri, setPri] = useState(task.priority)
-  const [dueDate, setDueDate] = useState(task.due_date || '')
-  const [status, setStatus] = useState(task.status)
-  const [checklist, setChecklist] = useState<ChecklistItem[]>((task.checklist as ChecklistItem[]) || [])
-  const [labels, setLabels] = useState<string[]>((task.labels as string[]) || [])
+  const [editing, setEditing] = useState(isCreate)
+  const [title, setTitle] = useState(task?.title || '')
+  const [description, setDescription] = useState(task?.description || '')
+  const [pri, setPri] = useState(task?.priority || 'medium')
+  const [dueDate, setDueDate] = useState(task?.due_date || '')
+  const [status, setStatus] = useState(task?.status || 'todo')
+  const [checklist, setChecklist] = useState<ChecklistItem[]>((task?.checklist as ChecklistItem[]) || [])
+  const [labels, setLabels] = useState<string[]>((task?.labels as string[]) || [])
   const [newCheck, setNewCheck] = useState('')
   const [newLabel, setNewLabel] = useState('')
-  const [estMin, setEstMin] = useState(task.estimated_minutes || 0)
-  const [actMin, setActMin] = useState(task.actual_minutes || 0)
+  const [estMin, setEstMin] = useState(task?.estimated_minutes || 0)
+  const [actMin, setActMin] = useState(task?.actual_minutes || 0)
+  const [saving, setSaving] = useState(false)
 
   // RACI
-  const [responsible, setResponsible] = useState<string[]>(task.raci_responsible || [])
-  const [accountable, setAccountable] = useState<string | null>(task.raci_accountable || null)
-  const [consulted, setConsulted] = useState<string[]>(task.raci_consulted || [])
-  const [informed, setInformed] = useState<string[]>(task.raci_informed || [])
+  const [responsible, setResponsible] = useState<string[]>(task?.raci_responsible || [])
+  const [accountable, setAccountable] = useState<string | null>(task?.raci_accountable || null)
+  const [consulted, setConsulted] = useState<string[]>(task?.raci_consulted || [])
+  const [informed, setInformed] = useState<string[]>(task?.raci_informed || [])
 
   async function save() {
-    const updates: any = {
+    if (!title.trim()) return
+    setSaving(true)
+
+    const fields: any = {
       title, description: description || null, priority: pri, status,
       due_date: dueDate || null, checklist, labels,
       estimated_minutes: estMin || null, actual_minutes: actMin || null,
       raci_responsible: responsible, raci_accountable: accountable,
       raci_consulted: consulted, raci_informed: informed,
     }
-    const { error } = await supabase.from('tasks').update(updates).eq('id', task.id)
-    if (!error) { onUpdate(task.id, updates); setEditing(false) }
+
+    if (isCreate) {
+      // CREATE mode
+      const { data, error } = await supabase.from('tasks').insert({
+        ...fields,
+        org_id: props.orgId,
+        contact_id: props.contactId,
+        source: 'manual',
+        created_by: props.createdBy,
+        assigned_to: accountable || undefined,
+      }).select().single()
+
+      if (!error && data) {
+        props.onCreate(data as CrmTask)
+        onClose()
+      } else {
+        console.error('Task create error:', error)
+        alert('Failed to create task')
+      }
+    } else {
+      // EDIT mode
+      const { error } = await supabase.from('tasks').update(fields).eq('id', task!.id)
+      if (!error) {
+        props.onUpdate(task!.id, fields)
+        setEditing(false)
+      }
+    }
+    setSaving(false)
   }
 
   async function syncToHub() {
+    if (!task) return
     const res = await fetch('/api/tasks/sync-to-hub', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ task_id: task.id }),
     })
     const data = await res.json()
-    if (data.hub_task_id) onUpdate(task.id, { hub_task_id: data.hub_task_id, last_synced_at: new Date().toISOString() } as any)
+    if (data.hub_task_id && props.onUpdate) {
+      props.onUpdate(task.id, { hub_task_id: data.hub_task_id, last_synced_at: new Date().toISOString() } as any)
+    }
   }
 
   function toggleRaci(role: RaciRole, memberId: string) {
@@ -177,24 +238,30 @@ export function CrmTaskDetail({ task, teamMembers, onUpdate, onClose }: {
   const isOverdue = dueDate && status !== 'done' && new Date(dueDate) < new Date()
 
   return (
-    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/30 z-[55] flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl max-h-[85vh] overflow-y-auto animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-start justify-between p-5 pb-3 border-b border-gray-100">
           <div className="flex-1">
             {editing ? (
               <input value={title} onChange={e => setTitle(e.target.value)}
-                className="text-sm font-bold text-np-dark bg-transparent border-b-2 border-np-blue outline-none w-full" autoFocus />
+                className="text-sm font-bold text-np-dark bg-transparent border-b-2 border-np-blue outline-none w-full"
+                placeholder={isCreate ? 'Task title...' : undefined}
+                autoFocus />
             ) : (
               <h2 className="text-sm font-bold text-np-dark">{title}</h2>
             )}
-            {task.contact && <p className="text-[10px] text-gray-400 mt-0.5">{(task.contact as any)?.first_name} {(task.contact as any)?.last_name}</p>}
+            {isCreate && <p className="text-[10px] text-gray-400 mt-0.5">New task for this contact</p>}
+            {!isCreate && task?.contact && <p className="text-[10px] text-gray-400 mt-0.5">{(task.contact as any)?.first_name} {(task.contact as any)?.last_name}</p>}
           </div>
           <div className="flex gap-1.5">
             {!editing ? (
               <button onClick={() => setEditing(true)} className="px-2.5 py-1 text-[10px] font-medium text-np-blue border border-np-blue/30 rounded-md hover:bg-np-blue/5">Edit</button>
             ) : (
-              <button onClick={save} className="px-2.5 py-1 text-[10px] font-medium text-white bg-np-blue rounded-md hover:bg-np-dark">Save</button>
+              <button onClick={save} disabled={!title.trim() || saving}
+                className="px-2.5 py-1 text-[10px] font-medium text-white bg-np-blue rounded-md hover:bg-np-dark disabled:opacity-40">
+                {saving ? 'Saving...' : isCreate ? 'Create Task' : 'Save'}
+              </button>
             )}
             <button onClick={onClose} className="p-1 hover:bg-gray-50 rounded"><X size={14} className="text-gray-400" /></button>
           </div>
@@ -257,50 +324,54 @@ export function CrmTaskDetail({ task, teamMembers, onUpdate, onClose }: {
           {/* RACI Matrix */}
           <div>
             <label className="text-[8px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">RACI Assignments</label>
-            <div className="border border-gray-100 rounded-lg overflow-hidden">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-gray-50">
-                    <th className="text-left text-[8px] font-semibold text-gray-400 p-2">Member</th>
-                    {Object.entries(RACI_CFG).map(([k, v]) => (
-                      <th key={k} className="text-center text-[8px] font-bold p-2" style={{ color: v.color, width: 50 }}>{v.short}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {teamMembers.map(m => {
-                    const roles = getMemberRoles(m.id)
-                    return (
-                      <tr key={m.id} className="border-t border-gray-50 hover:bg-gray-50/50">
-                        <td className="p-2">
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-5 h-5 rounded-full bg-np-blue/10 flex items-center justify-center">
-                              <span className="text-[7px] font-bold text-np-blue">{m.display_name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
+            {teamMembers.length > 0 ? (
+              <div className="border border-gray-100 rounded-lg overflow-hidden">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-gray-50">
+                      <th className="text-left text-[8px] font-semibold text-gray-400 p-2">Member</th>
+                      {Object.entries(RACI_CFG).map(([k, v]) => (
+                        <th key={k} className="text-center text-[8px] font-bold p-2" style={{ color: v.color, width: 50 }}>{v.short}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {teamMembers.map(m => {
+                      const roles = getMemberRoles(m.id)
+                      return (
+                        <tr key={m.id} className="border-t border-gray-50 hover:bg-gray-50/50">
+                          <td className="p-2">
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-5 h-5 rounded-full bg-np-blue/10 flex items-center justify-center">
+                                <span className="text-[7px] font-bold text-np-blue">{m.display_name.split(' ').map(n => n[0]).join('').slice(0, 2)}</span>
+                              </div>
+                              <span className="text-[10px] font-medium text-np-dark">{m.display_name}</span>
                             </div>
-                            <span className="text-[10px] font-medium text-np-dark">{m.display_name}</span>
-                          </div>
-                        </td>
-                        {(['responsible', 'accountable', 'consulted', 'informed'] as RaciRole[]).map(role => {
-                          const active = roles.includes(role)
-                          const cfg = RACI_CFG[role]
-                          return (
-                            <td key={role} className="text-center p-2">
-                              <button onClick={() => editing && toggleRaci(role, m.id)} disabled={!editing}
-                                className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${
-                                  active ? '' : editing ? 'border border-dashed border-gray-200 hover:border-gray-300' : ''
-                                }`}
-                                style={active ? { background: cfg.bg, color: cfg.color } : {}}>
-                                {active && <span className="text-[8px] font-bold">{cfg.short}</span>}
-                              </button>
-                            </td>
-                          )
-                        })}
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+                          </td>
+                          {(['responsible', 'accountable', 'consulted', 'informed'] as RaciRole[]).map(role => {
+                            const active = roles.includes(role)
+                            const cfg = RACI_CFG[role]
+                            return (
+                              <td key={role} className="text-center p-2">
+                                <button onClick={() => editing && toggleRaci(role, m.id)} disabled={!editing}
+                                  className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${
+                                    active ? '' : editing ? 'border border-dashed border-gray-200 hover:border-gray-300' : ''
+                                  }`}
+                                  style={active ? { background: cfg.bg, color: cfg.color } : {}}>
+                                  {active && <span className="text-[8px] font-bold">{cfg.short}</span>}
+                                </button>
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-[10px] text-gray-400 italic">No team members found. Add team members in Settings to assign RACI roles.</p>
+            )}
           </div>
 
           {/* Labels */}
@@ -352,19 +423,21 @@ export function CrmTaskDetail({ task, teamMembers, onUpdate, onClose }: {
             </div>
           </div>
 
-          {/* Hub sync */}
-          <div className="pt-3 border-t border-gray-100 flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <ExternalLink size={12} className="text-gray-300" />
-              <span className="text-[9px] text-gray-400">
-                {task.hub_task_id ? `Synced to Hub · ${task.last_synced_at ? new Date(task.last_synced_at as string).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}` : 'Not synced to Hub Board'}
-              </span>
+          {/* Hub sync — only show for existing tasks */}
+          {!isCreate && task && (
+            <div className="pt-3 border-t border-gray-100 flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <ExternalLink size={12} className="text-gray-300" />
+                <span className="text-[9px] text-gray-400">
+                  {task.hub_task_id ? `Synced to Hub · ${task.last_synced_at ? new Date(task.last_synced_at as string).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}` : 'Not synced to Hub Board'}
+                </span>
+              </div>
+              <button onClick={syncToHub}
+                className="px-2.5 py-1 text-[9px] font-medium text-np-blue border border-np-blue/30 rounded-md hover:bg-np-blue/5">
+                {task.hub_task_id ? 'Re-sync' : 'Sync to Hub'}
+              </button>
             </div>
-            <button onClick={syncToHub}
-              className="px-2.5 py-1 text-[9px] font-medium text-np-blue border border-np-blue/30 rounded-md hover:bg-np-blue/5">
-              {task.hub_task_id ? 'Re-sync' : 'Sync to Hub'}
-            </button>
-          </div>
+          )}
         </div>
       </div>
     </div>

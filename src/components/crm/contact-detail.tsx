@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import {
   fetchContact, updateContact, fetchNotes, createNote,
-  fetchActivityLog, fetchTasks, createTask, updateTask, fetchLifecycleEvents,
+  fetchActivityLog, fetchTasks, updateTask, fetchLifecycleEvents,
   fetchCallLogs, fetchConversations, fetchMessages
 } from '@/lib/crm-client'
 import type { CrmContact, ContactNote, CrmTask, CallLog, ActivityLogEntry, TeamMember } from '@/types/crm'
@@ -83,8 +83,6 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
   const [editing, setEditing] = useState(false)
   const [loading, setLoading] = useState(true)
   const [showTaskCreate, setShowTaskCreate] = useState(false)
-  const [taskCreating, setTaskCreating] = useState(false)
-  const [taskForm, setTaskForm] = useState({ title: '', description: '', priority: 'medium', due_date: '', kanban_column: '', assigned_to: '', raci_accountable: '', raci_responsible: [] as string[], labels: '' })
   const [selectedTask, setSelectedTask] = useState<CrmTask | null>(null)
   const [showEmailComposer, setShowEmailComposer] = useState(false)
 
@@ -165,27 +163,6 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
     await updateContact(contact.id, { tags })
     load()
     onUpdate?.()
-  }
-
-  const handleCreateTask = async () => {
-    if (!taskForm.title.trim() || !contact) return
-    setTaskCreating(true)
-    try {
-      const labelArr = taskForm.labels.trim() ? taskForm.labels.split(',').map(l => l.trim()).filter(Boolean) : []
-      const created = await createTask({
-        org_id: contact.org_id, title: taskForm.title, description: taskForm.description || undefined,
-        priority: taskForm.priority as any, status: 'todo', due_date: taskForm.due_date || undefined,
-        contact_id: contact.id, source: 'manual', created_by: contact.org_id,
-        assigned_to: taskForm.assigned_to || undefined,
-        raci_accountable: taskForm.raci_accountable || undefined,
-        raci_responsible: taskForm.raci_responsible.length ? taskForm.raci_responsible : undefined,
-        labels: labelArr.length ? labelArr : undefined,
-      } as any)
-      setTasks(prev => [created, ...prev])
-      setTaskForm({ title: '', description: '', priority: 'medium', due_date: '', kanban_column: '', assigned_to: '', raci_accountable: '', raci_responsible: [], labels: '' })
-      setShowTaskCreate(false)
-    } catch (e) { console.error(e); alert('Failed to create task') }
-    finally { setTaskCreating(false) }
   }
 
   const handleToggleTask = async (task: CrmTask) => {
@@ -495,86 +472,11 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
               {/* TASKS TAB — Now with CrmTaskCard + RACI */}
               {tab === 'tasks' && (
                 <>
-                  {/* Create Task */}
-                  {showTaskCreate ? (
-                    <div className="border border-gray-100 rounded-lg p-3 mb-3 bg-gray-50/50">
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">New Task</p>
-                        <button onClick={() => setShowTaskCreate(false)} className="p-0.5 hover:bg-gray-100 rounded"><X className="w-3 h-3 text-gray-400" /></button>
-                      </div>
-                      <input value={taskForm.title} onChange={e => setTaskForm(p => ({ ...p, title: e.target.value }))}
-                        placeholder="Task title..." autoFocus
-                        className="w-full px-2.5 py-1.5 text-xs border border-gray-100 rounded-md mb-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
-                      <textarea value={taskForm.description} onChange={e => setTaskForm(p => ({ ...p, description: e.target.value }))}
-                        rows={2} placeholder="Description (optional)"
-                        className="w-full px-2.5 py-1.5 text-xs border border-gray-100 rounded-md mb-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
-                      <div className="grid grid-cols-2 gap-2 mb-2">
-                        <select value={taskForm.priority} onChange={e => setTaskForm(p => ({ ...p, priority: e.target.value }))}
-                          className="px-2 py-1.5 text-[10px] border border-gray-100 rounded-md">
-                          <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option>
-                        </select>
-                        <input type="date" value={taskForm.due_date} onChange={e => setTaskForm(p => ({ ...p, due_date: e.target.value }))}
-                          className="px-2 py-1.5 text-[10px] border border-gray-100 rounded-md" />
-                      </div>
-
-                      {/* Accountable (A) */}
-                      <div className="mb-2">
-                        <label className="text-[8px] font-semibold text-gray-400 uppercase tracking-wider mb-1 block">Accountable (A)</label>
-                        <select value={taskForm.raci_accountable} onChange={e => setTaskForm(p => ({ ...p, raci_accountable: e.target.value, assigned_to: e.target.value }))}
-                          className="w-full px-2 py-1.5 text-[10px] border border-gray-100 rounded-md">
-                          <option value="">Unassigned</option>
-                          {teamMembers.map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
-                        </select>
-                      </div>
-
-                      {/* Responsible (R) - multi select */}
-                      {teamMembers.length > 0 && (
-                        <div className="mb-2">
-                          <label className="text-[8px] font-semibold text-gray-400 uppercase tracking-wider mb-1 block">Responsible (R)</label>
-                          <div className="flex flex-wrap gap-1">
-                            {teamMembers.map(m => {
-                              const selected = taskForm.raci_responsible.includes(m.id)
-                              return (
-                                <button key={m.id} type="button"
-                                  onClick={() => setTaskForm(p => ({
-                                    ...p,
-                                    raci_responsible: selected
-                                      ? p.raci_responsible.filter(id => id !== m.id)
-                                      : [...p.raci_responsible, m.id]
-                                  }))}
-                                  className={`px-2 py-0.5 text-[9px] rounded-full border transition-all ${
-                                    selected ? 'bg-teal-50 border-teal-300 text-teal-700 font-medium' : 'border-gray-200 text-gray-400 hover:border-gray-300'
-                                  }`}>
-                                  {m.display_name.split(' ').map(n => n[0]).join('')} {m.display_name}
-                                </button>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Labels */}
-                      <div className="mb-2">
-                        <label className="text-[8px] font-semibold text-gray-400 uppercase tracking-wider mb-1 block">Labels</label>
-                        <input value={taskForm.labels} onChange={e => setTaskForm(p => ({ ...p, labels: e.target.value }))}
-                          placeholder="follow-up, onboarding, billing (comma separated)"
-                          className="w-full px-2.5 py-1.5 text-[10px] border border-gray-100 rounded-md focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
-                      </div>
-
-                      <div className="flex justify-end gap-2">
-                        <button onClick={() => setShowTaskCreate(false)} className="px-2 py-1 text-[10px] text-gray-400">Cancel</button>
-                        <button onClick={handleCreateTask} disabled={!taskForm.title.trim() || taskCreating}
-                          className="px-3 py-1.5 bg-np-blue text-white text-[10px] font-medium rounded-md disabled:opacity-40 hover:bg-np-dark transition-colors">
-                          {taskCreating ? 'Creating...' : 'Create Task'}
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <button onClick={() => setShowTaskCreate(true)}
-                      className="flex items-center gap-1.5 px-3 py-2 w-full border border-dashed border-gray-200 rounded-lg text-[10px] text-gray-400 hover:border-np-blue hover:text-np-blue transition-colors mb-3">
-                      <Plus className="w-3 h-3" /> Add Task
-                    </button>
-                  )}
+                  {/* Add Task button — opens full modal identical to edit */}
+                  <button onClick={() => setShowTaskCreate(true)}
+                    className="flex items-center gap-1.5 px-3 py-2 w-full border border-dashed border-gray-200 rounded-lg text-[10px] text-gray-400 hover:border-np-blue hover:text-np-blue transition-colors mb-3">
+                    <Plus className="w-3 h-3" /> Add Task
+                  </button>
 
                   {/* Task Cards */}
                   <div className="space-y-2">
@@ -730,13 +632,26 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
         )}
       </div>
 
-      {/* Task Detail Modal */}
+      {/* Task Detail Modal — Edit existing */}
       {selectedTask && (
         <CrmTaskDetail
           task={selectedTask}
           teamMembers={teamMembers}
           onUpdate={handleTaskUpdate}
           onClose={() => setSelectedTask(null)}
+        />
+      )}
+
+      {/* Task Create Modal — identical UI to edit */}
+      {showTaskCreate && contact && (
+        <CrmTaskDetail
+          createMode
+          teamMembers={teamMembers}
+          contactId={contact.id}
+          orgId={contact.org_id}
+          createdBy={contact.org_id}
+          onCreate={(newTask) => { setTasks(prev => [newTask, ...prev]); setShowTaskCreate(false) }}
+          onClose={() => setShowTaskCreate(false)}
         />
       )}
 
