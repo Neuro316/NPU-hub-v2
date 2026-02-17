@@ -168,7 +168,7 @@ export async function updateCampaign(id: string, updates: Partial<EmailCampaign>
 export async function fetchTasks(filters?: { assigned_to?: string; status?: string; contact_id?: string }) {
   let query = supabase()
     .from('tasks')
-    .select('*, contacts(first_name, last_name), team_members!tasks_assigned_to_fkey(display_name)')
+    .select('*, contacts(first_name, last_name)')
     .order('created_at', { ascending: false })
 
   if (filters?.assigned_to) query = query.eq('assigned_to', filters.assigned_to)
@@ -344,7 +344,7 @@ export async function fetchKanbanColumns(orgId: string) {
 
 export async function fetchTeamMembers(orgId?: string) {
   let query = supabase()
-    .from('team_members')
+    .from('team_profiles')
     .select('*')
     .eq('status', 'active')
     .order('display_name')

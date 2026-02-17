@@ -48,7 +48,7 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
     if (!user || !currentOrg) { setLoading(false); return }
 
     supabase
-      .from('team_members')
+      .from('team_profiles')
       .select('*')
       .eq('org_id', currentOrg.id)
       .eq('user_id', user.id)

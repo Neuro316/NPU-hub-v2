@@ -264,6 +264,21 @@ export interface CrmTask {
   completed_at?: string | null
   created_at: string
   updated_at: string
+  // RACI
+  raci_accountable?: string | null
+  raci_responsible?: string[]
+  raci_consulted?: string[]
+  raci_informed?: string[]
+  // Hub sync
+  hub_task_id?: string | null
+  last_synced_at?: string | null
+  // Extended
+  checklist?: any
+  labels?: any
+  estimated_minutes?: number | null
+  actual_minutes?: number | null
+  attachments?: any
+  kanban_column?: string | null
   // Joined
   contact?: CrmContact | null
   assigned_member?: TeamMember | null
