@@ -97,7 +97,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
       fetchCallLogs(contactId, 10).then(setCalls).catch(e => console.warn('Calls load skipped:', e))
 
       // Load team members for RACI
-      supabase.from('team_members').select('*').eq('org_id', c.org_id).eq('is_active', true)
+      supabase.from('team_members').select('*').eq('org_id', c.org_id)
         .then(({ data }) => { if (data) setTeamMembers(data as TeamMember[]) })
 
       // Timeline
