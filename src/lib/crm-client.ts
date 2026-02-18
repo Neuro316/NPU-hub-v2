@@ -8,7 +8,10 @@ import type {
   CrmContact, Conversation, Message, CallLog, EmailCampaign,
   CrmTask, ContactNote, LifecycleEvent, ActivityLogEntry,
   Sequence, SequenceStep, SequenceEnrollment, ContactSearchParams, SavedFilter,
-  TeamMember, OrgEmailDailyStats
+  TeamMember, OrgEmailDailyStats,
+  ContactTagCategory, ContactTagDefinition, ContactRelationship,
+  RelationshipType, ContactNetworkScore, NetworkEvent,
+  NetworkGraphData, NetworkNode, NetworkEdge, NetworkCluster
 } from '@/types/crm'
 
 const supabase = () => createClient()
@@ -428,4 +431,182 @@ export function subscribeToCrmTable(
     .subscribe()
 
   return () => { sb.removeChannel(channel) }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Network Intelligence Client Functions
+// ═══════════════════════════════════════════════════════════════
+
+// ── Tag Management ──
+
+export async function fetchTagCategories() {
+  const { data, error } = await supabase()
+    .from('contact_tag_categories')
+    .select('*, tags:contact_tag_definitions(*)')
+    .order('sort_order')
+  if (error) throw error
+  return data as ContactTagCategory[]
+}
+
+export async function createTagDefinition(tag: Partial<ContactTagDefinition>) {
+  const { data, error } = await supabase().from('contact_tag_definitions').insert(tag).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteTagDefinition(id: string) {
+  const { error } = await supabase().from('contact_tag_definitions').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ── Relationships ──
+
+export async function fetchContactRelationships(contactId: string) {
+  const { data, error } = await supabase()
+    .from('contact_relationships')
+    .select('*, from_contact:contacts!contact_relationships_from_contact_id_fkey(id,first_name,last_name,tags,pipeline_stage,email,phone), to_contact:contacts!contact_relationships_to_contact_id_fkey(id,first_name,last_name,tags,pipeline_stage,email,phone)')
+    .or(`from_contact_id.eq.${contactId},to_contact_id.eq.${contactId}`)
+  if (error) throw error
+  return data as ContactRelationship[]
+}
+
+export async function fetchAllRelationships(orgId: string) {
+  const { data, error } = await supabase()
+    .from('contact_relationships')
+    .select('*')
+    .eq('org_id', orgId)
+  if (error) throw error
+  return data as ContactRelationship[]
+}
+
+export async function createRelationship(rel: { org_id: string; from_contact_id: string; to_contact_id: string; relationship_type: string; notes?: string; strength?: number; created_by?: string }) {
+  const { data, error } = await supabase().from('contact_relationships').insert(rel).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteRelationship(id: string) {
+  const { error } = await supabase().from('contact_relationships').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function fetchRelationshipTypes(orgId?: string) {
+  let q = supabase().from('relationship_types').select('*').eq('is_active', true).order('sort_order')
+  if (orgId) q = q.eq('org_id', orgId)
+  const { data, error } = await q
+  if (error) throw error
+  return data as RelationshipType[]
+}
+
+// ── Network Graph ──
+
+export async function fetchNetworkGraph(orgId: string): Promise<NetworkGraphData> {
+  const sb = supabase()
+  const [contactsRes, relsRes, scoresRes] = await Promise.all([
+    sb.from('contacts').select('id,first_name,last_name,tags,pipeline_stage,last_contacted_at').eq('org_id', orgId).is('merged_into_id', null),
+    sb.from('contact_relationships').select('*, type_config:relationship_types(*)').eq('org_id', orgId),
+    sb.from('contact_interaction_score').select('*').eq('org_id', orgId),
+  ])
+
+  const scoreMap = new Map((scoresRes.data || []).map((s: any) => [s.contact_id, s]))
+
+  const nodes: NetworkNode[] = (contactsRes.data || []).map((c: any) => {
+    const score = scoreMap.get(c.id) as any
+    return {
+      id: c.id,
+      name: `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'Unknown',
+      avatar: `${c.first_name?.[0] || ''}${c.last_name?.[0] || ''}`.toUpperCase(),
+      tags: c.tags || [],
+      pipeline_stage: c.pipeline_stage,
+      relationship_count: score?.relationship_count || 0,
+      interaction_score: score?.interaction_score || 0,
+      network_centrality: score?.network_centrality || 0,
+      bridge_score: score?.bridge_score || 0,
+      cluster_id: score?.cluster_id,
+    }
+  })
+
+  const edges: NetworkEdge[] = (relsRes.data || []).map((r: any) => ({
+    id: r.id, from: r.from_contact_id, to: r.to_contact_id,
+    type: r.relationship_type,
+    label: r.type_config?.label || r.relationship_type,
+    strength: r.strength, color: r.type_config?.color,
+  }))
+
+  const clusters = detectClusters(nodes, edges)
+  return { nodes, edges, clusters }
+}
+
+function detectClusters(nodes: NetworkNode[], edges: NetworkEdge[]): NetworkCluster[] {
+  const parent = new Map<string, string>()
+  nodes.forEach(n => parent.set(n.id, n.id))
+  function find(x: string): string {
+    if (parent.get(x) !== x) parent.set(x, find(parent.get(x)!))
+    return parent.get(x)!
+  }
+  function union(a: string, b: string) { parent.set(find(a), find(b)) }
+  edges.forEach(e => union(e.from, e.to))
+
+  const groups = new Map<string, string[]>()
+  nodes.forEach(n => {
+    const root = find(n.id)
+    if (!groups.has(root)) groups.set(root, [])
+    groups.get(root)!.push(n.id)
+  })
+
+  let cid = 0
+  const clusters: NetworkCluster[] = []
+  groups.forEach(ids => {
+    if (ids.length >= 2) {
+      const clusterNodes = nodes.filter(n => ids.includes(n.id))
+      const allTags = clusterNodes.flatMap(n => n.tags)
+      const tagCounts = new Map<string, number>()
+      allTags.forEach(t => tagCounts.set(t, (tagCounts.get(t) || 0) + 1))
+      const dominant = Array.from(tagCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3).map(e => e[0])
+      clusters.push({ id: cid, contact_ids: ids, dominant_tags: dominant })
+      ids.forEach(id => { const n = nodes.find(n => n.id === id); if (n) n.cluster_id = cid })
+      cid++
+    }
+  })
+  return clusters
+}
+
+export function findBridgeContacts(targetIds: Set<string>, edges: NetworkEdge[], nodes: NetworkNode[]): string[] {
+  const bridges: string[] = []
+  nodes.forEach(n => {
+    if (targetIds.has(n.id)) return
+    const connected = new Set<string>()
+    edges.forEach(e => {
+      if (e.from === n.id && targetIds.has(e.to)) connected.add(e.to)
+      if (e.to === n.id && targetIds.has(e.from)) connected.add(e.from)
+    })
+    if (connected.size >= 2) bridges.push(n.id)
+  })
+  return bridges
+}
+
+// ── Network Events ──
+
+export async function fetchNetworkEvents(orgId: string) {
+  const { data, error } = await supabase().from('network_events').select('*').eq('org_id', orgId).order('created_at', { ascending: false })
+  if (error) throw error
+  return data as NetworkEvent[]
+}
+
+export async function createNetworkEvent(event: Partial<NetworkEvent>) {
+  const { data, error } = await supabase().from('network_events').insert(event).select().single()
+  if (error) throw error
+  return data
+}
+
+// ── Seed helper ──
+
+export async function seedNetworkIntelligence(orgId: string) {
+  const { error } = await supabase().rpc('seed_network_intelligence', { p_org_id: orgId })
+  if (error) throw error
+}
+
+export async function computeNetworkScores(orgId: string) {
+  const { error } = await supabase().rpc('compute_contact_network_scores', { p_org_id: orgId })
+  if (error) throw error
 }

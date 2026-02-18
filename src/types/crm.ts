@@ -514,3 +514,76 @@ export interface ContactSearchParams {
   limit?: number
   offset?: number
 }
+
+// ═══════════════════════════════════════════════════════════════
+// Network Intelligence Types
+// ═══════════════════════════════════════════════════════════════
+
+export interface ContactTagCategory {
+  id: string; org_id: string; name: string; color: string; sort_order: number
+  tags?: ContactTagDefinition[]
+}
+
+export interface ContactTagDefinition {
+  id: string; org_id: string; category_id: string; name: string
+  description?: string; is_active: boolean; sort_order: number
+  category?: ContactTagCategory
+}
+
+export interface ContactRelationship {
+  id: string; org_id: string; from_contact_id: string; to_contact_id: string
+  relationship_type: string; notes?: string; strength: number
+  is_bidirectional: boolean; created_by?: string
+  created_at: string; updated_at: string
+  from_contact?: CrmContact; to_contact?: CrmContact
+  type_config?: RelationshipType
+}
+
+export interface RelationshipType {
+  id: string; org_id: string; name: string; label: string
+  icon?: string; reverse_label: string; color?: string
+  sort_order: number; is_active: boolean
+}
+
+export interface ContactNetworkScore {
+  contact_id: string; org_id: string; relationship_count: number
+  inbound_refs: number; outbound_refs: number; tag_count: number
+  last_interaction?: string; interaction_score: number
+  network_centrality: number; bridge_score: number
+  cluster_id?: number; computed_at: string
+}
+
+export interface NetworkEvent {
+  id: string; org_id: string; name: string; description?: string
+  event_date?: string; target_contacts: string[]
+  bridge_contacts: string[]; suggested_invites: string[]
+  status: 'planning' | 'invites_sent' | 'completed' | 'cancelled'
+  created_by?: string; created_at: string
+}
+
+export interface NetworkGraphData {
+  nodes: NetworkNode[]; edges: NetworkEdge[]; clusters: NetworkCluster[]
+}
+
+export interface NetworkNode {
+  id: string; name: string; avatar: string; tags: string[]
+  pipeline_stage?: string; relationship_count: number
+  interaction_score: number; network_centrality: number
+  bridge_score: number; cluster_id?: number
+  x?: number; y?: number
+}
+
+export interface NetworkEdge {
+  id: string; from: string; to: string; type: string
+  label: string; strength: number; color?: string
+}
+
+export interface NetworkCluster {
+  id: number; contact_ids: string[]; label?: string; dominant_tags: string[]
+}
+
+export interface NetworkInsight {
+  type: 'bridge_opportunity' | 'dormant_connector' | 'cluster_gap' | 'referral_chain' | 'event_suggestion' | 'engagement_alert'
+  title: string; description: string; contact_ids: string[]
+  confidence: number; action?: string; priority: 'high' | 'medium' | 'low'
+}
