@@ -5,30 +5,32 @@ import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
 import {
   Brain, Users, User, Compass, Plus, X, Trash2, Loader2, Send, Upload,
-  Sparkles, FileText, Mic, Video, ChevronDown, MessageSquare, Settings, Wand2,
-  Route, CheckSquare, Rocket, Megaphone, Target, BarChart3, Mail, BookOpen,
-  Image as ImageIcon
+  Sparkles, FileText, Mic, Video, MessageSquare, Settings, Wand2,
+  Route, Rocket, Megaphone, Target, Mail, BookOpen,
+  Image as ImageIcon, Star, Pin, Search, Tag, Share2, Clock,
+  Hash, MoreVertical, ChevronDown
 } from 'lucide-react'
 
 // ============================================================
 // TYPES
 // ============================================================
 interface AdvisoryVoice {
-  id: string
-  name: string
-  role: string
-  description: string
-  style: string
-  color: string
-  avatar: string
-  knowledge: string // accumulated from transcripts/uploads
-  source_count: number
-  enabled: boolean
+  id: string; name: string; role: string; description: string; style: string
+  color: string; avatar: string; knowledge: string; source_count: number; enabled: boolean
+}
+interface ChatMsg { role: 'user' | 'assistant'; content: string }
+interface Conversation {
+  id: string; org_id: string; user_id: string; user_name: string
+  voice_id: string; title: string; messages: ChatMsg[]
+  summary: string | null; key_insights: string[]; tags: string[]
+  rating: number | null; is_pinned: boolean; is_shared: boolean
+  is_archived: boolean; promoted_to_library: string | null
+  message_count: number; created_at: string; updated_at: string
 }
 
-interface ChatMsg { role: 'user' | 'assistant'; content: string }
-
-// Stable sub-components — MUST be outside the page component to avoid re-creation on every render
+// ============================================================
+// STABLE SUB-COMPONENTS (outside main component)
+// ============================================================
 const ChatBubble = ({ msg }: { msg: ChatMsg }) => (
   <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
     <div className={`max-w-[85%] px-3 py-2 rounded-xl text-xs leading-relaxed whitespace-pre-wrap ${
@@ -65,95 +67,39 @@ const QuickPrompts = ({ prompts, onSelect }: { prompts: string[]; onSelect: (s: 
   </div>
 )
 
+const StarRating = ({ rating, onChange, size = 'sm' }: { rating: number | null; onChange: (r: number) => void; size?: 'sm' | 'md' }) => (
+  <div className="flex gap-0.5">
+    {[1, 2, 3, 4, 5].map(star => (
+      <button key={star} onClick={(e) => { e.stopPropagation(); onChange(star) }} className={size === 'md' ? 'p-0.5' : ''}>
+        <Star className={`${size === 'md' ? 'w-4 h-4' : 'w-3 h-3'} ${
+          (rating || 0) >= star ? 'fill-amber-400 text-amber-400' : 'text-gray-200 hover:text-amber-300'
+        }`} />
+      </button>
+    ))}
+  </div>
+)
+
 // ============================================================
-// HUB MAP - every feature and how to get there
+// CONSTANTS
 // ============================================================
-const HUB_MAP = `
-NPU HUB FEATURE MAP (use this to guide users):
-
-JOURNEY BUILDER (/journeys) - Visual customer journey with paths and cards. Each path = a major phase (Marketing, Sales, Onboarding, Program, Off-boarding). Cards are touchpoints within paths. Cards can have assets, resources, tasks, email sending.
-- "How do I create a journey?" → Go to Journey Builder, click Add Path or AI Journey Creator
-- "How do I send resources to someone?" → Open a card in Journey Builder, expand the email widget, select resources, add recipient, click Send
-- "How do I use AI to build a journey?" → Click the purple AI Journey Creator button, describe your business, preview, then create
-
-TASK MANAGER (/tasks) - Kanban board with columns. Drag cards between columns. Click cards to edit details, assign team members, set due dates.
-- "How do I create a task?" → Go to Task Manager, click + in any column
-- "How do tasks connect to ShipIt?" → Create tasks from ShipIt sections, or link existing tasks in the card detail
-
-SHIPIT JOURNAL (/shipit) - Godin/Linchpin shipping framework. 6 sections: What/Who/Why/Fears/Timeline/Ship Date. AI Coach for each section. Export to Google Docs.
-- "How do I ship a project?" → Create a new ShipIt project, fill in sections, set a ship date, use AI coach for guidance
-- "How do I export to Google Doc?" → Click Export button, choose Create Google Doc (requires Apps Script integration)
-
-CAMPAIGNS (/campaigns) - 11-phase marketing campaign pipeline. AI Campaign Builder generates full campaign plans. RACI role assignment on steps.
-- "How do I create a campaign?" → Go to Campaigns, click New Campaign, or use AI Campaign Builder for AI-generated plans
-- "What are the campaign phases?" → Ideation, Strategy, Creative, Copy, Landing, Tracking, Build, QA, Launch, Optimize, Report
-
-SOCIAL MEDIA (/social) - 3-panel designer. Left: controls and voices. Center: AI chat generates 3 options per request. Right: platform previews. Posts tab for drafts. Calendar for scheduling.
-- "How do I create social posts?" → Go to Social Media, describe what you want, AI generates 3 options, select and save as drafts
-- "How do I schedule posts?" → Go to Calendar tab, drag posts from drafts to calendar days
-- "How do I create posts from a video?" → Click "From Video/Podcast" button, paste YouTube URL or transcript
-
-SETTINGS (/settings) - Brand identity, voice, vocabulary, messaging, AI prompts, email templates, content guardrails, platform rules.
-- "Where do I set up email templates?" → Settings > Email Templates section
-- "How do I change the brand voice?" → Settings > Voice & Tone section
-- "Where are the AI prompts?" → Settings > AI Prompts section
-
-INTEGRATIONS (/integrations) - Google Apps Script (master integration), Gmail, Slack, Calendar connections.
-- "How do I connect Gmail?" → Integrations > Google Apps Script card, paste your Web App URL, test connection
-- "How do I send emails?" → First set up Apps Script in Integrations, then use the email widget on Journey Cards
-
-TEAM (/team) - Team member management, roles, permissions.
-MEDIA LIBRARY (/media) - Upload and organize images, videos, documents.
-IDEAS (/ideas) - Capture and vote on business ideas.
-SOPs (/sops) - Standard operating procedures.
-ICPs (/icps) - Ideal customer profile definitions.
-CALENDAR (/calendar) - Content calendar and scheduling.
-COMPANY LIBRARY (/library) - Curated books and resources that define the methodology.
-MEDIA APPEARANCES (/media-appearances) - Track podcast/media appearances.
-SUPPORT TICKETS (/tickets) - Cross-app support ticket management.
-ANALYTICS (/analytics) - Platform analytics and metrics.
-AI ADVISORY (/advisory) - This page. Advisory board voices, Cameron AI, Hub Guide.
-
-CRM (/crm) - Full customer relationship management with unified identity tracking across the entire customer journey.
-- Dashboard: KPIs, pipeline funnel, acquisition funnel visualization, Mastermind lifecycle tracking
-- Contacts (/crm/contacts): Contact rolodex with 360-degree detail drawer (overview, timeline, tasks, notes, comms). Click any row to open.
-- Pipelines (/crm/pipelines): Kanban board for deal stages, drag contacts between stages
-- Analytics (/crm/analytics): Full analytics with charts for contacts, calls, emails, pipeline
-- Dialer (/crm/dialer): Call log, browser-based calling via Twilio, AI transcription
-- Messages (/crm/messages): SMS inbox with conversations and smart replies
-- Campaigns (/crm/campaigns): Email campaign builder with templates
-- Sequences (/crm/sequences): Drip sequence builder with multi-step automation
-- Tasks (/crm/tasks): CRM task management with AI extraction from call transcripts
-- Settings (/crm/settings): CRM configuration panels, Twilio, email, pipeline stages
-IDENTITY GRAPH: Tracks people from ad impression through quiz completion, nurture, enrollment, program metrics, and 6-month follow-up outcomes.
-- Quiz completions auto-link to CRM contacts via email identity resolution
-- Mastermind enrollment connects CRM contact to platform user account
-- Program data (NSCI scores, VR sessions) flows back to contact timeline
-- Sensorium EHR integration point is built in for future clinical data
-- "How do I add a contact?" → Go to CRM > Contacts, click Add Contact
-- "How do I move someone through the pipeline?" → CRM > Pipelines, drag their card between stages
-- "How do I set up SMS?" → CRM > Settings, configure Twilio credentials
-`
+const HUB_MAP = `NPU HUB FEATURE MAP:\nJOURNEY BUILDER (/journeys) - Visual customer journey with paths and cards.\nTASK MANAGER (/tasks) - Kanban board.\nSHIPIT JOURNAL (/shipit) - Shipping framework.\nCAMPAIGNS (/campaigns) - 11-phase marketing pipeline.\nSOCIAL MEDIA (/social) - 3-panel AI designer.\nSETTINGS (/settings) - Brand identity, voice.\nINTEGRATIONS (/integrations) - Google, Gmail, Slack.\nTEAM (/team) - Members, roles, permissions.\nSOPs (/sops) - Standard operating procedures.\nCRM (/crm) - Full CRM with contacts, pipelines, dialer, messages, sequences.\nAI ADVISORY (/advisory) - This page.`
 
 const DEFAULT_VOICES: AdvisoryVoice[] = [
-  { id: 'cameron', name: 'Cameron Allen', role: 'Founder & CEO', description: 'My own perspective, trained from my conversations, decisions, and communication style. Ask me anything about how I would handle a situation, what my priorities are, or how I think about problems.', style: 'Direct, warm, capacity-focused. Uses biological framing. Forward-facing questions. No em dashes.', color: '#386797', avatar: 'CA', knowledge: '', source_count: 0, enabled: true },
-  { id: 'advisor-1', name: 'Advisory Board', role: 'Strategic Advisors', description: 'Collective wisdom from advisory board meetings. Feed in recordings and transcripts to build this voice.', style: 'Strategic, experienced, asks clarifying questions before advising.', color: '#8B5CF6', avatar: 'AB', knowledge: '', source_count: 0, enabled: true },
+  { id: 'cameron', name: 'Cameron Allen', role: 'Founder & CEO', description: 'My own perspective, trained from my conversations.', style: 'Direct, warm, capacity-focused. No em dashes.', color: '#386797', avatar: 'CA', knowledge: '', source_count: 0, enabled: true },
+  { id: 'advisor-1', name: 'Advisory Board', role: 'Strategic Advisors', description: 'Collective wisdom from advisory board meetings.', style: 'Strategic, asks clarifying questions.', color: '#8B5CF6', avatar: 'AB', knowledge: '', source_count: 0, enabled: true },
 ]
 
 // ============================================================
-// COMPONENT
+// MAIN COMPONENT
 // ============================================================
 export default function AdvisoryPage() {
-  const { currentOrg, loading: orgLoading } = useWorkspace()
+  const { user, currentOrg, loading: orgLoading } = useWorkspace()
   const supabase = createClient()
   const [tab, setTab] = useState<'voices' | 'cameron' | 'guide'>('guide')
 
   // Voices
   const [voices, setVoices] = useState<AdvisoryVoice[]>(DEFAULT_VOICES)
   const [selectedVoice, setSelectedVoice] = useState<string | null>(null)
-  const [voiceChat, setVoiceChat] = useState<ChatMsg[]>([])
-  const [voiceInput, setVoiceInput] = useState('')
-  const [voiceLoading, setVoiceLoading] = useState(false)
   const [editingVoice, setEditingVoice] = useState<AdvisoryVoice | null>(null)
   const [uploadingTo, setUploadingTo] = useState<string | null>(null)
   const [uploadText, setUploadText] = useState('')
@@ -162,255 +108,287 @@ export default function AdvisoryPage() {
   const [modalFiles, setModalFiles] = useState<{ name: string; type: string; preview?: string }[]>([])
   const modalFileRef = useRef<HTMLInputElement>(null)
 
-  // Cameron AI
-  const [cameronChat, setCameronChat] = useState<ChatMsg[]>([])
-  const [cameronInput, setCameronInput] = useState('')
-  const [cameronLoading, setCameronLoading] = useState(false)
+  // Chat
+  const [chatMessages, setChatMessages] = useState<ChatMsg[]>([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+
+  // Conversation history
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [activeConvoId, setActiveConvoId] = useState<string | null>(null)
+  const [convoSearch, setConvoSearch] = useState('')
+  const [convoFilter, setConvoFilter] = useState<'all' | 'pinned' | 'rated' | 'shared'>('all')
+  const [showConvoMenu, setShowConvoMenu] = useState<string | null>(null)
+  const [showTagInput, setShowTagInput] = useState(false)
+  const [newTag, setNewTag] = useState('')
+  const [generatingSummary, setGeneratingSummary] = useState(false)
+  const [promotingToLibrary, setPromotingToLibrary] = useState(false)
+
+  // Cameron knowledge panel
   const [uploadFiles, setUploadFiles] = useState<{ name: string; type: string; preview?: string }[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
-
-  // Hub Guide
-  const [guideChat, setGuideChat] = useState<ChatMsg[]>([])
-  const [guideInput, setGuideInput] = useState('')
-  const [guideLoading, setGuideLoading] = useState(false)
-
   const chatEndRef = useRef<HTMLDivElement>(null)
 
-  // Load voices from Supabase
+  // ── Load voices ──
   useEffect(() => {
     if (!currentOrg) return
     const load = async () => {
-      const { data } = await supabase
-        .from('brand_profiles')
-        .select('guidelines')
-        .eq('org_id', currentOrg.id)
-        .eq('brand_key', 'np')
-        .single()
-      if (data?.guidelines?.advisory_voices) {
-        setVoices(data.guidelines.advisory_voices)
-      }
+      const { data } = await supabase.from('brand_profiles').select('guidelines')
+        .eq('org_id', currentOrg.id).eq('brand_key', 'np').single()
+      if (data?.guidelines?.advisory_voices) setVoices(data.guidelines.advisory_voices)
     }
     load()
   }, [currentOrg])
 
-  // Save voices
+  // ── Load conversations for current tab/voice ──
+  const loadConversations = useCallback(async () => {
+    if (!currentOrg || !user) return
+    const vid = tab === 'cameron' ? 'cameron' : tab === 'guide' ? 'guide' : selectedVoice || ''
+    if (!vid) return
+
+    let query = supabase.from('ai_conversations').select('id,org_id,user_id,user_name,voice_id,title,summary,key_insights,tags,rating,is_pinned,is_shared,is_archived,promoted_to_library,message_count,created_at,updated_at')
+      .eq('org_id', currentOrg.id).eq('voice_id', vid).eq('is_archived', false)
+      .order('is_pinned', { ascending: false }).order('updated_at', { ascending: false })
+
+    if (convoFilter === 'pinned') query = query.eq('is_pinned', true)
+    if (convoFilter === 'rated') query = query.not('rating', 'is', null)
+    if (convoFilter === 'shared') query = query.eq('is_shared', true)
+    if (convoSearch.trim()) query = query.or(`title.ilike.%${convoSearch}%,summary.ilike.%${convoSearch}%`)
+
+    const { data } = await query.limit(50)
+    setConversations((data || []).map(d => ({ ...d, messages: [] })) as Conversation[])
+  }, [currentOrg?.id, user?.id, tab, selectedVoice, convoFilter, convoSearch])
+
+  useEffect(() => { loadConversations() }, [loadConversations])
+
+  // ── Save voices ──
   const saveVoices = useCallback(async (newVoices: AdvisoryVoice[]) => {
     if (!currentOrg) return
-    const { data: existing } = await supabase
-      .from('brand_profiles')
-      .select('guidelines')
-      .eq('org_id', currentOrg.id)
-      .eq('brand_key', 'np')
-      .single()
-    await supabase
-      .from('brand_profiles')
+    const { data: existing } = await supabase.from('brand_profiles').select('guidelines')
+      .eq('org_id', currentOrg.id).eq('brand_key', 'np').single()
+    await supabase.from('brand_profiles')
       .update({ guidelines: { ...(existing?.guidelines || {}), advisory_voices: newVoices } })
-      .eq('org_id', currentOrg.id)
-      .eq('brand_key', 'np')
+      .eq('org_id', currentOrg.id).eq('brand_key', 'np')
     setVoices(newVoices)
   }, [currentOrg, supabase])
 
-  // Scroll to bottom
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [voiceChat, cameronChat, guideChat])
+  // ── Scroll chat ──
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [chatMessages])
 
-  // ============================================================
-  // AI CALLS
-  // ============================================================
-  const sendToAI = async (
-    systemPrompt: string,
-    messages: ChatMsg[],
-    userMsg: string,
-    setChat: (fn: (prev: ChatMsg[]) => ChatMsg[]) => void,
-    setLoading: (b: boolean) => void,
-    setInput: (s: string) => void,
-  ) => {
-    if (!userMsg.trim() || false) return
-    const newMsgs: ChatMsg[] = [...messages, { role: 'user', content: userMsg.trim() }]
-    setChat(() => newMsgs)
-    setInput('')
-    setLoading(true)
+  // ── Close menu on outside click ──
+  useEffect(() => {
+    const handler = () => setShowConvoMenu(null)
+    if (showConvoMenu) document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [showConvoMenu])
+
+  // ════════════════════════════════════════════
+  // CONVERSATION MANAGEMENT
+  // ════════════════════════════════════════════
+  const createConversation = async (voiceId: string, firstMsg: string): Promise<string | null> => {
+    if (!currentOrg || !user) return null
+    const title = firstMsg.slice(0, 80) + (firstMsg.length > 80 ? '...' : '')
+    const { data } = await supabase.from('ai_conversations').insert({
+      org_id: currentOrg.id, user_id: user.id,
+      user_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'User',
+      voice_id: voiceId, title, messages: [], message_count: 0,
+    }).select().single()
+    if (data) {
+      setConversations(prev => [{ ...data, messages: [] } as Conversation, ...prev])
+      setActiveConvoId(data.id)
+      return data.id
+    }
+    return null
+  }
+
+  const saveMessages = async (convoId: string, msgs: ChatMsg[]) => {
+    await supabase.from('ai_conversations').update({ messages: msgs, message_count: msgs.length }).eq('id', convoId)
+  }
+
+  const updateConversation = async (convoId: string, updates: Partial<Conversation>) => {
+    await supabase.from('ai_conversations').update(updates).eq('id', convoId)
+    setConversations(prev => prev.map(c => c.id === convoId ? { ...c, ...updates } as Conversation : c))
+  }
+
+  const deleteConversation = async (convoId: string) => {
+    await supabase.from('ai_conversations').delete().eq('id', convoId)
+    setConversations(prev => prev.filter(c => c.id !== convoId))
+    if (activeConvoId === convoId) { setActiveConvoId(null); setChatMessages([]) }
+  }
+
+  const loadConversation = async (convo: Conversation) => {
+    setActiveConvoId(convo.id)
+    // Fetch full messages
+    const { data } = await supabase.from('ai_conversations').select('messages').eq('id', convo.id).single()
+    const msgs = (data?.messages || []) as ChatMsg[]
+    setChatMessages(msgs)
+    setConversations(prev => prev.map(c => c.id === convo.id ? { ...c, messages: msgs } : c))
+  }
+
+  const startNewConversation = () => {
+    setActiveConvoId(null)
+    setChatMessages([])
+    setChatInput('')
+  }
+
+  // ════════════════════════════════════════════
+  // AI SEND (with auto-save)
+  // ════════════════════════════════════════════
+  const sendToAI = async (systemPrompt: string, voiceId: string) => {
+    if (!chatInput.trim()) return
+    const userMsg = chatInput.trim()
+    let convoId = activeConvoId
+    if (!convoId) {
+      convoId = await createConversation(voiceId, userMsg)
+      if (!convoId) return
+    }
+
+    const newMsgs: ChatMsg[] = [...chatMessages, { role: 'user', content: userMsg }]
+    setChatMessages(newMsgs)
+    setChatInput('')
+    setChatLoading(true)
+    saveMessages(convoId, newMsgs)
 
     try {
       const res = await fetch('/api/ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: newMsgs,
-          campaignContext: { type: 'advisory', systemOverride: systemPrompt },
-        }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: newMsgs, campaignContext: { type: 'advisory', systemOverride: systemPrompt } }),
       })
       const data = await res.json()
       const reply = (data.content || 'No response.').replace(/\*\*/g, '').replace(/\u2014/g, ', ').replace(/\u2013/g, ', ').trim()
-      setChat(() => [...newMsgs, { role: 'assistant', content: reply }])
+      const withReply: ChatMsg[] = [...newMsgs, { role: 'assistant', content: reply }]
+      setChatMessages(withReply)
+      saveMessages(convoId, withReply)
+      setConversations(prev => prev.map(c =>
+        c.id === convoId ? { ...c, message_count: withReply.length, updated_at: new Date().toISOString() } : c
+      ))
     } catch {
-      setChat(() => [...newMsgs, { role: 'assistant', content: 'Connection error. Try again.' }])
+      const errMsgs: ChatMsg[] = [...newMsgs, { role: 'assistant', content: 'Connection error. Try again.' }]
+      setChatMessages(errMsgs)
+      saveMessages(convoId, errMsgs)
     }
-    setLoading(false)
+    setChatLoading(false)
   }
 
-  // Voice chat
-  const sendVoiceChat = () => {
-    const voice = voices.find(v => v.id === selectedVoice)
-    if (!voice) return
-    const sys = `You are ${voice.name}, ${voice.role}. ${voice.description}
-
-Communication style: ${voice.style}
-
-${voice.knowledge ? `KNOWLEDGE BASE (from uploaded transcripts and recordings):\n${voice.knowledge}\n\nUse this knowledge to inform your responses. When asked about specific topics covered in the knowledge base, reference that information directly.` : 'No knowledge base uploaded yet. Respond based on the role description.'}
-
-Stay in character. Answer questions the way ${voice.name} would. Be helpful and specific.`
-
-    sendToAI(sys, voiceChat, voiceInput, setVoiceChat, setVoiceLoading, setVoiceInput)
+  const sendChat = () => {
+    const voiceId = tab === 'cameron' ? 'cameron' : tab === 'guide' ? 'guide' : selectedVoice || ''
+    let sys = ''
+    if (tab === 'guide') {
+      sys = `You are the NPU Hub Guide.\n\n${HUB_MAP}\n\nBe concise. Step-by-step instructions. No em dashes.`
+    } else if (tab === 'cameron') {
+      const cam = voices.find(v => v.id === 'cameron')
+      sys = `You are Cameron Allen, founder of Neuro Progeny.\n\nStyle: Direct, warm. Biological framing. No em dashes. Capacity over pathology.\nBeliefs: All behavior is adaptive. HRV is a mirror. Train state fluidity. VR is feedback amplifier.\n\n${cam?.knowledge ? `KNOWLEDGE:\n${cam.knowledge}` : ''}\n\nAnswer as Cameron would.`
+    } else if (selectedVoice) {
+      const v = voices.find(v => v.id === selectedVoice)
+      if (v) sys = `You are ${v.name}, ${v.role}. ${v.description}\nStyle: ${v.style}\n${v.knowledge ? `KNOWLEDGE:\n${v.knowledge}` : ''}\nStay in character.`
+    }
+    if (sys) sendToAI(sys, voiceId)
   }
 
-  // Cameron AI
-  const sendCameronChat = () => {
-    const cameron = voices.find(v => v.id === 'cameron')
-    const sys = `You are Cameron Allen, founder and CEO of Neuro Progeny. You are an AI representation of Cameron, trained to answer questions the way Cameron would.
+  // ════════════════════════════════════════════
+  // AI SUMMARY + INSIGHTS
+  // ════════════════════════════════════════════
+  const generateSummary = async (convoId: string) => {
+    // Get full messages
+    const { data: convoData } = await supabase.from('ai_conversations').select('messages,title').eq('id', convoId).single()
+    const msgs = (convoData?.messages || []) as ChatMsg[]
+    if (msgs.length < 2) return
+    setGeneratingSummary(true)
 
-Your communication style: Direct, warm, grounded. You use biological framing for nervous system concepts. You ask forward-facing questions. You never use em dashes. You frame everything through capacity building, not pathology.
-
-Core beliefs:
-- All behavior is adaptive. Nothing is broken.
-- HRV is a mirror, not a score to optimize
-- We train state fluidity, not calm-chasing
-- Capacity gaps are training opportunities, not character flaws
-- VR biofeedback is a feedback amplifier
-
-${cameron?.knowledge ? `CAMERON'S KNOWLEDGE BASE (from conversations, recordings, and decisions):\n${cameron.knowledge}\n\nUse this knowledge to answer questions authentically as Cameron would. Reference specific decisions, preferences, and approaches from the knowledge base.` : ''}
-
-Your team members will ask you questions about:
-- How to handle situations
-- What your priorities are
-- How you think about problems
-- Business decisions
-- How features in the platform work and connect
-- Your communication style and preferences
-
-Answer as Cameron would. Be direct, specific, and helpful. If you don't have enough context to answer as Cameron, say so and give your best approximation.`
-
-    sendToAI(sys, cameronChat, cameronInput, setCameronChat, setCameronLoading, setCameronInput)
+    try {
+      const transcript = msgs.map(m => `${m.role === 'user' ? 'User' : 'AI'}: ${m.content}`).join('\n\n')
+      const res = await fetch('/api/ai', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: `Analyze this conversation. Return ONLY valid JSON, no markdown:\n{"summary":"2-3 sentence summary","insights":["insight 1","insight 2","insight 3"],"tags":["tag1","tag2"]}\n\nConversation:\n${transcript.slice(0, 20000)}` }],
+          campaignContext: { type: 'analysis', systemOverride: 'Extract summary, insights, tags. Return ONLY valid JSON.' },
+        }),
+      })
+      const data = await res.json()
+      let content = (data.content || '').replace(/```json\s*/g, '').replace(/```\s*/g, '').trim()
+      const parsed = JSON.parse(content)
+      await updateConversation(convoId, {
+        summary: parsed.summary || null,
+        key_insights: parsed.insights || [],
+        tags: parsed.tags || [],
+      } as any)
+    } catch {}
+    setGeneratingSummary(false)
   }
 
-  // Hub Guide
-  const sendGuideChat = () => {
-    const sys = `You are the NPU Hub Guide, an intelligent assistant that knows every feature of the NPU Hub platform. Your job is to help team members navigate the platform, find features, understand how things connect, and learn how to use tools effectively.
+  // ════════════════════════════════════════════
+  // PROMOTE TO LIBRARY
+  // ════════════════════════════════════════════
+  const promoteToLibrary = async (convoId: string) => {
+    if (!currentOrg || !user) return
+    setPromotingToLibrary(true)
 
-${HUB_MAP}
+    // Get full conversation
+    const { data: convoData } = await supabase.from('ai_conversations').select('*').eq('id', convoId).single()
+    if (!convoData) { setPromotingToLibrary(false); return }
+    const convo = convoData as Conversation
 
-RESPONSE RULES:
-- Be concise and direct
-- When explaining how to do something, give step-by-step instructions
-- Reference specific page paths (e.g., "Go to /journeys")
-- When features connect (like tasks linking to ShipIt), explain the connection
-- If they ask about something not in the hub, say so
-- Use friendly, helpful tone
-- No em dashes
-- If they seem lost, ask what they're trying to accomplish`
+    // Generate summary if missing
+    if (!convo.summary) await generateSummary(convoId)
+    // Refetch after summary
+    const { data: refreshed } = await supabase.from('ai_conversations').select('*').eq('id', convoId).single()
+    const final = (refreshed || convo) as Conversation
 
-    sendToAI(sys, guideChat, guideInput, setGuideChat, setGuideLoading, setGuideInput)
+    const transcript = (final.messages as ChatMsg[]).map(m => `${m.role === 'user' ? 'User' : 'AI'}: ${m.content}`).join('\n\n')
+
+    const { data: libItem } = await supabase.from('company_library').insert({
+      org_id: currentOrg.id, title: final.title,
+      description: final.summary || 'AI advisory conversation',
+      category: 'ai-conversation', content_type: 'conversation', content: transcript,
+      summary: final.summary, key_insights: final.key_insights || [],
+      tags: [...(final.tags || []), 'ai-conversation', final.voice_id],
+      source_type: 'ai_conversation', source_id: convoId,
+      author_name: final.user_name, rating: final.rating, created_by: user.id,
+    }).select().single()
+
+    if (libItem) {
+      await updateConversation(convoId, { promoted_to_library: libItem.id } as any)
+    }
+    setPromotingToLibrary(false)
   }
 
-  // ============================================================
-  // EXTRACT KNOWLEDGE FROM TEXT
-  // ============================================================
+  // ════════════════════════════════════════════
+  // KNOWLEDGE EXTRACTION
+  // ════════════════════════════════════════════
   const extractKnowledge = async (voiceId: string, rawText: string, sourceName: string) => {
     setExtracting(true)
     try {
       const res = await fetch('/api/ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: `Extract key insights, advice, decisions, perspectives, communication patterns, and notable quotes from this transcript/recording. Organize by topic. Be thorough but concise. Preserve the speaker's voice and style.\n\nSource: ${sourceName}\n\nContent:\n${rawText.slice(0, 30000)}` }],
-          campaignContext: { type: 'knowledge_extraction', systemOverride: 'You are a knowledge extraction system. Extract and organize key insights, decisions, advice patterns, communication style notes, and notable perspectives from the provided content. Return structured, searchable knowledge that can be used to emulate this person\'s voice and decision-making. Format as clear paragraphs organized by topic.' },
+          messages: [{ role: 'user', content: `Extract key insights, decisions, perspectives from:\nSource: ${sourceName}\n\n${rawText.slice(0, 30000)}` }],
+          campaignContext: { type: 'knowledge_extraction', systemOverride: 'Extract and organize key insights, decisions, advice patterns. Return structured knowledge.' },
         }),
       })
       const data = await res.json()
       const extracted = (data.content || '').replace(/\*\*/g, '').replace(/\u2014/g, ', ').trim()
-
       if (extracted) {
-        const updated = voices.map(v => {
-          if (v.id === voiceId) {
-            return {
-              ...v,
-              knowledge: (v.knowledge ? v.knowledge + '\n\n---\n\n' : '') + `[Source: ${sourceName}]\n${extracted}`,
-              source_count: v.source_count + 1,
-            }
-          }
-          return v
-        })
+        const updated = voices.map(v => v.id === voiceId
+          ? { ...v, knowledge: (v.knowledge ? v.knowledge + '\n\n---\n\n' : '') + `[Source: ${sourceName}]\n${extracted}`, source_count: v.source_count + 1 }
+          : v)
         await saveVoices(updated)
       }
     } catch {}
-    setExtracting(false)
-    setUploadingTo(null)
-    setUploadText('')
+    setExtracting(false); setUploadingTo(null); setUploadText('')
   }
 
-  // Handle file uploads - extract text from docs/images
   const handleFileUpload = async (files: FileList | null) => {
     if (!files) return
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
-      const isImage = file.type.startsWith('image/')
-      const isText = file.type === 'text/plain' || file.name.endsWith('.txt') || file.name.endsWith('.md')
-      const isPdf = file.type === 'application/pdf' || file.name.endsWith('.pdf')
-      const isDoc = file.name.endsWith('.docx') || file.name.endsWith('.doc')
-      const isVideo = file.type.startsWith('video/') || /\.(mp4|mov|avi|webm|mkv)$/i.test(file.name)
-      const isAudio = file.type.startsWith('audio/') || /\.(mp3|m4a|wav|ogg|aac|flac)$/i.test(file.name)
-
-      if (isImage) {
-        // Convert image to base64 for preview + AI vision description
-        const reader = new FileReader()
-        reader.onload = async (e) => {
-          const base64 = e.target?.result as string
-          setUploadFiles(prev => [...prev, { name: file.name, type: 'image', preview: base64 }])
-
-          // Use AI to describe the image for knowledge extraction
-          setExtracting(true)
-          try {
-            const res = await fetch('/api/ai', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                messages: [{ role: 'user', content: [
-                  { type: 'image', source: { type: 'base64', media_type: file.type, data: base64.split(',')[1] } },
-                  { type: 'text', text: 'Describe this image in detail. What does it communicate about brand feel, aesthetic, style, tone, or visual identity? What mood, colors, textures, or design principles are at play? How might someone use this as inspiration for their brand or operating style? Be specific and thorough.' }
-                ] }],
-                campaignContext: { type: 'image_analysis', systemOverride: 'You are a brand and style analyst. Describe images in terms of visual identity, mood, aesthetic principles, and what they communicate about the person or brand\'s style and approach. Be specific about colors, composition, texture, and the feeling they create.' },
-              }),
-            })
-            const data = await res.json()
-            const description = (data.content || '').replace(/\*\*/g, '').replace(/\u2014/g, ', ').trim()
-            if (description) {
-              const updated = voices.map(v => {
-                if (v.id === 'cameron') {
-                  return {
-                    ...v,
-                    knowledge: (v.knowledge ? v.knowledge + '\n\n---\n\n' : '') + `[Source: Image - ${file.name}]\n[Visual Style Reference]\n${description}`,
-                    source_count: v.source_count + 1,
-                  }
-                }
-                return v
-              })
-              await saveVoices(updated)
-            }
-          } catch {}
-          setExtracting(false)
-        }
-        reader.readAsDataURL(file)
-      } else if (isText) {
+      if (file.type === 'text/plain' || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
         const reader = new FileReader()
         reader.onload = (e) => {
-          const text = e.target?.result as string
-          setUploadText(prev => prev + (prev ? '\n\n' : '') + text)
+          setUploadText(prev => prev + (prev ? '\n\n' : '') + (e.target?.result as string))
           setUploadFiles(prev => [...prev, { name: file.name, type: 'document' }])
         }
         reader.readAsText(file)
-      } else if (isPdf) {
-        // Read PDF as base64, send to AI for text extraction
+      } else if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
         const reader = new FileReader()
         reader.onload = async (e) => {
           const base64 = e.target?.result as string
@@ -418,117 +396,13 @@ RESPONSE RULES:
           setExtracting(true)
           try {
             const res = await fetch('/api/ai', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                messages: [{ role: 'user', content: [
-                  { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64.split(',')[1] } },
-                  { type: 'text', text: 'Extract all the text content from this PDF document. Preserve the structure and organization. Return the full text content.' }
-                ] }],
-                campaignContext: { type: 'pdf_extraction', systemOverride: 'You are a document text extraction system. Extract all readable text from the provided PDF, preserving headings, paragraphs, and structure. Return the complete text content.' },
-              }),
-            })
-            const data = await res.json()
-            const text = (data.content || '').trim()
-            if (text) setUploadText(prev => prev + (prev ? '\n\n' : '') + text)
-          } catch {}
-          setExtracting(false)
-        }
-        reader.readAsDataURL(file)
-      } else if (isDoc) {
-        // DOCX: send as base64 document to AI (Claude supports DOCX natively)
-        const reader = new FileReader()
-        reader.onload = async (e) => {
-          const base64 = e.target?.result as string
-          setUploadFiles(prev => [...prev, { name: file.name, type: 'document' }])
-          setExtracting(true)
-          try {
-            const res = await fetch('/api/ai', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                messages: [{ role: 'user', content: [
-                  { type: 'document', source: { type: 'base64', media_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', data: base64.split(',')[1] } },
-                  { type: 'text', text: 'Extract all the text content from this document. Preserve the structure, headings, paragraphs, and organization. Return the full text content.' }
-                ] }],
-                campaignContext: { type: 'docx_extraction', systemOverride: 'You are a document text extraction system. Extract all readable text from the provided document, preserving headings, paragraphs, and structure. Return the complete text content.' },
-              }),
-            })
-            const data = await res.json()
-            const text = (data.content || '').trim()
-            if (text) setUploadText(prev => prev + (prev ? '\n\n' : '') + text)
-          } catch {}
-          setExtracting(false)
-        }
-        reader.readAsDataURL(file)
-      } else if (isVideo || isAudio) {
-        // For video/audio, we note the file and prompt for transcript
-        setUploadFiles(prev => [...prev, { name: file.name, type: isVideo ? 'video' : 'audio' }])
-        setUploadText(prev => prev + (prev ? '\n\n' : '') + `[${isVideo ? 'Video' : 'Audio'} uploaded: ${file.name}]\nPaste the transcript below, or use YouTube URL for auto-extraction.`)
-      }
-    }
-  }
-
-  // Handle file upload for modal (Board Voices)
-  const handleModalFileUpload = async (files: FileList | null, targetVoiceId: string) => {
-    if (!files) return
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i]
-      const isImage = file.type.startsWith('image/')
-      const isText = file.type === 'text/plain' || file.name.endsWith('.txt') || file.name.endsWith('.md')
-      const isPdf = file.type === 'application/pdf' || file.name.endsWith('.pdf')
-
-      if (isImage) {
-        const reader = new FileReader()
-        reader.onload = async (e) => {
-          const base64 = e.target?.result as string
-          setModalFiles(prev => [...prev, { name: file.name, type: 'image', preview: base64 }])
-          setExtracting(true)
-          try {
-            const res = await fetch('/api/ai', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                messages: [{ role: 'user', content: [
-                  { type: 'image', source: { type: 'base64', media_type: file.type, data: base64.split(',')[1] } },
-                  { type: 'text', text: 'Describe this image in detail for knowledge extraction. What information, style, mood, or context does it convey?' }
-                ] }],
-                campaignContext: { type: 'image_analysis', systemOverride: 'Describe images thoroughly for knowledge extraction. Focus on content, context, style, and any information that would help emulate the perspective of the person who shared this.' },
-              }),
-            })
-            const data = await res.json()
-            const desc = (data.content || '').replace(/\*\*/g, '').trim()
-            if (desc) {
-              const updated = voices.map(v => v.id === targetVoiceId ? { ...v, knowledge: (v.knowledge ? v.knowledge + '\n\n---\n\n' : '') + `[Source: Image - ${file.name}]\n${desc}`, source_count: v.source_count + 1 } : v)
-              await saveVoices(updated)
-            }
-          } catch {}
-          setExtracting(false)
-        }
-        reader.readAsDataURL(file)
-      } else if (isText) {
-        const reader = new FileReader()
-        reader.onload = (e) => {
-          setUploadText(prev => prev + (prev ? '\n\n' : '') + (e.target?.result as string))
-          setModalFiles(prev => [...prev, { name: file.name, type: 'document' }])
-        }
-        reader.readAsText(file)
-      } else if (isPdf) {
-        const reader = new FileReader()
-        reader.onload = async (e) => {
-          const base64 = e.target?.result as string
-          setModalFiles(prev => [...prev, { name: file.name, type: 'pdf' }])
-          setExtracting(true)
-          try {
-            const res = await fetch('/api/ai', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 messages: [{ role: 'user', content: [
                   { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64.split(',')[1] } },
                   { type: 'text', text: 'Extract all text content from this PDF.' }
                 ] }],
-                campaignContext: { type: 'pdf_extraction', systemOverride: 'Extract all readable text from the PDF. Return full text content.' },
+                campaignContext: { type: 'pdf_extraction', systemOverride: 'Extract all text. Return full content.' },
               }),
             })
             const data = await res.json()
@@ -541,37 +415,32 @@ RESPONSE RULES:
     }
   }
 
-  // Fetch Google Doc content
   const fetchGoogleDoc = async (url: string, targetVoiceId: string) => {
-    const docIdMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/)
-    if (!docIdMatch) return
+    const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/)
+    if (!match) return
     setExtracting(true)
     try {
-      // Use our Google API route to fetch the doc via Apps Script
       const res = await fetch('/api/google', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orgId: currentOrg?.id, action: 'getDocContent', docId: docIdMatch[1] }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orgId: currentOrg?.id, action: 'getDocContent', docId: match[1] }),
       })
       const data = await res.json()
       if (data.content) {
         setUploadText(prev => prev + (prev ? '\n\n' : '') + data.content)
-        if (targetVoiceId === 'cameron') {
-          setUploadFiles(prev => [...prev, { name: `Google Doc`, type: 'gdoc' }])
-        } else {
-          setModalFiles(prev => [...prev, { name: `Google Doc`, type: 'gdoc' }])
-        }
+        setUploadFiles(prev => [...prev, { name: 'Google Doc', type: 'gdoc' }])
       }
     } catch {}
-    setExtracting(false)
-    setGdocUrl('')
+    setExtracting(false); setGdocUrl('')
   }
 
-  // ============================================================
-  // RENDER HELPERS — moved to stable refs to prevent input focus loss
-  // ============================================================
-
+  // ════════════════════════════════════════════
+  // RENDER
+  // ════════════════════════════════════════════
   if (orgLoading) return <div className="flex items-center justify-center h-64"><div className="animate-pulse text-gray-400">Loading...</div></div>
+
+  const activeConvo = conversations.find(c => c.id === activeConvoId) || null
+  const cameron = voices.find(v => v.id === 'cameron')
+  const cameronSources = (cameron?.knowledge || '').split('\n\n---\n\n').filter(Boolean)
 
   return (
     <div className="h-[calc(100vh-6rem)] flex flex-col">
@@ -582,12 +451,8 @@ RESPONSE RULES:
           <p className="text-xs text-gray-400 mt-0.5">Advisory voices, Cameron AI, and platform guide</p>
         </div>
         <div className="flex bg-gray-100 rounded-lg p-0.5">
-          {([
-            ['guide', Compass, 'Hub Guide'],
-            ['cameron', User, 'Cameron AI'],
-            ['voices', Users, 'Board Voices'],
-          ] as const).map(([k, Icon, label]) => (
-            <button key={k} onClick={() => setTab(k)}
+          {([['guide', Compass, 'Hub Guide'], ['cameron', User, 'Cameron AI'], ['voices', Users, 'Board Voices']] as const).map(([k, Icon, label]) => (
+            <button key={k} onClick={() => { setTab(k); setActiveConvoId(null); setChatMessages([]); setChatInput('') }}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
                 tab === k ? 'bg-white text-np-dark shadow-sm' : 'text-gray-500 hover:text-gray-700'
               }`}>
@@ -597,492 +462,357 @@ RESPONSE RULES:
         </div>
       </div>
 
-      {/* ============================================================ */}
-      {/* TAB: HUB GUIDE */}
-      {/* ============================================================ */}
-      {tab === 'guide' && (
-        <div className="flex-1 flex flex-col bg-white border border-gray-100 rounded-2xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
-              <Compass className="w-4 h-4 text-white" />
+      {/* Main 3-panel layout */}
+      <div className="flex-1 flex gap-3 min-h-0">
+
+        {/* ════ LEFT: Conversation Sidebar ════ */}
+        <div className="w-64 flex-shrink-0 bg-white border border-gray-100 rounded-2xl flex flex-col overflow-hidden">
+          <div className="px-3 py-2.5 border-b border-gray-100 space-y-2">
+            <button onClick={startNewConversation}
+              className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-np-blue text-white rounded-lg text-[10px] font-bold hover:bg-np-blue/90">
+              <Plus className="w-3 h-3" /> New Conversation
+            </button>
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+              <input value={convoSearch} onChange={e => setConvoSearch(e.target.value)} placeholder="Search conversations..."
+                className="w-full pl-7 pr-2 py-1.5 text-[10px] border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300" />
             </div>
-            <div>
-              <h2 className="text-sm font-bold text-np-dark">Hub Guide</h2>
-              <p className="text-[10px] text-gray-400">I know every feature in NPU Hub. Ask me how to do anything.</p>
+            <div className="flex gap-1">
+              {(['all', 'pinned', 'rated', 'shared'] as const).map(f => (
+                <button key={f} onClick={() => setConvoFilter(f)}
+                  className={`text-[8px] font-bold uppercase px-2 py-1 rounded-md transition-colors ${
+                    convoFilter === f ? 'bg-np-blue/10 text-np-blue' : 'text-gray-400 hover:text-gray-600'
+                  }`}>{f}</button>
+              ))}
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5">
-            {guideChat.length === 0 && (
-              <div className="py-6">
-                <p className="text-xs text-gray-400 text-center mb-4">What would you like to do? I can walk you through any feature.</p>
-                <div className="grid grid-cols-2 gap-2 max-w-lg mx-auto">
-                  {[
-                    { icon: Route, label: 'How do I build a customer journey?', color: '#8B5CF6' },
-                    { icon: Mail, label: 'How do I send resources to someone?', color: '#EA4335' },
-                    { icon: Rocket, label: 'How does ShipIt connect to tasks?', color: '#F59E0B' },
-                    { icon: Megaphone, label: 'Walk me through creating a campaign', color: '#3B82F6' },
-                    { icon: Target, label: 'How do I create social media posts?', color: '#EC4899' },
-                    { icon: Settings, label: 'Where do I set up integrations?', color: '#10B981' },
-                  ].map(q => (
-                    <button key={q.label} onClick={() => setGuideInput(q.label)}
-                      className="flex items-center gap-2 text-left text-[11px] text-gray-600 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2.5 hover:bg-np-blue/5 hover:border-np-blue/20 hover:text-np-blue transition-all">
-                      <q.icon className="w-4 h-4 flex-shrink-0" style={{ color: q.color }} />
-                      {q.label}
+          <div className="flex-1 overflow-y-auto">
+            {conversations.length === 0 ? (
+              <div className="text-center py-8">
+                <MessageSquare className="w-6 h-6 text-gray-200 mx-auto mb-2" />
+                <p className="text-[10px] text-gray-400">No conversations yet</p>
+                <p className="text-[8px] text-gray-300 mt-0.5">Start chatting to save history</p>
+              </div>
+            ) : (
+              <div className="p-1.5 space-y-0.5">
+                {conversations.map(convo => (
+                  <div key={convo.id} onClick={() => loadConversation(convo)}
+                    className={`relative px-2.5 py-2 rounded-xl cursor-pointer group transition-all ${
+                      activeConvoId === convo.id ? 'bg-np-blue/5 border border-np-blue/20' : 'hover:bg-gray-50 border border-transparent'
+                    }`}>
+                    <div className="flex items-start gap-1.5 pr-6">
+                      {convo.is_pinned && <Pin className="w-2.5 h-2.5 text-amber-500 flex-shrink-0 mt-0.5 fill-amber-500" />}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] font-semibold text-np-dark truncate">{convo.title}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="text-[8px] text-gray-400">{convo.message_count} msgs</span>
+                          {convo.rating && <StarRating rating={convo.rating} onChange={() => {}} />}
+                          {convo.promoted_to_library && <BookOpen className="w-2.5 h-2.5 text-green-500" />}
+                          {convo.is_shared && <Share2 className="w-2.5 h-2.5 text-purple-400" />}
+                        </div>
+                        {convo.tags && convo.tags.length > 0 && (
+                          <div className="flex gap-0.5 mt-0.5 flex-wrap">
+                            {convo.tags.slice(0, 3).map(t => (
+                              <span key={t} className="text-[7px] bg-gray-100 text-gray-500 px-1 py-0.5 rounded">{t}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <span className="text-[7px] text-gray-300 absolute top-2 right-2">
+                      {new Date(convo.updated_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                    </span>
+
+                    {/* Context menu */}
+                    <button onClick={e => { e.stopPropagation(); setShowConvoMenu(showConvoMenu === convo.id ? null : convo.id) }}
+                      className="absolute bottom-1.5 right-1.5 opacity-0 group-hover:opacity-100 text-gray-300 hover:text-gray-500 p-0.5">
+                      <MoreVertical className="w-3 h-3" />
                     </button>
-                  ))}
-                </div>
+                    {showConvoMenu === convo.id && (
+                      <div className="absolute right-0 top-full z-20 mt-1 w-44 bg-white border border-gray-200 rounded-xl shadow-xl py-1"
+                        onClick={e => e.stopPropagation()}>
+                        <button onClick={() => { updateConversation(convo.id, { is_pinned: !convo.is_pinned } as any); setShowConvoMenu(null) }}
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-[10px] text-gray-600 hover:bg-gray-50">
+                          <Pin className="w-3 h-3" /> {convo.is_pinned ? 'Unpin' : 'Pin to Top'}
+                        </button>
+                        <button onClick={() => { updateConversation(convo.id, { is_shared: !convo.is_shared } as any); setShowConvoMenu(null) }}
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-[10px] text-gray-600 hover:bg-gray-50">
+                          <Share2 className="w-3 h-3" /> {convo.is_shared ? 'Make Private' : 'Share with Team'}
+                        </button>
+                        <button onClick={() => { generateSummary(convo.id); setShowConvoMenu(null) }}
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-[10px] text-gray-600 hover:bg-gray-50">
+                          <Sparkles className="w-3 h-3" /> Generate Summary
+                        </button>
+                        <button onClick={() => { promoteToLibrary(convo.id); setShowConvoMenu(null) }}
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-[10px] text-green-600 hover:bg-green-50">
+                          <BookOpen className="w-3 h-3" /> Promote to Library
+                        </button>
+                        <div className="border-t border-gray-100 my-1" />
+                        <button onClick={() => { if (confirm('Delete this conversation?')) { deleteConversation(convo.id); setShowConvoMenu(null) } }}
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-[10px] text-red-500 hover:bg-red-50">
+                          <Trash2 className="w-3 h-3" /> Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
-            {guideChat.map((msg, i) => <ChatBubble key={i} msg={msg} />)}
-            {guideLoading && (
+          </div>
+        </div>
+
+        {/* ════ CENTER: Chat ════ */}
+        <div className="flex-1 bg-white border border-gray-100 rounded-2xl flex flex-col overflow-hidden min-w-0">
+          {/* Header */}
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              {tab === 'guide' && (
+                <><div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center"><Compass className="w-4 h-4 text-white" /></div>
+                <div><h2 className="text-sm font-bold text-np-dark">Hub Guide</h2><p className="text-[10px] text-gray-400 truncate max-w-[200px]">{activeConvo?.title || 'New conversation'}</p></div></>
+              )}
+              {tab === 'cameron' && (
+                <><div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#386797] to-[#2a4f73] flex items-center justify-center text-white text-xs font-bold">CA</div>
+                <div><h2 className="text-sm font-bold text-np-dark">Cameron AI</h2><p className="text-[10px] text-gray-400 truncate max-w-[200px]">{activeConvo?.title || 'New conversation'}</p></div></>
+              )}
+              {tab === 'voices' && selectedVoice && (() => {
+                const v = voices.find(v => v.id === selectedVoice)
+                return v ? (
+                  <><div className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: v.color }}>{v.avatar}</div>
+                  <div><h2 className="text-sm font-bold text-np-dark">{v.name}</h2><p className="text-[10px] text-gray-400 truncate max-w-[200px]">{activeConvo?.title || 'New conversation'}</p></div></>
+                ) : null
+              })()}
+            </div>
+
+            {/* Actions */}
+            {activeConvo && (
+              <div className="flex items-center gap-2">
+                <StarRating rating={activeConvo.rating} size="md"
+                  onChange={r => updateConversation(activeConvo.id, { rating: r } as any)} />
+                <button onClick={() => setShowTagInput(!showTagInput)}
+                  className={`p-1.5 rounded-lg transition-colors ${showTagInput ? 'bg-np-blue/10 text-np-blue' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'}`}>
+                  <Tag className="w-3.5 h-3.5" />
+                </button>
+                <button onClick={() => promoteToLibrary(activeConvo.id)}
+                  disabled={!!activeConvo.promoted_to_library || promotingToLibrary}
+                  className={`flex items-center gap-1 text-[10px] font-bold px-2.5 py-1.5 rounded-lg border transition-colors ${
+                    activeConvo.promoted_to_library
+                      ? 'bg-green-50 border-green-200 text-green-600'
+                      : 'border-gray-200 text-gray-500 hover:text-green-600 hover:border-green-200 hover:bg-green-50'
+                  }`}>
+                  {promotingToLibrary ? <Loader2 className="w-3 h-3 animate-spin" /> : <BookOpen className="w-3 h-3" />}
+                  {activeConvo.promoted_to_library ? 'In Library' : 'Library'}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Tag bar */}
+          {showTagInput && activeConvo && (
+            <div className="px-4 py-2 border-b border-gray-100 flex items-center gap-2 flex-wrap bg-gray-50/50">
+              {(activeConvo.tags || []).map(tag => (
+                <span key={tag} className="flex items-center gap-1 text-[9px] bg-white border border-gray-200 text-gray-600 px-2 py-0.5 rounded-full">
+                  <Hash className="w-2.5 h-2.5" />{tag}
+                  <button onClick={() => updateConversation(activeConvo.id, { tags: (activeConvo.tags || []).filter(t => t !== tag) } as any)}
+                    className="text-gray-400 hover:text-red-500"><X className="w-2.5 h-2.5" /></button>
+                </span>
+              ))}
+              <input value={newTag} onChange={e => setNewTag(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && newTag.trim()) {
+                    updateConversation(activeConvo.id, { tags: [...(activeConvo.tags || []), newTag.trim().toLowerCase()] } as any)
+                    setNewTag('')
+                  }
+                }}
+                placeholder="Add tag..." className="text-[10px] border-none bg-transparent focus:outline-none placeholder-gray-300 w-20" />
+              <button onClick={() => generateSummary(activeConvo.id)} disabled={generatingSummary}
+                className="flex items-center gap-1 text-[9px] text-purple-500 hover:text-purple-700 ml-auto font-medium">
+                {generatingSummary ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Sparkles className="w-2.5 h-2.5" />}
+                Auto-tag
+              </button>
+            </div>
+          )}
+
+          {/* Summary */}
+          {activeConvo?.summary && (
+            <div className="px-4 py-2 bg-amber-50/50 border-b border-amber-100/50">
+              <p className="text-[10px] text-amber-700 leading-relaxed">{activeConvo.summary}</p>
+              {activeConvo.key_insights && activeConvo.key_insights.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {activeConvo.key_insights.map((ins, i) => (
+                    <span key={i} className="text-[8px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded">{ins}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5">
+            {chatMessages.length === 0 && (
+              <div className="py-6">
+                <p className="text-xs text-gray-400 text-center mb-4">
+                  {tab === 'guide' ? 'What would you like to do?' : tab === 'cameron' ? "Ask me anything. I'll answer as Cameron would." : selectedVoice ? `Chat with ${voices.find(v => v.id === selectedVoice)?.name}.` : 'Select a voice to start.'}
+                </p>
+                {tab === 'guide' && <QuickPrompts prompts={['How do I build a customer journey?', 'How do I send resources to someone?', 'Walk me through creating a campaign', 'Where do I set up integrations?']} onSelect={setChatInput} />}
+                {tab === 'cameron' && <QuickPrompts prompts={['How would Cameron handle a participant who wants to quit?', "What are Cameron's priorities for Q1?", 'How does Cameron think about pricing?', 'What would Cameron say about a new feature?']} onSelect={setChatInput} />}
+              </div>
+            )}
+            {chatMessages.map((msg, i) => <ChatBubble key={i} msg={msg} />)}
+            {chatLoading && (
               <div className="flex justify-start">
                 <div className="bg-gray-50 border border-gray-100 rounded-xl px-3 py-2 flex items-center gap-1.5">
-                  <Loader2 className="w-3 h-3 text-teal-500 animate-spin" />
-                  <span className="text-[10px] text-gray-400">Looking that up...</span>
+                  <Loader2 className="w-3 h-3 text-np-blue animate-spin" />
+                  <span className="text-[10px] text-gray-400">Thinking...</span>
                 </div>
               </div>
             )}
             <div ref={chatEndRef} />
           </div>
 
-          <ChatInput value={guideInput} onChange={setGuideInput} onSend={sendGuideChat} loading={guideLoading} placeholder="Ask how to do anything in NPU Hub..." />
+          <ChatInput value={chatInput} onChange={setChatInput} onSend={sendChat} loading={chatLoading}
+            placeholder={tab === 'guide' ? 'Ask how to do anything...' : tab === 'cameron' ? 'Ask Cameron anything...' : `Ask ${voices.find(v => v.id === selectedVoice)?.name || 'advisor'}...`} />
         </div>
-      )}
 
-      {/* ============================================================ */}
-      {/* TAB: CAMERON AI */}
-      {/* ============================================================ */}
-      {tab === 'cameron' && (() => {
-        const cameron = voices.find(v => v.id === 'cameron')
-        const sources = (cameron?.knowledge || '').split('\n\n---\n\n').filter(Boolean)
-        return (
-        <div className="flex-1 flex gap-4 min-h-0">
-          {/* Left: Chat */}
-          <div className="flex-1 bg-white border border-gray-100 rounded-2xl flex flex-col overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#386797] to-[#2a4f73] flex items-center justify-center text-white text-xs font-bold">CA</div>
-              <div>
-                <h2 className="text-sm font-bold text-np-dark">Cameron AI</h2>
-                <p className="text-[10px] text-gray-400">Ask me anything. I'll answer the way Cameron would.</p>
+        {/* ════ RIGHT PANEL ════ */}
+        {tab === 'cameron' && (
+          <div className="w-72 flex-shrink-0 bg-white border border-gray-100 rounded-2xl flex flex-col overflow-hidden">
+            <div className="px-3 py-2.5 border-b border-gray-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Upload className="w-3.5 h-3.5 text-np-blue" />
+                <h3 className="text-xs font-bold text-np-dark">Knowledge Feed</h3>
               </div>
+              <span className="text-[9px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{cameron?.source_count || 0} sources</span>
             </div>
-
-            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5">
-              {cameronChat.length === 0 && (
-                <div className="py-6">
-                  <p className="text-xs text-gray-400 text-center mb-4">I'm Cameron's AI. Ask me how Cameron would handle something, what his priorities are, or how he thinks about a problem.</p>
-                  <QuickPrompts prompts={[
-                    'How would Cameron handle a participant who wants to quit after week 2?',
-                    'What are Cameron\'s priorities for Q1?',
-                    'How does Cameron think about pricing the Immersive Mastermind?',
-                    'What would Cameron say about adding a new feature to the platform?',
-                  ]} onSelect={setCameronInput} />
-                </div>
-              )}
-              {cameronChat.map((msg, i) => <ChatBubble key={i} msg={msg} />)}
-              {cameronLoading && (
-                <div className="flex justify-start">
-                  <div className="bg-gray-50 border border-gray-100 rounded-xl px-3 py-2 flex items-center gap-1.5">
-                    <Loader2 className="w-3 h-3 text-[#386797] animate-spin" />
-                    <span className="text-[10px] text-gray-400">Thinking like Cameron...</span>
-                  </div>
-                </div>
-              )}
-              <div ref={chatEndRef} />
-            </div>
-
-            <ChatInput value={cameronInput} onChange={setCameronInput} onSend={sendCameronChat} loading={cameronLoading} placeholder="Ask Cameron anything..." />
-          </div>
-
-          {/* Right: Knowledge Feed */}
-          <div className="w-80 flex-shrink-0 bg-white border border-gray-100 rounded-2xl flex flex-col overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-100">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Upload className="w-3.5 h-3.5 text-np-blue" />
-                  <h3 className="text-xs font-bold text-np-dark">Knowledge Feed</h3>
-                </div>
-                <span className="text-[9px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{cameron?.source_count || 0} sources</span>
-              </div>
-              <p className="text-[10px] text-gray-400 mt-1">Keep feeding info to make Cameron AI smarter</p>
-            </div>
-
-            {/* Upload area */}
-            <div className="px-3 py-3 border-b border-gray-100 space-y-2">
-              <input id="cameron-source-name" placeholder="Source name (e.g., ChatGPT Brain Dump)"
+            <div className="px-3 py-2.5 border-b border-gray-100 space-y-2">
+              <input id="cameron-source-name" placeholder="Source name..."
                 className="w-full text-[11px] border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300" />
-
-              {/* File drop zone */}
-              <div
-                onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('border-np-blue', 'bg-np-blue/5') }}
-                onDragLeave={e => { e.currentTarget.classList.remove('border-np-blue', 'bg-np-blue/5') }}
-                onDrop={e => { e.preventDefault(); e.currentTarget.classList.remove('border-np-blue', 'bg-np-blue/5'); handleFileUpload(e.dataTransfer.files) }}
-                onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-gray-200 rounded-xl px-3 py-2 text-center cursor-pointer hover:border-np-blue/40 hover:bg-np-blue/5 transition-all"
-              >
-                <input ref={fileInputRef} type="file" multiple accept=".txt,.md,.pdf,.docx,.doc,.png,.jpg,.jpeg,.webp,.gif,.mp3,.m4a,.wav,.mp4,.mov,.webm"
-                  onChange={e => handleFileUpload(e.target.files)} className="hidden" />
-                <div className="flex items-center justify-center gap-2">
-                  <div className="flex gap-1">
-                    <FileText className="w-3 h-3 text-gray-400" />
-                    <ImageIcon className="w-3 h-3 text-gray-400" />
-                    <Video className="w-3 h-3 text-gray-400" />
-                    <Mic className="w-3 h-3 text-gray-400" />
-                  </div>
-                  <span className="text-[10px] text-gray-400">Drop files or click to upload</span>
-                </div>
-                <p className="text-[8px] text-gray-300 mt-0.5">Docs, PDFs, images, video, audio</p>
+              <div onClick={() => fileInputRef.current?.click()}
+                className="border-2 border-dashed border-gray-200 rounded-xl px-3 py-2 text-center cursor-pointer hover:border-np-blue/40 transition-all">
+                <input ref={fileInputRef} type="file" multiple accept=".txt,.md,.pdf,.docx" onChange={e => handleFileUpload(e.target.files)} className="hidden" />
+                <span className="text-[10px] text-gray-400">Drop files or click</span>
               </div>
-
-              {/* Google Doc link */}
               <div className="flex gap-1.5">
-                <input value={gdocUrl} onChange={e => setGdocUrl(e.target.value)}
-                  placeholder="Paste Google Doc URL..."
-                  className="flex-1 text-[11px] border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300" />
-                <button onClick={() => fetchGoogleDoc(gdocUrl, 'cameron')}
-                  disabled={!gdocUrl.includes('docs.google.com') || extracting}
-                  className="text-[10px] font-bold text-np-blue px-2.5 py-1.5 rounded-lg border border-np-blue/20 hover:bg-np-blue/5 disabled:opacity-30 flex-shrink-0">
+                <input value={gdocUrl} onChange={e => setGdocUrl(e.target.value)} placeholder="Google Doc URL..."
+                  className="flex-1 text-[11px] border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none placeholder-gray-300" />
+                <button onClick={() => fetchGoogleDoc(gdocUrl, 'cameron')} disabled={!gdocUrl.includes('docs.google.com') || extracting}
+                  className="text-[10px] font-bold text-np-blue px-2 py-1.5 rounded-lg border border-np-blue/20 disabled:opacity-30">
                   {extracting ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Fetch'}
                 </button>
               </div>
-
-              {/* Uploaded files preview */}
               {uploadFiles.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {uploadFiles.map((f, i) => (
-                    <div key={i} className="flex items-center gap-1 bg-gray-50 border border-gray-100 rounded-lg px-2 py-1">
-                      {f.type === 'image' && f.preview ? (
-                        <img src={f.preview} alt="" className="w-5 h-5 rounded object-cover" />
-                      ) : f.type === 'video' ? (
-                        <Video className="w-3 h-3 text-purple-400" />
-                      ) : f.type === 'audio' ? (
-                        <Mic className="w-3 h-3 text-amber-400" />
-                      ) : f.type === 'pdf' ? (
-                        <FileText className="w-3 h-3 text-red-400" />
-                      ) : f.type === 'gdoc' ? (
-                        <FileText className="w-3 h-3 text-blue-400" />
-                      ) : (
-                        <FileText className="w-3 h-3 text-gray-400" />
-                      )}
-                      <span className="text-[9px] text-gray-600 max-w-[100px] truncate">{f.name}</span>
-                      <button onClick={() => setUploadFiles(prev => prev.filter((_, fi) => fi !== i))} className="text-gray-300 hover:text-red-400">
-                        <X className="w-2.5 h-2.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
+                <div className="flex flex-wrap gap-1">{uploadFiles.map((f, i) => (
+                  <span key={i} className="flex items-center gap-1 text-[9px] bg-gray-50 border border-gray-100 rounded px-1.5 py-0.5">
+                    <FileText className="w-2.5 h-2.5 text-gray-400" />{f.name}
+                    <button onClick={() => setUploadFiles(prev => prev.filter((_, fi) => fi !== i))} className="text-gray-300 hover:text-red-400"><X className="w-2 h-2" /></button>
+                  </span>
+                ))}</div>
               )}
-
-              <textarea value={uploadText} onChange={e => setUploadText(e.target.value)}
-                placeholder="Paste transcript, brain dump, conversation, notes, decisions..."
-                rows={4}
-                className="w-full text-[11px] border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 resize-none font-mono leading-relaxed" />
-              <div className="flex items-center justify-between">
-                <span className="text-[9px] text-gray-400">{uploadText.length > 0 ? `${uploadText.length.toLocaleString()} chars` : 'Paste or drop files'}</span>
+              <textarea value={uploadText} onChange={e => setUploadText(e.target.value)} placeholder="Paste transcript..."
+                rows={3} className="w-full text-[11px] border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none placeholder-gray-300 resize-none font-mono" />
+              <div className="flex justify-between items-center">
+                <span className="text-[9px] text-gray-400">{uploadText.length > 0 ? `${uploadText.length.toLocaleString()} chars` : ''}</span>
                 <button onClick={() => {
                   const name = (document.getElementById('cameron-source-name') as HTMLInputElement)?.value || 'Untitled'
                   extractKnowledge('cameron', uploadText, name)
                 }} disabled={extracting || !uploadText.trim()}
-                  className="flex items-center gap-1 text-[10px] font-bold text-white bg-np-blue px-3 py-1.5 rounded-lg hover:bg-np-blue/90 disabled:opacity-40">
-                  {extracting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                  {extracting ? 'Extracting...' : 'Feed'}
+                  className="flex items-center gap-1 text-[10px] font-bold text-white bg-np-blue px-3 py-1.5 rounded-lg disabled:opacity-40">
+                  {extracting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />} Feed
                 </button>
               </div>
-              {extracting && (
-                <div className="flex items-center gap-1.5 text-[10px] text-np-blue bg-np-blue/5 px-2.5 py-1.5 rounded-lg">
-                  <Loader2 className="w-3 h-3 animate-spin" /> Extracting knowledge...
-                </div>
-              )}
             </div>
-
-            {/* Sources list */}
-            <div className="flex-1 overflow-y-auto">
-              {sources.length > 0 && (
-                <div className="px-3 pt-2 pb-1 flex items-center justify-between">
-                  <span className="text-[9px] text-gray-400">{sources.length} knowledge source{sources.length !== 1 ? 's' : ''}</span>
-                  <button onClick={() => {
-                    if (!confirm('Clear all knowledge from Cameron AI? This cannot be undone.')) return
-                    const updated = voices.map(v => v.id === 'cameron' ? { ...v, knowledge: '', source_count: 0 } : v)
-                    saveVoices(updated)
-                  }} className="text-[9px] text-red-400 hover:text-red-600 flex items-center gap-0.5">
-                    <Trash2 className="w-2.5 h-2.5" /> Clear All
-                  </button>
-                </div>
-              )}
-              <div className="px-3 pb-2 space-y-1.5">
-                {sources.length === 0 ? (
-                  <div className="text-center py-6">
-                    <Brain className="w-8 h-8 text-gray-200 mx-auto mb-2" />
-                    <p className="text-[10px] text-gray-400">No knowledge yet</p>
-                    <p className="text-[9px] text-gray-300 mt-0.5">Upload docs, images, or paste a brain dump</p>
-                  </div>
-                ) : sources.map((src, i) => {
-                  const lines = src.split('\n')
-                  const sourceLine = lines.find(l => l.startsWith('[Source:'))
-                  const name = sourceLine ? sourceLine.replace('[Source: ', '').replace(']', '') : `Source ${i + 1}`
-                  const isImage = name.startsWith('Image -') || src.includes('[Visual Style Reference]')
-                  const isGdoc = name.startsWith('Google Doc')
-                  const preview = lines.filter(l => !l.startsWith('[Source:') && !l.startsWith('[Visual')).join(' ').slice(0, 100)
-                  return (
-                    <div key={i} className="bg-gray-50 border border-gray-100 rounded-xl px-3 py-2 group">
-                      <div className="flex items-center justify-between mb-0.5">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          {isImage ? <ImageIcon className="w-3 h-3 text-purple-400 flex-shrink-0" /> :
-                           isGdoc ? <FileText className="w-3 h-3 text-blue-400 flex-shrink-0" /> :
-                           <FileText className="w-3 h-3 text-gray-400 flex-shrink-0" />}
-                          <span className="text-[10px] font-bold text-np-dark truncate">{name}</span>
-                        </div>
-                        <button onClick={() => {
-                          const updated = voices.map(v => {
-                            if (v.id === 'cameron') {
-                              const newSources = sources.filter((_, si) => si !== i)
-                              return { ...v, knowledge: newSources.join('\n\n---\n\n'), source_count: Math.max(0, v.source_count - 1) }
-                            }
-                            return v
-                          })
-                          saveVoices(updated)
-                        }} className="text-gray-300 hover:text-red-500 p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                          title="Delete this source">
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
-                      <p className="text-[9px] text-gray-500 leading-relaxed line-clamp-2">{preview}</p>
+            <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5">
+              {cameronSources.length === 0 ? (
+                <div className="text-center py-6"><Brain className="w-6 h-6 text-gray-200 mx-auto mb-2" /><p className="text-[10px] text-gray-400">No knowledge yet</p></div>
+              ) : cameronSources.map((src, i) => {
+                const lines = src.split('\n')
+                const sl = lines.find(l => l.startsWith('[Source:'))
+                const name = sl ? sl.replace('[Source: ', '').replace(']', '') : `Source ${i + 1}`
+                const preview = lines.filter(l => !l.startsWith('[Source:') && !l.startsWith('[Visual')).join(' ').slice(0, 80)
+                return (
+                  <div key={i} className="bg-gray-50 border border-gray-100 rounded-lg px-2.5 py-1.5 group">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-bold text-np-dark truncate">{name}</span>
+                      <button onClick={() => {
+                        const updated = voices.map(v => v.id === 'cameron' ? { ...v, knowledge: cameronSources.filter((_, si) => si !== i).join('\n\n---\n\n'), source_count: Math.max(0, v.source_count - 1) } : v)
+                        saveVoices(updated)
+                      }} className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100"><Trash2 className="w-2.5 h-2.5" /></button>
                     </div>
-                  )
-                })}
-              </div>
+                    <p className="text-[8px] text-gray-500 line-clamp-2">{preview}</p>
+                  </div>
+                )
+              })}
             </div>
           </div>
-        </div>
-        )
-      })()}
+        )}
 
-      {/* ============================================================ */}
-      {/* TAB: ADVISORY BOARD VOICES */}
-      {/* ============================================================ */}
-      {tab === 'voices' && (
-        <div className="flex-1 flex gap-4 min-h-0">
-          {/* Left: Voice list */}
-          <div className="w-72 flex-shrink-0 bg-white border border-gray-100 rounded-2xl flex flex-col overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-              <h3 className="text-xs font-bold text-np-dark">Advisory Voices</h3>
-              <button onClick={() => {
-                const newVoice: AdvisoryVoice = {
-                  id: `voice-${Date.now()}`, name: 'New Advisor', role: 'Advisor', description: '', style: '',
-                  color: '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0'),
-                  avatar: 'NA', knowledge: '', source_count: 0, enabled: true,
-                }
-                setEditingVoice(newVoice)
-              }} className="text-np-blue hover:bg-np-blue/5 p-1 rounded">
-                <Plus className="w-3.5 h-3.5" />
-              </button>
+        {tab === 'voices' && (
+          <div className="w-56 flex-shrink-0 bg-white border border-gray-100 rounded-2xl flex flex-col overflow-hidden">
+            <div className="px-3 py-2.5 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-xs font-bold text-np-dark">Voices</h3>
+              <button onClick={() => setEditingVoice({
+                id: `voice-${Date.now()}`, name: 'New Advisor', role: 'Advisor', description: '', style: '',
+                color: '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0'),
+                avatar: 'NA', knowledge: '', source_count: 0, enabled: true,
+              })} className="text-np-blue hover:bg-np-blue/5 p-1 rounded"><Plus className="w-3 h-3" /></button>
             </div>
-
-            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+            <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5">
               {voices.filter(v => v.id !== 'cameron').map(voice => (
-                <button key={voice.id} onClick={() => { setSelectedVoice(voice.id); setVoiceChat([]) }}
-                  className={`w-full text-left p-2.5 rounded-xl transition-all ${
+                <button key={voice.id} onClick={() => { setSelectedVoice(voice.id); setActiveConvoId(null); setChatMessages([]) }}
+                  className={`w-full text-left p-2 rounded-xl transition-all ${
                     selectedVoice === voice.id ? 'bg-np-blue/5 border border-np-blue/20' : 'hover:bg-gray-50 border border-transparent'
                   }`}>
                   <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0"
-                      style={{ backgroundColor: voice.color }}>
-                      {voice.avatar}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-xs font-semibold text-np-dark truncate">{voice.name}</div>
-                      <div className="text-[9px] text-gray-400 truncate">{voice.role} · {voice.source_count} sources</div>
-                    </div>
+                    <div className="w-6 h-6 rounded-lg flex items-center justify-center text-white text-[8px] font-bold" style={{ backgroundColor: voice.color }}>{voice.avatar}</div>
+                    <div className="min-w-0"><div className="text-[10px] font-semibold text-np-dark truncate">{voice.name}</div><div className="text-[8px] text-gray-400">{voice.source_count} sources</div></div>
                   </div>
                 </button>
               ))}
             </div>
-          </div>
-
-          {/* Right: Chat or empty */}
-          <div className="flex-1 bg-white border border-gray-100 rounded-2xl flex flex-col overflow-hidden">
-            {selectedVoice ? (() => {
-              const voice = voices.find(v => v.id === selectedVoice)
-              if (!voice) return null
-              return (
-                <>
-                  <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: voice.color }}>
-                        {voice.avatar}
-                      </div>
-                      <div>
-                        <h2 className="text-sm font-bold text-np-dark">{voice.name}</h2>
-                        <p className="text-[10px] text-gray-400">{voice.role} · {voice.source_count} sources</p>
-                      </div>
-                    </div>
-                    <div className="flex gap-1.5">
-                      <button onClick={() => setUploadingTo(voice.id)}
-                        className="flex items-center gap-1 text-[10px] text-purple-600 font-medium px-2 py-1 rounded-lg border border-purple-200 hover:bg-purple-50">
-                        <Upload className="w-3 h-3" /> Feed
-                      </button>
-                      <button onClick={() => setEditingVoice(voice)}
-                        className="flex items-center gap-1 text-[10px] text-gray-500 font-medium px-2 py-1 rounded-lg border border-gray-200 hover:bg-gray-50">
-                        <Settings className="w-3 h-3" /> Edit
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5">
-                    {voiceChat.length === 0 && (
-                      <div className="py-6">
-                        <p className="text-xs text-gray-400 text-center mb-4">Chat with {voice.name}. {voice.source_count > 0 ? `${voice.source_count} sources loaded.` : 'Feed transcripts or recordings to build their knowledge base.'}</p>
-                        <QuickPrompts prompts={[
-                          `What would you advise about scaling cohort enrollment?`,
-                          `How should we think about pricing strategy?`,
-                          `What are the biggest risks you see right now?`,
-                          `What should we prioritize this quarter?`,
-                        ]} onSelect={setVoiceInput} />
-                      </div>
-                    )}
-                    {voiceChat.map((msg, i) => <ChatBubble key={i} msg={msg} />)}
-                    {voiceLoading && (
-                      <div className="flex justify-start">
-                        <div className="bg-gray-50 border border-gray-100 rounded-xl px-3 py-2 flex items-center gap-1.5">
-                          <Loader2 className="w-3 h-3 animate-spin" style={{ color: voice.color }} />
-                          <span className="text-[10px] text-gray-400">{voice.name} is thinking...</span>
-                        </div>
-                      </div>
-                    )}
-                    <div ref={chatEndRef} />
-                  </div>
-
-                  <ChatInput value={voiceInput} onChange={setVoiceInput} onSend={sendVoiceChat} loading={voiceLoading} placeholder={`Ask ${voice.name}...`} />
-                </>
-              )
-            })() : (
-              <div className="flex-1 flex items-center justify-center">
-                <div className="text-center">
-                  <Users className="w-12 h-12 text-gray-200 mx-auto mb-3" />
-                  <p className="text-sm text-gray-400">Select an advisory voice to start a conversation</p>
-                  <p className="text-[10px] text-gray-300 mt-1">Feed transcripts and recordings to build their knowledge base</p>
-                </div>
+            {selectedVoice && (
+              <div className="px-3 py-2 border-t border-gray-100 flex gap-1.5">
+                <button onClick={() => setUploadingTo(selectedVoice)}
+                  className="flex-1 flex items-center justify-center gap-1 text-[9px] text-purple-600 font-medium py-1.5 rounded-lg border border-purple-200 hover:bg-purple-50">
+                  <Upload className="w-3 h-3" /> Feed
+                </button>
+                <button onClick={() => setEditingVoice(voices.find(v => v.id === selectedVoice) || null)}
+                  className="flex-1 flex items-center justify-center gap-1 text-[9px] text-gray-500 font-medium py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50">
+                  <Settings className="w-3 h-3" /> Edit
+                </button>
               </div>
             )}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* ============================================================ */}
-      {/* UPLOAD MODAL */}
-      {/* ============================================================ */}
+      {/* ════ UPLOAD MODAL ════ */}
       {uploadingTo && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => !extracting && setUploadingTo(null)}>
           <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
             <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Upload className="w-4 h-4 text-purple-500" />
-                <h3 className="text-sm font-bold text-np-dark">Feed Knowledge to {voices.find(v => v.id === uploadingTo)?.name}</h3>
-              </div>
-              <button onClick={() => !extracting && (setUploadingTo(null), setModalFiles([]))} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+              <div className="flex items-center gap-2"><Upload className="w-4 h-4 text-purple-500" /><h3 className="text-sm font-bold text-np-dark">Feed Knowledge</h3></div>
+              <button onClick={() => !extracting && setUploadingTo(null)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
             </div>
-
             <div className="px-5 py-4 space-y-3">
-              <p className="text-xs text-gray-500">Upload documents, images, audio, video, paste text, or link a Google Doc. AI will extract key insights to build this voice.</p>
-
-              {/* File drop zone */}
-              <div
-                onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('border-purple-400', 'bg-purple-50') }}
-                onDragLeave={e => { e.currentTarget.classList.remove('border-purple-400', 'bg-purple-50') }}
-                onDrop={e => { e.preventDefault(); e.currentTarget.classList.remove('border-purple-400', 'bg-purple-50'); handleModalFileUpload(e.dataTransfer.files, uploadingTo) }}
-                onClick={() => modalFileRef.current?.click()}
-                className="border-2 border-dashed border-gray-200 rounded-xl px-4 py-4 text-center cursor-pointer hover:border-purple-300 hover:bg-purple-50/50 transition-all"
-              >
-                <input ref={modalFileRef} type="file" multiple accept=".txt,.md,.pdf,.docx,.doc,.png,.jpg,.jpeg,.webp,.gif,.mp3,.m4a,.wav,.mp4,.mov,.webm"
-                  onChange={e => handleModalFileUpload(e.target.files, uploadingTo)} className="hidden" />
-                <div className="flex items-center justify-center gap-3 mb-1.5">
-                  <FileText className="w-5 h-5 text-gray-400" />
-                  <ImageIcon className="w-5 h-5 text-gray-400" />
-                  <Video className="w-5 h-5 text-gray-400" />
-                  <Mic className="w-5 h-5 text-gray-400" />
-                </div>
-                <div className="text-xs text-gray-500 font-medium">Drop files or click to upload</div>
-                <p className="text-[10px] text-gray-400 mt-0.5">PDFs, documents, images, video, audio</p>
-              </div>
-
-              {/* Google Doc link */}
-              <div className="flex gap-2">
-                <input value={gdocUrl} onChange={e => setGdocUrl(e.target.value)}
-                  placeholder="Paste Google Doc URL..."
-                  className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-purple-300/30 placeholder-gray-300" />
-                <button onClick={() => fetchGoogleDoc(gdocUrl, uploadingTo)}
-                  disabled={!gdocUrl.includes('docs.google.com') || extracting}
-                  className="text-xs font-bold text-purple-600 px-3 py-2 rounded-lg border border-purple-200 hover:bg-purple-50 disabled:opacity-30 flex-shrink-0">
-                  {extracting ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Fetch Doc'}
-                </button>
-              </div>
-
-              {/* Uploaded files preview */}
-              {modalFiles.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {modalFiles.map((f, i) => (
-                    <div key={i} className="flex items-center gap-1.5 bg-purple-50 border border-purple-100 rounded-lg px-2.5 py-1.5">
-                      {f.type === 'image' && f.preview ? (
-                        <img src={f.preview} alt="" className="w-5 h-5 rounded object-cover" />
-                      ) : f.type === 'pdf' ? (
-                        <FileText className="w-3.5 h-3.5 text-red-400" />
-                      ) : f.type === 'gdoc' ? (
-                        <FileText className="w-3.5 h-3.5 text-blue-400" />
-                      ) : (
-                        <FileText className="w-3.5 h-3.5 text-purple-400" />
-                      )}
-                      <span className="text-[10px] text-gray-600">{f.name}</span>
-                      <button onClick={() => setModalFiles(prev => prev.filter((_, fi) => fi !== i))} className="text-gray-300 hover:text-red-400">
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Source Name</label>
-                <input id="source-name" placeholder="e.g., Advisory Board Call Jan 2026"
-                  className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-300/30 placeholder-gray-300" />
-              </div>
-
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Paste Text / Transcript</label>
-                <textarea value={uploadText} onChange={e => setUploadText(e.target.value)}
-                  placeholder="Paste transcript, meeting notes, or conversation here..."
-                  rows={6}
-                  className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-300/30 placeholder-gray-300 resize-none font-mono" />
-                <div className="text-[9px] text-gray-400 mt-1">{uploadText.length.toLocaleString()} characters</div>
-              </div>
-
-              {extracting && (
-                <div className="flex items-center gap-2 text-xs text-purple-600 bg-purple-50 px-3 py-2 rounded-lg">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  Extracting knowledge... This may take a moment.
-                </div>
-              )}
+              <div><label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Source Name</label>
+                <input id="source-name" placeholder="e.g., Advisory Board Call" className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none placeholder-gray-300" /></div>
+              <div><label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Paste Text / Transcript</label>
+                <textarea value={uploadText} onChange={e => setUploadText(e.target.value)} placeholder="Paste transcript..." rows={6}
+                  className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none placeholder-gray-300 resize-none font-mono" /></div>
             </div>
-
             <div className="px-5 py-3 border-t border-gray-100 flex justify-end gap-2">
-              <button onClick={() => !extracting && setUploadingTo(null)}
-                className="text-xs text-gray-500 px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50">Cancel</button>
-              <button onClick={() => {
-                const sourceName = (document.getElementById('source-name') as HTMLInputElement)?.value || 'Untitled Source'
-                extractKnowledge(uploadingTo, uploadText, sourceName)
-              }} disabled={extracting || !uploadText.trim()}
-                className="flex items-center gap-1.5 text-xs font-bold text-white bg-purple-600 px-4 py-2 rounded-lg hover:bg-purple-700 disabled:opacity-40">
-                {extracting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                {extracting ? 'Extracting...' : 'Extract Knowledge'}
+              <button onClick={() => !extracting && setUploadingTo(null)} className="text-xs text-gray-500 px-4 py-2 rounded-lg border border-gray-200">Cancel</button>
+              <button onClick={() => { const n = (document.getElementById('source-name') as HTMLInputElement)?.value || 'Untitled'; extractKnowledge(uploadingTo, uploadText, n) }}
+                disabled={extracting || !uploadText.trim()}
+                className="flex items-center gap-1.5 text-xs font-bold text-white bg-purple-600 px-4 py-2 rounded-lg disabled:opacity-40">
+                {extracting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />} {extracting ? 'Extracting...' : 'Extract Knowledge'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ============================================================ */}
-      {/* EDIT VOICE MODAL */}
-      {/* ============================================================ */}
+      {/* ════ EDIT VOICE MODAL ════ */}
       {editingVoice && !uploadingTo && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setEditingVoice(null)}>
           <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
@@ -1090,65 +820,34 @@ RESPONSE RULES:
               <h3 className="text-sm font-bold text-np-dark">{voices.find(v => v.id === editingVoice.id) ? 'Edit Voice' : 'New Voice'}</h3>
               <button onClick={() => setEditingVoice(null)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
             </div>
-
             <div className="px-5 py-4 space-y-3">
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Name</label>
-                  <input value={editingVoice.name} onChange={e => setEditingVoice({ ...editingVoice, name: e.target.value })}
-                    className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Role</label>
-                  <input value={editingVoice.role} onChange={e => setEditingVoice({ ...editingVoice, role: e.target.value })}
-                    className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
-                </div>
+                <div><label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Name</label>
+                  <input value={editingVoice.name} onChange={e => setEditingVoice({ ...editingVoice, name: e.target.value })} className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none" /></div>
+                <div><label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Role</label>
+                  <input value={editingVoice.role} onChange={e => setEditingVoice({ ...editingVoice, role: e.target.value })} className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none" /></div>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Initials</label>
-                  <input value={editingVoice.avatar} onChange={e => setEditingVoice({ ...editingVoice, avatar: e.target.value.slice(0, 2).toUpperCase() })}
-                    maxLength={2}
-                    className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Color</label>
-                  <input type="color" value={editingVoice.color} onChange={e => setEditingVoice({ ...editingVoice, color: e.target.value })}
-                    className="w-full h-9 border border-gray-200 rounded-lg cursor-pointer" />
-                </div>
+                <div><label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Initials</label>
+                  <input value={editingVoice.avatar} onChange={e => setEditingVoice({ ...editingVoice, avatar: e.target.value.slice(0, 2).toUpperCase() })} maxLength={2} className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none" /></div>
+                <div><label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Color</label>
+                  <input type="color" value={editingVoice.color} onChange={e => setEditingVoice({ ...editingVoice, color: e.target.value })} className="w-full h-9 border border-gray-200 rounded-lg cursor-pointer" /></div>
               </div>
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Description</label>
-                <textarea value={editingVoice.description} onChange={e => setEditingVoice({ ...editingVoice, description: e.target.value })}
-                  placeholder="What perspective does this voice bring? What are they known for?"
-                  rows={2}
-                  className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 resize-none" />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Communication Style</label>
-                <input value={editingVoice.style} onChange={e => setEditingVoice({ ...editingVoice, style: e.target.value })}
-                  placeholder="e.g., Direct and analytical. Asks tough questions. Data-driven."
-                  className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300" />
-              </div>
+              <div><label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Description</label>
+                <textarea value={editingVoice.description} onChange={e => setEditingVoice({ ...editingVoice, description: e.target.value })} rows={2} className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none resize-none" /></div>
+              <div><label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Style</label>
+                <input value={editingVoice.style} onChange={e => setEditingVoice({ ...editingVoice, style: e.target.value })} className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none" /></div>
             </div>
-
             <div className="px-5 py-3 border-t border-gray-100 flex justify-between">
               {voices.find(v => v.id === editingVoice.id) && editingVoice.id !== 'cameron' ? (
-                <button onClick={() => {
-                  const updated = voices.filter(v => v.id !== editingVoice.id)
-                  saveVoices(updated)
-                  if (selectedVoice === editingVoice.id) setSelectedVoice(null)
-                  setEditingVoice(null)
-                }} className="text-[10px] text-red-400 hover:text-red-600 flex items-center gap-1">
-                  <Trash2 className="w-3 h-3" /> Delete
-                </button>
+                <button onClick={() => { saveVoices(voices.filter(v => v.id !== editingVoice.id)); if (selectedVoice === editingVoice.id) setSelectedVoice(null); setEditingVoice(null) }}
+                  className="text-[10px] text-red-400 flex items-center gap-1"><Trash2 className="w-3 h-3" /> Delete</button>
               ) : <div />}
               <div className="flex gap-2">
                 <button onClick={() => setEditingVoice(null)} className="text-xs text-gray-500 px-3 py-1.5 rounded-lg border border-gray-200">Cancel</button>
                 <button onClick={() => {
                   const exists = voices.find(v => v.id === editingVoice.id)
-                  const updated = exists ? voices.map(v => v.id === editingVoice.id ? editingVoice : v) : [...voices, editingVoice]
-                  saveVoices(updated)
+                  saveVoices(exists ? voices.map(v => v.id === editingVoice.id ? editingVoice : v) : [...voices, editingVoice])
                   setEditingVoice(null)
                 }} className="text-xs font-bold text-white bg-np-blue px-4 py-1.5 rounded-lg">Save</button>
               </div>
