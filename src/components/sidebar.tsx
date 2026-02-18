@@ -27,6 +27,7 @@ import {
   Mic,
   TicketCheck,
   Activity,
+  ScrollText,
   Image,
   Rocket,
   Contact2,
@@ -110,6 +111,7 @@ const navCategories: NavCategory[] = [
     collapsible: true,
     items: [
       { label: 'Team', href: '/team', icon: Users, moduleKey: 'team' },
+      { label: 'Activity Log', href: '/activity-log', icon: ScrollText, moduleKey: 'analytics' },
       { label: 'Integrations', href: '/integrations', icon: Activity, moduleKey: 'integrations' },
       { label: 'Settings', href: '/settings', icon: Settings, moduleKey: 'settings' },
     ],
