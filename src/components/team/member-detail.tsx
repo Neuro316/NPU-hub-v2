@@ -3,11 +3,13 @@
 import { useState, useEffect } from 'react'
 import type { TeamMember } from '@/lib/hooks/use-team-data'
 import { ROLE_CONFIG } from '@/lib/hooks/use-team-data'
+import { createClient } from '@/lib/supabase-browser'
 import {
   X, Trash2, Shield, Mail, Phone, MessageSquare, Building2, User,
   LayoutDashboard, Route, CheckSquare, Megaphone, Target, Rocket, Image,
   Brain, FileText, Lightbulb, Users, Calendar, BookOpen, Mic, TicketCheck,
-  BarChart3, Activity, Settings, Eye, Pencil, ChevronDown, ChevronRight
+  BarChart3, Activity, Settings, Eye, Pencil, ChevronDown, ChevronRight,
+  LogIn, LogOut, Loader2, Check, RefreshCw,
 } from 'lucide-react'
 
 // Every module in the app with view/edit capability
@@ -67,6 +69,166 @@ interface MemberDetailProps {
   isAdmin: boolean
   isOwnProfile: boolean
   allOrgs: Organization[]
+}
+
+// ════════════════════════════════════════════════
+// Google Account Connection (per-user OAuth)
+// Only shown on your own profile
+// ════════════════════════════════════════════════
+function GoogleAccountSection({ isOwnProfile }: { isOwnProfile: boolean }) {
+  const [connected, setConnected] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [connecting, setConnecting] = useState(false)
+  const [googleEmail, setGoogleEmail] = useState('')
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
+
+  useEffect(() => {
+    if (isOwnProfile) checkStatus()
+    else setLoading(false)
+  }, [isOwnProfile])
+
+  const checkStatus = async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/gcal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'status' }),
+      })
+      const data = await res.json()
+      setConnected(data.connected)
+      if (data.email) setGoogleEmail(data.email)
+    } catch {
+      setConnected(false)
+    }
+    setLoading(false)
+  }
+
+  const handleConnect = async () => {
+    setConnecting(true)
+    try {
+      const redirectUri = `${window.location.origin}/api/gcal/callback`
+      const res = await fetch('/api/gcal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'auth_url', redirect_uri: redirectUri }),
+      })
+      const data = await res.json()
+      if (data.url) {
+        const popup = window.open(data.url, 'google_auth', 'width=500,height=600')
+        const interval = setInterval(async () => {
+          try {
+            if (popup?.closed) {
+              clearInterval(interval)
+              await checkStatus()
+              setConnecting(false)
+            }
+          } catch { clearInterval(interval); setConnecting(false) }
+        }, 1000)
+      } else {
+        setConnecting(false)
+      }
+    } catch { setConnecting(false) }
+  }
+
+  const handleDisconnect = async () => {
+    if (!confirm('Disconnect your Google account? Calendar and tasks will stop syncing.')) return
+    await fetch('/api/gcal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'disconnect' }),
+    })
+    setConnected(false)
+    setGoogleEmail('')
+    setTestResult(null)
+  }
+
+  const testConnection = async () => {
+    setTestResult(null)
+    try {
+      const res = await fetch('/api/gcal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'calendar_events',
+          timeMin: new Date().toISOString(),
+          timeMax: new Date(Date.now() + 7 * 86400000).toISOString(),
+        }),
+      })
+      const data = await res.json()
+      if (data.events) {
+        setTestResult({ ok: true, msg: `Found ${data.events.length} events in the next 7 days` })
+      } else {
+        setTestResult({ ok: false, msg: data.error || 'Could not fetch events' })
+      }
+    } catch (err: any) {
+      setTestResult({ ok: false, msg: err.message || 'Connection test failed' })
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 py-2">
+        <Loader2 className="w-3 h-3 animate-spin text-gray-400" />
+        <span className="text-[10px] text-gray-400">Checking Google connection...</span>
+      </div>
+    )
+  }
+
+  // If viewing someone else's profile, just show status
+  if (!isOwnProfile) {
+    return (
+      <div className="flex items-center gap-2 py-2">
+        <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${connected ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}`}>
+          {connected ? 'Connected' : 'Not Connected'}
+        </span>
+        {connected && googleEmail && (
+          <span className="text-[10px] text-gray-400">{googleEmail}</span>
+        )}
+      </div>
+    )
+  }
+
+  // Own profile: full connection controls
+  return (
+    <div className="space-y-2">
+      {connected ? (
+        <>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-green-100 text-green-600">Connected</span>
+              {googleEmail && <span className="text-[10px] text-gray-400">{googleEmail}</span>}
+            </div>
+            <button onClick={handleDisconnect} className="text-[10px] text-red-400 hover:text-red-600 flex items-center gap-1">
+              <LogOut className="w-3 h-3" /> Disconnect
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={testConnection}
+              className="text-[9px] font-medium px-2 py-1 rounded bg-green-50 text-green-600 border border-green-200 hover:bg-green-100 flex items-center gap-1">
+              <RefreshCw className="w-2.5 h-2.5" /> Test
+            </button>
+            {testResult && (
+              <span className={`text-[9px] flex items-center gap-1 ${testResult.ok ? 'text-green-600' : 'text-red-500'}`}>
+                {testResult.ok ? <Check className="w-2.5 h-2.5" /> : <X className="w-2.5 h-2.5" />}
+                {testResult.msg}
+              </span>
+            )}
+          </div>
+          <p className="text-[9px] text-gray-400">Your Google Calendar events and Tasks sync to the Calendar page.</p>
+        </>
+      ) : (
+        <>
+          <button onClick={handleConnect} disabled={connecting}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 disabled:opacity-50">
+            {connecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LogIn className="w-3.5 h-3.5" />}
+            {connecting ? 'Connecting...' : 'Connect Google Account'}
+          </button>
+          <p className="text-[9px] text-gray-400">Connects your Google Calendar and Tasks to NPU Hub. Only you can connect your own account.</p>
+        </>
+      )}
+    </div>
+  )
 }
 
 export function MemberDetail({ member, onClose, onUpdate, onDelete, isSuperAdmin, isAdmin, isOwnProfile, allOrgs }: MemberDetailProps) {
@@ -222,7 +384,7 @@ export function MemberDetail({ member, onClose, onUpdate, onDelete, isSuperAdmin
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
 
-          {/* Profile Section - editable by self or admin+ */}
+          {/* Profile Section */}
           <div className="space-y-3">
             <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
               <User className="w-3 h-3" /> Profile
@@ -276,33 +438,61 @@ export function MemberDetail({ member, onClose, onUpdate, onDelete, isSuperAdmin
             </div>
           </div>
 
-          {/* Slack - editable by self or admin+ */}
-          <div className="space-y-3">
+          {/* ════════════════════════════════════ */}
+          {/* Connected Accounts Section           */}
+          {/* ════════════════════════════════════ */}
+          <div className="space-y-4">
             <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
-              <MessageSquare className="w-3 h-3" /> Slack Integration
+              <Activity className="w-3 h-3" /> Connected Accounts
             </h4>
-            <p className="text-[9px] text-gray-400">Your Slack ID is used for task notifications and @mentions</p>
-            <div>
-              <label className="text-[10px] text-gray-500 block mb-0.5">Slack User ID</label>
-              {canEditSlack ? (
-                <input value={slackId} onChange={e => setSlackId(e.target.value)}
-                  onBlur={() => slackId !== (member.slack_user_id || '') && save('slack_user_id', slackId || null)}
-                  placeholder="U01ABCDEF"
-                  className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 font-mono" />
-              ) : (
-                <p className="text-xs text-np-dark py-2 font-mono">{slackId || 'Not set'}</p>
-              )}
+
+            {/* Slack */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-5 rounded flex items-center justify-center bg-[#4A154B]/10">
+                  <MessageSquare className="w-3 h-3 text-[#4A154B]" />
+                </div>
+                <span className="text-[11px] font-semibold text-np-dark">Slack</span>
+                {slackId && <span className="text-[8px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-green-100 text-green-600">Connected</span>}
+              </div>
+              <p className="text-[9px] text-gray-400 ml-7">Used for task notifications and @mentions</p>
+              <div className="ml-7 space-y-2">
+                <div>
+                  <label className="text-[10px] text-gray-500 block mb-0.5">Slack User ID</label>
+                  {canEditSlack ? (
+                    <input value={slackId} onChange={e => setSlackId(e.target.value)}
+                      onBlur={() => slackId !== (member.slack_user_id || '') && save('slack_user_id', slackId || null)}
+                      placeholder="U01ABCDEF"
+                      className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 font-mono" />
+                  ) : (
+                    <p className="text-xs text-np-dark py-2 font-mono">{slackId || 'Not set'}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-500 block mb-0.5">Slack Display Name</label>
+                  {canEditSlack ? (
+                    <input value={slackName} onChange={e => setSlackName(e.target.value)}
+                      onBlur={() => slackName !== (member.slack_display_name || '') && save('slack_display_name', slackName || null)}
+                      placeholder="@yourname"
+                      className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300" />
+                  ) : (
+                    <p className="text-xs text-np-dark py-2">{slackName || 'Not set'}</p>
+                  )}
+                </div>
+              </div>
             </div>
-            <div>
-              <label className="text-[10px] text-gray-500 block mb-0.5">Slack Display Name</label>
-              {canEditSlack ? (
-                <input value={slackName} onChange={e => setSlackName(e.target.value)}
-                  onBlur={() => slackName !== (member.slack_display_name || '') && save('slack_display_name', slackName || null)}
-                  placeholder="@yourname"
-                  className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300" />
-              ) : (
-                <p className="text-xs text-np-dark py-2">{slackName || 'Not set'}</p>
-              )}
+
+            {/* Google Calendar + Tasks */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-5 rounded flex items-center justify-center bg-blue-50">
+                  <Calendar className="w-3 h-3 text-blue-600" />
+                </div>
+                <span className="text-[11px] font-semibold text-np-dark">Google Calendar + Tasks</span>
+              </div>
+              <div className="ml-7">
+                <GoogleAccountSection isOwnProfile={isOwnProfile} />
+              </div>
             </div>
           </div>
 
@@ -424,7 +614,7 @@ export function MemberDetail({ member, onClose, onUpdate, onDelete, isSuperAdmin
                                         <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all ${
                                           enabled ? 'border-purple-500 bg-purple-500' : 'border-gray-300'
                                         }`}>
-                                          {enabled && <span className="text-white text-[8px] font-bold">✓</span>}
+                                          {enabled && <span className="text-white text-[8px] font-bold">&#10003;</span>}
                                         </div>
                                         <div>
                                           <div className="text-[10px] font-semibold text-np-dark">{sub.label}</div>
@@ -458,7 +648,7 @@ export function MemberDetail({ member, onClose, onUpdate, onDelete, isSuperAdmin
                           onClick={() => toggleWorkspace(org.id)}
                           className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg border transition-all text-left ${hasAccess ? 'border-green-300 bg-green-50' : 'border-gray-200 bg-gray-50'}`}>
                           <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${hasAccess ? 'border-green-500 bg-green-500' : 'border-gray-300'}`}>
-                            {hasAccess && <span className="text-white text-[8px] font-bold">✓</span>}
+                            {hasAccess && <span className="text-white text-[8px] font-bold">&#10003;</span>}
                           </div>
                           <span className="text-xs font-medium text-np-dark">{org.name}</span>
                         </button>
@@ -475,11 +665,10 @@ export function MemberDetail({ member, onClose, onUpdate, onDelete, isSuperAdmin
         <div className="px-5 py-3 border-t border-gray-100 text-[10px] text-gray-400">
           Added {new Date(member.created_at).toLocaleDateString()}
           {member.updated_at !== member.created_at && (
-            <span> · Updated {new Date(member.updated_at).toLocaleDateString()}</span>
+            <span> - Updated {new Date(member.updated_at).toLocaleDateString()}</span>
           )}
         </div>
       </div>
     </div>
   )
 }
-

@@ -1,9 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useTeamData } from '@/lib/hooks/use-team-data'
 import { useWorkspace } from '@/lib/workspace-context'
-import { MessageSquare, Calendar, Mail, CheckSquare, ChevronDown, ChevronUp, ExternalLink, Zap, Globe, FolderOpen, FileText, Loader2, Check, X } from 'lucide-react'
+import { createClient } from '@/lib/supabase-browser'
+import {
+  MessageSquare, Calendar, Mail, CheckSquare, ChevronDown, ChevronUp,
+  ExternalLink, Zap, Globe, FolderOpen, FileText, Loader2, Check, X,
+  User, LogIn, LogOut, RefreshCw, Shield,
+} from 'lucide-react'
 
 interface IntegrationCardProps {
   icon: any
@@ -12,10 +17,11 @@ interface IntegrationCardProps {
   color: string
   connected: boolean
   children: React.ReactNode
+  defaultOpen?: boolean
 }
 
-function IntegrationCard({ icon: Icon, name, description, color, connected, children }: IntegrationCardProps) {
-  const [open, setOpen] = useState(false)
+function IntegrationCard({ icon: Icon, name, description, color, connected, children, defaultOpen }: IntegrationCardProps) {
+  const [open, setOpen] = useState(defaultOpen || false)
   return (
     <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
       <button onClick={() => setOpen(!open)} className="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors text-left">
@@ -42,6 +48,178 @@ function IntegrationCard({ icon: Icon, name, description, color, connected, chil
   )
 }
 
+// ════════════════════════════════════════════════
+// Personal Google Connection Component
+// Each team member connects their own account
+// ════════════════════════════════════════════════
+function PersonalGoogleConnection() {
+  const supabase = createClient()
+  const [connected, setConnected] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [connecting, setConnecting] = useState(false)
+  const [userEmail, setUserEmail] = useState('')
+  const [lastSync, setLastSync] = useState<string | null>(null)
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
+
+  // Check connection status on mount
+  useEffect(() => {
+    checkStatus()
+  }, [])
+
+  const checkStatus = async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/gcal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'status' }),
+      })
+      const data = await res.json()
+      setConnected(data.connected)
+
+      // Get current user email
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user?.email) setUserEmail(user.email)
+    } catch {
+      setConnected(false)
+    }
+    setLoading(false)
+  }
+
+  const handleConnect = async () => {
+    setConnecting(true)
+    try {
+      const redirectUri = `${window.location.origin}/api/gcal/callback`
+      const res = await fetch('/api/gcal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'auth_url', redirect_uri: redirectUri }),
+      })
+      const data = await res.json()
+      if (data.url) {
+        const popup = window.open(data.url, 'google_auth', 'width=500,height=600')
+        const interval = setInterval(async () => {
+          try {
+            if (popup?.closed) {
+              clearInterval(interval)
+              await checkStatus()
+              setConnecting(false)
+            }
+          } catch { clearInterval(interval); setConnecting(false) }
+        }, 1000)
+      } else {
+        setConnecting(false)
+      }
+    } catch { setConnecting(false) }
+  }
+
+  const handleDisconnect = async () => {
+    if (!confirm('Disconnect your Google account? Your calendar and tasks will stop syncing.')) return
+    await fetch('/api/gcal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'disconnect' }),
+    })
+    setConnected(false)
+    setTestResult(null)
+  }
+
+  const testConnection = async () => {
+    setTestResult(null)
+    try {
+      const res = await fetch('/api/gcal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'calendar_events',
+          timeMin: new Date().toISOString(),
+          timeMax: new Date(Date.now() + 7 * 86400000).toISOString(),
+        }),
+      })
+      const data = await res.json()
+      if (data.events) {
+        setTestResult({ ok: true, msg: `Connected! Found ${data.events.length} events in the next 7 days.` })
+      } else if (data.error === 'not_connected') {
+        setTestResult({ ok: false, msg: 'Not connected. Click "Connect Google Account" above.' })
+      } else {
+        setTestResult({ ok: false, msg: data.error || 'Could not fetch events.' })
+      }
+    } catch (err: any) {
+      setTestResult({ ok: false, msg: err.message || 'Connection test failed.' })
+    }
+  }
+
+  if (loading) return <div className="flex items-center gap-2 py-3"><Loader2 className="w-4 h-4 animate-spin text-gray-400" /><span className="text-xs text-gray-400">Checking connection...</span></div>
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+            <Calendar className="w-5 h-5 text-blue-600" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-np-dark">Google Calendar + Tasks</p>
+            <p className="text-[10px] text-gray-400">
+              {connected ? `Connected as ${userEmail}` : 'Connect your Google account to sync calendar and tasks'}
+            </p>
+          </div>
+        </div>
+        {connected ? (
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-full bg-green-100 text-green-600">Connected</span>
+            <button onClick={handleDisconnect} className="p-2 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50" title="Disconnect">
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <button onClick={handleConnect} disabled={connecting}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 disabled:opacity-50">
+            {connecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LogIn className="w-3.5 h-3.5" />}
+            {connecting ? 'Connecting...' : 'Connect Google Account'}
+          </button>
+        )}
+      </div>
+
+      {connected && (
+        <div className="bg-green-50 border border-green-100 rounded-lg p-3">
+          <p className="text-[10px] text-green-700 leading-relaxed">
+            Your Google Calendar events and Tasks will appear in the <strong>Calendar</strong> page.
+            You can create events and complete tasks directly from NPU Hub.
+          </p>
+          <div className="flex items-center gap-2 mt-2">
+            <button onClick={testConnection}
+              className="text-[10px] font-medium px-2.5 py-1 rounded bg-green-600 text-white hover:bg-green-700 flex items-center gap-1">
+              <RefreshCw className="w-3 h-3" /> Test Connection
+            </button>
+          </div>
+          {testResult && (
+            <div className={`flex items-center gap-1.5 mt-2 text-[10px] ${testResult.ok ? 'text-green-700' : 'text-red-600'}`}>
+              {testResult.ok ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+              {testResult.msg}
+            </div>
+          )}
+        </div>
+      )}
+
+      {!connected && (
+        <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+          <p className="text-[10px] font-bold text-blue-700 mb-1">What this connects:</p>
+          <div className="text-[10px] text-blue-600 space-y-0.5">
+            <p>&#10003; View all your Google Calendar events in the Calendar page</p>
+            <p>&#10003; View and complete Google Tasks from NPU Hub</p>
+            <p>&#10003; Create new calendar events and tasks directly</p>
+            <p>&#10003; Each team member connects their own account</p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════
+// Main Page
+// ════════════════════════════════════════════════
 export default function IntegrationsPage() {
   const { currentOrg, loading: orgLoading } = useWorkspace()
   const { getSetting, saveSetting, isSuperAdmin, loading } = useTeamData()
@@ -77,263 +255,248 @@ export default function IntegrationsPage() {
     return <div className="flex items-center justify-center h-64"><div className="animate-pulse text-gray-400">Loading integrations...</div></div>
   }
 
-  if (!isSuperAdmin) {
-    return (
-      <div className="text-center py-16">
-        <Zap className="w-12 h-12 text-gray-200 mx-auto mb-4" />
-        <h2 className="text-lg font-semibold text-np-dark mb-2">Integrations</h2>
-        <p className="text-sm text-gray-500">Only Super Admins can configure integrations.</p>
-      </div>
-    )
-  }
-
   return (
     <div>
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-np-dark">Integrations</h1>
-        <p className="text-xs text-gray-400 mt-0.5">{currentOrg?.name} · Connect external services</p>
+        <p className="text-xs text-gray-400 mt-0.5">{currentOrg?.name} - Connect external services</p>
       </div>
 
-      <div className="space-y-3 max-w-2xl">
+      <div className="space-y-6 max-w-2xl">
 
-        {/* Google Apps Script - PRIMARY integration */}
-        <IntegrationCard
-          icon={Globe}
-          name="Google Apps Script"
-          description="Powers Gmail emails, Drive folders, Google Docs sync, and ShipIt export"
-          color="#0F9D58"
-          connected={!!appsScriptConfig.enabled}
-        >
-          <div className="space-y-3">
-            <div className="bg-green-50 border border-green-100 rounded-lg p-3">
-              <p className="text-[10px] font-bold text-green-700 mb-1">This is the master integration</p>
-              <p className="text-[10px] text-green-600 leading-relaxed">
-                One Apps Script URL powers everything: Send Resources emails, ShipIt Journal Google Doc sync, Drive folder creation, and more.
-                Deploy the Code.gs file from the google-apps-script folder in your repo.
-              </p>
+        {/* ══════════════════════════════════════ */}
+        {/* PERSONAL CONNECTIONS - Every team member */}
+        {/* ══════════════════════════════════════ */}
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <User className="w-4 h-4 text-np-blue" />
+            <h2 className="text-sm font-semibold text-np-dark">My Connections</h2>
+            <span className="text-[9px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full font-medium">Personal</span>
+          </div>
+          <p className="text-xs text-gray-400 mb-3">
+            These connect YOUR personal accounts. Each team member manages their own connections.
+          </p>
+
+          <div className="bg-white border border-gray-100 rounded-xl p-5">
+            <PersonalGoogleConnection />
+          </div>
+        </div>
+
+        {/* ══════════════════════════════════════ */}
+        {/* ORG INTEGRATIONS - Super Admin only */}
+        {/* ══════════════════════════════════════ */}
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <Shield className="w-4 h-4 text-gray-500" />
+            <h2 className="text-sm font-semibold text-np-dark">Organization Integrations</h2>
+            <span className="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full font-medium">Admin Only</span>
+          </div>
+
+          {!isSuperAdmin ? (
+            <div className="bg-white border border-gray-100 rounded-xl p-8 text-center">
+              <Shield className="w-8 h-8 text-gray-200 mx-auto mb-2" />
+              <p className="text-xs text-gray-400">Organization integrations are managed by Super Admins.</p>
             </div>
+          ) : (
+            <div className="space-y-3">
 
-            <div>
-              <label className="text-[10px] text-gray-500 block mb-0.5">Web App URL</label>
-              <input
-                value={appsScriptConfig.url || ''}
-                onChange={e => saveSetting('apps_script', { ...appsScriptConfig, url: e.target.value })}
-                placeholder="https://script.google.com/macros/s/.../exec"
-                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 font-mono" />
-            </div>
+              {/* Google Apps Script */}
+              <IntegrationCard
+                icon={Globe}
+                name="Google Apps Script"
+                description="Powers Gmail emails, Drive folders, Google Docs sync, and ShipIt export"
+                color="#0F9D58"
+                connected={!!appsScriptConfig.enabled}
+              >
+                <div className="space-y-3">
+                  <div className="bg-green-50 border border-green-100 rounded-lg p-3">
+                    <p className="text-[10px] font-bold text-green-700 mb-1">This is the master integration</p>
+                    <p className="text-[10px] text-green-600 leading-relaxed">
+                      One Apps Script URL powers everything: Send Resources emails, ShipIt Journal Google Doc sync, Drive folder creation, and more.
+                      Deploy the Code.gs file from the google-apps-script folder in your repo.
+                    </p>
+                  </div>
 
-            <div className="flex items-center gap-2">
-              <button onClick={testConnection} disabled={testing}
-                className="text-xs font-medium px-3 py-1.5 rounded-lg bg-green-50 text-green-600 border border-green-200 hover:bg-green-100 disabled:opacity-50 flex items-center gap-1.5">
-                {testing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Globe className="w-3 h-3" />}
-                {testing ? 'Testing...' : 'Test Connection'}
-              </button>
-              <button
-                onClick={() => saveSetting('apps_script', { ...appsScriptConfig, enabled: !appsScriptConfig.enabled })}
-                className={`text-xs font-medium px-3 py-1.5 rounded-lg ${appsScriptConfig.enabled ? 'bg-red-50 text-red-500' : 'bg-green-50 text-green-600'}`}>
-                {appsScriptConfig.enabled ? 'Disable' : 'Enable'}
-              </button>
-            </div>
+                  <div>
+                    <label className="text-[10px] text-gray-500 block mb-0.5">Web App URL</label>
+                    <input
+                      value={appsScriptConfig.url || ''}
+                      onChange={e => saveSetting('apps_script', { ...appsScriptConfig, url: e.target.value })}
+                      placeholder="https://script.google.com/macros/s/.../exec"
+                      className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 font-mono" />
+                  </div>
 
-            {testResult && (
-              <div className={`flex items-start gap-2 p-2.5 rounded-lg text-xs ${testResult.ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
-                {testResult.ok ? <Check className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" /> : <X className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />}
-                <div>
-                  <p className="font-medium">{testResult.msg}</p>
-                  {testResult.caps && (
-                    <p className="text-[10px] mt-1 opacity-80">Capabilities: {testResult.caps.join(', ')}</p>
+                  <div className="flex items-center gap-2">
+                    <button onClick={testConnection} disabled={testing}
+                      className="text-xs font-medium px-3 py-1.5 rounded-lg bg-green-50 text-green-600 border border-green-200 hover:bg-green-100 disabled:opacity-50 flex items-center gap-1.5">
+                      {testing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Globe className="w-3 h-3" />}
+                      {testing ? 'Testing...' : 'Test Connection'}
+                    </button>
+                    <button
+                      onClick={() => saveSetting('apps_script', { ...appsScriptConfig, enabled: !appsScriptConfig.enabled })}
+                      className={`text-xs font-medium px-3 py-1.5 rounded-lg ${appsScriptConfig.enabled ? 'bg-red-50 text-red-500' : 'bg-green-50 text-green-600'}`}>
+                      {appsScriptConfig.enabled ? 'Disable' : 'Enable'}
+                    </button>
+                  </div>
+
+                  {testResult && (
+                    <div className={`flex items-start gap-2 p-2.5 rounded-lg text-xs ${testResult.ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
+                      {testResult.ok ? <Check className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" /> : <X className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />}
+                      <div>
+                        <p className="font-medium">{testResult.msg}</p>
+                        {testResult.caps && (
+                          <p className="text-[10px] mt-1 opacity-80">Capabilities: {testResult.caps.join(', ')}</p>
+                        )}
+                      </div>
+                    </div>
                   )}
+
+                  <div className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-[10px] text-gray-500 leading-relaxed">
+                    <p className="font-bold text-gray-600 mb-1">When connected, these features activate:</p>
+                    <div className="space-y-0.5">
+                      <p>&#10003; Send Resources emails from Journey Cards via Gmail</p>
+                      <p>&#10003; ShipIt Journal export to Google Docs</p>
+                      <p>&#10003; Auto-create Drive folders per ShipIt project</p>
+                      <p>&#10003; Bi-directional doc sync</p>
+                      <p>&#10003; Branded HTML email templates with NP styling</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+                    <p className="text-[10px] font-bold text-blue-700 mb-1">Setup Steps</p>
+                    <ol className="text-[10px] text-blue-600 space-y-0.5 list-decimal pl-3">
+                      <li>Go to script.google.com and create a new project</li>
+                      <li>Paste Code.gs from the google-apps-script folder</li>
+                      <li>Deploy as Web App (Execute as: Me, Access: Anyone)</li>
+                      <li>Copy the URL and paste above</li>
+                      <li>Click "Test Connection" to verify</li>
+                      <li>Click "Enable" to activate</li>
+                    </ol>
+                  </div>
                 </div>
-              </div>
-            )}
+              </IntegrationCard>
 
-            <div className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-[10px] text-gray-500 leading-relaxed">
-              <p className="font-bold text-gray-600 mb-1">When connected, these features activate:</p>
-              <div className="space-y-0.5">
-                <p>&#10003; Send Resources emails from Journey Cards via Gmail</p>
-                <p>&#10003; ShipIt Journal export to Google Docs</p>
-                <p>&#10003; Auto-create Drive folders per ShipIt project</p>
-                <p>&#10003; Bi-directional doc sync (push changes / pull edits back)</p>
-                <p>&#10003; Branded HTML email templates with NP styling</p>
-              </div>
-            </div>
+              {/* Gmail */}
+              <IntegrationCard
+                icon={Mail}
+                name="Gmail"
+                description="Send branded resource emails from Journey Cards"
+                color="#EA4335"
+                connected={!!appsScriptConfig.enabled}
+              >
+                <div className="space-y-3">
+                  <div className="bg-green-50 border border-green-100 rounded-lg p-3 text-[10px] text-green-700">
+                    <p className="font-bold mb-0.5">Powered by Google Apps Script</p>
+                    <p>Gmail sending is handled by the unified Apps Script integration above. When Apps Script is connected, the "Email" button on Journey Cards will send branded HTML emails via your Gmail account.</p>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-gray-500 block mb-0.5">Default Sender Name</label>
+                    <input value={gmailConfig.sender_name || 'Cameron Allen'}
+                      onChange={e => saveSetting('gmail', { ...gmailConfig, sender_name: e.target.value })}
+                      placeholder="Cameron Allen"
+                      className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-gray-500 block mb-0.5">Default Sender Email</label>
+                    <input value={gmailConfig.sender_email || 'cameron.allen@neuroprogeny.com'}
+                      onChange={e => saveSetting('gmail', { ...gmailConfig, sender_email: e.target.value })}
+                      placeholder="cameron.allen@neuroprogeny.com"
+                      className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300" />
+                  </div>
 
-            <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
-              <p className="text-[10px] font-bold text-blue-700 mb-1">Setup Steps</p>
-              <ol className="text-[10px] text-blue-600 space-y-0.5 list-decimal pl-3">
-                <li>Go to script.google.com and create a new project</li>
-                <li>Paste Code.gs from the google-apps-script folder</li>
-                <li>Deploy as Web App (Execute as: Me, Access: Anyone)</li>
-                <li>Copy the URL and paste above</li>
-                <li>Click "Test Connection" to verify</li>
-                <li>Click "Enable" to activate</li>
-              </ol>
-            </div>
-          </div>
-        </IntegrationCard>
+                  {/* Test Email */}
+                  <div className="border-t border-gray-100 pt-3">
+                    <label className="text-[10px] font-bold text-gray-500 block mb-1">Send Test Email</label>
+                    <div className="flex gap-2">
+                      <input id="test-email-input"
+                        defaultValue={gmailConfig.sender_email || 'cameron.allen@neuroprogeny.com'}
+                        placeholder="your@email.com"
+                        className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300" />
+                      <button
+                        onClick={async () => {
+                          const emailInput = document.getElementById('test-email-input') as HTMLInputElement
+                          const testEmail = emailInput?.value?.trim()
+                          if (!testEmail || !testEmail.includes('@')) { alert('Enter a valid email'); return }
+                          const btn = document.getElementById('test-email-btn') as HTMLButtonElement
+                          if (btn) { btn.disabled = true; btn.textContent = 'Sending...' }
+                          try {
+                            const res = await fetch('/api/send-resources', {
+                              method: 'POST', headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                recipientName: 'Test User',
+                                recipientEmail: testEmail,
+                                personalNote: 'This is a test email from NPU Hub to verify your Gmail integration is working correctly.',
+                                resources: [
+                                  { name: 'NPU Hub', url: 'https://hub.neuroprogeny.com', type: 'link' },
+                                  { name: 'Neuro Progeny Website', url: 'https://neuroprogeny.com', type: 'link' },
+                                ],
+                                cardName: 'Integration Test',
+                                orgId: currentOrg?.id || '',
+                                useSenderFromSettings: true,
+                              }),
+                            })
+                            const result = await res.json()
+                            if (result.success) {
+                              alert('Test email sent! Check your inbox.')
+                            } else {
+                              alert('Failed: ' + (result.error || 'Unknown error'))
+                            }
+                          } catch (err: any) {
+                            alert('Error: ' + (err.message || 'Network error'))
+                          }
+                          if (btn) { btn.disabled = false; btn.textContent = 'Send Test' }
+                        }}
+                        id="test-email-btn"
+                        className="text-xs font-medium px-3 py-1.5 rounded-lg bg-red-500 text-white hover:bg-red-600 whitespace-nowrap">
+                        Send Test
+                      </button>
+                    </div>
+                    <p className="text-[9px] text-gray-400 mt-1">Sends a branded test email with sample resources.</p>
+                  </div>
+                </div>
+              </IntegrationCard>
 
-        {/* Gmail (powered by Apps Script) */}
-        <IntegrationCard
-          icon={Mail}
-          name="Gmail"
-          description="Send branded resource emails from Journey Cards"
-          color="#EA4335"
-          connected={!!appsScriptConfig.enabled}
-        >
-          <div className="space-y-3">
-            <div className="bg-green-50 border border-green-100 rounded-lg p-3 text-[10px] text-green-700">
-              <p className="font-bold mb-0.5">Powered by Google Apps Script</p>
-              <p>Gmail sending is handled by the unified Apps Script integration above. When Apps Script is connected, the "Email" button on Journey Cards will send branded HTML emails via your Gmail account.</p>
-            </div>
-            <div>
-              <label className="text-[10px] text-gray-500 block mb-0.5">Default Sender Name</label>
-              <input value={gmailConfig.sender_name || 'Cameron Allen'}
-                onChange={e => saveSetting('gmail', { ...gmailConfig, sender_name: e.target.value })}
-                placeholder="Cameron Allen"
-                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300" />
-            </div>
-            <div>
-              <label className="text-[10px] text-gray-500 block mb-0.5">Default Sender Email</label>
-              <input value={gmailConfig.sender_email || 'cameron.allen@neuroprogeny.com'}
-                onChange={e => saveSetting('gmail', { ...gmailConfig, sender_email: e.target.value })}
-                placeholder="cameron.allen@neuroprogeny.com"
-                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300" />
-            </div>
+              {/* Slack */}
+              <IntegrationCard
+                icon={MessageSquare}
+                name="Slack"
+                description="Task notifications, @mentions, and DMs to your team"
+                color="#4A154B"
+                connected={!!slackConfig.enabled}
+              >
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-[10px] text-gray-500 block mb-0.5">Webhook URL</label>
+                    <input value={slackConfig.webhook_url || ''}
+                      onChange={e => saveSetting('slack_config', { ...slackConfig, webhook_url: e.target.value })}
+                      placeholder="https://hooks.slack.com/services/..."
+                      className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 font-mono" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-gray-500 block mb-0.5">Bot Token</label>
+                    <input value={slackConfig.bot_token || ''}
+                      onChange={e => saveSetting('slack_config', { ...slackConfig, bot_token: e.target.value })}
+                      placeholder="xoxb-..." type="password"
+                      className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 font-mono" />
+                  </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    <button onClick={() => saveSetting('slack_config', { ...slackConfig, enabled: !slackConfig.enabled })}
+                      className={`text-xs font-medium px-3 py-1.5 rounded-lg ${slackConfig.enabled ? 'bg-red-50 text-red-500' : 'bg-green-50 text-green-600'}`}>
+                      {slackConfig.enabled ? 'Disable' : 'Enable'}
+                    </button>
+                    <button onClick={() => {
+                      fetch(slackConfig.webhook_url, { method: 'POST', body: JSON.stringify({ text: 'NPU Hub Slack test!' }) })
+                        .then(() => alert('Test message sent!')).catch(() => alert('Failed'))
+                    }} className="text-xs font-medium px-3 py-1.5 rounded-lg bg-[#4A154B] text-white hover:opacity-90">
+                      Send Test
+                    </button>
+                  </div>
+                </div>
+              </IntegrationCard>
 
-            {/* Test Email */}
-            <div className="border-t border-gray-100 pt-3">
-              <label className="text-[10px] font-bold text-gray-500 block mb-1">Send Test Email</label>
-              <div className="flex gap-2">
-                <input id="test-email-input"
-                  defaultValue={gmailConfig.sender_email || 'cameron.allen@neuroprogeny.com'}
-                  placeholder="your@email.com"
-                  className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300" />
-                <button
-                  onClick={async () => {
-                    const emailInput = document.getElementById('test-email-input') as HTMLInputElement
-                    const testEmail = emailInput?.value?.trim()
-                    if (!testEmail || !testEmail.includes('@')) { alert('Enter a valid email'); return }
-                    const btn = document.getElementById('test-email-btn') as HTMLButtonElement
-                    if (btn) { btn.disabled = true; btn.textContent = 'Sending...' }
-                    try {
-                      const res = await fetch('/api/send-resources', {
-                        method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          recipientName: 'Test User',
-                          recipientEmail: testEmail,
-                          personalNote: 'This is a test email from NPU Hub to verify your Gmail integration is working correctly.',
-                          resources: [
-                            { name: 'NPU Hub', url: 'https://hub.neuroprogeny.com', type: 'link' },
-                            { name: 'Neuro Progeny Website', url: 'https://neuroprogeny.com', type: 'link' },
-                          ],
-                          cardName: 'Integration Test',
-                          orgId: currentOrg?.id || '',
-                          useSenderFromSettings: true,
-                        }),
-                      })
-                      const result = await res.json()
-                      if (result.success) {
-                        alert('Test email sent! Check your inbox.')
-                      } else {
-                        alert('Failed: ' + (result.error || 'Unknown error'))
-                      }
-                    } catch (err: any) {
-                      alert('Error: ' + (err.message || 'Network error'))
-                    }
-                    if (btn) { btn.disabled = false; btn.textContent = 'Send Test' }
-                  }}
-                  id="test-email-btn"
-                  className="text-xs font-medium px-3 py-1.5 rounded-lg bg-red-500 text-white hover:bg-red-600 whitespace-nowrap">
-                  Send Test
-                </button>
-              </div>
-              <p className="text-[9px] text-gray-400 mt-1">Sends a branded test email with sample resources to verify the full pipeline works.</p>
             </div>
-
-            <div className="text-[10px] text-gray-500 leading-relaxed">
-              <p className="font-bold text-gray-600 mb-1">Email is used in:</p>
-              <p>&#10003; Journey Cards → Email selected resources to participants</p>
-              <p>&#10003; Branded HTML template with NP colors and logo</p>
-              <p>&#10003; Personal note field and resource links</p>
-            </div>
-          </div>
-        </IntegrationCard>
-
-        {/* Slack */}
-        <IntegrationCard
-          icon={MessageSquare}
-          name="Slack"
-          description="Task notifications, @mentions, and DMs to your team"
-          color="#4A154B"
-          connected={!!slackConfig.enabled}
-        >
-          <div className="space-y-3">
-            <div>
-              <label className="text-[10px] text-gray-500 block mb-0.5">Webhook URL</label>
-              <input value={slackConfig.webhook_url || ''}
-                onChange={e => saveSetting('slack_config', { ...slackConfig, webhook_url: e.target.value })}
-                placeholder="https://hooks.slack.com/services/..."
-                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 font-mono" />
-            </div>
-            <div>
-              <label className="text-[10px] text-gray-500 block mb-0.5">Bot Token</label>
-              <input value={slackConfig.bot_token || ''}
-                onChange={e => saveSetting('slack_config', { ...slackConfig, bot_token: e.target.value })}
-                placeholder="xoxb-..." type="password"
-                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 font-mono" />
-            </div>
-            <div className="flex items-center gap-2 pt-1">
-              <button onClick={() => saveSetting('slack_config', { ...slackConfig, enabled: !slackConfig.enabled })}
-                className={`text-xs font-medium px-3 py-1.5 rounded-lg ${slackConfig.enabled ? 'bg-red-50 text-red-500' : 'bg-green-50 text-green-600'}`}>
-                {slackConfig.enabled ? 'Disable' : 'Enable'}
-              </button>
-              <button onClick={() => {
-                fetch(slackConfig.webhook_url, { method: 'POST', body: JSON.stringify({ text: 'NPU Hub Slack test!' }) })
-                  .then(() => alert('Test message sent!')).catch(() => alert('Failed'))
-              }} className="text-xs font-medium px-3 py-1.5 rounded-lg bg-[#4A154B] text-white hover:opacity-90">
-                Send Test
-              </button>
-            </div>
-          </div>
-        </IntegrationCard>
-
-        {/* Google Calendar */}
-        <IntegrationCard
-          icon={Calendar}
-          name="Google Calendar"
-          description="Sync task due dates and ship dates to calendars"
-          color="#4285F4"
-          connected={!!calendarConfig.enabled}
-        >
-          <div className="space-y-3">
-            <p className="text-xs text-gray-500">Tasks with due dates and ShipIt ship dates will create calendar events.</p>
-            <div>
-              <label className="text-[10px] text-gray-500 block mb-0.5">Google OAuth Client ID</label>
-              <input value={calendarConfig.client_id || ''}
-                onChange={e => saveSetting('google_calendar', { ...calendarConfig, client_id: e.target.value })}
-                placeholder="Your Google OAuth client ID"
-                className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 font-mono" />
-            </div>
-            <button onClick={() => saveSetting('google_calendar', { ...calendarConfig, enabled: !calendarConfig.enabled })}
-              className={`text-xs font-medium px-3 py-1.5 rounded-lg ${calendarConfig.enabled ? 'bg-red-50 text-red-500' : 'bg-green-50 text-green-600'}`}>
-              {calendarConfig.enabled ? 'Disable' : 'Enable'}
-            </button>
-          </div>
-        </IntegrationCard>
-
-        {/* Google Tasks */}
-        <IntegrationCard
-          icon={CheckSquare}
-          name="Google Tasks"
-          description="Sync kanban tasks with Google Tasks"
-          color="#1AA260"
-          connected={false}
-        >
-          <div className="py-4 text-center">
-            <p className="text-xs text-gray-400">Coming soon. Two-way sync between NPU Hub tasks and Google Tasks.</p>
-          </div>
-        </IntegrationCard>
-
+          )}
+        </div>
       </div>
     </div>
   )
