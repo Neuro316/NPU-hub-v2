@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useRef, DragEvent } from 'react'
+import { useState, DragEvent } from 'react'
 import type { JourneyCard, JourneyPhase } from '@/lib/types/journey'
 import { FlowCard } from './flow-card'
-import { Plus, Pencil, Check, Trash2, ChevronRight, GripVertical } from 'lucide-react'
+import { Plus, Pencil, Check, Trash2, ChevronRight } from 'lucide-react'
 
 interface PathGroupProps {
   phase: JourneyPhase
@@ -16,6 +16,31 @@ interface PathGroupProps {
   onDeletePhase: (id: string) => Promise<any>
 }
 
+// ════════════════════════════════════════════════
+// Drop Zone component
+// ════════════════════════════════════════════════
+function DropZone({
+  active, onDragOver, onDragLeave, onDrop,
+}: {
+  active: boolean
+  onDragOver: (e: DragEvent<HTMLDivElement>) => void
+  onDragLeave: (e: DragEvent<HTMLDivElement>) => void
+  onDrop: (e: DragEvent<HTMLDivElement>) => void
+}) {
+  return (
+    <div
+      className={`flex-shrink-0 rounded transition-all ${
+        active
+          ? 'w-4 h-16 bg-np-blue/30 border-2 border-dashed border-np-blue'
+          : 'w-1.5 h-12 bg-transparent hover:bg-gray-200 hover:w-3'
+      }`}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    />
+  )
+}
+
 export function PathGroup({
   phase, cards, onAddCard, onUpdateCard, onDeleteCard,
   onCardClick, onUpdatePhase, onDeletePhase,
@@ -23,7 +48,6 @@ export function PathGroup({
   const [editing, setEditing] = useState(false)
   const [label, setLabel] = useState(phase.label)
   const [addingCard, setAddingCard] = useState<number | null>(null)
-  const [addingAtPosition, setAddingAtPosition] = useState<{ row: number; afterIdx: number } | null>(null)
   const [newTitle, setNewTitle] = useState('')
   const [dragOverTarget, setDragOverTarget] = useState<string | null>(null)
 
@@ -53,28 +77,9 @@ export function PathGroup({
     setAddingCard(null)
   }
 
-  // Insert card at specific position within a row
-  const handleInsertCard = async (rowIdx: number, afterSortOrder: number) => {
-    if (!newTitle.trim()) return
-    const rowCards = (rowGroups[rowIdx] || []).sort((a, b) => a.sort_order - b.sort_order)
-
-    // Shift all cards after the insertion point
-    const insertOrder = afterSortOrder + 1
-    for (const card of rowCards) {
-      if (card.sort_order >= insertOrder) {
-        await onUpdateCard(card.id, { sort_order: card.sort_order + 1 } as any)
-      }
-    }
-
-    await onAddCard(phase.id, newTitle.trim(), rowIdx)
-    // Now fix its sort_order to the insertion point
-    setNewTitle('')
-    setAddingAtPosition(null)
-  }
-
   // ── Drag & Drop ──
   const handleDragStart = (e: DragEvent, card: JourneyCard) => {
-    e.dataTransfer.setData('application/json', JSON.stringify({
+    e.dataTransfer.setData('application/x-journey-card', JSON.stringify({
       cardId: card.id,
       fromPhaseId: phase.id,
       fromRow: card.row_index || 0,
@@ -89,18 +94,24 @@ export function PathGroup({
     setDragOverTarget(targetId)
   }
 
-  const handleDragLeave = () => {
-    setDragOverTarget(null)
+  const handleDragLeave = (e: DragEvent) => {
+    const related = e.relatedTarget as HTMLElement | null
+    if (!related || !(e.currentTarget as HTMLElement).contains(related)) {
+      setDragOverTarget(null)
+    }
   }
 
   const handleDrop = async (e: DragEvent, targetRow: number, targetSortOrder: number) => {
     e.preventDefault()
+    e.stopPropagation()
     setDragOverTarget(null)
 
-    try {
-      const data = JSON.parse(e.dataTransfer.getData('application/json'))
-      const { cardId, fromRow, sortOrder: fromSortOrder } = data
+    const raw = e.dataTransfer.getData('application/x-journey-card')
+    if (!raw) return
 
+    try {
+      const data = JSON.parse(raw)
+      const { cardId, fromPhaseId } = data
       if (!cardId) return
 
       const rowCards = (rowGroups[targetRow] || []).sort((a, b) => a.sort_order - b.sort_order)
@@ -113,41 +124,25 @@ export function PathGroup({
       }
 
       // Move the dragged card
-      await onUpdateCard(cardId, {
+      const updates: Record<string, any> = {
         row_index: targetRow,
         sort_order: targetSortOrder,
-      } as any)
+      }
+
+      // Cross-path: update phase_id
+      if (fromPhaseId !== phase.id) {
+        updates.phase_id = phase.id
+      }
+
+      await onUpdateCard(cardId, updates as any)
     } catch {}
   }
 
-  const handleMoveCard = async (cardId: string, direction: 'left' | 'right', rowIdx: number) => {
-    const rowCards = (rowGroups[rowIdx] || []).sort((a, b) => a.sort_order - b.sort_order)
-    const idx = rowCards.findIndex(c => c.id === cardId)
-    if (idx < 0) return
-    const swapIdx = direction === 'left' ? idx - 1 : idx + 1
-    if (swapIdx < 0 || swapIdx >= rowCards.length) return
-
-    const currentOrder = rowCards[idx].sort_order
-    const swapOrder = rowCards[swapIdx].sort_order
-
-    await onUpdateCard(rowCards[idx].id, { sort_order: swapOrder } as any)
-    await onUpdateCard(rowCards[swapIdx].id, { sort_order: currentOrder } as any)
-  }
-
-  const handleMoveCardVertical = async (cardId: string, direction: 'up' | 'down', currentRow: number) => {
-    const currentRowIdx = rowNumbers.indexOf(currentRow)
-    if (currentRowIdx < 0) return
-
-    let targetRow: number
-    if (direction === 'up' && currentRowIdx > 0) {
-      targetRow = rowNumbers[currentRowIdx - 1]
-    } else if (direction === 'down' && currentRowIdx < rowNumbers.length - 1) {
-      targetRow = rowNumbers[currentRowIdx + 1]
-    } else {
-      return
-    }
-
-    await onUpdateCard(cardId, { row_index: targetRow } as any)
+  // Drop on the whole row area (end of row)
+  const handleRowDrop = async (e: DragEvent, targetRow: number) => {
+    const rowCards = (rowGroups[targetRow] || [])
+    const maxOrder = rowCards.length > 0 ? Math.max(...rowCards.map(c => c.sort_order)) + 1 : 0
+    await handleDrop(e, targetRow, maxOrder)
   }
 
   const handleAddSubRow = () => {
@@ -206,24 +201,30 @@ export function PathGroup({
           return (
             <div
               key={rowNum}
-              className="flex items-center gap-1 px-4 py-3 min-h-[80px] overflow-x-auto"
+              className={`flex items-center gap-0.5 px-4 py-3 min-h-[80px] overflow-x-auto transition-colors ${
+                dragOverTarget === `row-${rowNum}` ? 'bg-blue-50/50' : ''
+              }`}
               style={{ borderBottom: rowIdx < rowNumbers.length - 1 ? '1px dashed #E5E7EB' : 'none' }}
+              onDragOver={e => { e.preventDefault(); setDragOverTarget(`row-${rowNum}`) }}
+              onDragLeave={e => {
+                const related = e.relatedTarget as HTMLElement | null
+                if (!related || !(e.currentTarget as HTMLElement).contains(related)) setDragOverTarget(null)
+              }}
+              onDrop={e => handleRowDrop(e, rowNum)}
             >
-              <div className="flex-shrink-0 w-1 h-8 rounded-full opacity-40" style={{ backgroundColor: phase.color }} />
+              <div className="flex-shrink-0 w-1 h-8 rounded-full opacity-40 mr-2" style={{ backgroundColor: phase.color }} />
 
               {/* Drop zone at start of row */}
-              <div
-                className={`flex-shrink-0 w-2 h-16 rounded transition-all mx-0.5 ${
-                  dragOverTarget === `drop-${rowNum}-start` ? 'bg-np-blue w-3' : 'bg-transparent hover:bg-gray-200'
-                }`}
+              <DropZone
+                active={dragOverTarget === `drop-${rowNum}-start`}
                 onDragOver={e => handleDragOver(e, `drop-${rowNum}-start`)}
                 onDragLeave={handleDragLeave}
                 onDrop={e => handleDrop(e, rowNum, 0)}
               />
 
               {rowCards.map((card, cardIdx) => (
-                <div key={card.id} className="flex items-center gap-0.5 flex-shrink-0">
-                  {/* Card (draggable) */}
+                <div key={card.id} className="flex items-center flex-shrink-0">
+                  {/* Draggable card */}
                   <div
                     draggable
                     onDragStart={e => handleDragStart(e, card)}
@@ -232,25 +233,15 @@ export function PathGroup({
                     <FlowCard
                       card={card}
                       pathColor={phase.color}
-                      canMoveLeft={cardIdx > 0}
-                      canMoveRight={cardIdx < rowCards.length - 1}
-                      canMoveUp={rowIdx > 0}
-                      canMoveDown={rowIdx < rowNumbers.length - 1}
-                      onMoveLeft={() => handleMoveCard(card.id, 'left', rowNum)}
-                      onMoveRight={() => handleMoveCard(card.id, 'right', rowNum)}
-                      onMoveUp={() => handleMoveCardVertical(card.id, 'up', rowNum)}
-                      onMoveDown={() => handleMoveCardVertical(card.id, 'down', rowNum)}
                       onClick={() => onCardClick(card)}
                     />
                   </div>
 
-                  {/* Arrow + drop zone between cards */}
+                  {/* Arrow + drop zone after each card */}
                   <div className="flex items-center flex-shrink-0">
-                    <ChevronRight className="w-3 h-3 text-gray-300 flex-shrink-0" />
-                    <div
-                      className={`flex-shrink-0 w-2 h-16 rounded transition-all ${
-                        dragOverTarget === `drop-${rowNum}-${cardIdx}` ? 'bg-np-blue w-3' : 'bg-transparent hover:bg-gray-200'
-                      }`}
+                    <ChevronRight className="w-3 h-3 text-gray-300 flex-shrink-0 mx-0.5" />
+                    <DropZone
+                      active={dragOverTarget === `drop-${rowNum}-${cardIdx}`}
                       onDragOver={e => handleDragOver(e, `drop-${rowNum}-${cardIdx}`)}
                       onDragLeave={handleDragLeave}
                       onDrop={e => handleDrop(e, rowNum, card.sort_order + 1)}
@@ -259,22 +250,9 @@ export function PathGroup({
                 </div>
               ))}
 
-              {/* Add card inline at position */}
-              {addingAtPosition?.row === rowNum ? (
-                <div className="flex-shrink-0 bg-white border border-np-blue/30 rounded-lg p-2 w-44 shadow-sm">
-                  <input value={newTitle} onChange={e => setNewTitle(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') handleAddCard(rowNum)
-                      if (e.key === 'Escape') { setAddingAtPosition(null); setNewTitle('') }
-                    }}
-                    placeholder="Card title..." className="w-full text-xs border-none focus:outline-none placeholder-gray-300" autoFocus />
-                  <div className="flex gap-1 mt-1.5">
-                    <button onClick={() => handleAddCard(rowNum)} className="text-[10px] bg-np-blue text-white px-2 py-0.5 rounded font-medium">Add</button>
-                    <button onClick={() => { setAddingAtPosition(null); setNewTitle('') }} className="text-[10px] text-gray-400 px-2 py-0.5 rounded">Cancel</button>
-                  </div>
-                </div>
-              ) : addingCard === rowNum ? (
-                <div className="flex-shrink-0 bg-white border border-gray-200 rounded-lg p-2 w-44">
+              {/* Add card button */}
+              {addingCard === rowNum ? (
+                <div className="flex-shrink-0 bg-white border border-gray-200 rounded-lg p-2 w-44 ml-1">
                   <input value={newTitle} onChange={e => setNewTitle(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') handleAddCard(rowNum); if (e.key === 'Escape') { setAddingCard(null); setNewTitle('') } }}
                     placeholder="Card title..." className="w-full text-xs border-none focus:outline-none placeholder-gray-300" autoFocus />
@@ -285,7 +263,7 @@ export function PathGroup({
                 </div>
               ) : (
                 <button onClick={() => setAddingCard(rowNum)}
-                  className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 border border-dashed border-gray-200 rounded-lg text-[9px] text-gray-400 hover:text-np-dark hover:border-gray-300 transition-colors whitespace-nowrap">
+                  className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 border border-dashed border-gray-200 rounded-lg text-[9px] text-gray-400 hover:text-np-dark hover:border-gray-300 transition-colors whitespace-nowrap ml-1">
                   <Plus className="w-3 h-3" /> Add Card
                 </button>
               )}
