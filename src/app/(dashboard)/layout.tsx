@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 import { WorkspaceProvider } from '@/lib/workspace-context'
 import { PermissionsProvider } from '@/lib/hooks/use-permissions'
 import { Sidebar } from '@/components/sidebar'

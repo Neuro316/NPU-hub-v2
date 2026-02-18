@@ -3,266 +3,575 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
-import Link from 'next/link'
-import { ChevronLeft, ChevronRight, Plus, Clock, X, ArrowLeft, Trash2, Loader2 } from 'lucide-react'
+import {
+  ChevronLeft, ChevronRight, Plus, Clock, X, Trash2, Loader2,
+  Calendar as CalIcon, CheckSquare, Link2, ExternalLink,
+  RefreshCw, LogIn, LogOut, Eye, EyeOff, Circle, CheckCircle2,
+} from 'lucide-react'
 
-const PLATFORMS = [
-  { key: 'instagram', icon: 'IG', color: '#E4405F' },
-  { key: 'facebook', icon: 'FB', color: '#1877F2' },
-  { key: 'linkedin', icon: 'LI', color: '#0A66C2' },
-  { key: 'tiktok', icon: 'TT', color: '#000' },
-  { key: 'x', icon: 'X', color: '#1DA1F2' },
-  { key: 'youtube', icon: 'YT', color: '#FF0000' },
-]
-
+const PLATFORM_ICONS: Record<string, { icon: string; color: string }> = {
+  instagram: { icon: 'IG', color: '#E4405F' },
+  facebook: { icon: 'FB', color: '#1877F2' },
+  linkedin: { icon: 'LI', color: '#0A66C2' },
+  tiktok: { icon: 'TT', color: '#000' },
+  x: { icon: 'X', color: '#1DA1F2' },
+  youtube: { icon: 'YT', color: '#FF0000' },
+}
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-interface ScheduledPost {
+interface CalendarEvent {
   id: string
-  content_original: string
-  status: string
-  scheduled_at: string | null
-  platform_versions: any[]
-  brand: string
-  custom_fields: Record<string, any>
+  type: 'google_event' | 'google_task' | 'social_post' | 'hub_task'
+  title: string
+  start: string
+  end?: string
+  allDay?: boolean
+  color: string
+  meta?: any
 }
 
 export default function CalendarPage() {
   const { currentOrg, loading: orgLoading } = useWorkspace()
   const supabase = createClient()
-  const [posts, setPosts] = useState<ScheduledPost[]>([])
+
+  const [events, setEvents] = useState<CalendarEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [currentDate, setCurrentDate] = useState(new Date())
-  const [dragPost, setDragPost] = useState<string | null>(null)
-  const [dragOverDay, setDragOverDay] = useState<number | null>(null)
-  const [dragOverUnscheduled, setDragOverUnscheduled] = useState(false)
-  const [showScheduler, setShowScheduler] = useState<ScheduledPost | null>(null)
-  const [scheduleDate, setScheduleDate] = useState('')
-  const [scheduleTime, setScheduleTime] = useState('09:00')
+  const [selectedDay, setSelectedDay] = useState<Date | null>(null)
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null)
+
+  // Google connection state
+  const [googleConnected, setGoogleConnected] = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false)
+
+  // Visibility toggles
+  const [showGoogle, setShowGoogle] = useState(true)
+  const [showTasks, setShowTasks] = useState(true)
+  const [showSocial, setShowSocial] = useState(true)
+  const [showHubTasks, setShowHubTasks] = useState(true)
+
+  // New event creation
+  const [showCreate, setShowCreate] = useState(false)
+  const [newTitle, setNewTitle] = useState('')
+  const [newDate, setNewDate] = useState('')
+  const [newTime, setNewTime] = useState('')
+  const [newType, setNewType] = useState<'google_event' | 'google_task'>('google_event')
   const [saving, setSaving] = useState(false)
 
-  const fetchPosts = useCallback(async () => {
+  // Check Google connection
+  useEffect(() => {
+    async function checkGoogle() {
+      try {
+        const res = await fetch('/api/gcal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'status' }),
+        })
+        const data = await res.json()
+        setGoogleConnected(data.connected)
+      } catch { setGoogleConnected(false) }
+    }
+    checkGoogle()
+  }, [])
+
+  // Fetch all events for current month
+  const fetchAllEvents = useCallback(async () => {
     if (!currentOrg) return
     setLoading(true)
-    const { data } = await supabase.from('social_posts').select('id, content_original, status, scheduled_at, platform_versions, brand, custom_fields').eq('org_id', currentOrg.id).order('created_at', { ascending: false })
-    if (data) setPosts(data)
+    const allEvents: CalendarEvent[] = []
+
+    const year = currentDate.getFullYear()
+    const month = currentDate.getMonth()
+    const firstDay = new Date(year, month, 1)
+    const lastDay = new Date(year, month + 1, 0, 23, 59, 59)
+
+    // 1. Social posts from Supabase
+    try {
+      const { data: posts } = await supabase
+        .from('social_posts')
+        .select('*')
+        .eq('org_id', currentOrg.id)
+        .gte('scheduled_at', firstDay.toISOString())
+        .lte('scheduled_at', lastDay.toISOString())
+        .order('scheduled_at')
+
+      for (const p of (posts || [])) {
+        const platforms = (p.platform_versions || []).map((v: any) => v.platform)
+        allEvents.push({
+          id: `sp-${p.id}`,
+          type: 'social_post',
+          title: p.content_original?.slice(0, 60) || 'Social Post',
+          start: p.scheduled_at,
+          color: platforms.length > 0 ? (PLATFORM_ICONS[platforms[0]]?.color || '#6b7280') : '#6b7280',
+          meta: { ...p, platforms },
+        })
+      }
+    } catch {}
+
+    // 2. Hub tasks with due dates
+    try {
+      const { data: tasks } = await supabase
+        .from('tasks')
+        .select('*')
+        .eq('org_id', currentOrg.id)
+        .not('due_date', 'is', null)
+        .gte('due_date', firstDay.toISOString().split('T')[0])
+        .lte('due_date', lastDay.toISOString().split('T')[0])
+
+      for (const t of (tasks || [])) {
+        allEvents.push({
+          id: `ht-${t.id}`,
+          type: 'hub_task',
+          title: t.title,
+          start: t.due_date,
+          allDay: true,
+          color: t.status === 'done' ? '#10B981' : t.priority === 'high' ? '#EF4444' : '#3B82F6',
+          meta: t,
+        })
+      }
+    } catch {}
+
+    // 3. Google Calendar events
+    if (googleConnected && showGoogle) {
+      try {
+        const res = await fetch('/api/gcal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'calendar_events',
+            timeMin: firstDay.toISOString(),
+            timeMax: lastDay.toISOString(),
+          }),
+        })
+        const data = await res.json()
+        for (const e of (data.events || [])) {
+          allEvents.push({
+            id: `gc-${e.id}`,
+            type: 'google_event',
+            title: e.title,
+            start: e.start,
+            end: e.end,
+            allDay: e.allDay,
+            color: e.calendarColor || '#4285f4',
+            meta: e,
+          })
+        }
+      } catch {}
+    }
+
+    // 4. Google Tasks
+    if (googleConnected && showTasks) {
+      try {
+        const res = await fetch('/api/gcal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'task_lists' }),
+        })
+        const data = await res.json()
+        for (const t of (data.tasks || [])) {
+          if (!t.due) continue
+          const dueDate = new Date(t.due)
+          if (dueDate >= firstDay && dueDate <= lastDay) {
+            allEvents.push({
+              id: `gt-${t.id}`,
+              type: 'google_task',
+              title: t.title,
+              start: t.due,
+              allDay: true,
+              color: t.status === 'completed' ? '#34a853' : '#fbbc05',
+              meta: t,
+            })
+          }
+        }
+      } catch {}
+    }
+
+    setEvents(allEvents)
     setLoading(false)
-  }, [currentOrg?.id])
+  }, [currentOrg?.id, currentDate, googleConnected, showGoogle, showTasks])
 
-  useEffect(() => { fetchPosts() }, [fetchPosts])
+  useEffect(() => { fetchAllEvents() }, [fetchAllEvents])
 
+  // Google OAuth flow
+  const handleGoogleConnect = async () => {
+    setGoogleLoading(true)
+    try {
+      const redirectUri = `${window.location.origin}/api/gcal/callback`
+      const res = await fetch('/api/gcal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'auth_url', redirect_uri: redirectUri }),
+      })
+      const data = await res.json()
+      if (data.url) {
+        // Open OAuth in popup
+        const popup = window.open(data.url, 'google_auth', 'width=500,height=600')
+        // Poll for completion
+        const interval = setInterval(async () => {
+          try {
+            if (popup?.closed) {
+              clearInterval(interval)
+              const status = await fetch('/api/gcal', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'status' }),
+              })
+              const s = await status.json()
+              setGoogleConnected(s.connected)
+              setGoogleLoading(false)
+              if (s.connected) fetchAllEvents()
+            }
+          } catch { clearInterval(interval); setGoogleLoading(false) }
+        }, 1000)
+      }
+    } catch { setGoogleLoading(false) }
+  }
+
+  const handleGoogleDisconnect = async () => {
+    await fetch('/api/gcal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'disconnect' }),
+    })
+    setGoogleConnected(false)
+    fetchAllEvents()
+  }
+
+  // Create new event
+  const handleCreate = async () => {
+    if (!newTitle.trim() || !newDate) return
+    setSaving(true)
+
+    if (newType === 'google_event' && googleConnected) {
+      const start = newTime ? `${newDate}T${newTime}:00` : newDate
+      const end = newTime
+        ? new Date(new Date(`${newDate}T${newTime}:00`).getTime() + 3600000).toISOString()
+        : newDate
+      await fetch('/api/gcal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create_event',
+          summary: newTitle,
+          start, end,
+          allDay: !newTime,
+        }),
+      })
+    } else if (newType === 'google_task' && googleConnected) {
+      await fetch('/api/gcal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create_task',
+          title: newTitle,
+          due: newDate,
+        }),
+      })
+    }
+
+    setNewTitle('')
+    setNewDate('')
+    setNewTime('')
+    setShowCreate(false)
+    setSaving(false)
+    fetchAllEvents()
+  }
+
+  // Complete a Google Task
+  const handleCompleteTask = async (event: CalendarEvent) => {
+    if (event.type !== 'google_task') return
+    await fetch('/api/gcal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'complete_task',
+        listId: event.meta.listId,
+        taskId: event.meta.id,
+      }),
+    })
+    fetchAllEvents()
+  }
+
+  // Calendar grid
   const year = currentDate.getFullYear()
   const month = currentDate.getMonth()
-  const firstDay = new Date(year, month, 1).getDay()
-  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const firstDayOfMonth = new Date(year, month, 1)
+  const lastDayOfMonth = new Date(year, month + 1, 0)
+  const startOffset = firstDayOfMonth.getDay()
+  const totalDays = lastDayOfMonth.getDate()
   const today = new Date()
 
-  const calendarDays: (number | null)[] = []
-  for (let i = 0; i < firstDay; i++) calendarDays.push(null)
-  for (let i = 1; i <= daysInMonth; i++) calendarDays.push(i)
-
-  const getPostsForDay = (day: number) => {
-    return posts.filter(p => {
-      if (!p.scheduled_at) return false
-      const d = new Date(p.scheduled_at)
-      return d.getFullYear() === year && d.getMonth() === month && d.getDate() === day
+  const getEventsForDay = (day: number) => {
+    const dayStart = new Date(year, month, day)
+    const dayEnd = new Date(year, month, day, 23, 59, 59)
+    return events.filter(e => {
+      if (e.type === 'social_post' && !showSocial) return false
+      if (e.type === 'hub_task' && !showHubTasks) return false
+      if (e.type === 'google_event' && !showGoogle) return false
+      if (e.type === 'google_task' && !showTasks) return false
+      const eDate = new Date(e.start)
+      return eDate >= dayStart && eDate <= dayEnd
     })
   }
 
-  const unscheduledPosts = posts.filter(p => !p.scheduled_at && p.status === 'draft')
-
-  const schedulePost = async (postId: string, dateStr: string, time: string) => {
-    setSaving(true)
-    const dt = new Date(`${dateStr}T${time}:00`)
-    const { data } = await supabase.from('social_posts').update({ scheduled_at: dt.toISOString(), status: 'scheduled' }).eq('id', postId).select().single()
-    if (data) setPosts(prev => prev.map(p => p.id === postId ? data : p))
-    setShowScheduler(null)
-    setSaving(false)
+  const TYPE_LABELS: Record<string, string> = {
+    google_event: 'Calendar Event',
+    google_task: 'Google Task',
+    social_post: 'Social Post',
+    hub_task: 'Hub Task',
   }
 
-  const unschedulePost = async (postId: string) => {
-    setSaving(true)
-    const { data } = await supabase.from('social_posts').update({ scheduled_at: null, status: 'draft' }).eq('id', postId).select().single()
-    if (data) setPosts(prev => prev.map(p => p.id === postId ? data : p))
-    setShowScheduler(null)
-    setSaving(false)
+  const TYPE_ICONS: Record<string, any> = {
+    google_event: CalIcon,
+    google_task: CheckSquare,
+    social_post: Circle,
+    hub_task: CheckCircle2,
   }
 
-  const deletePost = async (postId: string) => {
-    await supabase.from('social_posts').delete().eq('id', postId)
-    setPosts(prev => prev.filter(p => p.id !== postId))
-    setShowScheduler(null)
-  }
-
-  const handleDrop = async (day: number) => {
-    if (!dragPost) return
-    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-    const existing = posts.find(p => p.id === dragPost)
-    const time = existing?.scheduled_at ? new Date(existing.scheduled_at).toTimeString().slice(0, 5) : '09:00'
-    await schedulePost(dragPost, dateStr, time)
-    setDragPost(null)
-    setDragOverDay(null)
-  }
-
-  const handleDropUnscheduled = async () => {
-    if (!dragPost) return
-    await unschedulePost(dragPost)
-    setDragPost(null)
-    setDragOverUnscheduled(false)
-  }
-
-  const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1))
-  const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1))
-
-  if (orgLoading || loading) return <div className="flex items-center justify-center h-64"><div className="animate-pulse text-gray-400">Loading...</div></div>
+  if (orgLoading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>
 
   return (
     <div>
+      {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-xl font-semibold text-np-dark">Content Calendar</h1>
-          <p className="text-xs text-gray-400 mt-0.5">{currentOrg?.name} | {posts.filter(p => p.status === 'scheduled').length} scheduled | {unscheduledPosts.length} drafts</p>
+          <h1 className="text-xl font-semibold text-np-dark">Calendar</h1>
+          <p className="text-xs text-gray-400 mt-0.5">{currentOrg?.name} - Unified Calendar</p>
         </div>
-        <Link href="/social" className="flex items-center gap-1.5 px-3 py-2 bg-np-blue text-white rounded-lg text-xs font-medium hover:bg-np-blue/90">
-          <Plus className="w-3.5 h-3.5" /> Create Post
-        </Link>
+        <div className="flex items-center gap-2">
+          {googleConnected ? (
+            <button onClick={handleGoogleDisconnect}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-green-700 bg-green-50 rounded-lg hover:bg-green-100">
+              <CheckCircle2 className="w-3.5 h-3.5" /> Google Connected
+            </button>
+          ) : (
+            <button onClick={handleGoogleConnect} disabled={googleLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-white border border-gray-200 rounded-lg hover:bg-gray-50">
+              {googleLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LogIn className="w-3.5 h-3.5" />}
+              Connect Google
+            </button>
+          )}
+          <button onClick={() => { setShowCreate(true); setNewDate(`${year}-${String(month + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`) }}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-np-blue text-white rounded-lg text-xs font-medium hover:bg-np-blue/90">
+            <Plus className="w-3.5 h-3.5" /> New Event
+          </button>
+        </div>
       </div>
 
+      {/* Filters */}
+      <div className="flex items-center gap-3 mb-4">
+        {[
+          { key: 'google', label: 'Calendar', color: '#4285f4', show: showGoogle, toggle: () => setShowGoogle(!showGoogle) },
+          { key: 'tasks', label: 'Tasks', color: '#fbbc05', show: showTasks, toggle: () => setShowTasks(!showTasks) },
+          { key: 'social', label: 'Social Posts', color: '#E4405F', show: showSocial, toggle: () => setShowSocial(!showSocial) },
+          { key: 'hub', label: 'Hub Tasks', color: '#3B82F6', show: showHubTasks, toggle: () => setShowHubTasks(!showHubTasks) },
+        ].map(f => (
+          <button key={f.key} onClick={f.toggle}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all
+              ${f.show ? 'opacity-100' : 'opacity-40'}`}
+            style={{ backgroundColor: f.show ? `${f.color}15` : '#f3f4f6', color: f.show ? f.color : '#9ca3af' }}>
+            {f.show ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+            {f.label}
+          </button>
+        ))}
+        <button onClick={fetchAllEvents} className="ml-auto text-gray-400 hover:text-np-dark">
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+        </button>
+      </div>
+
+      {/* Month nav */}
       <div className="flex items-center justify-between mb-3">
-        <button onClick={prevMonth} className="p-1.5 rounded-lg hover:bg-gray-100"><ChevronLeft className="w-4 h-4 text-gray-500" /></button>
-        <span className="text-sm font-bold text-np-dark">{currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</span>
-        <button onClick={nextMonth} className="p-1.5 rounded-lg hover:bg-gray-100"><ChevronRight className="w-4 h-4 text-gray-500" /></button>
+        <button onClick={() => setCurrentDate(new Date(year, month - 1, 1))}
+          className="p-2 hover:bg-gray-100 rounded-lg"><ChevronLeft className="w-4 h-4" /></button>
+        <h2 className="text-base font-semibold text-np-dark">
+          {currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
+        </h2>
+        <button onClick={() => setCurrentDate(new Date(year, month + 1, 1))}
+          className="p-2 hover:bg-gray-100 rounded-lg"><ChevronRight className="w-4 h-4" /></button>
       </div>
 
       {/* Calendar grid */}
-      <div className="bg-white border border-gray-100 rounded-xl overflow-hidden mb-4">
+      <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
         <div className="grid grid-cols-7">
-          {DAYS.map(d => <div key={d} className="text-center text-[9px] font-bold text-gray-400 uppercase py-2 border-b border-gray-100">{d}</div>)}
-          {calendarDays.map((day, i) => {
-            const isToday = day && today.getFullYear() === year && today.getMonth() === month && today.getDate() === day
-            const dayPosts = day ? getPostsForDay(day) : []
-            const isDragOver = day === dragOverDay && dragPost
+          {DAYS.map(d => (
+            <div key={d} className="px-2 py-2 text-center text-[10px] font-semibold text-gray-400 border-b border-gray-50">{d}</div>
+          ))}
+          {Array.from({ length: startOffset }).map((_, i) => (
+            <div key={`e-${i}`} className="min-h-[100px] border-b border-r border-gray-50 bg-gray-50/30" />
+          ))}
+          {Array.from({ length: totalDays }).map((_, i) => {
+            const day = i + 1
+            const dayEvents = getEventsForDay(day)
+            const isToday = day === today.getDate() && month === today.getMonth() && year === today.getFullYear()
+            const isSelected = selectedDay?.getDate() === day && selectedDay?.getMonth() === month
+
             return (
-              <div key={i}
-                className={`min-h-[90px] border-b border-r border-gray-50 p-1 transition-colors ${day ? '' : 'bg-gray-50/50'} ${isDragOver ? 'bg-blue-50 ring-2 ring-inset ring-np-blue/30' : day ? 'hover:bg-blue-50/20' : ''}`}
-                onDragOver={day ? e => { e.preventDefault(); setDragOverDay(day) } : undefined}
-                onDragLeave={() => setDragOverDay(null)}
-                onDrop={day ? e => { e.preventDefault(); handleDrop(day); setDragOverDay(null) } : undefined}>
-                {day && (
-                  <>
-                    <span className={`text-[10px] font-bold inline-block w-5 h-5 rounded-full text-center leading-5 ${isToday ? 'bg-np-blue text-white' : 'text-gray-500'}`}>{day}</span>
-                    <div className="space-y-0.5 mt-0.5">
-                      {dayPosts.slice(0, 3).map(post => {
-                        const platforms = post.platform_versions?.map((v: any) => v.platform) || []
-                        const time = post.scheduled_at ? new Date(post.scheduled_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : ''
-                        const cf = post.custom_fields || {}
-                        return (
-                          <div key={post.id}
-                            draggable
-                            onDragStart={e => { setDragPost(post.id); e.dataTransfer.effectAllowed = 'move' }}
-                            onDragEnd={() => { setDragPost(null); setDragOverDay(null); setDragOverUnscheduled(false) }}
-                            onClick={() => { setShowScheduler(post); setScheduleDate(`${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`); setScheduleTime(post.scheduled_at ? new Date(post.scheduled_at).toTimeString().slice(0, 5) : '09:00') }}
-                            className={`rounded px-1.5 py-0.5 cursor-grab hover:shadow-sm transition-all active:cursor-grabbing ${dragPost === post.id ? 'opacity-40' : ''}`}
-                            style={{ backgroundColor: cf.formatType === 'reel' ? '#FEF2F2' : cf.formatType === 'carousel' ? '#F0FDF4' : '#EFF6FF' }}>
-                            <div className="flex items-center gap-0.5">
-                              {cf.formatType && <span className="text-[6px] font-bold uppercase px-0.5 rounded" style={{ backgroundColor: cf.formatType === 'reel' ? '#EF4444' : cf.formatType === 'carousel' ? '#10B981' : '#3B82F6', color: '#fff' }}>{cf.formatType[0]}</span>}
-                              {platforms.slice(0, 2).map((p: string) => <span key={p} className="text-[7px] font-bold" style={{ color: PLATFORMS.find(pl => pl.key === p)?.color }}>{PLATFORMS.find(pl => pl.key === p)?.icon}</span>)}
-                              <span className="text-[8px] text-gray-600 truncate flex-1">{cf.hook || post.content_original?.slice(0, 18)}</span>
-                            </div>
-                            {time && <div className="text-[7px] text-np-blue font-bold">{time}</div>}
-                          </div>
-                        )
-                      })}
-                      {dayPosts.length > 3 && <div className="text-[8px] text-gray-400 text-center">+{dayPosts.length - 3} more</div>}
-                    </div>
-                  </>
-                )}
+              <div key={day}
+                onClick={() => setSelectedDay(new Date(year, month, day))}
+                className={`min-h-[100px] border-b border-r border-gray-50 p-1 cursor-pointer hover:bg-np-blue/5 transition-colors
+                  ${isSelected ? 'bg-np-blue/10 ring-1 ring-np-blue/30' : ''}`}>
+                <span className={`inline-flex items-center justify-center w-6 h-6 text-xs font-medium rounded-full
+                  ${isToday ? 'bg-np-blue text-white' : 'text-gray-600'}`}>
+                  {day}
+                </span>
+                <div className="mt-0.5 space-y-0.5">
+                  {dayEvents.slice(0, 3).map(e => (
+                    <button key={e.id}
+                      onClick={(ev) => { ev.stopPropagation(); setSelectedEvent(e) }}
+                      className="w-full text-left px-1.5 py-0.5 rounded text-[10px] truncate font-medium"
+                      style={{ backgroundColor: `${e.color}20`, color: e.color }}>
+                      {e.title}
+                    </button>
+                  ))}
+                  {dayEvents.length > 3 && (
+                    <span className="text-[9px] text-gray-400 pl-1">+{dayEvents.length - 3} more</span>
+                  )}
+                </div>
               </div>
             )
           })}
         </div>
       </div>
 
-      {/* Unscheduled drafts - drop zone */}
-      <div className={`bg-white border-2 rounded-xl p-4 transition-all ${dragOverUnscheduled && dragPost ? 'border-orange-400 bg-orange-50' : 'border-gray-100'}`}
-        onDragOver={e => { e.preventDefault(); setDragOverUnscheduled(true) }}
-        onDragLeave={() => setDragOverUnscheduled(false)}
-        onDrop={e => { e.preventDefault(); handleDropUnscheduled() }}>
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-xs font-bold text-np-dark">Unscheduled Drafts</h3>
-          <span className="text-[9px] text-gray-400">Drag to calendar to schedule | Drag here to unschedule</span>
-        </div>
-        {unscheduledPosts.length === 0 && !dragPost ? (
-          <p className="text-[10px] text-gray-400 py-2">No unscheduled drafts. Create posts in the Social Designer.</p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {unscheduledPosts.map(post => {
-              const platforms = post.platform_versions?.map((v: any) => v.platform) || []
-              const cf = post.custom_fields || {}
+      {/* Day detail panel */}
+      {selectedDay && (
+        <div className="mt-4 bg-white border border-gray-100 rounded-2xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-np-dark">
+              {selectedDay.toLocaleDateString('default', { weekday: 'long', month: 'long', day: 'numeric' })}
+            </h3>
+            <button onClick={() => setSelectedDay(null)} className="text-gray-400 hover:text-gray-600">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="space-y-2">
+            {getEventsForDay(selectedDay.getDate()).length === 0 && (
+              <p className="text-sm text-gray-400 py-4 text-center">No events this day</p>
+            )}
+            {getEventsForDay(selectedDay.getDate()).map(e => {
+              const Icon = TYPE_ICONS[e.type]
               return (
-                <div key={post.id}
-                  draggable
-                  onDragStart={e => { setDragPost(post.id); e.dataTransfer.effectAllowed = 'move' }}
-                  onDragEnd={() => { setDragPost(null); setDragOverDay(null); setDragOverUnscheduled(false) }}
-                  onClick={() => { setShowScheduler(post); setScheduleDate(new Date().toISOString().split('T')[0]); setScheduleTime('09:00') }}
-                  className={`bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 cursor-grab hover:shadow-sm transition-all max-w-xs active:cursor-grabbing ${dragPost === post.id ? 'opacity-40' : ''}`}>
-                  <div className="flex items-center gap-1 mb-0.5">
-                    {cf.formatType && <span className="text-[7px] font-bold uppercase px-1 py-0.5 rounded text-white" style={{ backgroundColor: cf.formatType === 'reel' ? '#EF4444' : cf.formatType === 'carousel' ? '#10B981' : '#3B82F6' }}>{cf.formatType}</span>}
-                    {platforms.map((p: string) => <span key={p} className="text-[9px] font-bold" style={{ color: PLATFORMS.find(pl => pl.key === p)?.color }}>{PLATFORMS.find(pl => pl.key === p)?.icon}</span>)}
-                    <span className="text-[8px] font-bold text-gray-400 uppercase">{post.brand === 'np' ? 'NP' : 'SEN'}</span>
+                <div key={e.id}
+                  className="flex items-start gap-3 p-3 rounded-xl hover:bg-gray-50 cursor-pointer transition-colors"
+                  onClick={() => setSelectedEvent(e)}>
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                    style={{ backgroundColor: `${e.color}20` }}>
+                    <Icon className="w-4 h-4" style={{ color: e.color }} />
                   </div>
-                  <p className="text-[10px] text-gray-600 line-clamp-2">{cf.hook || post.content_original}</p>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-np-dark truncate">{e.title}</p>
+                    <p className="text-[10px] text-gray-400">{TYPE_LABELS[e.type]}
+                      {!e.allDay && e.start && ` - ${new Date(e.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                    </p>
+                  </div>
+                  {e.type === 'google_task' && e.meta?.status !== 'completed' && (
+                    <button onClick={(ev) => { ev.stopPropagation(); handleCompleteTask(e) }}
+                      className="text-[10px] text-green-600 bg-green-50 px-2 py-1 rounded hover:bg-green-100">
+                      Complete
+                    </button>
+                  )}
+                  {e.type === 'social_post' && e.meta?.platforms?.map((p: string) => (
+                    <span key={p} className="w-5 h-5 rounded-full text-white text-[8px] flex items-center justify-center"
+                      style={{ backgroundColor: PLATFORM_ICONS[p]?.color || '#666' }}>
+                      {PLATFORM_ICONS[p]?.icon || '?'}
+                    </span>
+                  ))}
                 </div>
               )
             })}
-            {dragPost && dragOverUnscheduled && (
-              <div className="flex items-center gap-2 border-2 border-dashed border-orange-300 rounded-lg px-4 py-3 bg-orange-50">
-                <ArrowLeft className="w-4 h-4 text-orange-500" />
-                <span className="text-[10px] text-orange-600 font-medium">Drop to unschedule</span>
-              </div>
-            )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Schedule / Reschedule modal */}
-      {showScheduler && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setShowScheduler(null)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-bold text-np-dark">{showScheduler.scheduled_at ? 'Reschedule Post' : 'Schedule Post'}</h3>
-              <button onClick={() => setShowScheduler(null)}><X className="w-4 h-4 text-gray-400" /></button>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-3 mb-4">
-              <div className="flex items-center gap-1.5 mb-1">
-                {showScheduler.custom_fields?.formatType && (
-                  <span className="text-[7px] font-bold uppercase px-1.5 py-0.5 rounded text-white" style={{ backgroundColor: showScheduler.custom_fields.formatType === 'reel' ? '#EF4444' : showScheduler.custom_fields.formatType === 'carousel' ? '#10B981' : '#3B82F6' }}>{showScheduler.custom_fields.formatType}</span>
-                )}
-                {showScheduler.platform_versions?.map((v: any) => (
-                  <span key={v.platform} className="text-[9px] font-bold" style={{ color: PLATFORMS.find(pl => pl.key === v.platform)?.color }}>{PLATFORMS.find(pl => pl.key === v.platform)?.icon}</span>
-                ))}
-                <span className="text-[8px] text-gray-400 uppercase font-bold">{showScheduler.brand === 'np' ? 'NP' : 'SEN'}</span>
+      {/* Event detail modal */}
+      {selectedEvent && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => setSelectedEvent(null)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center"
+                  style={{ backgroundColor: `${selectedEvent.color}20` }}>
+                  {(() => { const I = TYPE_ICONS[selectedEvent.type]; return <I className="w-5 h-5" style={{ color: selectedEvent.color }} /> })()}
+                </div>
+                <div>
+                  <p className="text-[10px] font-medium text-gray-400 uppercase">{TYPE_LABELS[selectedEvent.type]}</p>
+                  <h3 className="font-semibold text-np-dark">{selectedEvent.title}</h3>
+                </div>
               </div>
-              {showScheduler.custom_fields?.hook && <p className="text-[11px] font-bold text-np-dark mb-0.5">{showScheduler.custom_fields.hook}</p>}
-              <p className="text-[10px] text-gray-600 line-clamp-3">{showScheduler.content_original}</p>
-              {showScheduler.scheduled_at && <p className="text-[9px] text-blue-500 font-medium mt-1.5">Currently: {new Date(showScheduler.scheduled_at).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>}
+              <button onClick={() => setSelectedEvent(null)}><X className="w-4 h-4 text-gray-400" /></button>
             </div>
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              <div><label className="text-[10px] font-bold text-gray-400 uppercase block mb-0.5">Date</label><input type="date" value={scheduleDate} onChange={e => setScheduleDate(e.target.value)} className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none" /></div>
-              <div><label className="text-[10px] font-bold text-gray-400 uppercase block mb-0.5">Time</label><input type="time" value={scheduleTime} onChange={e => setScheduleTime(e.target.value)} className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none" /></div>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => schedulePost(showScheduler.id, scheduleDate, scheduleTime)} disabled={saving} className="btn-primary text-xs py-2 px-4 flex items-center gap-1.5 disabled:opacity-50">
-                {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Clock className="w-3 h-3" />} {showScheduler.scheduled_at ? 'Reschedule' : 'Schedule'}
-              </button>
-              {showScheduler.scheduled_at && (
-                <button onClick={() => unschedulePost(showScheduler.id)} disabled={saving} className="text-xs py-2 px-4 bg-orange-50 text-orange-600 rounded-lg font-medium border border-orange-200 hover:bg-orange-100 flex items-center gap-1.5 disabled:opacity-50">
-                  <ArrowLeft className="w-3 h-3" /> Unschedule
-                </button>
+            
+            <div className="space-y-3 text-sm">
+              <div className="flex items-center gap-2 text-gray-500">
+                <Clock className="w-4 h-4" />
+                {selectedEvent.allDay ? 'All day' : new Date(selectedEvent.start).toLocaleString()}
+              </div>
+
+              {selectedEvent.meta?.description && (
+                <p className="text-gray-600 text-xs bg-gray-50 p-3 rounded-lg">{selectedEvent.meta.description}</p>
               )}
-              <button onClick={() => setShowScheduler(null)} className="btn-secondary text-xs py-2 px-4">Cancel</button>
-              <button onClick={() => deletePost(showScheduler.id)} className="text-xs py-2 px-4 text-red-500 hover:bg-red-50 rounded-lg ml-auto flex items-center gap-1"><Trash2 className="w-3 h-3" /></button>
+
+              {selectedEvent.meta?.location && (
+                <p className="text-gray-500 text-xs">Location: {selectedEvent.meta.location}</p>
+              )}
+
+              {selectedEvent.meta?.notes && (
+                <p className="text-gray-600 text-xs bg-gray-50 p-3 rounded-lg">{selectedEvent.meta.notes}</p>
+              )}
+
+              {selectedEvent.meta?.content_original && (
+                <p className="text-gray-600 text-xs bg-gray-50 p-3 rounded-lg whitespace-pre-wrap">
+                  {selectedEvent.meta.content_original}
+                </p>
+              )}
+
+              {selectedEvent.meta?.htmlLink && (
+                <a href={selectedEvent.meta.htmlLink} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-np-blue text-xs hover:underline">
+                  <ExternalLink className="w-3.5 h-3.5" /> Open in Google Calendar
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create event modal */}
+      {showCreate && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => setShowCreate(false)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl" onClick={e => e.stopPropagation()}>
+            <h3 className="font-semibold text-np-dark mb-4">New Event</h3>
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <button onClick={() => setNewType('google_event')}
+                  className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium border ${newType === 'google_event' ? 'border-np-blue bg-np-blue/10 text-np-blue' : 'border-gray-200 text-gray-500'}`}>
+                  <CalIcon className="w-4 h-4 mx-auto mb-1" /> Calendar Event
+                </button>
+                <button onClick={() => setNewType('google_task')}
+                  className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium border ${newType === 'google_task' ? 'border-np-blue bg-np-blue/10 text-np-blue' : 'border-gray-200 text-gray-500'}`}>
+                  <CheckSquare className="w-4 h-4 mx-auto mb-1" /> Google Task
+                </button>
+              </div>
+              <input value={newTitle} onChange={e => setNewTitle(e.target.value)}
+                placeholder="Title" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" autoFocus />
+              <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+              {newType === 'google_event' && (
+                <input type="time" value={newTime} onChange={e => setNewTime(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+              )}
+              {!googleConnected && (
+                <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded-lg">
+                  Connect Google Calendar above to create events and tasks.
+                </p>
+              )}
+              <div className="flex gap-2">
+                <button onClick={() => setShowCreate(false)} className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm">Cancel</button>
+                <button onClick={handleCreate} disabled={saving || !googleConnected || !newTitle.trim()}
+                  className="flex-1 px-3 py-2 bg-np-blue text-white rounded-lg text-sm font-medium disabled:opacity-50">
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Create'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
