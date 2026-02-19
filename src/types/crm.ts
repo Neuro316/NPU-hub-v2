@@ -48,6 +48,27 @@ export interface CrmContact {
   address_state?: string | null
   address_zip?: string | null
   reason_for_contact?: string | null
+  date_of_birth?: string | null
+  preferred_name?: string | null
+  timezone?: string | null
+  preferred_contact_method?: 'call' | 'text' | 'email' | null
+  occupation?: string | null
+  industry?: string | null
+  referred_by_contact_id?: string | null
+  referred_by_contact?: { first_name: string; last_name: string } | null
+  instagram_handle?: string | null
+  linkedin_url?: string | null
+  how_heard_about_us?: string | null
+  emergency_contact_name?: string | null
+  emergency_contact_phone?: string | null
+  informed_consent_signed?: boolean
+  informed_consent_signed_at?: string | null
+  billing_info_saved?: boolean
+  stripe_customer_id?: string | null
+  subscription_plan?: string | null
+  subscription_start?: string | null
+  subscription_end?: string | null
+  subscription_status?: 'active' | 'past_due' | 'canceled' | 'trialing' | 'expired' | null
 }
 
 export interface TeamMember {

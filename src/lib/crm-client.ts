@@ -459,6 +459,33 @@ export async function deleteTagDefinition(id: string) {
   if (error) throw error
 }
 
+// ── Contact Tag Assignment (structured junction table) ──
+
+export async function fetchContactStructuredTags(contactId: string) {
+  const { data, error } = await supabase()
+    .from('contact_tags')
+    .select('*, tag_definition:contact_tag_definitions(*)')
+    .eq('contact_id', contactId)
+  if (error) throw error
+  return data || []
+}
+
+export async function addContactTag(contactId: string, tagDefinitionId: string, orgId: string) {
+  const { error } = await supabase()
+    .from('contact_tags')
+    .upsert({ contact_id: contactId, tag_definition_id: tagDefinitionId, org_id: orgId }, { onConflict: 'contact_id,tag_definition_id' })
+  if (error) throw error
+}
+
+export async function removeContactTag(contactId: string, tagDefinitionId: string) {
+  const { error } = await supabase()
+    .from('contact_tags')
+    .delete()
+    .eq('contact_id', contactId)
+    .eq('tag_definition_id', tagDefinitionId)
+  if (error) throw error
+}
+
 // ── Relationships ──
 
 export async function fetchContactRelationships(contactId: string) {
