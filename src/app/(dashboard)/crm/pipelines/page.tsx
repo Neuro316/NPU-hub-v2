@@ -256,10 +256,19 @@ export default function PipelinesPage() {
   }, [])
 
   const moveContact = async (id: string, stage: string) => {
-    try { await updateContact(id, { pipeline_stage: stage }); setContacts(prev => prev.map(c => c.id === id ? { ...c, pipeline_stage: stage } : c)) } catch (e) { console.error(e) }
+    try {
+      await updateContact(id, { pipeline_stage: stage, pipeline_id: activePipelineId } as any)
+      setContacts(prev => prev.map(c => c.id === id ? { ...c, pipeline_stage: stage, pipeline_id: activePipelineId } : c))
+    } catch (e) { console.error(e) }
   }
 
-  const stageContacts = (name: string) => contacts.filter(c => (c.pipeline_stage || activePipeline.stages[0]?.name || 'New Lead') === name)
+  const pipelineContacts = contacts.filter(c => {
+    // Show contact in this pipeline only if explicitly assigned
+    // Contacts with no pipeline_id show only in the default pipeline
+    if (c.pipeline_id) return c.pipeline_id === activePipelineId
+    return activePipeline.is_default === true
+  })
+  const stageContacts = (name: string) => pipelineContacts.filter(c => (c.pipeline_stage || activePipeline.stages[0]?.name || 'New Lead') === name)
   const stageValue = (name: string) => stageContacts(name).reduce((s,c) => s + ((c.custom_fields?.value as number)||0), 0)
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 rounded-lg bg-np-blue/20 animate-pulse" /></div>
@@ -286,7 +295,7 @@ export default function PipelinesPage() {
               </div>
             )}
           </div>
-          <p className="text-[11px] text-gray-400">{contacts.length} contacts</p>
+          <p className="text-[11px] text-gray-400">{pipelineContacts.length} contacts</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setShowMetrics(!showMetrics)} className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg transition-colors ${showMetrics ? 'bg-np-blue/10 text-np-blue' : 'bg-gray-50 text-gray-400'}`}><BarChart3 size={13} /> Metrics</button>
@@ -294,7 +303,7 @@ export default function PipelinesPage() {
         </div>
       </div>
 
-      {showMetrics && <PipelineMetrics contacts={contacts} stages={activePipeline.stages} />}
+      {showMetrics && <PipelineMetrics contacts={pipelineContacts} stages={activePipeline.stages} />}
 
       <div className="flex gap-3 overflow-x-auto pb-4" style={{ minHeight: 'calc(100vh - 380px)' }}>
         {activePipeline.stages.map(stage => {

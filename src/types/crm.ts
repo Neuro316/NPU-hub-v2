@@ -19,6 +19,7 @@ export interface CrmContact {
   do_not_contact: boolean
   tags: string[]
   pipeline_stage?: string | null
+  pipeline_id?: string | null
   assigned_to?: string | null
   source?: string | null
   notes?: string | null

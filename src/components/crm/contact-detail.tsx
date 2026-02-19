@@ -101,6 +101,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
   const [tagCategories, setTagCategories] = useState<ContactTagCategory[]>([])
   const [contactTagIds, setContactTagIds] = useState<Set<string>>(new Set())
   const [showTagPicker, setShowTagPicker] = useState(false)
+  const [pipelineConfigs, setPipelineConfigs] = useState<{ id: string; name: string; stages: { name: string; color: string }[]; is_default?: boolean }[]>([])
   const [infoForm, setInfoForm] = useState({
     address_street: '', address_city: '', address_state: '', address_zip: '',
     reason_for_contact: '', date_of_birth: '', preferred_name: '', timezone: 'America/New_York',
@@ -140,6 +141,13 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
       fetchContactStructuredTags(contactId).then(tags => {
         setContactTagIds(new Set(tags.map((t: any) => t.tag_definition_id)))
       }).catch(e => console.warn('Structured tags load skipped:', e))
+
+      // Load pipeline configurations
+      supabase.from('org_settings').select('setting_value')
+        .eq('setting_key', 'crm_pipelines').maybeSingle()
+        .then(({ data }) => {
+          if (data?.setting_value?.pipelines) setPipelineConfigs(data.setting_value.pipelines)
+        })
       fetchContactRelationships(contactId).then(setRelationships).catch(e => console.warn('Relationships load skipped:', e))
       fetchRelationshipTypes(c.org_id).then(setRelTypes).catch(e => console.warn('RelTypes load skipped:', e))
       fetchContacts({ limit: 200 }).then(res => setAllContacts(res.contacts.filter(ct => ct.id !== contactId))).catch(e => console.warn('Contacts load skipped:', e))
@@ -739,18 +747,43 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
                     <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
                       <Target className="w-3 h-3" /> Pipeline
                     </h4>
+                    {/* Pipeline selector */}
+                    {pipelineConfigs.length > 1 && (
+                      <select
+                        value={contact.pipeline_id || pipelineConfigs.find(p => p.is_default)?.id || ''}
+                        onChange={async (e) => {
+                          const pid = e.target.value
+                          const pipeline = pipelineConfigs.find(p => p.id === pid)
+                          const firstStage = pipeline?.stages?.[0]?.name || 'New Lead'
+                          await updateContact(contact.id, { pipeline_id: pid, pipeline_stage: firstStage } as any)
+                          load(); onUpdate?.()
+                        }}
+                        className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 bg-white"
+                      >
+                        {pipelineConfigs.map(p => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                    )}
+                    {/* Stage buttons from active pipeline */}
                     <div className="flex flex-wrap gap-1.5">
-                      {['New Lead', 'Contacted', 'Qualified', 'Discovery', 'Proposal', 'Enrolled', 'Active', 'Graduated'].map(stage => (
-                        <button key={stage}
-                          onClick={() => updateContact(contact.id, { pipeline_stage: stage }).then(() => { load(); onUpdate?.() })}
-                          className={`text-[9px] font-medium px-2.5 py-1 rounded-full border transition-all ${
-                            contact.pipeline_stage === stage
-                              ? 'bg-np-blue text-white border-np-blue'
-                              : 'bg-white text-gray-500 border-gray-200 hover:border-np-blue/30'
-                          }`}>
-                          {stage}
-                        </button>
-                      ))}
+                      {(() => {
+                        const contactPipeline = pipelineConfigs.find(p => p.id === contact.pipeline_id)
+                          || pipelineConfigs.find(p => p.is_default)
+                        const stages = contactPipeline?.stages?.map(s => s.name)
+                          || ['New Lead', 'Contacted', 'Qualified', 'Discovery', 'Proposal', 'Enrolled', 'Active', 'Graduated']
+                        return stages.map(stage => (
+                          <button key={stage}
+                            onClick={() => updateContact(contact.id, { pipeline_stage: stage }).then(() => { load(); onUpdate?.() })}
+                            className={`text-[9px] font-medium px-2.5 py-1 rounded-full border transition-all ${
+                              contact.pipeline_stage === stage
+                                ? 'bg-np-blue text-white border-np-blue'
+                                : 'bg-white text-gray-500 border-gray-200 hover:border-np-blue/30'
+                            }`}>
+                            {stage}
+                          </button>
+                        ))
+                      })()}
                     </div>
                   </div>
 
