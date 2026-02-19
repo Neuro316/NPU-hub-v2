@@ -10,19 +10,21 @@ import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import {
   Users, BarChart3, Phone, MessageCircle, Mail, Workflow,
-  CheckSquare, Settings, LayoutDashboard, Target, MessagesSquare
+  CheckSquare, Settings, LayoutDashboard, Target, MessagesSquare, GitBranch
 } from 'lucide-react'
 
 const CRM_NAV = [
   { href: '/crm', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/crm/contacts', label: 'Contacts', icon: Users },
   { href: '/crm/pipelines', label: 'Pipelines', icon: Target },
+  { href: '/crm/network', label: 'Network', icon: GitBranch },
   { href: '/crm/conversations', label: 'Conversations', icon: MessagesSquare },
   { href: '/crm/dialer', label: 'Dialer', icon: Phone },
   { href: '/crm/messages', label: 'Messages', icon: MessageCircle },
   { href: '/crm/campaigns', label: 'Campaigns', icon: Mail },
   { href: '/crm/sequences', label: 'Sequences', icon: Workflow },
   { href: '/crm/tasks', label: 'Tasks', icon: CheckSquare },
+  { href: '/crm/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/crm/settings', label: 'Settings', icon: Settings },
 ]
 
