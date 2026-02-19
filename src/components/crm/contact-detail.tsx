@@ -354,29 +354,21 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
                 <button onClick={onClose} className="p-1.5 rounded hover:bg-gray-100"><X className="w-4 h-4 text-gray-400" /></button>
               </div>
 
-              {/* Quick contacts */}
+              {/* Quick action buttons */}
               <div className="flex gap-2 mt-3 flex-wrap">
                 <ContactCommsButtons contact={contact} size="md" onEmailClick={() => setShowEmailComposer(true)} />
-                {contact.phone && <span className="text-[9px] text-gray-400 self-center">{contact.phone}</span>}
-                {contact.email && <span className="text-[9px] text-gray-400 self-center">{contact.email}</span>}
               </div>
 
               {/* Tags */}
-              <div className="flex flex-wrap gap-1 mt-2.5">
-                {(contact.tags || []).map(tag => (
-                  <span key={tag} className="flex items-center gap-0.5 text-[9px] font-medium bg-np-blue/8 text-np-blue px-2 py-0.5 rounded-full group">
-                    {tag}
-                    <button onClick={() => removeTag(tag)} className="opacity-0 group-hover:opacity-100 hover:text-red-500">
-                      <X className="w-2.5 h-2.5" />
-                    </button>
-                  </span>
-                ))}
-                <div className="flex items-center gap-1">
-                  <input value={newTag} onChange={e => setNewTag(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && handleAddTag()}
-                    placeholder="+ tag" className="text-[9px] w-14 bg-transparent border-none outline-none placeholder-gray-300" />
+              {/* Tag pills (compact, managed in Overview tab) */}
+              {(contact.tags || []).length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-2.5">
+                  {(contact.tags || []).slice(0, 5).map(tag => (
+                    <span key={tag} className="text-[9px] font-medium bg-np-blue/8 text-np-blue px-2 py-0.5 rounded-full">{tag}</span>
+                  ))}
+                  {(contact.tags?.length || 0) > 5 && <span className="text-[9px] text-gray-400">+{contact.tags!.length - 5}</span>}
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Tab bar */}
@@ -539,37 +531,61 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
                     </div>
                   )}
 
-                  {/* Tag Picker */}
+                  {/* Tag Picker Dropdown */}
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
-                        <Tag className="w-3 h-3" /> Tags
-                      </h4>
-                      <button onClick={() => setShowTagPicker(!showTagPicker)}
-                        className="text-[9px] text-np-blue hover:underline">{showTagPicker ? 'Close' : 'Manage Tags'}</button>
+                    <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                      <Tag className="w-3 h-3" /> Tags
+                    </h4>
+                    {/* Current tags */}
+                    <div className="flex flex-wrap gap-1">
+                      {(contact.tags || []).map(tag => {
+                        const tagDef = tagCategories.flatMap((cat: any) => cat.tags || []).find((t: any) => t.name === tag)
+                        const color = tagDef?.color || '#94a3b8'
+                        return (
+                          <span key={tag} className="inline-flex items-center gap-0.5 text-[9px] font-medium px-2 py-0.5 rounded-full group"
+                            style={{ backgroundColor: color + '18', color }}>
+                            {tag}
+                            <button onClick={() => {
+                              if (tagDef) { removeContactTag(contact.id, tagDef.id).then(() => { load(); onUpdate?.() }).catch(console.error) }
+                              else { removeTag(tag) }
+                            }} className="opacity-0 group-hover:opacity-100 hover:text-red-500 ml-0.5">
+                              <X className="w-2.5 h-2.5" />
+                            </button>
+                          </span>
+                        )
+                      })}
                     </div>
-                    {showTagPicker && tagCategories.length > 0 && (
-                      <div className="bg-gray-50 rounded-xl p-3 border border-gray-100 max-h-60 overflow-y-auto space-y-3">
+                    {/* Dropdown to add tags */}
+                    <div className="relative">
+                      <select
+                        value=""
+                        onChange={async (e) => {
+                          const val = e.target.value
+                          if (val === '__custom__') {
+                            const custom = prompt('Enter custom tag name:')
+                            if (custom?.trim() && contact) {
+                              const tags = [...(contact.tags || []), custom.trim()]
+                              await updateContact(contact.id, { tags })
+                              load(); onUpdate?.()
+                            }
+                          } else if (val) {
+                            await handleToggleTag(val)
+                          }
+                        }}
+                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 bg-white appearance-none cursor-pointer"
+                      >
+                        <option value="">+ Add tag...</option>
                         {tagCategories.map(cat => (
-                          <div key={cat.id}>
-                            <p className="text-[9px] font-bold uppercase tracking-wider mb-1" style={{ color: cat.color || '#6b7280' }}>{cat.name}</p>
-                            <div className="flex flex-wrap gap-1">
-                              {(cat as any).tags?.map((tag: any) => (
-                                <button key={tag.id} onClick={() => handleToggleTag(tag.id)}
-                                  className={`text-[9px] font-medium px-2 py-0.5 rounded-full border transition-all ${
-                                    contactTagIds.has(tag.id)
-                                      ? 'text-white border-transparent'
-                                      : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
-                                  }`}
-                                  style={contactTagIds.has(tag.id) ? { backgroundColor: tag.color || cat.color || '#6366f1', borderColor: tag.color || cat.color } : {}}>
-                                  {tag.name}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
+                          <optgroup key={cat.id} label={cat.name}>
+                            {(cat as any).tags?.filter((t: any) => !contactTagIds.has(t.id)).map((tag: any) => (
+                              <option key={tag.id} value={tag.id}>{tag.name}</option>
+                            ))}
+                          </optgroup>
                         ))}
-                      </div>
-                    )}
+                        <option value="__custom__">Type a custom tag...</option>
+                      </select>
+                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" />
+                    </div>
                   </div>
 
                   {/* Edit Info */}
