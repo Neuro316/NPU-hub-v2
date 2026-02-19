@@ -61,9 +61,20 @@ export default function ContactsPage() {
   const [relTypes, setRelTypes] = useState<RelationshipType[]>([])
   const [connSearchResults, setConnSearchResults] = useState<CrmContact[]>([])
   const [connSearchQuery, setConnSearchQuery] = useState('')
+  const [pipelineConfigs, setPipelineConfigs] = useState<any[]>([])
+  const [bulkPipelineId, setBulkPipelineId] = useState('')
+  const [bulkPipelineStage, setBulkPipelineStage] = useState('')
 
   useEffect(() => { fetchTeamMembers().then(setTeamMembers).catch(console.error) }, [])
   useEffect(() => { if (currentOrg) fetchRelationshipTypes(currentOrg.id).then(setRelTypes).catch(console.error) }, [currentOrg])
+  useEffect(() => {
+    if (!currentOrg) return
+    const { createClient } = require('@/lib/supabase-browser')
+    createClient().from('org_settings').select('setting_value').eq('org_id', currentOrg.id).eq('setting_key', 'crm_pipelines').maybeSingle()
+      .then(({ data }: { data: any }) => {
+        if (data?.setting_value?.pipelines) setPipelineConfigs(data.setting_value.pipelines)
+      })
+  }, [currentOrg?.id])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -162,15 +173,36 @@ export default function ContactsPage() {
       </div>
 
       {selected.size > 0 && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-np-blue/5 border border-np-blue/20 rounded-lg">
+        <div className="flex items-center gap-2 px-4 py-2 bg-np-blue/5 border border-np-blue/20 rounded-lg flex-wrap">
           <span className="text-xs font-semibold text-np-blue">{selected.size} selected</span>
-          <div className="flex gap-1 ml-auto">
+          <div className="flex gap-1 items-center ml-auto flex-wrap">
+            {/* Pipeline assignment */}
+            <select value={bulkPipelineId} onChange={e => {
+              setBulkPipelineId(e.target.value)
+              const pl = pipelineConfigs.find((p: any) => p.id === e.target.value)
+              setBulkPipelineStage(pl?.stages?.[0]?.name || '')
+            }}
+              className="px-2 py-1 text-[10px] bg-white border border-gray-100 rounded-md focus:outline-none focus:ring-1 focus:ring-np-blue/30">
+              <option value="">Pipeline...</option>
+              {pipelineConfigs.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            {bulkPipelineId && (
+              <>
+                <select value={bulkPipelineStage} onChange={e => setBulkPipelineStage(e.target.value)}
+                  className="px-2 py-1 text-[10px] bg-white border border-gray-100 rounded-md focus:outline-none focus:ring-1 focus:ring-np-blue/30">
+                  {(pipelineConfigs.find((p: any) => p.id === bulkPipelineId)?.stages || []).map((s: any) => (
+                    <option key={s.name} value={s.name}>{s.name}</option>
+                  ))}
+                </select>
+                <button onClick={() => { handleBulkAction('set_pipeline', { pipeline_id: bulkPipelineId, pipeline_stage: bulkPipelineStage }); setBulkPipelineId(''); setBulkPipelineStage('') }}
+                  className="px-2 py-1 text-[10px] font-bold text-white bg-np-blue rounded-md hover:bg-np-blue/90">Assign</button>
+              </>
+            )}
+            <div className="w-px h-5 bg-gray-200 mx-1" />
             <button onClick={() => { const t = prompt('Tag name:'); if (t) handleBulkAction('add_tags', { tags: [t] }) }}
               className="px-2 py-1 text-[10px] font-medium bg-white border border-gray-100 rounded-md hover:bg-gray-50">
               <Tag size={10} className="inline mr-0.5" /> Add Tag
             </button>
-            <button onClick={() => { const s = prompt('Pipeline stage:'); if (s) handleBulkAction('set_pipeline_stage', { pipeline_stage: s }) }}
-              className="px-2 py-1 text-[10px] font-medium bg-white border border-gray-100 rounded-md hover:bg-gray-50">Set Stage</button>
             <button onClick={() => handleBulkAction('add_to_dnc', {})}
               className="px-2 py-1 text-[10px] font-medium bg-red-50 border border-red-200 text-red-600 rounded-md hover:bg-red-100">DNC</button>
             <button onClick={() => setSelected(new Set())} className="px-2 py-1 text-[10px] text-gray-400 hover:text-np-dark"><X size={12} /></button>
