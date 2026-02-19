@@ -3,16 +3,15 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
-  Plus, MoreHorizontal, ChevronDown, GripVertical,
-  X, DollarSign, Trash2, Settings, BarChart3,
-  Clock, TrendingUp, Target, Percent, Save
+  Plus, MoreHorizontal, Phone, Mail, ChevronDown, GripVertical,
+  X, DollarSign, Pencil, Trash2, Settings, BarChart3,
+  Clock, TrendingUp, Target, Percent, Save, Palette
 } from 'lucide-react'
 import { fetchContacts, updateContact } from '@/lib/crm-client'
 import type { CrmContact } from '@/types/crm'
 import { PIPELINE_STAGES, STAGE_COLORS } from '@/types/crm'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
-import { ContactCommsButtons } from '@/components/crm/twilio-comms'
 
 interface PipelineStageConfig {
   id: string; name: string; color: string; is_closed_won?: boolean; is_closed_lost?: boolean; position: number
@@ -59,11 +58,7 @@ function ContactCard({ contact, stages, onMove }: { contact: CrmContact; stages:
   const daysSince = contact.last_contacted_at ? Math.floor((Date.now() - new Date(contact.last_contacted_at).getTime()) / 86400000) : null
 
   return (
-    <div
-      draggable
-      onDragStart={e => { e.dataTransfer.setData('contactId', contact.id); e.dataTransfer.effectAllowed = 'move' }}
-      className="group relative bg-white rounded-lg border border-gray-100/60 p-3 hover:shadow-md hover:border-np-blue/30 transition-all cursor-grab active:cursor-grabbing active:opacity-70"
-    >
+    <div className="group relative bg-white rounded-lg border border-gray-100/60 p-3 hover:shadow-md hover:border-np-blue/30 transition-all cursor-pointer">
       <div className="flex items-start gap-2.5">
         <div className="w-7 h-7 rounded-full bg-gradient-to-br from-teal/80 to-np-dark/80 flex items-center justify-center text-[9px] font-bold text-white flex-shrink-0">{initials}</div>
         <div className="flex-1 min-w-0">
@@ -78,8 +73,9 @@ function ContactCard({ contact, stages, onMove }: { contact: CrmContact; stages:
         {daysSince !== null && daysSince > 7 && <span className="text-[9px] text-orange-400">{daysSince}d</span>}
         {value && <span className="text-[10px] font-semibold text-green-600 flex items-center gap-0.5"><DollarSign size={9} />{(value/1000).toFixed(0)}k</span>}
       </div>
-      <div className="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-all" onClick={e => e.stopPropagation()}>
-        <ContactCommsButtons contact={contact} size="sm" />
+      <div className="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-all">
+        <button className="p-1 rounded bg-gray-50 hover:bg-np-blue/10 transition-colors"><Phone size={10} className="text-gray-400" /></button>
+        <button className="p-1 rounded bg-gray-50 hover:bg-np-blue/10 transition-colors"><Mail size={10} className="text-gray-400" /></button>
       </div>
       {showMenu && (
         <div className="absolute right-0 top-8 z-20 w-36 bg-white rounded-lg shadow-xl border border-gray-100 py-1 animate-in fade-in zoom-in-95 duration-150">
@@ -251,24 +247,15 @@ export default function PipelinesPage() {
   }
 
   useEffect(() => {
-    if (!currentOrg) return
-    fetchContacts({ org_id: currentOrg.id, limit: 500 }).then(r => setContacts(r.contacts)).catch(console.error).finally(() => setLoading(false))
-  }, [currentOrg?.id])
+    fetchContacts({ limit: 500 }).then(r => setContacts(r.contacts)).catch(console.error).finally(() => setLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const moveContact = async (id: string, stage: string) => {
-    try {
-      await updateContact(id, { pipeline_stage: stage, pipeline_id: activePipelineId } as any)
-      setContacts(prev => prev.map(c => c.id === id ? { ...c, pipeline_stage: stage, pipeline_id: activePipelineId } : c))
-    } catch (e) { console.error(e) }
+    try { await updateContact(id, { pipeline_stage: stage }); setContacts(prev => prev.map(c => c.id === id ? { ...c, pipeline_stage: stage } : c)) } catch (e) { console.error(e) }
   }
 
-  const pipelineContacts = contacts.filter(c => {
-    // Show contact in this pipeline only if explicitly assigned
-    // Contacts with no pipeline_id show only in the default pipeline
-    if (c.pipeline_id) return c.pipeline_id === activePipelineId
-    return activePipeline.is_default === true
-  })
-  const stageContacts = (name: string) => pipelineContacts.filter(c => (c.pipeline_stage || activePipeline.stages[0]?.name || 'New Lead') === name)
+  const stageContacts = (name: string) => contacts.filter(c => (c.pipeline_stage || activePipeline.stages[0]?.name || 'New Lead') === name)
   const stageValue = (name: string) => stageContacts(name).reduce((s,c) => s + ((c.custom_fields?.value as number)||0), 0)
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 rounded-lg bg-np-blue/20 animate-pulse" /></div>
@@ -295,7 +282,7 @@ export default function PipelinesPage() {
               </div>
             )}
           </div>
-          <p className="text-[11px] text-gray-400">{pipelineContacts.length} contacts</p>
+          <p className="text-[11px] text-gray-400">{contacts.length} contacts</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setShowMetrics(!showMetrics)} className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg transition-colors ${showMetrics ? 'bg-np-blue/10 text-np-blue' : 'bg-gray-50 text-gray-400'}`}><BarChart3 size={13} /> Metrics</button>
@@ -303,7 +290,7 @@ export default function PipelinesPage() {
         </div>
       </div>
 
-      {showMetrics && <PipelineMetrics contacts={pipelineContacts} stages={activePipeline.stages} />}
+      {showMetrics && <PipelineMetrics contacts={contacts} stages={activePipeline.stages} />}
 
       <div className="flex gap-3 overflow-x-auto pb-4" style={{ minHeight: 'calc(100vh - 380px)' }}>
         {activePipeline.stages.map(stage => {
@@ -317,12 +304,7 @@ export default function PipelinesPage() {
                 <div className="flex-1" />
                 {sv > 0 && <span className="text-[10px] font-medium text-green-600">${(sv/1000).toFixed(0)}k</span>}
               </div>
-              <div
-                className="space-y-2 min-h-[200px] rounded-xl bg-gray-50/50 p-2 border border-gray-100/30 transition-colors"
-                onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('bg-np-blue/5', 'border-np-blue/30'); e.currentTarget.classList.remove('bg-gray-50/50', 'border-gray-100/30') }}
-                onDragLeave={e => { e.currentTarget.classList.remove('bg-np-blue/5', 'border-np-blue/30'); e.currentTarget.classList.add('bg-gray-50/50', 'border-gray-100/30') }}
-                onDrop={e => { e.preventDefault(); e.currentTarget.classList.remove('bg-np-blue/5', 'border-np-blue/30'); e.currentTarget.classList.add('bg-gray-50/50', 'border-gray-100/30'); const cid = e.dataTransfer.getData('contactId'); if (cid) moveContact(cid, stage.name) }}
-              >
+              <div className="space-y-2 min-h-[200px] rounded-xl bg-gray-50/50 p-2 border border-gray-100/30">
                 {sc.map(c => <ContactCard key={c.id} contact={c} stages={activePipeline.stages} onMove={s => moveContact(c.id, s)} />)}
                 {sc.length === 0 && <div className="text-center py-8 text-[10px] text-gray-400">No contacts</div>}
               </div>
