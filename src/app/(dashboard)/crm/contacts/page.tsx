@@ -77,9 +77,10 @@ export default function ContactsPage() {
   }, [currentOrg?.id])
 
   const load = useCallback(async () => {
+    if (!currentOrg) return
     setLoading(true)
     try {
-      const params: ContactSearchParams = { limit, offset: page * limit }
+      const params: ContactSearchParams = { org_id: currentOrg.id, limit, offset: page * limit }
       if (search) params.q = search
       if (stageFilter) params.pipeline_stage = stageFilter
       if (tagFilter) params.tags = [tagFilter]
@@ -87,7 +88,7 @@ export default function ContactsPage() {
       setContacts(res.contacts); setTotal(res.total)
     } catch (e) { console.error('Contact load error:', e) }
     finally { setLoading(false) }
-  }, [search, stageFilter, tagFilter, page])
+  }, [currentOrg?.id, search, stageFilter, tagFilter, page])
 
   useEffect(() => { load() }, [load])
 
@@ -140,7 +141,7 @@ export default function ContactsPage() {
   const handleConnSearchInForm = async (q: string) => {
     setConnSearchQuery(q)
     if (q.length < 2) { setConnSearchResults([]); return }
-    try { const res = await fetchContacts({ q, limit: 6 }); setConnSearchResults(res.contacts) } catch (e) { console.error(e) }
+    try { const res = await fetchContacts({ org_id: currentOrg?.id, q, limit: 6 }); setConnSearchResults(res.contacts) } catch (e) { console.error(e) }
   }
 
   const allTags = useMemo(() => {

@@ -115,7 +115,7 @@ export default function MessagesPage() {
     if (q.length < 2) { setContactResults([]); return }
     setSearchingContacts(true)
     try {
-      const res = await fetchContacts({ q, limit: 10 })
+      const res = await fetchContacts({ org_id: currentOrg?.id, q, limit: 10 })
       setContactResults(res.contacts)
     } catch (e) { console.error(e) }
     finally { setSearchingContacts(false) }

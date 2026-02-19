@@ -10,10 +10,11 @@ import Link from 'next/link'
 import {
   Users, Phone, MessageCircle, Mail, TrendingUp, TrendingDown,
   ArrowRight, Clock, UserPlus, CheckCircle2, AlertTriangle,
-  Route, GraduationCap, Brain
+  Route, GraduationCap, Brain, GitBranch, Sparkles, Loader2
 } from 'lucide-react'
-import { fetchContacts, fetchCallLogs, fetchCampaigns, fetchTasks } from '@/lib/crm-client'
-import type { CrmContact, CallLog, EmailCampaign, CrmTask } from '@/types/crm'
+import { fetchContacts, fetchCallLogs, fetchCampaigns, fetchTasks, fetchNetworkGraph, seedNetworkIntelligence } from '@/lib/crm-client'
+import type { CrmContact, CallLog, EmailCampaign, CrmTask, NetworkGraphData } from '@/types/crm'
+import { useWorkspace } from '@/lib/workspace-context'
 
 function StatCard({ label, value, icon: Icon, trend, color, href }: {
   label: string; value: string | number; icon: any; trend?: number; color: string; href?: string
@@ -67,17 +68,19 @@ function CallRow({ call }: { call: any }) {
 }
 
 export default function CrmDashboard() {
+  const { currentOrg } = useWorkspace()
   const [contacts, setContacts] = useState<CrmContact[]>([])
   const [calls, setCalls] = useState<any[]>([])
   const [campaigns, setCampaigns] = useState<EmailCampaign[]>([])
   const [tasks, setTasks] = useState<CrmTask[]>([])
+  const [networkData, setNetworkData] = useState<NetworkGraphData | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function load() {
       try {
         const [cRes, clRes, cpRes, tRes] = await Promise.allSettled([
-          fetchContacts({ limit: 1000 }),
+          fetchContacts({ org_id: currentOrg?.id, limit: 1000 }),
           fetchCallLogs(undefined, 50),
           fetchCampaigns(),
           fetchTasks(),
@@ -86,6 +89,15 @@ export default function CrmDashboard() {
         if (clRes.status === 'fulfilled') setCalls(clRes.value)
         if (cpRes.status === 'fulfilled') setCampaigns(cpRes.value)
         if (tRes.status === 'fulfilled') setTasks(tRes.value)
+
+        // Load network data
+        if (currentOrg) {
+          try {
+            await seedNetworkIntelligence(currentOrg.id).catch(() => {})
+            const graph = await fetchNetworkGraph(currentOrg.id)
+            setNetworkData(graph)
+          } catch {}
+        }
       } catch (e) {
         console.error('CRM Dashboard load error:', e)
       } finally {
@@ -93,7 +105,7 @@ export default function CrmDashboard() {
       }
     }
     load()
-  }, [])
+  }, [currentOrg?.id])
 
   if (loading) {
     return (
@@ -319,6 +331,61 @@ export default function CrmDashboard() {
           })()}
         </div>
       </div>
+
+      {/* Network Intelligence Widget */}
+      {networkData && (
+        <div className="rounded-xl border border-gray-100 bg-white overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+            <h3 className="text-sm font-semibold text-np-dark flex items-center gap-1.5">
+              <GitBranch size={14} className="text-indigo-500" /> Network Intelligence
+            </h3>
+            <Link href="/crm/network" className="text-[10px] font-medium text-np-blue hover:underline flex items-center gap-0.5">
+              View Network <ArrowRight size={10} />
+            </Link>
+          </div>
+          <div className="p-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+              <div className="text-center">
+                <p className="text-2xl font-bold text-np-dark">{networkData.edges.length}</p>
+                <p className="text-[9px] text-gray-400">Connections</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-np-dark">{networkData.clusters.length}</p>
+                <p className="text-[9px] text-gray-400">Clusters</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-np-dark">
+                  {networkData.nodes.filter(n => n.relationship_count > 0).length}
+                </p>
+                <p className="text-[9px] text-gray-400">Connected</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-gray-300">
+                  {networkData.nodes.filter(n => n.relationship_count === 0).length}
+                </p>
+                <p className="text-[9px] text-gray-400">Orphans</p>
+              </div>
+            </div>
+            {/* Top connectors */}
+            {networkData.nodes.filter(n => n.relationship_count > 0).length > 0 && (
+              <div>
+                <p className="text-[9px] font-bold text-gray-400 uppercase mb-2">Top Connectors</p>
+                <div className="flex gap-3">
+                  {[...networkData.nodes].sort((a, b) => b.relationship_count - a.relationship_count).slice(0, 5).map(n => (
+                    <div key={n.id} className="flex items-center gap-1.5">
+                      <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-[8px] font-bold">{n.avatar}</div>
+                      <div>
+                        <p className="text-[10px] font-semibold text-np-dark">{n.name}</p>
+                        <p className="text-[8px] text-gray-400">{n.relationship_count} connections</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

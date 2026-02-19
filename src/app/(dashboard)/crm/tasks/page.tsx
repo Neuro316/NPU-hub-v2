@@ -260,7 +260,7 @@ export default function TasksPage() {
     if (currentOrg) {
       fetchTeamMembers(currentOrg.id).then(setTeamMembers).catch(console.error)
       fetchKanbanColumns(currentOrg.id).then((data) => setKanbanCols(data.map((c: any) => ({ id: c.id, name: c.name || c.title })))).catch(console.error)
-      fetchContacts({ limit: 500 }).then(r => setContacts(r.contacts)).catch(console.error)
+      fetchContacts({ org_id: currentOrg.id, limit: 500 }).then(r => setContacts(r.contacts)).catch(console.error)
     }
   }, [currentOrg?.id])
 

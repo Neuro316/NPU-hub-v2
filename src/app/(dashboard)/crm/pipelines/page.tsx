@@ -251,9 +251,9 @@ export default function PipelinesPage() {
   }
 
   useEffect(() => {
-    fetchContacts({ limit: 500 }).then(r => setContacts(r.contacts)).catch(console.error).finally(() => setLoading(false))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    if (!currentOrg) return
+    fetchContacts({ org_id: currentOrg.id, limit: 500 }).then(r => setContacts(r.contacts)).catch(console.error).finally(() => setLoading(false))
+  }, [currentOrg?.id])
 
   const moveContact = async (id: string, stage: string) => {
     try {

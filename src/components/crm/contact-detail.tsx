@@ -159,7 +159,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
         })
       fetchContactRelationships(contactId).then(setRelationships).catch(e => console.warn('Relationships load skipped:', e))
       fetchRelationshipTypes(c.org_id).then(setRelTypes).catch(e => console.warn('RelTypes load skipped:', e))
-      fetchContacts({ limit: 200 }).then(res => setAllContacts(res.contacts.filter(ct => ct.id !== contactId))).catch(e => console.warn('Contacts load skipped:', e))
+      fetchContacts({ org_id: c.org_id, limit: 200 }).then(res => setAllContacts(res.contacts.filter(ct => ct.id !== contactId))).catch(e => console.warn('Contacts load skipped:', e))
 
       // Load team members for RACI (status='active' matches actual DB column)
       supabase.from('team_profiles').select('*').eq('org_id', c.org_id).eq('status', 'active')

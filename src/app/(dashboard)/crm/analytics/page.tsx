@@ -79,7 +79,7 @@ export default function AnalyticsPage() {
     async function load() {
       try {
         const [cRes, clRes, cpRes, tRes] = await Promise.allSettled([
-          fetchContacts({ limit: 2000 }), fetchCallLogs(undefined, 200), fetchCampaigns(), fetchTasks(),
+          fetchContacts({ org_id: currentOrg?.id, limit: 2000 }), fetchCallLogs(undefined, 200), fetchCampaigns(), fetchTasks(),
         ])
         if (cRes.status === 'fulfilled') setContacts(cRes.value.contacts)
         if (clRes.status === 'fulfilled') setCalls(clRes.value)

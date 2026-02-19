@@ -26,6 +26,8 @@ export async function fetchContacts(params: ContactSearchParams = {}) {
     .is('merged_into_id', null)
     .order('updated_at', { ascending: false })
 
+  if (params.org_id) query = query.eq('org_id', params.org_id)
+
   if (params.q) {
     // Try ilike on name/email first (more reliable than search_vector which may not be populated)
     query = query.or(`first_name.ilike.%${params.q}%,last_name.ilike.%${params.q}%,email.ilike.%${params.q}%,phone.ilike.%${params.q}%`)

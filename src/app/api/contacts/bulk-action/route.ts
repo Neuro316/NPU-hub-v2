@@ -50,6 +50,18 @@ export async function POST(request: NextRequest) {
       break;
     }
 
+    case 'set_pipeline': {
+      const updates: Record<string, unknown> = {};
+      if (params.pipeline_id) updates.pipeline_id = params.pipeline_id;
+      if (params.pipeline_stage) updates.pipeline_stage = params.pipeline_stage;
+      const { error } = await supabase
+        .from('contacts')
+        .update(updates)
+        .in('id', contact_ids);
+      if (!error) affected = contact_ids.length;
+      break;
+    }
+
     case 'assign_to': {
       const { error } = await supabase
         .from('contacts')

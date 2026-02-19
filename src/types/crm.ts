@@ -552,6 +552,7 @@ export interface BulkActionRequest {
 }
 
 export interface ContactSearchParams {
+  org_id?: string
   q?: string
   tags?: string[]
   pipeline_stage?: string
