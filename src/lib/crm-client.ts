@@ -517,6 +517,11 @@ export async function deleteRelationship(id: string) {
   if (error) throw error
 }
 
+export async function updateRelationship(id: string, updates: { strength?: number; notes?: string; relationship_type?: string }) {
+  const { error } = await supabase().from('contact_relationships').update(updates).eq('id', id)
+  if (error) throw error
+}
+
 export async function fetchRelationshipTypes(orgId?: string) {
   let q = supabase().from('relationship_types').select('*').eq('is_active', true).order('sort_order')
   if (orgId) q = q.eq('org_id', orgId)

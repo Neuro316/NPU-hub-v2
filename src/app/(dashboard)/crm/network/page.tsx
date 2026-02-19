@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useWorkspace } from '@/lib/workspace-context'
 import {
   fetchNetworkGraph, fetchRelationshipTypes, fetchTagCategories,
-  createRelationship, deleteRelationship, seedNetworkIntelligence,
+  createRelationship, deleteRelationship, updateRelationship, seedNetworkIntelligence,
   computeNetworkScores, findBridgeContacts
 } from '@/lib/crm-client'
 import type {
@@ -15,7 +15,7 @@ import {
   Search, Filter, Sparkles, Users, GitBranch, X, Plus, Trash2,
   Loader2, Star, Zap, AlertTriangle, Calendar, ChevronRight,
   ChevronDown, Maximize2, RefreshCw, Eye, EyeOff, Target,
-  Crosshair, List, LayoutGrid, Phone, Mail, MapPin, ZoomIn, ZoomOut, Link, ExternalLink
+  Crosshair, List, LayoutGrid, Phone, Mail, MapPin, ZoomIn, ZoomOut, Link, ExternalLink, Pencil
 } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════════════════
@@ -165,12 +165,15 @@ export default function NetworkPage() {
   const [pathTo, setPathTo] = useState<string | null>(null)
   const [pathResult, setPathResult] = useState<string[]>([])
   const [showContactInfo, setShowContactInfo] = useState(true)
+  const [editingEdge, setEditingEdge] = useState<string | null>(null)
+  const [editStrength, setEditStrength] = useState(3)
 
   // Canvas
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const animRef = useRef<number>(0)
   const [canvasSize, setCanvasSize] = useState({ w: 800, h: 600 })
+  const prevCanvasSize = useRef({ w: 800, h: 600 })
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [zoom, setZoom] = useState(1)
   const [dragging, setDragging] = useState<string | null>(null)
@@ -200,11 +203,14 @@ export default function NetworkPage() {
 
   useEffect(() => { loadData() }, [loadData])
 
-  // ── Init simulation ──
+  // ── Init simulation (only when graph data changes, not canvas resize) ──
   useEffect(() => {
     if (!graphData) return
-    setSimNodes(initSimulation(graphData.nodes, canvasSize.w, canvasSize.h))
-  }, [graphData, canvasSize.w, canvasSize.h])
+    const w = containerRef.current?.clientWidth || canvasSize.w
+    const h = containerRef.current?.clientHeight || canvasSize.h
+    setSimNodes(initSimulation(graphData.nodes, w, h))
+    prevCanvasSize.current = { w, h }
+  }, [graphData])
 
   // ── Canvas resize (ResizeObserver) ──
   useEffect(() => {
@@ -212,7 +218,22 @@ export default function NetworkPage() {
     if (!el) return
     const obs = new ResizeObserver(entries => {
       for (const e of entries) {
-        setCanvasSize({ w: e.contentRect.width, h: e.contentRect.height })
+        const newW = e.contentRect.width
+        const newH = e.contentRect.height
+        if (newW > 0 && newH > 0) {
+          const oldW = prevCanvasSize.current.w
+          const oldH = prevCanvasSize.current.h
+          // Rescale node positions to fit new canvas size
+          if (oldW > 0 && oldH > 0 && (Math.abs(newW - oldW) > 20 || Math.abs(newH - oldH) > 20)) {
+            setSimNodes(prev => prev.map(n => ({
+              ...n,
+              x: (n.x / oldW) * newW,
+              y: (n.y / oldH) * newH,
+            })))
+          }
+          prevCanvasSize.current = { w: newW, h: newH }
+          setCanvasSize({ w: newW, h: newH })
+        }
       }
     })
     obs.observe(el)
@@ -553,6 +574,22 @@ export default function NetworkPage() {
     } catch (err: any) {
       alert(err.message || 'Failed to create relationship')
     }
+  }
+
+  const handleDeleteEdge = async (edgeId: string) => {
+    if (!confirm('Remove this connection?')) return
+    try {
+      await deleteRelationship(edgeId)
+      setEditingEdge(null)
+      loadData()
+    } catch (err: any) { alert(err.message || 'Failed to delete') }
+  }
+
+  const handleUpdateEdgeStrength = async (edgeId: string, strength: number) => {
+    try {
+      await updateRelationship(edgeId, { strength })
+      loadData()
+    } catch (err: any) { alert(err.message || 'Failed to update') }
   }
 
   const toggleTagFilter = (name: string) => {
@@ -1110,23 +1147,51 @@ export default function NetworkPage() {
                 const otherColor = other.cluster_id !== undefined
                   ? CLUSTER_COLORS[other.cluster_id % CLUSTER_COLORS.length]
                   : '#94a3b8'
+                const isEditing = editingEdge === edge.id
                 return (
-                  <div key={edge.id}
-                    onClick={() => setSelectedNode(otherId)}
-                    className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
-                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[8px] font-bold flex-shrink-0"
-                      style={{ backgroundColor: otherColor }}>
-                      {other.avatar}
+                  <div key={edge.id} className="rounded-lg border border-transparent hover:border-gray-100 transition-colors">
+                    <div className="flex items-center gap-2 px-2 py-1.5 cursor-pointer"
+                      onClick={() => setSelectedNode(otherId)}>
+                      <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[8px] font-bold flex-shrink-0"
+                        style={{ backgroundColor: otherColor }}>
+                        {other.avatar}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] font-semibold text-np-dark truncate">{other.name}</p>
+                        <p className="text-[8px] truncate" style={{ color: edge.color || '#6366f1' }}>{edge.label}</p>
+                      </div>
+                      <div className="flex gap-0.5 flex-shrink-0">
+                        {[1, 2, 3, 4, 5].map(s => (
+                          <div key={s} className={`w-1 h-1 rounded-full ${s <= edge.strength ? 'bg-np-blue' : 'bg-gray-200'}`} />
+                        ))}
+                      </div>
+                      <button onClick={(e) => { e.stopPropagation(); setEditingEdge(isEditing ? null : edge.id); setEditStrength(edge.strength) }}
+                        className="opacity-0 group-hover:opacity-100 p-0.5 text-gray-300 hover:text-gray-500 transition-all"
+                        style={{ opacity: isEditing ? 1 : undefined }}>
+                        <Pencil className="w-3 h-3" />
+                      </button>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[10px] font-semibold text-np-dark truncate">{other.name}</p>
-                      <p className="text-[8px] truncate" style={{ color: edge.color || '#6366f1' }}>{edge.label}</p>
-                    </div>
-                    <div className="flex gap-0.5 flex-shrink-0">
-                      {[1, 2, 3, 4, 5].map(s => (
-                        <div key={s} className={`w-1 h-1 rounded-full ${s <= edge.strength ? 'bg-np-blue' : 'bg-gray-200'}`} />
-                      ))}
-                    </div>
+                    {isEditing && (
+                      <div className="px-2 pb-2 pt-1 border-t border-gray-50 space-y-2" onClick={e => e.stopPropagation()}>
+                        <div>
+                          <p className="text-[8px] font-bold text-gray-400 uppercase mb-1">Strength</p>
+                          <div className="flex gap-1">
+                            {[1, 2, 3, 4, 5].map(s => (
+                              <button key={s} onClick={() => { setEditStrength(s); handleUpdateEdgeStrength(edge.id, s) }}
+                                className={`w-6 h-6 rounded text-[9px] font-bold transition-colors ${
+                                  s <= editStrength ? 'bg-np-blue text-white' : 'bg-gray-100 text-gray-400'
+                                }`}>
+                                {s}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <button onClick={() => handleDeleteEdge(edge.id)}
+                          className="flex items-center gap-1 text-[9px] text-red-500 hover:text-red-700 font-medium transition-colors">
+                          <Trash2 className="w-3 h-3" /> Remove Connection
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )
               })}
