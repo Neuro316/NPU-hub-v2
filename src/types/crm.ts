@@ -599,6 +599,11 @@ export interface NetworkNode {
   interaction_score: number; network_centrality: number
   bridge_score: number; cluster_id?: number
   x?: number; y?: number
+  // Contact info for detail panel
+  phone?: string | null; email?: string | null
+  address_city?: string | null; address_state?: string | null
+  preferred_name?: string | null; reason_for_contact?: string | null
+  occupation?: string | null; instagram_handle?: string | null; linkedin_url?: string | null
 }
 
 export interface NetworkEdge {

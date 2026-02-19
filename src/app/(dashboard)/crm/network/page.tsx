@@ -15,7 +15,7 @@ import {
   Search, Filter, Sparkles, Users, GitBranch, X, Plus, Trash2,
   Loader2, Star, Zap, AlertTriangle, Calendar, ChevronRight,
   ChevronDown, Maximize2, RefreshCw, Eye, EyeOff, Target,
-  Crosshair, List, LayoutGrid
+  Crosshair, List, LayoutGrid, Phone, Mail, MapPin, ZoomIn, ZoomOut, Link, ExternalLink
 } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════════════════
@@ -47,7 +47,7 @@ function initSimulation(nodes: NetworkNode[], w: number, h: number): SimNode[] {
   const cx = w / 2, cy = h / 2
   return nodes.map((n, i) => {
     const angle = (2 * Math.PI * i) / (nodes.length || 1)
-    const r = Math.min(w, h) * 0.3
+    const r = Math.min(w, h) * 0.38
     return {
       ...n,
       x: cx + r * Math.cos(angle) + (Math.random() - 0.5) * 40,
@@ -58,7 +58,7 @@ function initSimulation(nodes: NetworkNode[], w: number, h: number): SimNode[] {
 }
 
 function tickSim(nodes: SimNode[], edges: NetworkEdge[], w: number, h: number) {
-  const repulsion = 6000, attraction = 0.004, gravity = 0.008, damping = 0.82
+  const repulsion = 8000, attraction = 0.003, gravity = 0.006, damping = 0.82
   const nodeMap = new Map(nodes.map(n => [n.id, n]))
 
   for (let i = 0; i < nodes.length; i++) {
@@ -158,6 +158,13 @@ export default function NetworkPage() {
   const [addRelType, setAddRelType] = useState('')
   const [addRelNotes, setAddRelNotes] = useState('')
   const [addRelStrength, setAddRelStrength] = useState(3)
+
+  // Pathfinder - find connection chain between two people
+  const [pathMode, setPathMode] = useState(false)
+  const [pathFrom, setPathFrom] = useState<string | null>(null)
+  const [pathTo, setPathTo] = useState<string | null>(null)
+  const [pathResult, setPathResult] = useState<string[]>([])
+  const [showContactInfo, setShowContactInfo] = useState(true)
 
   // Canvas
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -281,7 +288,12 @@ export default function NetworkPage() {
 
     const nodeMap = new Map(simNodes.map(n => [n.id, n]))
 
-    // ── Draw edges ──
+    // Auto-scale bubble size based on node count and viewport
+    const area = canvasSize.w * canvasSize.h
+    const nodeCount = Math.max(1, visibleNodes.length)
+    const scaleFactor = Math.min(1.8, Math.max(0.6, Math.sqrt(area / (nodeCount * 3000))))
+
+    // ── Draw edges (solid lines) ──
     graphData?.edges.forEach(edge => {
       const a = nodeMap.get(edge.from), b = nodeMap.get(edge.to)
       if (!a || !b) return
@@ -297,19 +309,17 @@ export default function NetworkPage() {
       if (isBothEvent) {
         ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 2.5; ctx.globalAlpha = 1
       } else if (isSelected) {
-        ctx.strokeStyle = edge.color || '#6366f1'; ctx.lineWidth = 2; ctx.globalAlpha = 0.8
+        ctx.strokeStyle = edge.color || '#6366f1'; ctx.lineWidth = 2; ctx.globalAlpha = 0.9
       } else {
-        ctx.strokeStyle = '#d1d5db'; ctx.lineWidth = 1; ctx.globalAlpha = selectedNode ? 0.1 : 0.3
+        ctx.strokeStyle = edge.color || '#94a3b8'; ctx.lineWidth = 1.2; ctx.globalAlpha = selectedNode ? 0.08 : 0.35
       }
-      ctx.setLineDash(isSelected || isBothEvent ? [] : [3, 3])
       ctx.stroke()
-      ctx.setLineDash([])
 
       // Edge label on selected
       if (isSelected || isBothEvent) {
         const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2
         ctx.font = '500 8px system-ui'
-        ctx.fillStyle = isBothEvent ? '#d97706' : '#6366f1'
+        ctx.fillStyle = isBothEvent ? '#d97706' : edge.color || '#6366f1'
         ctx.textAlign = 'center'
         ctx.globalAlpha = 1
         ctx.fillText(edge.label || edge.type, mx, my - 5)
@@ -328,7 +338,7 @@ export default function NetworkPage() {
       const isBridge = bridgeContacts.includes(node.id)
       const isDim = selectedNode && !isSelected && !isConnected
 
-      const baseR = Math.max(10, Math.min(22, 10 + (node.relationship_count || 0) * 1.5))
+      const baseR = Math.max(12, Math.min(28, (12 + (node.relationship_count || 0) * 1.8) * scaleFactor))
       const r = isSelected ? baseR + 4 : isHovered ? baseR + 2 : baseR
 
       if (isDim) ctx.globalAlpha = 0.15
@@ -406,10 +416,13 @@ export default function NetworkPage() {
   })
 
   const findNodeAt = (wx: number, wy: number): SimNode | null => {
+    const area = canvasSize.w * canvasSize.h
+    const nodeCount = Math.max(1, visibleNodes.length)
+    const scaleFactor = Math.min(1.8, Math.max(0.6, Math.sqrt(area / (nodeCount * 3000))))
     for (let i = simNodes.length - 1; i >= 0; i--) {
       const n = simNodes[i]
       if (!visibleIds.has(n.id)) continue
-      const r = Math.max(10, Math.min(22, 10 + (n.relationship_count || 0) * 1.5))
+      const r = Math.max(12, Math.min(28, (12 + (n.relationship_count || 0) * 1.8) * scaleFactor))
       if (Math.hypot(wx - n.x, wy - n.y) < r + 5) return n
     }
     return null
@@ -469,7 +482,11 @@ export default function NetworkPage() {
     const { x, y } = screenToWorld(e.clientX - rect.left, e.clientY - rect.top)
     const node = findNodeAt(x, y)
     if (node) {
-      if (eventMode) {
+      if (pathMode) {
+        if (!pathFrom) { setPathFrom(node.id) }
+        else if (!pathTo && node.id !== pathFrom) { setPathTo(node.id) }
+        else { setPathFrom(node.id); setPathTo(null); setPathResult([]) }
+      } else if (eventMode) {
         setEventContacts(prev => {
           const next = new Set(prev)
           next.has(node.id) ? next.delete(node.id) : next.add(node.id)
@@ -500,9 +517,25 @@ export default function NetworkPage() {
         body: JSON.stringify({ graphData }),
       })
       const data = await res.json()
-      setInsights(data.insights || [])
+      if (!res.ok) {
+        console.error('Insights error:', data.error)
+        setInsights([{
+          type: 'engagement_alert', title: 'Analysis Unavailable',
+          description: data.error || 'Could not generate insights. Check that ANTHROPIC_API_KEY is configured in your environment variables.',
+          contact_ids: [], confidence: 0, priority: 'low'
+        }])
+      } else {
+        setInsights(data.insights || [])
+      }
       setInsightsOpen(true)
-    } catch {}
+    } catch (e: any) {
+      setInsights([{
+        type: 'engagement_alert', title: 'Connection Error',
+        description: e.message || 'Failed to reach the AI analysis endpoint.',
+        contact_ids: [], confidence: 0, priority: 'low'
+      }])
+      setInsightsOpen(true)
+    }
     setInsightsLoading(false)
   }
 
@@ -537,6 +570,47 @@ export default function NetworkPage() {
       return next
     })
   }
+
+  // ── BFS Pathfinder: find shortest connection chain ──
+  const findPath = useCallback((fromId: string, toId: string): string[] => {
+    if (!graphData || fromId === toId) return []
+    const adj = new Map<string, string[]>()
+    graphData.edges.forEach(e => {
+      if (!adj.has(e.from)) adj.set(e.from, [])
+      if (!adj.has(e.to)) adj.set(e.to, [])
+      adj.get(e.from)!.push(e.to)
+      adj.get(e.to)!.push(e.from)
+    })
+    const visited = new Set<string>()
+    const parent = new Map<string, string>()
+    const queue = [fromId]
+    visited.add(fromId)
+    while (queue.length > 0) {
+      const current = queue.shift()!
+      if (current === toId) {
+        const path: string[] = []
+        let node = toId
+        while (node) { path.unshift(node); node = parent.get(node)! }
+        return path
+      }
+      for (const neighbor of (adj.get(current) || [])) {
+        if (!visited.has(neighbor)) {
+          visited.add(neighbor)
+          parent.set(neighbor, current)
+          queue.push(neighbor)
+        }
+      }
+    }
+    return [] // no path found
+  }, [graphData])
+
+  useEffect(() => {
+    if (pathFrom && pathTo) {
+      setPathResult(findPath(pathFrom, pathTo))
+    } else {
+      setPathResult([])
+    }
+  }, [pathFrom, pathTo, findPath])
 
   // ═══════════════════════════════════════════════════════════════
   // DERIVED DATA
@@ -756,6 +830,10 @@ export default function NetworkPage() {
                 className="flex items-center gap-1 text-[10px] font-bold text-white bg-np-blue px-2.5 py-1.5 rounded-lg shadow-sm hover:bg-np-blue/90 transition-colors">
                 <Plus className="w-3 h-3" /> Connection
               </button>
+              <button onClick={() => { setPathMode(!pathMode); setPathFrom(null); setPathTo(null); setPathResult([]) }}
+                className={`flex items-center gap-1 text-[10px] font-bold px-2.5 py-1.5 rounded-lg shadow-sm transition-colors ${pathMode ? 'bg-amber-500 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:text-np-blue'}`}>
+                <Link className="w-3 h-3" /> Find Path
+              </button>
               <button onClick={loadData}
                 className="p-1.5 bg-white border border-gray-200 rounded-lg shadow-sm text-gray-500 hover:text-np-blue transition-colors">
                 <RefreshCw className="w-3.5 h-3.5" />
@@ -765,6 +843,50 @@ export default function NetworkPage() {
                 <Crosshair className="w-3.5 h-3.5" />
               </button>
             </div>
+
+            {/* Zoom controls bottom-right */}
+            <div className="absolute bottom-3 right-3 z-10 flex flex-col gap-1">
+              <button onClick={() => setZoom(z => Math.min(3, z * 1.25))}
+                className="w-8 h-8 bg-white border border-gray-200 rounded-lg shadow-sm flex items-center justify-center text-gray-500 hover:text-np-blue transition-colors">
+                <ZoomIn className="w-4 h-4" />
+              </button>
+              <div className="text-center text-[8px] text-gray-400 font-medium">{Math.round(zoom * 100)}%</div>
+              <button onClick={() => setZoom(z => Math.max(0.2, z * 0.8))}
+                className="w-8 h-8 bg-white border border-gray-200 rounded-lg shadow-sm flex items-center justify-center text-gray-500 hover:text-np-blue transition-colors">
+                <ZoomOut className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Pathfinder banner */}
+            {pathMode && (
+              <div className="absolute top-14 left-3 z-10 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 shadow-sm max-w-xs">
+                <p className="text-[10px] font-bold text-amber-700 mb-1">Connection Chain Finder</p>
+                <p className="text-[9px] text-amber-600 mb-2">Click two contacts to find the shortest path between them.</p>
+                <div className="space-y-1">
+                  <p className="text-[9px] text-amber-700">From: <span className="font-bold">{pathFrom ? simNodes.find(n => n.id === pathFrom)?.name || '...' : 'Click a contact'}</span></p>
+                  <p className="text-[9px] text-amber-700">To: <span className="font-bold">{pathTo ? simNodes.find(n => n.id === pathTo)?.name || '...' : 'Click another contact'}</span></p>
+                </div>
+                {pathResult.length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-amber-200">
+                    <p className="text-[9px] font-bold text-green-700 mb-1">{pathResult.length - 1} degrees of separation:</p>
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {pathResult.map((id, i) => {
+                        const node = simNodes.find(n => n.id === id)
+                        return node ? (
+                          <span key={id} className="flex items-center gap-1">
+                            {i > 0 && <ChevronRight className="w-3 h-3 text-amber-400" />}
+                            <span className="text-[9px] font-semibold text-np-dark bg-white px-1.5 py-0.5 rounded border border-amber-200">{node.name.split(' ')[0]}</span>
+                          </span>
+                        ) : null
+                      })}
+                    </div>
+                  </div>
+                )}
+                {pathFrom && pathTo && pathResult.length === 0 && (
+                  <p className="mt-2 text-[9px] text-red-600 font-medium">No connection path found between these contacts.</p>
+                )}
+              </div>
+            )}
 
             {/* Stats + AI top-right */}
             <div className="absolute top-3 right-3 z-10 flex gap-2">
@@ -877,20 +999,76 @@ export default function NetworkPage() {
       {/* ═══ RIGHT: DETAIL PANEL ═══ */}
       {selectedNodeData && (
         <div className="w-72 flex-shrink-0 bg-white border border-gray-100 rounded-2xl flex flex-col overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-sm"
-                style={{ backgroundColor: selectedNodeData.cluster_id !== undefined ? CLUSTER_COLORS[selectedNodeData.cluster_id % CLUSTER_COLORS.length] : '#94a3b8' }}>
-                {selectedNodeData.avatar}
+          <div className="px-4 py-3 border-b border-gray-100">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-sm"
+                  style={{ backgroundColor: selectedNodeData.cluster_id !== undefined ? CLUSTER_COLORS[selectedNodeData.cluster_id % CLUSTER_COLORS.length] : '#94a3b8' }}>
+                  {selectedNodeData.avatar}
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-np-dark">{selectedNodeData.name}</h3>
+                  <p className="text-[9px] text-gray-400">
+                    {selectedNodeData.preferred_name ? `"${selectedNodeData.preferred_name}" · ` : ''}
+                    {selectedNodeData.pipeline_stage || 'No stage'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-sm font-bold text-np-dark">{selectedNodeData.name}</h3>
-                <p className="text-[9px] text-gray-400">{selectedNodeData.pipeline_stage || 'No stage'}</p>
-              </div>
+              <button onClick={() => setSelectedNode(null)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                <X className="w-4 h-4" />
+              </button>
             </div>
-            <button onClick={() => setSelectedNode(null)} className="text-gray-400 hover:text-gray-600 transition-colors">
-              <X className="w-4 h-4" />
+
+            {/* Expandable Contact Info */}
+            <button onClick={() => setShowContactInfo(!showContactInfo)}
+              className="flex items-center gap-1 mt-2 text-[9px] text-np-blue font-medium w-full">
+              <ChevronDown className={`w-3 h-3 transition-transform ${showContactInfo ? 'rotate-180' : ''}`} />
+              Contact Info
             </button>
+            {showContactInfo && (
+              <div className="mt-1.5 space-y-1.5 pl-1">
+                {selectedNodeData.phone && (
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <Phone className="w-3 h-3 text-green-500" />
+                    <span className="text-np-dark">{selectedNodeData.phone}</span>
+                  </div>
+                )}
+                {selectedNodeData.email && (
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <Mail className="w-3 h-3 text-amber-500" />
+                    <span className="text-np-dark truncate">{selectedNodeData.email}</span>
+                  </div>
+                )}
+                {(selectedNodeData.address_city || selectedNodeData.address_state) && (
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <MapPin className="w-3 h-3 text-blue-500" />
+                    <span className="text-np-dark">{[selectedNodeData.address_city, selectedNodeData.address_state].filter(Boolean).join(', ')}</span>
+                  </div>
+                )}
+                {selectedNodeData.occupation && (
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <Users className="w-3 h-3 text-gray-400" />
+                    <span className="text-np-dark">{selectedNodeData.occupation}</span>
+                  </div>
+                )}
+                {selectedNodeData.reason_for_contact && (
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <Target className="w-3 h-3 text-purple-500" />
+                    <span className="text-np-dark">{selectedNodeData.reason_for_contact}</span>
+                  </div>
+                )}
+                {(selectedNodeData.instagram_handle || selectedNodeData.linkedin_url) && (
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <ExternalLink className="w-3 h-3 text-indigo-500" />
+                    {selectedNodeData.instagram_handle && <span className="text-np-dark">@{selectedNodeData.instagram_handle.replace('@','')}</span>}
+                    {selectedNodeData.linkedin_url && <a href={selectedNodeData.linkedin_url} target="_blank" rel="noopener noreferrer" className="text-np-blue hover:underline">LinkedIn</a>}
+                  </div>
+                )}
+                {!selectedNodeData.phone && !selectedNodeData.email && (
+                  <p className="text-[9px] text-gray-400 italic">No contact details on file</p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Scores */}
@@ -919,7 +1097,7 @@ export default function NetworkPage() {
             </div>
           )}
 
-          {/* Connections */}
+          {/* Connections List */}
           <div className="flex-1 overflow-y-auto px-4 py-2.5">
             <p className="text-[8px] font-bold text-gray-400 uppercase tracking-wider mb-2">
               {selectedEdges.length} Connections
@@ -958,11 +1136,15 @@ export default function NetworkPage() {
             </div>
           </div>
 
-          {/* Quick add connection */}
-          <div className="px-4 py-2.5 border-t border-gray-100">
+          {/* Quick actions */}
+          <div className="px-4 py-2.5 border-t border-gray-100 space-y-1.5">
             <button onClick={() => { setAddRelFrom(selectedNode || ''); setAddRelOpen(true) }}
               className="w-full flex items-center justify-center gap-1 text-[10px] font-medium text-np-blue border border-np-blue/20 rounded-lg py-1.5 hover:bg-np-blue/5 transition-colors">
               <Plus className="w-3 h-3" /> Add Connection
+            </button>
+            <button onClick={() => { setPathMode(true); setPathFrom(selectedNode); setPathTo(null); setPathResult([]) }}
+              className="w-full flex items-center justify-center gap-1 text-[10px] font-medium text-amber-600 border border-amber-200 rounded-lg py-1.5 hover:bg-amber-50 transition-colors">
+              <Link className="w-3 h-3" /> Find Path From Here
             </button>
           </div>
         </div>

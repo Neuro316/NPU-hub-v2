@@ -530,7 +530,7 @@ export async function fetchRelationshipTypes(orgId?: string) {
 export async function fetchNetworkGraph(orgId: string): Promise<NetworkGraphData> {
   const sb = supabase()
   const [contactsRes, relsRes, scoresRes] = await Promise.all([
-    sb.from('contacts').select('id,first_name,last_name,tags,pipeline_stage,last_contacted_at').eq('org_id', orgId).is('merged_into_id', null),
+    sb.from('contacts').select('id,first_name,last_name,tags,pipeline_stage,last_contacted_at,phone,email,address_city,address_state,preferred_name,reason_for_contact,occupation,instagram_handle,linkedin_url').eq('org_id', orgId).is('merged_into_id', null),
     sb.from('contact_relationships').select('*, type_config:relationship_types(*)').eq('org_id', orgId),
     sb.from('contact_interaction_score').select('*').eq('org_id', orgId),
   ])
@@ -550,6 +550,10 @@ export async function fetchNetworkGraph(orgId: string): Promise<NetworkGraphData
       network_centrality: score?.network_centrality || 0,
       bridge_score: score?.bridge_score || 0,
       cluster_id: score?.cluster_id,
+      phone: c.phone, email: c.email,
+      address_city: c.address_city, address_state: c.address_state,
+      preferred_name: c.preferred_name, reason_for_contact: c.reason_for_contact,
+      occupation: c.occupation, instagram_handle: c.instagram_handle, linkedin_url: c.linkedin_url,
     }
   })
 
