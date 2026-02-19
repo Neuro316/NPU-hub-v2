@@ -289,7 +289,7 @@ export default function ContactsPage() {
                   <input value={form.last_name} onChange={e => setForm(p=>({...p,last_name:e.target.value}))} placeholder="Smith" className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Email *</label>
+                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Email</label>
                   <input type="email" value={form.email} onChange={e => setForm(p=>({...p,email:e.target.value}))} placeholder="jane@example.com" className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
                 <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Phone</label>
                   <input type="tel" value={form.phone} onChange={e => setForm(p=>({...p,phone:e.target.value}))} placeholder="+1 828 555 1234" className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
