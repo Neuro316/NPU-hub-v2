@@ -6,7 +6,8 @@ import {
   X, Phone, Mail, MessageCircle, Tag, Clock, CheckCircle2, AlertTriangle,
   TrendingUp, Send, Pencil, Trash2, Plus, User, Activity, Brain,
   Route, Target, Calendar, FileText, Sparkles, ChevronRight, Heart,
-  ArrowRightLeft, GraduationCap, BarChart3, Shield, ExternalLink, Paperclip, GitBranch, MapPin, ChevronDown
+  ArrowRightLeft, GraduationCap, BarChart3, Shield, ExternalLink, Paperclip, GitBranch, MapPin, ChevronDown,
+  Globe, Lightbulb, Linkedin, Instagram, Twitter, Youtube, BookOpen, Mic, Link2, ThumbsUp, ThumbsDown
 } from 'lucide-react'
 import {
   fetchContact, updateContact, fetchNotes, createNote,
@@ -73,7 +74,15 @@ interface ContactDetailProps {
 export default function ContactDetail({ contactId, onClose, onUpdate }: ContactDetailProps) {
   const supabase = createClient()
   const [contact, setContact] = useState<CrmContact | null>(null)
-  const [tab, setTab] = useState<'overview' | 'connections' | 'timeline' | 'tasks' | 'notes' | 'comms' | 'stats'>('overview')
+  const [tab, setTab] = useState<'overview' | 'intel' | 'connections' | 'timeline' | 'tasks' | 'notes' | 'comms' | 'stats'>('overview')
+  const [engagementTopics, setEngagementTopics] = useState<any[]>([])
+  const [showEngagementForm, setShowEngagementForm] = useState(false)
+  const [engTopic, setEngTopic] = useState('')
+  const [engChannel, setEngChannel] = useState('email')
+  const [engResponse, setEngResponse] = useState(false)
+  const [engSentiment, setEngSentiment] = useState('neutral')
+  const [engNotes, setEngNotes] = useState('')
+  const [referralChain, setReferralChain] = useState<any[]>([])
   const [timeline, setTimeline] = useState<TimelineEvent[]>([])
   const [notes, setNotes] = useState<ContactNote[]>([])
   const [tasks, setTasks] = useState<CrmTask[]>([])
@@ -170,6 +179,23 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
           .limit(50)
         setTimeline(data || [])
       } catch (e) { console.warn('Timeline load skipped:', e) }
+
+      // Engagement topics
+      Promise.resolve(supabase.from('contact_engagement_topics').select('*').eq('contact_id', contactId).order('outreach_date', { ascending: false }))
+        .then(({ data }: { data: any }) => { if (data) setEngagementTopics(data) }).catch(() => {})
+
+      // Referral chain (walk up referred_by chain)
+      const chain: any[] = []
+      let current = c
+      let depth = 0
+      while (current?.referred_by_contact_id && depth < 10) {
+        try {
+          const ref = await fetchContact(current.referred_by_contact_id)
+          if (ref) { chain.push(ref); current = ref; depth++ }
+          else break
+        } catch { break }
+      }
+      setReferralChain(chain)
     } catch (e) { console.error('ContactDetail load error:', e) }
     setLoading(false)
   }, [contactId])
@@ -314,8 +340,32 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
     } catch (e) { console.error(e) }
   }
 
+  const handleLogEngagement = async () => {
+    if (!contact || !engTopic.trim()) return
+    try {
+      await supabase.from('contact_engagement_topics').insert({
+        org_id: contact.org_id,
+        contact_id: contact.id,
+        topic: engTopic.trim(),
+        channel: engChannel,
+        got_response: engResponse,
+        response_sentiment: engResponse ? engSentiment : null,
+        response_notes: engNotes || null,
+      })
+      // Refresh
+      const { data } = await supabase.from('contact_engagement_topics').select('*').eq('contact_id', contact.id).order('outreach_date', { ascending: false })
+      if (data) setEngagementTopics(data)
+      // Recompute stats
+      try { await supabase.rpc('compute_engagement_stats', { p_contact_id: contact.id }) } catch {}
+      setShowEngagementForm(false)
+      setEngTopic(''); setEngNotes(''); setEngResponse(false); setEngSentiment('neutral')
+      load()
+    } catch (e) { console.error(e) }
+  }
+
   const TABS = [
     { key: 'overview', label: 'Overview', icon: User },
+    { key: 'intel', label: 'Intel', icon: Lightbulb },
     { key: 'connections', label: 'Connections', icon: GitBranch },
     { key: 'timeline', label: 'Timeline', icon: Activity },
     { key: 'tasks', label: 'Tasks', icon: CheckCircle2 },
@@ -957,6 +1007,243 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
               )}
 
               {/* CONNECTIONS TAB */}
+              {tab === 'intel' && contact && (
+                <div className="space-y-4">
+                  {/* Contact Type & Population */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-[8px] font-bold text-gray-400 uppercase mb-1">Contact Type</p>
+                      <p className="text-[11px] font-semibold text-np-dark">
+                        {contact.contact_type ? contact.contact_type.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()) : 'Not set'}
+                      </p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-[8px] font-bold text-gray-400 uppercase mb-1">Population Served</p>
+                      <p className="text-[11px] text-np-dark">{contact.population_served || 'Not set'}</p>
+                    </div>
+                  </div>
+
+                  {/* Key Differentiator */}
+                  {contact.key_differentiator && (
+                    <div className="bg-amber-50 border border-amber-100 rounded-lg p-3">
+                      <p className="text-[8px] font-bold text-amber-600 uppercase mb-1 flex items-center gap-1"><Sparkles className="w-3 h-3" /> Key Differentiator</p>
+                      <p className="text-[11px] text-amber-800">{contact.key_differentiator}</p>
+                    </div>
+                  )}
+
+                  {/* Outreach Strategy */}
+                  {contact.preferred_outreach_strategy && (
+                    <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+                      <p className="text-[8px] font-bold text-blue-600 uppercase mb-1 flex items-center gap-1"><Target className="w-3 h-3" /> Outreach Strategy</p>
+                      <p className="text-[11px] text-blue-800">{contact.preferred_outreach_strategy}</p>
+                    </div>
+                  )}
+
+                  {/* Social Profiles */}
+                  <div className="bg-white border border-gray-100 rounded-lg p-3">
+                    <p className="text-[8px] font-bold text-gray-400 uppercase mb-2 flex items-center gap-1"><Globe className="w-3 h-3" /> Social Profiles</p>
+                    <div className="space-y-1.5">
+                      {contact.linkedin_url && (
+                        <a href={contact.linkedin_url} target="_blank" rel="noopener" className="flex items-center gap-2 text-[10px] text-blue-600 hover:underline">
+                          <Linkedin className="w-3 h-3" /> {contact.linkedin_url.replace('https://linkedin.com/in/', '').replace('https://www.linkedin.com/in/', '')}
+                        </a>
+                      )}
+                      {contact.instagram_handle && (
+                        <a href={`https://instagram.com/${contact.instagram_handle}`} target="_blank" rel="noopener" className="flex items-center gap-2 text-[10px] text-pink-600 hover:underline">
+                          <Instagram className="w-3 h-3" /> @{contact.instagram_handle}
+                        </a>
+                      )}
+                      {contact.twitter_handle && (
+                        <a href={`https://x.com/${contact.twitter_handle}`} target="_blank" rel="noopener" className="flex items-center gap-2 text-[10px] text-gray-700 hover:underline">
+                          <Twitter className="w-3 h-3" /> @{contact.twitter_handle}
+                        </a>
+                      )}
+                      {contact.youtube_url && (
+                        <a href={contact.youtube_url} target="_blank" rel="noopener" className="flex items-center gap-2 text-[10px] text-red-600 hover:underline">
+                          <Youtube className="w-3 h-3" /> YouTube
+                        </a>
+                      )}
+                      {contact.facebook_url && (
+                        <a href={contact.facebook_url} target="_blank" rel="noopener" className="flex items-center gap-2 text-[10px] text-blue-700 hover:underline">
+                          <Globe className="w-3 h-3" /> Facebook
+                        </a>
+                      )}
+                      {contact.tiktok_handle && (
+                        <span className="flex items-center gap-2 text-[10px] text-gray-700">
+                          <Globe className="w-3 h-3" /> TikTok: @{contact.tiktok_handle}
+                        </span>
+                      )}
+                      {contact.website_url && (
+                        <a href={contact.website_url} target="_blank" rel="noopener" className="flex items-center gap-2 text-[10px] text-np-blue hover:underline">
+                          <Link2 className="w-3 h-3" /> {contact.website_url.replace(/https?:\/\/(www\.)?/, '')}
+                        </a>
+                      )}
+                      {contact.blog_url && (
+                        <a href={contact.blog_url} target="_blank" rel="noopener" className="flex items-center gap-2 text-[10px] text-green-600 hover:underline">
+                          <BookOpen className="w-3 h-3" /> Blog
+                        </a>
+                      )}
+                      {contact.social_follow_suggestion && (
+                        <div className="mt-2 bg-green-50 rounded px-2 py-1">
+                          <p className="text-[9px] font-bold text-green-700 flex items-center gap-1"><ThumbsUp className="w-3 h-3" /> Suggested: Follow/connect on social media</p>
+                        </div>
+                      )}
+                      {!contact.linkedin_url && !contact.instagram_handle && !contact.twitter_handle && !contact.website_url && (
+                        <p className="text-[10px] text-gray-400 italic">No social profiles on file</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Topics */}
+                  {(contact.topics_of_interest?.length || contact.presentation_topics?.length) ? (
+                    <div className="grid grid-cols-2 gap-3">
+                      {contact.topics_of_interest?.length ? (
+                        <div className="bg-gray-50 rounded-lg p-3">
+                          <p className="text-[8px] font-bold text-gray-400 uppercase mb-1.5 flex items-center gap-1"><Globe className="w-3 h-3" /> Social Topics</p>
+                          <div className="flex flex-wrap gap-1">
+                            {contact.topics_of_interest.map((t: string) => (
+                              <span key={t} className="text-[8px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full">{t}</span>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                      {contact.presentation_topics?.length ? (
+                        <div className="bg-gray-50 rounded-lg p-3">
+                          <p className="text-[8px] font-bold text-gray-400 uppercase mb-1.5 flex items-center gap-1"><Mic className="w-3 h-3" /> Presentations</p>
+                          <div className="flex flex-wrap gap-1">
+                            {contact.presentation_topics.map((t: string) => (
+                              <span key={t} className="text-[8px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">{t}</span>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {/* Publications */}
+                  {contact.publications && (
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-[8px] font-bold text-gray-400 uppercase mb-1 flex items-center gap-1"><BookOpen className="w-3 h-3" /> Publications</p>
+                      <p className="text-[10px] text-gray-700 whitespace-pre-wrap">{contact.publications}</p>
+                    </div>
+                  )}
+
+                  {/* AI Research Notes */}
+                  {contact.ai_research_notes && (
+                    <div className="bg-purple-50 border border-purple-100 rounded-lg p-3">
+                      <p className="text-[8px] font-bold text-purple-600 uppercase mb-1 flex items-center gap-1"><Brain className="w-3 h-3" /> AI Research Notes</p>
+                      <p className="text-[10px] text-purple-800 whitespace-pre-wrap">{contact.ai_research_notes}</p>
+                    </div>
+                  )}
+
+                  {/* Referral Chain */}
+                  {referralChain.length > 0 && (
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-[8px] font-bold text-gray-400 uppercase mb-2 flex items-center gap-1"><Route className="w-3 h-3" /> Referral Chain</p>
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <span className="text-[10px] font-semibold text-np-dark bg-np-blue/10 px-2 py-0.5 rounded-full">
+                          {contact.first_name} {contact.last_name}
+                        </span>
+                        {referralChain.map((ref, i) => (
+                          <div key={ref.id} className="flex items-center gap-1">
+                            <ChevronRight className="w-3 h-3 text-gray-300" />
+                            <span className="text-[10px] text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full">
+                              referred by {ref.first_name} {ref.last_name}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Engagement Tracking */}
+                  <div className="bg-white border border-gray-100 rounded-lg p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-[8px] font-bold text-gray-400 uppercase flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Engagement Tracking</p>
+                      <button onClick={() => setShowEngagementForm(!showEngagementForm)}
+                        className="text-[9px] font-bold text-np-blue flex items-center gap-0.5">
+                        <Plus className="w-3 h-3" /> Log Outreach
+                      </button>
+                    </div>
+
+                    {/* Response rate summary */}
+                    {contact.engagement_response_rate !== null && contact.engagement_response_rate !== undefined && (
+                      <div className="mb-2 flex items-center gap-3">
+                        <div className="bg-green-50 rounded px-2 py-1">
+                          <p className="text-[9px] font-bold text-green-700">{contact.engagement_response_rate?.toFixed(0)}% response rate</p>
+                        </div>
+                        {contact.top_responding_topics?.length ? (
+                          <div className="flex gap-1">
+                            {contact.top_responding_topics.slice(0, 3).map((t: string) => (
+                              <span key={t} className="text-[8px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">{t}</span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+
+                    {showEngagementForm && (
+                      <div className="bg-gray-50 rounded-lg p-3 mb-3 space-y-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[8px] font-bold text-gray-400 uppercase">Topic</label>
+                            <input value={engTopic} onChange={e => setEngTopic(e.target.value)}
+                              className="w-full text-[10px] border border-gray-200 rounded px-2 py-1 mt-0.5" placeholder="e.g. VR biofeedback" />
+                          </div>
+                          <div>
+                            <label className="text-[8px] font-bold text-gray-400 uppercase">Channel</label>
+                            <select value={engChannel} onChange={e => setEngChannel(e.target.value)}
+                              className="w-full text-[10px] border border-gray-200 rounded px-2 py-1 mt-0.5">
+                              <option value="email">Email</option>
+                              <option value="social">Social Media</option>
+                              <option value="call">Call</option>
+                              <option value="text">Text</option>
+                              <option value="in_person">In Person</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <label className="flex items-center gap-1.5 text-[10px]">
+                            <input type="checkbox" checked={engResponse} onChange={e => setEngResponse(e.target.checked)} className="rounded" />
+                            Got response
+                          </label>
+                          {engResponse && (
+                            <select value={engSentiment} onChange={e => setEngSentiment(e.target.value)}
+                              className="text-[10px] border border-gray-200 rounded px-2 py-1">
+                              <option value="positive">Positive</option>
+                              <option value="neutral">Neutral</option>
+                              <option value="negative">Negative</option>
+                            </select>
+                          )}
+                        </div>
+                        <input value={engNotes} onChange={e => setEngNotes(e.target.value)}
+                          className="w-full text-[10px] border border-gray-200 rounded px-2 py-1" placeholder="Notes..." />
+                        <button onClick={handleLogEngagement}
+                          className="text-[10px] font-bold text-white bg-np-blue px-3 py-1 rounded hover:bg-np-blue/90">
+                          Log Engagement
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Engagement history */}
+                    <div className="space-y-1">
+                      {engagementTopics.slice(0, 8).map((e: any) => (
+                        <div key={e.id} className="flex items-center gap-2 text-[9px] py-1 border-b border-gray-50 last:border-0">
+                          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${e.got_response ? (e.response_sentiment === 'positive' ? 'bg-green-500' : e.response_sentiment === 'negative' ? 'bg-red-500' : 'bg-amber-500') : 'bg-gray-300'}`} />
+                          <span className="font-semibold text-np-dark">{e.topic}</span>
+                          <span className="text-gray-400">via {e.channel}</span>
+                          {e.got_response && <span className="text-green-600 font-medium">responded</span>}
+                          <span className="ml-auto text-gray-300">{new Date(e.outreach_date).toLocaleDateString()}</span>
+                        </div>
+                      ))}
+                      {engagementTopics.length === 0 && (
+                        <p className="text-[10px] text-gray-400 italic text-center py-2">No engagement logged yet</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {tab === 'connections' && (
                 <>
                   <button onClick={() => setShowAddConnection(!showAddConnection)}

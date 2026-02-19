@@ -33,6 +33,8 @@ const INSIGHT_ICONS: Record<string, any> = {
   referral_chain: ChevronRight,
   event_suggestion: Calendar,
   engagement_alert: Zap,
+  network_gap: Eye,
+  social_suggestion: Star,
 }
 
 // ═══════════════════════════════════════════════════════════════

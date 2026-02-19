@@ -70,6 +70,29 @@ export interface CrmContact {
   subscription_start?: string | null
   subscription_end?: string | null
   subscription_status?: 'active' | 'past_due' | 'canceled' | 'trialing' | 'expired' | null
+  // Intelligence fields
+  contact_type?: 'b2b_coach' | 'b2b_clinic' | 'b2b_partner' | 'b2c_client' | 'b2c_prospect' | 'other' | null
+  population_served?: string | null
+  preferred_outreach_strategy?: string | null
+  topics_of_interest?: string[] | null
+  presentation_topics?: string[] | null
+  publications?: string | null
+  key_differentiator?: string | null
+  twitter_handle?: string | null
+  facebook_url?: string | null
+  youtube_url?: string | null
+  tiktok_handle?: string | null
+  website_url?: string | null
+  blog_url?: string | null
+  social_follow_suggestion?: boolean
+  ai_research_notes?: string | null
+  ai_connection_discoveries?: Array<{ contact_id: string; confidence: number; basis: string }> | null
+  import_batch_id?: string | null
+  // Engagement rollup
+  engagement_response_rate?: number | null
+  top_responding_topics?: string[] | null
+  last_enriched_at?: string | null
+  referral_depth?: number | null
 }
 
 export interface TeamMember {

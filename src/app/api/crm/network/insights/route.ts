@@ -92,6 +92,110 @@ export async function POST(request: NextRequest) {
   // Always generate local insights
   const localInsights = generateLocalInsights()
 
+  // ── Network gap analysis ──
+  try {
+    const { data: orgData } = await supabase.from('team_profiles').select('org_id').eq('user_id', user.id).single()
+    if (orgData?.org_id) {
+      // Run gap analysis function
+      try { await supabase.rpc('analyze_network_gaps', { p_org_id: orgData.org_id }) } catch {}
+      
+      // Fetch gaps
+      const { data: gaps } = await supabase.from('network_gap_analysis')
+        .select('*').eq('org_id', orgData.org_id).order('severity')
+      
+      if (gaps?.length) {
+        // Group by type
+        const byType = new Map<string, any[]>()
+        gaps.forEach((g: any) => {
+          if (!byType.has(g.analysis_type)) byType.set(g.analysis_type, [])
+          byType.get(g.analysis_type)!.push(g)
+        })
+
+        byType.forEach((gapList, type) => {
+          const highSeverity = gapList.filter(g => g.severity === 'high')
+          const label = type === 'geographic' ? 'Geographic' : type === 'industry' ? 'Industry' : type === 'population' ? 'Population' : type
+          
+          if (gapList.length > 0) {
+            localInsights.push({
+              type: 'network_gap',
+              priority: highSeverity.length > 0 ? 'high' : 'medium',
+              confidence: 0.8,
+              title: `${label} gap: ${gapList.length} areas with thin coverage`,
+              description: gapList.slice(0, 5).map((g: any) => g.gap_label).join(', ') + (gapList.length > 5 ? ` and ${gapList.length - 5} more` : ''),
+              contact_ids: [],
+              action: gapList[0]?.suggested_action || `Expand outreach to underrepresented ${label.toLowerCase()} areas.`,
+            })
+          }
+        })
+      }
+
+      // ── Social follow suggestions ──
+      const { data: followSuggestions } = await supabase.from('contacts')
+        .select('id,first_name,last_name,linkedin_url,instagram_handle,twitter_handle')
+        .eq('org_id', orgData.org_id)
+        .eq('social_follow_suggestion', true)
+        .is('merged_into_id', null)
+        .limit(10)
+      
+      if (followSuggestions?.length) {
+        localInsights.push({
+          type: 'social_suggestion',
+          priority: 'low',
+          confidence: 0.9,
+          title: `${followSuggestions.length} contacts to follow on social media`,
+          description: `AI research flagged these contacts for social network building: ${followSuggestions.slice(0, 5).map((c: any) => `${c.first_name} ${c.last_name}`).join(', ')}`,
+          contact_ids: followSuggestions.map((c: any) => c.id),
+          action: `Connect with these contacts on LinkedIn and Instagram to build your professional network.`,
+        })
+      }
+
+      // ── Engagement intelligence: contacts with low response rates ──
+      const { data: lowEngagement } = await supabase.from('contacts')
+        .select('id,first_name,last_name,engagement_response_rate,top_responding_topics')
+        .eq('org_id', orgData.org_id)
+        .not('engagement_response_rate', 'is', null)
+        .lt('engagement_response_rate', 20)
+        .is('merged_into_id', null)
+        .limit(5)
+      
+      if (lowEngagement?.length) {
+        localInsights.push({
+          type: 'engagement_alert',
+          priority: 'medium',
+          confidence: 0.75,
+          title: `${lowEngagement.length} contacts with low response rates`,
+          description: `These contacts rarely respond to outreach. Consider changing your approach or topic.`,
+          contact_ids: lowEngagement.map((c: any) => c.id),
+          action: `Review outreach strategy for these contacts. Try different topics or channels.`,
+        })
+      }
+
+      // ── High response rate contacts worth nurturing ──
+      const { data: highEngagement } = await supabase.from('contacts')
+        .select('id,first_name,last_name,engagement_response_rate,top_responding_topics')
+        .eq('org_id', orgData.org_id)
+        .not('engagement_response_rate', 'is', null)
+        .gt('engagement_response_rate', 70)
+        .is('merged_into_id', null)
+        .order('engagement_response_rate', { ascending: false })
+        .limit(5)
+      
+      if (highEngagement?.length) {
+        localInsights.push({
+          type: 'referral_chain',
+          priority: 'medium',
+          confidence: 0.85,
+          title: `${highEngagement.length} highly responsive contacts`,
+          description: `These contacts respond to over 70% of your outreach: ${highEngagement.map((c: any) => c.first_name).join(', ')}. Great candidates for referral requests or collaboration.`,
+          contact_ids: highEngagement.map((c: any) => c.id),
+          action: `Deepen these relationships. Ask for introductions or co-creation opportunities.`,
+        })
+      }
+    }
+  } catch (err) {
+    console.warn('Gap analysis skipped:', err)
+  }
+
   // If API key available, enrich with AI analysis
   if (apiKey) {
     try {
