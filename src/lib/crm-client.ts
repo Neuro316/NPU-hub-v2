@@ -78,6 +78,14 @@ export async function updateContact(id: string, updates: Partial<CrmContact>) {
   return data as CrmContact
 }
 
+export async function deleteContact(id: string) {
+  const { error } = await supabase()
+    .from('contacts')
+    .delete()
+    .eq('id', id)
+  if (error) throw error
+}
+
 // ─── Conversations & Messages ───
 
 export async function fetchConversations(channel?: string) {

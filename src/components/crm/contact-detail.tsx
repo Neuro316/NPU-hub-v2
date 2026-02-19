@@ -10,7 +10,7 @@ import {
   Globe, Lightbulb, Linkedin, Instagram, Twitter, Youtube, BookOpen, Mic, Link2, ThumbsUp, ThumbsDown
 } from 'lucide-react'
 import {
-  fetchContact, updateContact, fetchNotes, createNote,
+  fetchContact, updateContact, deleteContact, fetchNotes, createNote,
   fetchActivityLog, fetchTasks, updateTask, fetchLifecycleEvents,
   fetchCallLogs, fetchConversations, fetchMessages,
   fetchContactRelationships, createRelationship, deleteRelationship,
@@ -118,6 +118,10 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
     instagram_handle: '', linkedin_url: '', emergency_contact_name: '', emergency_contact_phone: '',
     referred_by_contact_id: '', referred_by_search: '',
   })
+  const [editingHeader, setEditingHeader] = useState(false)
+  const [headerForm, setHeaderForm] = useState({ first_name: '', last_name: '', email: '', phone: '', company: '' })
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const load = useCallback(async () => {
     if (!contactId) return
@@ -390,27 +394,108 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-full bg-np-blue flex items-center justify-center text-white font-bold text-sm">
-                    {contact.first_name[0]}{contact.last_name[0]}
+                    {contact.first_name[0]}{contact.last_name?.[0] || ''}
                   </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-np-dark">{contact.first_name} {contact.last_name}</h3>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      {contact.pipeline_stage && (
-                        <span className="text-[9px] font-bold bg-np-blue/10 text-np-blue px-1.5 py-0.5 rounded">{contact.pipeline_stage}</span>
-                      )}
-                      {mastermind && (
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: mastermind.color + '18', color: mastermind.color }}>
-                          {mastermind.label}
-                        </span>
-                      )}
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: health.bg, color: health.color }}>
-                        {health.label} ({contact.health_score || 50})
-                      </span>
+                  {editingHeader ? (
+                    <div className="space-y-1.5">
+                      <div className="flex gap-1.5">
+                        <input value={headerForm.first_name} onChange={e => setHeaderForm(p => ({ ...p, first_name: e.target.value }))}
+                          placeholder="First name" className="w-24 px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                        <input value={headerForm.last_name} onChange={e => setHeaderForm(p => ({ ...p, last_name: e.target.value }))}
+                          placeholder="Last name" className="w-24 px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                      </div>
+                      <div className="flex gap-1.5">
+                        <input value={headerForm.email} onChange={e => setHeaderForm(p => ({ ...p, email: e.target.value }))}
+                          placeholder="Email" className="w-36 px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                        <input value={headerForm.phone} onChange={e => setHeaderForm(p => ({ ...p, phone: e.target.value }))}
+                          placeholder="Phone" className="w-28 px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                      </div>
+                      <input value={headerForm.company} onChange={e => setHeaderForm(p => ({ ...p, company: e.target.value }))}
+                        placeholder="Company" className="w-full px-2 py-1 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                      <div className="flex gap-1.5">
+                        <button onClick={async () => {
+                          try {
+                            await updateContact(contact.id, {
+                              first_name: headerForm.first_name || contact.first_name,
+                              last_name: headerForm.last_name,
+                              email: headerForm.email || undefined,
+                              phone: headerForm.phone || undefined,
+                              company: headerForm.company || undefined,
+                            } as any)
+                            setEditingHeader(false); load(); onUpdate?.()
+                          } catch (e: any) { alert('Save failed: ' + (e?.message || '')) }
+                        }}
+                          className="px-2.5 py-1 text-[10px] font-bold text-white bg-np-blue rounded-md hover:bg-np-dark">Save</button>
+                        <button onClick={() => setEditingHeader(false)} className="px-2.5 py-1 text-[10px] text-gray-400">Cancel</button>
+                      </div>
                     </div>
+                  ) : (
+                    <div>
+                      <h3 className="text-sm font-bold text-np-dark">{contact.first_name} {contact.last_name}</h3>
+                      {(contact as any).company && <p className="text-[10px] text-gray-400">{(contact as any).company}</p>}
+                      <div className="flex items-center gap-2 mt-0.5">
+                        {contact.pipeline_stage && (
+                          <span className="text-[9px] font-bold bg-np-blue/10 text-np-blue px-1.5 py-0.5 rounded">{contact.pipeline_stage}</span>
+                        )}
+                        {mastermind && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: mastermind.color + '18', color: mastermind.color }}>
+                            {mastermind.label}
+                          </span>
+                        )}
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: health.bg, color: health.color }}>
+                          {health.label} ({contact.health_score || 50})
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
+                  {!editingHeader && (
+                    <>
+                      <button onClick={() => {
+                        setHeaderForm({
+                          first_name: contact.first_name || '',
+                          last_name: contact.last_name || '',
+                          email: contact.email || '',
+                          phone: contact.phone || '',
+                          company: (contact as any).company || '',
+                        })
+                        setEditingHeader(true)
+                      }} className="p-1.5 rounded hover:bg-gray-100" title="Edit contact">
+                        <Pencil className="w-3.5 h-3.5 text-gray-400" />
+                      </button>
+                      <button onClick={() => setShowDeleteConfirm(true)} className="p-1.5 rounded hover:bg-red-50" title="Delete contact">
+                        <Trash2 className="w-3.5 h-3.5 text-gray-400 hover:text-red-500" />
+                      </button>
+                    </>
+                  )}
+                  <button onClick={onClose} className="p-1.5 rounded hover:bg-gray-100"><X className="w-4 h-4 text-gray-400" /></button>
+                </div>
+              </div>
+
+              {/* Delete confirmation */}
+              {showDeleteConfirm && (
+                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-xs font-semibold text-red-700">Delete {contact.first_name} {contact.last_name}?</p>
+                  <p className="text-[10px] text-red-600 mt-1">This will permanently remove this contact and all associated connections, notes, tasks, and activity.</p>
+                  <div className="flex gap-2 mt-2">
+                    <button onClick={async () => {
+                      setDeleting(true)
+                      try {
+                        await deleteContact(contact.id)
+                        setShowDeleteConfirm(false)
+                        onClose()
+                        onUpdate?.()
+                      } catch (e: any) { alert('Delete failed: ' + (e?.message || '')) }
+                      finally { setDeleting(false) }
+                    }} disabled={deleting}
+                      className="px-3 py-1.5 text-[10px] font-bold text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50">
+                      {deleting ? 'Deleting...' : 'Yes, Delete'}
+                    </button>
+                    <button onClick={() => setShowDeleteConfirm(false)} className="px-3 py-1.5 text-[10px] text-gray-500">Cancel</button>
                   </div>
                 </div>
-                <button onClick={onClose} className="p-1.5 rounded hover:bg-gray-100"><X className="w-4 h-4 text-gray-400" /></button>
-              </div>
+              )}
 
               {/* Quick action buttons */}
               <div className="flex gap-2 mt-3 flex-wrap">
