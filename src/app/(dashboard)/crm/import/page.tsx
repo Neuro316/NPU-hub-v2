@@ -228,17 +228,8 @@ export default function ImportPage() {
     if (file.name.endsWith('.csv') || file.name.endsWith('.tsv')) {
       const text = await file.text()
       parseCSV(text)
-    } else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
-      // Use SheetJS via dynamic import
-      // @ts-ignore - xlsx may not have type declarations
-      const XLSX = await import('xlsx')
-      const data = await file.arrayBuffer()
-      const wb = XLSX.read(data)
-      const ws = wb.Sheets[wb.SheetNames[0]]
-      const csv = XLSX.utils.sheet_to_csv(ws)
-      parseCSV(csv)
     } else {
-      alert('Please upload a .csv, .tsv, or .xlsx file')
+      alert('Please upload a .csv or .tsv file')
     }
   }
 
@@ -250,14 +241,6 @@ export default function ImportPage() {
     if (file.name.endsWith('.csv') || file.name.endsWith('.tsv')) {
       const text = await file.text()
       parseCSV(text)
-    } else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
-      // @ts-ignore - xlsx may not have type declarations
-      const XLSX = await import('xlsx')
-      const data = await file.arrayBuffer()
-      const wb = XLSX.read(data)
-      const ws = wb.Sheets[wb.SheetNames[0]]
-      const csv = XLSX.utils.sheet_to_csv(ws)
-      parseCSV(csv)
     }
   }
 
@@ -658,8 +641,8 @@ export default function ImportPage() {
           >
             <FileSpreadsheet className="w-12 h-12 text-gray-300 mx-auto mb-4" />
             <p className="text-sm font-semibold text-np-dark mb-1">Drop your file here or click to browse</p>
-            <p className="text-xs text-gray-400">Supports .csv, .tsv, .xlsx, .xls</p>
-            <input ref={fileRef} type="file" accept=".csv,.tsv,.xlsx,.xls" onChange={handleFileUpload} className="hidden" />
+            <p className="text-xs text-gray-400">Supports .csv and .tsv (export from Excel or Sheets as CSV)</p>
+            <input ref={fileRef} type="file" accept=".csv,.tsv" onChange={handleFileUpload} className="hidden" />
           </div>
 
           <div className="mt-6 grid grid-cols-2 gap-4">
