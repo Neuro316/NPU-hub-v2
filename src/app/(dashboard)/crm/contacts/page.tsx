@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import { fetchContacts, bulkUpdateContacts, createContact, fetchTeamMembers, fetchRelationshipTypes, createRelationship } from '@/lib/crm-client'
 import type { CrmContact, ContactSearchParams, TeamMember, RelationshipType } from '@/types/crm'
-import { PIPELINE_STAGES, STAGE_COLORS } from '@/types/crm'
+import { STAGE_COLORS } from '@/types/crm'
 import ContactDetail from '@/components/crm/contact-detail'
 import { useWorkspace } from '@/lib/workspace-context'
 
@@ -23,7 +23,7 @@ function ContactTag({ tag }: { tag: string }) {
 
 interface NewContactForm {
   first_name: string; last_name: string; email: string; phone: string
-  company: string; source: string; pipeline_stage: string; assigned_to: string
+  company: string; source: string; pipeline_id: string; pipeline_stage: string; assigned_to: string
   tags: string[]; newTag: string
   connect_to_id: string; connect_to_name: string; connect_type: string; connect_strength: number
   address_street: string; address_city: string; address_state: string; address_zip: string
@@ -34,7 +34,7 @@ interface NewContactForm {
   emergency_contact_name: string; emergency_contact_phone: string
 }
 const emptyForm: NewContactForm = {
-  first_name:'', last_name:'', email:'', phone:'', company:'', source:'', pipeline_stage:'', assigned_to:'',
+  first_name:'', last_name:'', email:'', phone:'', company:'', source:'', pipeline_id:'', pipeline_stage:'', assigned_to:'',
   tags:[], newTag:'', connect_to_id:'', connect_to_name:'', connect_type:'', connect_strength:3,
   address_street:'', address_city:'', address_state:'', address_zip:'', reason_for_contact:'',
   preferred_name:'', date_of_birth:'', timezone:'America/New_York', preferred_contact_method:'',
@@ -102,13 +102,13 @@ export default function ContactsPage() {
   }
 
   const handleCreate = async () => {
-    if (!form.first_name || !form.email || !currentOrg) return
+    if (!form.first_name || !currentOrg) return
     setCreating(true)
     try {
       const newContact = await createContact({
         org_id: currentOrg.id, first_name: form.first_name, last_name: form.last_name,
         email: form.email, phone: form.phone || undefined, source: form.source || undefined,
-        pipeline_stage: form.pipeline_stage || 'New Lead', assigned_to: form.assigned_to || undefined,
+        pipeline_stage: form.pipeline_stage || 'New Lead', pipeline_id: form.pipeline_id || undefined, assigned_to: form.assigned_to || undefined,
         tags: form.tags, custom_fields: form.company ? { company: form.company } : undefined,
         sms_consent: false, email_consent: true, do_not_contact: false,
         address_street: form.address_street || undefined, address_city: form.address_city || undefined,
@@ -160,7 +160,7 @@ export default function ContactsPage() {
         <select value={stageFilter} onChange={e => { setStageFilter(e.target.value); setPage(0) }}
           className="text-xs bg-white border border-gray-100 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-teal/30">
           <option value="">All Stages</option>
-          {PIPELINE_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+          {pipelineConfigs.flatMap((p: any) => p.stages || []).map((s: any) => <option key={s.name} value={s.name}>{s.name}</option>)}
         </select>
         <select value={tagFilter} onChange={e => { setTagFilter(e.target.value); setPage(0) }}
           className="text-xs bg-white border border-gray-100 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-teal/30">
@@ -301,9 +301,19 @@ export default function ContactsPage() {
                   <select value={form.source} onChange={e => setForm(p=>({...p,source:e.target.value}))} className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30">
                     <option value="">Select source</option>{SOURCE_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                   </select></div>
-                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Pipeline Stage</label>
+                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Pipeline</label>
+                  <select value={form.pipeline_id} onChange={e => {
+                    const pid = e.target.value
+                    const pl = pipelineConfigs.find((p: any) => p.id === pid)
+                    setForm(p => ({ ...p, pipeline_id: pid, pipeline_stage: pl?.stages?.[0]?.name || '' }))
+                  }} className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30">
+                    <option value="">No pipeline</option>
+                    {pipelineConfigs.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select></div>
+                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Stage</label>
                   <select value={form.pipeline_stage} onChange={e => setForm(p=>({...p,pipeline_stage:e.target.value}))} className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30">
-                    <option value="">Select stage</option>{PIPELINE_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+                    <option value="">Select stage</option>
+                    {(pipelineConfigs.find((p: any) => p.id === form.pipeline_id)?.stages || []).map((s: any) => <option key={s.name} value={s.name}>{s.name}</option>)}
                   </select></div>
               </div>
               <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Assigned To</label>
@@ -408,7 +418,7 @@ export default function ContactsPage() {
             </div>
             <div className="flex justify-end gap-2 mt-5">
               <button onClick={() => { setShowCreate(false); setForm(emptyForm) }} className="px-3 py-2 text-xs text-gray-400 hover:text-np-dark">Cancel</button>
-              <button onClick={handleCreate} disabled={!form.first_name || !form.email || creating}
+              <button onClick={handleCreate} disabled={!form.first_name || creating}
                 className="px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark disabled:opacity-40 transition-colors">
                 {creating ? 'Creating...' : 'Create Contact'}
               </button>

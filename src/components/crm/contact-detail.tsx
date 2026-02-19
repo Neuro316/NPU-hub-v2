@@ -797,43 +797,46 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
                     <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
                       <Target className="w-3 h-3" /> Pipeline
                     </h4>
-                    {/* Pipeline selector */}
-                    {pipelineConfigs.length > 1 && (
+                    <div className="grid grid-cols-2 gap-2">
+                      {/* Pipeline selector */}
                       <select
                         value={contact.pipeline_id || pipelineConfigs.find(p => p.is_default)?.id || ''}
                         onChange={async (e) => {
                           const pid = e.target.value
-                          const pipeline = pipelineConfigs.find(p => p.id === pid)
-                          const firstStage = pipeline?.stages?.[0]?.name || 'New Lead'
-                          await updateContact(contact.id, { pipeline_id: pid, pipeline_stage: firstStage } as any)
+                          if (!pid) {
+                            await updateContact(contact.id, { pipeline_id: null, pipeline_stage: null } as any)
+                          } else {
+                            const pipeline = pipelineConfigs.find(p => p.id === pid)
+                            const firstStage = pipeline?.stages?.[0]?.name || 'New Lead'
+                            await updateContact(contact.id, { pipeline_id: pid, pipeline_stage: firstStage } as any)
+                          }
                           load(); onUpdate?.()
                         }}
                         className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 bg-white"
                       >
+                        <option value="">No pipeline</option>
                         {pipelineConfigs.map(p => (
                           <option key={p.id} value={p.id}>{p.name}</option>
                         ))}
                       </select>
-                    )}
-                    {/* Stage buttons from active pipeline */}
-                    <div className="flex flex-wrap gap-1.5">
-                      {(() => {
-                        const contactPipeline = pipelineConfigs.find(p => p.id === contact.pipeline_id)
-                          || pipelineConfigs.find(p => p.is_default)
-                        const stages = contactPipeline?.stages?.map(s => s.name)
-                          || ['New Lead', 'Contacted', 'Qualified', 'Discovery', 'Proposal', 'Enrolled', 'Active', 'Graduated']
-                        return stages.map(stage => (
-                          <button key={stage}
-                            onClick={() => updateContact(contact.id, { pipeline_stage: stage }).then(() => { load(); onUpdate?.() })}
-                            className={`text-[9px] font-medium px-2.5 py-1 rounded-full border transition-all ${
-                              contact.pipeline_stage === stage
-                                ? 'bg-np-blue text-white border-np-blue'
-                                : 'bg-white text-gray-500 border-gray-200 hover:border-np-blue/30'
-                            }`}>
-                            {stage}
-                          </button>
-                        ))
-                      })()}
+                      {/* Stage selector */}
+                      <select
+                        value={contact.pipeline_stage || ''}
+                        onChange={async (e) => {
+                          await updateContact(contact.id, { pipeline_stage: e.target.value } as any)
+                          load(); onUpdate?.()
+                        }}
+                        className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 bg-white"
+                      >
+                        <option value="">No stage</option>
+                        {(() => {
+                          const contactPipeline = pipelineConfigs.find(p => p.id === contact.pipeline_id)
+                            || pipelineConfigs.find(p => p.is_default)
+                          return (contactPipeline?.stages || []).map(s => (
+                            <option key={s.name} value={s.name}>{s.name}</option>
+                          ))
+                        })()}
+                      </select>
                     </div>
                   </div>
 
