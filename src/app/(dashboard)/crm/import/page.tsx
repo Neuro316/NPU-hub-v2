@@ -165,9 +165,9 @@ export default function ImportPage() {
   useEffect(() => {
     if (!currentOrg) return
     const sb = createClient()
-    sb.from('org_settings').select('value').eq('org_id', currentOrg.id).eq('key', 'crm_pipelines').single()
+    sb.from('org_settings').select('setting_value').eq('org_id', currentOrg.id).eq('setting_key', 'crm_pipelines').maybeSingle()
       .then(({ data }: { data: any }) => {
-        if (data?.value) setPipelines(data.value)
+        if (data?.setting_value?.pipelines) setPipelines(data.setting_value.pipelines)
       })
   }, [currentOrg?.id])
 
@@ -175,31 +175,40 @@ export default function ImportPage() {
   // FILE PARSING
   // ═══════════════════════════════════════════════════════════════
   const parseCSV = (text: string) => {
-    const lines = text.split(/\r?\n/).filter(l => l.trim())
-    if (lines.length < 2) return
-    
-    // Handle quoted CSV fields
-    const parseLine = (line: string): string[] => {
-      const result: string[] = []
+    // Parse CSV handling multiline quoted fields
+    const parseFullCSV = (raw: string): string[][] => {
+      const rows: string[][] = []
       let current = ''
       let inQuotes = false
-      for (let i = 0; i < line.length; i++) {
-        const ch = line[i]
+      let row: string[] = []
+
+      for (let i = 0; i < raw.length; i++) {
+        const ch = raw[i]
         if (ch === '"') {
-          if (inQuotes && line[i + 1] === '"') { current += '"'; i++ }
+          if (inQuotes && raw[i + 1] === '"') { current += '"'; i++ }
           else inQuotes = !inQuotes
         } else if (ch === ',' && !inQuotes) {
-          result.push(current.trim()); current = ''
+          row.push(current.trim()); current = ''
+        } else if ((ch === '\n' || ch === '\r') && !inQuotes) {
+          if (ch === '\r' && raw[i + 1] === '\n') i++ // skip \r\n
+          row.push(current.trim())
+          if (row.some(c => c)) rows.push(row)
+          row = []; current = ''
         } else {
           current += ch
         }
       }
-      result.push(current.trim())
-      return result
+      // Last row
+      row.push(current.trim())
+      if (row.some(c => c)) rows.push(row)
+      return rows
     }
 
-    const headers = parseLine(lines[0])
-    const rows = lines.slice(1).map(l => parseLine(l)).filter(r => r.some(c => c))
+    const allRows = parseFullCSV(text)
+    if (allRows.length < 2) return
+
+    const headers = allRows[0]
+    const rows = allRows.slice(1)
     
     setRawHeaders(headers)
     setRawRows(rows)
