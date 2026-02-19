@@ -92,7 +92,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
   const [showAddConnection, setShowAddConnection] = useState(false)
   const [connForm, setConnForm] = useState({ to_contact_id: '', relationship_type: '', strength: 3, notes: '' })
   const [connSearch, setConnSearch] = useState('')
-  const [connSearchResults, setConnSearchResults] = useState<CrmContact[]>([])
+  const [allContacts, setAllContacts] = useState<CrmContact[]>([])
   const [connSearching, setConnSearching] = useState(false)
 
   const load = useCallback(async () => {
@@ -108,6 +108,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
       fetchCallLogs(contactId, 10).then(setCalls).catch(e => console.warn('Calls load skipped:', e))
       fetchContactRelationships(contactId).then(setRelationships).catch(e => console.warn('Relationships load skipped:', e))
       fetchRelationshipTypes(c.org_id).then(setRelTypes).catch(e => console.warn('RelTypes load skipped:', e))
+      fetchContacts({ limit: 200 }).then(res => setAllContacts(res.contacts.filter(ct => ct.id !== contactId))).catch(e => console.warn('Contacts load skipped:', e))
 
       // Load team members for RACI (status='active' matches actual DB column)
       supabase.from('team_profiles').select('*').eq('org_id', c.org_id).eq('status', 'active')
@@ -198,14 +199,13 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
 
   const handleConnSearch = async (q: string) => {
     setConnSearch(q)
-    if (q.length < 2) { setConnSearchResults([]); return }
-    setConnSearching(true)
-    try {
-      const res = await fetchContacts({ q, limit: 8 })
-      setConnSearchResults(res.contacts.filter(c => c.id !== contactId))
-    } catch (e) { console.error(e) }
-    setConnSearching(false)
   }
+
+  const filteredContacts = allContacts.filter(c => {
+    if (!connSearch) return true
+    const name = `${c.first_name} ${c.last_name}`.toLowerCase()
+    return name.includes(connSearch.toLowerCase())
+  })
 
   const handleAddConnection = async () => {
     if (!contact || !connForm.to_contact_id || !connForm.relationship_type) return
@@ -218,10 +218,8 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
         strength: connForm.strength,
         notes: connForm.notes || undefined,
       })
-      setShowAddConnection(false)
       setConnForm({ to_contact_id: '', relationship_type: '', strength: 3, notes: '' })
       setConnSearch('')
-      setConnSearchResults([])
       load()
     } catch (e) { console.error(e); alert('Failed to create connection') }
   }
@@ -487,7 +485,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
               {/* CONNECTIONS TAB */}
               {tab === 'connections' && (
                 <>
-                  <button onClick={() => setShowAddConnection(true)}
+                  <button onClick={() => setShowAddConnection(!showAddConnection)}
                     className="flex items-center gap-1.5 px-3 py-2 w-full border border-dashed border-gray-200 rounded-lg text-[10px] text-gray-400 hover:border-np-blue hover:text-np-blue transition-colors mb-3">
                     <Plus className="w-3 h-3" /> Add Connection
                   </button>
@@ -496,24 +494,28 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
                     <div className="bg-gray-50 rounded-xl p-3 mb-3 space-y-2.5 border border-gray-100">
                       <h5 className="text-[10px] font-bold text-np-dark">New Connection</h5>
                       <div>
-                        <label className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Search Contact</label>
-                        <input value={connSearch} onChange={e => handleConnSearch(e.target.value)}
-                          placeholder="Type to search contacts..."
-                          className="w-full mt-1 px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
-                        {connSearchResults.length > 0 && (
-                          <div className="mt-1 bg-white border border-gray-100 rounded-lg max-h-32 overflow-y-auto shadow-sm">
-                            {connSearchResults.map(c => (
-                              <button key={c.id} onClick={() => { setConnForm(p => ({ ...p, to_contact_id: c.id })); setConnSearch(`${c.first_name} ${c.last_name}`); setConnSearchResults([]) }}
-                                className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 flex items-center gap-2 ${connForm.to_contact_id === c.id ? 'bg-np-blue/5' : ''}`}>
-                                <div className="w-5 h-5 rounded-full bg-np-blue/10 flex items-center justify-center text-[8px] font-bold text-np-blue">
-                                  {c.first_name?.[0]}{c.last_name?.[0]}
-                                </div>
-                                {c.first_name} {c.last_name}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                        {connSearching && <p className="text-[9px] text-gray-400 mt-1">Searching...</p>}
+                        <label className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Contact</label>
+                        <input value={connSearch} onChange={e => setConnSearch(e.target.value)}
+                          placeholder="Filter contacts..."
+                          className="w-full mt-1 px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 mb-1" />
+                        <div className="bg-white border border-gray-100 rounded-lg max-h-36 overflow-y-auto">
+                          {filteredContacts.length === 0 ? (
+                            <p className="text-[9px] text-gray-400 text-center py-3">No contacts found</p>
+                          ) : filteredContacts.map(c => (
+                            <button key={c.id} onClick={() => setConnForm(p => ({ ...p, to_contact_id: c.id }))}
+                              className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 transition-colors ${
+                                connForm.to_contact_id === c.id ? 'bg-np-blue/10 text-np-blue font-medium' : 'hover:bg-gray-50'
+                              }`}>
+                              <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white ${
+                                connForm.to_contact_id === c.id ? 'bg-np-blue' : 'bg-gray-300'
+                              }`}>
+                                {c.first_name?.[0]}{c.last_name?.[0]}
+                              </div>
+                              {c.first_name} {c.last_name}
+                              {c.pipeline_stage && <span className="text-[8px] text-gray-400 ml-auto">{c.pipeline_stage}</span>}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                       <div>
                         <label className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Relationship</label>
@@ -540,10 +542,10 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
                           placeholder="Optional notes..." className="w-full mt-1 px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
                       </div>
                       <div className="flex justify-end gap-2 pt-1">
-                        <button onClick={() => { setShowAddConnection(false); setConnSearch(''); setConnSearchResults([]) }}
-                          className="px-3 py-1.5 text-[10px] text-gray-400 hover:text-np-dark">Cancel</button>
+                        <button onClick={() => { setShowAddConnection(false); setConnSearch(''); setConnForm({ to_contact_id: '', relationship_type: '', strength: 3, notes: '' }) }}
+                          className="px-3 py-1.5 text-[10px] text-gray-400 hover:text-np-dark">Done</button>
                         <button onClick={handleAddConnection} disabled={!connForm.to_contact_id || !connForm.relationship_type}
-                          className="px-3 py-1.5 bg-np-blue text-white text-[10px] font-medium rounded-lg disabled:opacity-40">Create</button>
+                          className="px-3 py-1.5 bg-np-blue text-white text-[10px] font-medium rounded-lg disabled:opacity-40">Add Connection</button>
                       </div>
                     </div>
                   )}
