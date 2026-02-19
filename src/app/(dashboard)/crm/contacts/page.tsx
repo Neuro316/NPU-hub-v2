@@ -4,8 +4,8 @@ import { useEffect, useState, useMemo, useCallback } from 'react'
 import {
   Search, Plus, Tag, X
 } from 'lucide-react'
-import { fetchContacts, bulkUpdateContacts, createContact, fetchTeamMembers } from '@/lib/crm-client'
-import type { CrmContact, ContactSearchParams, TeamMember } from '@/types/crm'
+import { fetchContacts, bulkUpdateContacts, createContact, fetchTeamMembers, fetchRelationshipTypes, createRelationship } from '@/lib/crm-client'
+import type { CrmContact, ContactSearchParams, TeamMember, RelationshipType } from '@/types/crm'
 import { PIPELINE_STAGES, STAGE_COLORS } from '@/types/crm'
 import ContactDetail from '@/components/crm/contact-detail'
 import { useWorkspace } from '@/lib/workspace-context'
@@ -25,8 +25,9 @@ interface NewContactForm {
   first_name: string; last_name: string; email: string; phone: string
   company: string; source: string; pipeline_stage: string; assigned_to: string
   tags: string[]; newTag: string
+  connect_to_id: string; connect_to_name: string; connect_type: string; connect_strength: number
 }
-const emptyForm: NewContactForm = { first_name:'', last_name:'', email:'', phone:'', company:'', source:'', pipeline_stage:'', assigned_to:'', tags:[], newTag:'' }
+const emptyForm: NewContactForm = { first_name:'', last_name:'', email:'', phone:'', company:'', source:'', pipeline_stage:'', assigned_to:'', tags:[], newTag:'', connect_to_id:'', connect_to_name:'', connect_type:'', connect_strength:3 }
 
 export default function ContactsPage() {
   const { currentOrg } = useWorkspace()
@@ -44,8 +45,12 @@ export default function ContactsPage() {
   const [form, setForm] = useState<NewContactForm>(emptyForm)
   const [creating, setCreating] = useState(false)
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
+  const [relTypes, setRelTypes] = useState<RelationshipType[]>([])
+  const [connSearchResults, setConnSearchResults] = useState<CrmContact[]>([])
+  const [connSearchQuery, setConnSearchQuery] = useState('')
 
   useEffect(() => { fetchTeamMembers().then(setTeamMembers).catch(console.error) }, [])
+  useEffect(() => { if (currentOrg) fetchRelationshipTypes(currentOrg.id).then(setRelTypes).catch(console.error) }, [currentOrg])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -75,20 +80,34 @@ export default function ContactsPage() {
     if (!form.first_name || !form.email || !currentOrg) return
     setCreating(true)
     try {
-      await createContact({
+      const newContact = await createContact({
         org_id: currentOrg.id, first_name: form.first_name, last_name: form.last_name,
         email: form.email, phone: form.phone || undefined, source: form.source || undefined,
         pipeline_stage: form.pipeline_stage || 'New Lead', assigned_to: form.assigned_to || undefined,
         tags: form.tags, custom_fields: form.company ? { company: form.company } : undefined,
         sms_consent: false, email_consent: true, do_not_contact: false,
       })
-      setShowCreate(false); setForm(emptyForm); load()
+      if (form.connect_to_id && form.connect_type && newContact?.id) {
+        await createRelationship({
+          org_id: currentOrg.id,
+          from_contact_id: newContact.id,
+          to_contact_id: form.connect_to_id,
+          relationship_type: form.connect_type,
+          strength: form.connect_strength,
+        }).catch(e => console.warn('Connection create skipped:', e))
+      }
+      setShowCreate(false); setForm(emptyForm); setConnSearchResults([]); setConnSearchQuery(''); load()
     } catch (e) { console.error(e); alert('Failed to create contact') }
     finally { setCreating(false) }
   }
 
   const addTag = () => { const t = form.newTag.trim(); if (t && !form.tags.includes(t)) setForm(p => ({ ...p, tags: [...p.tags, t], newTag: '' })) }
   const removeTag = (t: string) => setForm(p => ({ ...p, tags: p.tags.filter(x => x !== t) }))
+  const handleConnSearchInForm = async (q: string) => {
+    setConnSearchQuery(q)
+    if (q.length < 2) { setConnSearchResults([]); return }
+    try { const res = await fetchContacts({ q, limit: 6 }); setConnSearchResults(res.contacts) } catch (e) { console.error(e) }
+  }
 
   const allTags = useMemo(() => {
     const tags = new Set<string>(); contacts.forEach(c => c.tags?.forEach(t => tags.add(t))); return Array.from(tags).sort()
@@ -244,6 +263,37 @@ export default function ContactsPage() {
                   <input value={form.newTag} onChange={e => setForm(p=>({...p,newTag:e.target.value}))} onKeyDown={e => e.key==='Enter' && (e.preventDefault(),addTag())} placeholder="Add tag..." className="flex-1 px-3 py-1.5 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" />
                   <button onClick={addTag} className="px-2 py-1.5 text-xs bg-gray-50 border border-gray-100 rounded-lg hover:bg-gray-100">Add</button>
                 </div>
+              </div>
+              <div className="border-t border-gray-100 pt-3">
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Connect To Existing Contact</label>
+                <div className="relative mt-1">
+                  <input value={connSearchQuery} onChange={e => handleConnSearchInForm(e.target.value)}
+                    placeholder="Search contacts to connect..." className="w-full px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" />
+                  {connSearchResults.length > 0 && (
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-100 rounded-lg max-h-32 overflow-y-auto shadow-lg z-10">
+                      {connSearchResults.map(c => (
+                        <button key={c.id} onClick={() => { setForm(p=>({...p,connect_to_id:c.id,connect_to_name:`${c.first_name} ${c.last_name}`})); setConnSearchQuery(`${c.first_name} ${c.last_name}`); setConnSearchResults([]) }}
+                          className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 flex items-center gap-2">
+                          <div className="w-5 h-5 rounded-full bg-np-blue/10 flex items-center justify-center text-[8px] font-bold text-np-blue">{c.first_name?.[0]}{c.last_name?.[0]}</div>
+                          {c.first_name} {c.last_name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {form.connect_to_id && (
+                  <div className="mt-2 space-y-2">
+                    <div className="flex items-center gap-2 px-2 py-1.5 bg-np-blue/5 rounded-lg">
+                      <span className="text-[10px] font-medium text-np-blue">{form.connect_to_name}</span>
+                      <button onClick={() => { setForm(p=>({...p,connect_to_id:'',connect_to_name:'',connect_type:''})); setConnSearchQuery('') }} className="text-gray-400 hover:text-red-500"><X size={10} /></button>
+                    </div>
+                    <select value={form.connect_type} onChange={e => setForm(p=>({...p,connect_type:e.target.value}))}
+                      className="w-full px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30">
+                      <option value="">Select relationship...</option>
+                      {relTypes.map(rt => <option key={rt.id} value={rt.name}>{rt.label}</option>)}
+                    </select>
+                  </div>
+                )}
               </div>
             </div>
             <div className="flex justify-end gap-2 mt-5">

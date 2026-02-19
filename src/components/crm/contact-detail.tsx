@@ -6,14 +6,16 @@ import {
   X, Phone, Mail, MessageCircle, Tag, Clock, CheckCircle2, AlertTriangle,
   TrendingUp, Send, Pencil, Trash2, Plus, User, Activity, Brain,
   Route, Target, Calendar, FileText, Sparkles, ChevronRight, Heart,
-  ArrowRightLeft, GraduationCap, BarChart3, Shield, ExternalLink, Paperclip
+  ArrowRightLeft, GraduationCap, BarChart3, Shield, ExternalLink, Paperclip, GitBranch
 } from 'lucide-react'
 import {
   fetchContact, updateContact, fetchNotes, createNote,
   fetchActivityLog, fetchTasks, updateTask, fetchLifecycleEvents,
-  fetchCallLogs, fetchConversations, fetchMessages
+  fetchCallLogs, fetchConversations, fetchMessages,
+  fetchContactRelationships, createRelationship, deleteRelationship,
+  fetchRelationshipTypes, fetchContacts
 } from '@/lib/crm-client'
-import type { CrmContact, ContactNote, CrmTask, CallLog, ActivityLogEntry, TeamMember } from '@/types/crm'
+import type { CrmContact, ContactNote, CrmTask, CallLog, ActivityLogEntry, TeamMember, ContactRelationship, RelationshipType } from '@/types/crm'
 import { ContactCommsButtons } from '@/components/crm/twilio-comms'
 import { CrmTaskCard, CrmTaskDetail } from '@/components/crm/crm-task-card'
 import ContactCommPanel from '@/components/crm/contact-comm-panel'
@@ -70,7 +72,7 @@ interface ContactDetailProps {
 export default function ContactDetail({ contactId, onClose, onUpdate }: ContactDetailProps) {
   const supabase = createClient()
   const [contact, setContact] = useState<CrmContact | null>(null)
-  const [tab, setTab] = useState<'overview' | 'timeline' | 'tasks' | 'notes' | 'comms' | 'stats'>('overview')
+  const [tab, setTab] = useState<'overview' | 'connections' | 'timeline' | 'tasks' | 'notes' | 'comms' | 'stats'>('overview')
   const [timeline, setTimeline] = useState<TimelineEvent[]>([])
   const [notes, setNotes] = useState<ContactNote[]>([])
   const [tasks, setTasks] = useState<CrmTask[]>([])
@@ -85,6 +87,13 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
   const [showTaskCreate, setShowTaskCreate] = useState(false)
   const [selectedTask, setSelectedTask] = useState<CrmTask | null>(null)
   const [showEmailComposer, setShowEmailComposer] = useState(false)
+  const [relationships, setRelationships] = useState<ContactRelationship[]>([])
+  const [relTypes, setRelTypes] = useState<RelationshipType[]>([])
+  const [showAddConnection, setShowAddConnection] = useState(false)
+  const [connForm, setConnForm] = useState({ to_contact_id: '', relationship_type: '', strength: 3, notes: '' })
+  const [connSearch, setConnSearch] = useState('')
+  const [connSearchResults, setConnSearchResults] = useState<CrmContact[]>([])
+  const [connSearching, setConnSearching] = useState(false)
 
   const load = useCallback(async () => {
     if (!contactId) return
@@ -97,6 +106,8 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
       fetchNotes(contactId).then(setNotes).catch(e => console.warn('Notes load skipped:', e))
       fetchTasks({ contact_id: contactId }).then(setTasks).catch(e => console.warn('Tasks load skipped:', e))
       fetchCallLogs(contactId, 10).then(setCalls).catch(e => console.warn('Calls load skipped:', e))
+      fetchContactRelationships(contactId).then(setRelationships).catch(e => console.warn('Relationships load skipped:', e))
+      fetchRelationshipTypes(c.org_id).then(setRelTypes).catch(e => console.warn('RelTypes load skipped:', e))
 
       // Load team members for RACI (status='active' matches actual DB column)
       supabase.from('team_profiles').select('*').eq('org_id', c.org_id).eq('status', 'active')
@@ -185,8 +196,44 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
     setSelectedTask(prev => prev?.id === id ? { ...prev, ...updates } : prev)
   }
 
+  const handleConnSearch = async (q: string) => {
+    setConnSearch(q)
+    if (q.length < 2) { setConnSearchResults([]); return }
+    setConnSearching(true)
+    try {
+      const res = await fetchContacts({ q, limit: 8 })
+      setConnSearchResults(res.contacts.filter(c => c.id !== contactId))
+    } catch (e) { console.error(e) }
+    setConnSearching(false)
+  }
+
+  const handleAddConnection = async () => {
+    if (!contact || !connForm.to_contact_id || !connForm.relationship_type) return
+    try {
+      await createRelationship({
+        org_id: contact.org_id,
+        from_contact_id: contact.id,
+        to_contact_id: connForm.to_contact_id,
+        relationship_type: connForm.relationship_type,
+        strength: connForm.strength,
+        notes: connForm.notes || undefined,
+      })
+      setShowAddConnection(false)
+      setConnForm({ to_contact_id: '', relationship_type: '', strength: 3, notes: '' })
+      setConnSearch('')
+      setConnSearchResults([])
+      load()
+    } catch (e) { console.error(e); alert('Failed to create connection') }
+  }
+
+  const handleDeleteConnection = async (relId: string) => {
+    try { await deleteRelationship(relId); load() }
+    catch (e) { console.error(e) }
+  }
+
   const TABS = [
     { key: 'overview', label: 'Overview', icon: User },
+    { key: 'connections', label: 'Connections', icon: GitBranch },
     { key: 'timeline', label: 'Timeline', icon: Activity },
     { key: 'tasks', label: 'Tasks', icon: CheckCircle2 },
     { key: 'notes', label: 'Notes', icon: FileText },
@@ -434,6 +481,107 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
                       </div>
                     </div>
                   </div>
+                </>
+              )}
+
+              {/* CONNECTIONS TAB */}
+              {tab === 'connections' && (
+                <>
+                  <button onClick={() => setShowAddConnection(true)}
+                    className="flex items-center gap-1.5 px-3 py-2 w-full border border-dashed border-gray-200 rounded-lg text-[10px] text-gray-400 hover:border-np-blue hover:text-np-blue transition-colors mb-3">
+                    <Plus className="w-3 h-3" /> Add Connection
+                  </button>
+
+                  {showAddConnection && (
+                    <div className="bg-gray-50 rounded-xl p-3 mb-3 space-y-2.5 border border-gray-100">
+                      <h5 className="text-[10px] font-bold text-np-dark">New Connection</h5>
+                      <div>
+                        <label className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Search Contact</label>
+                        <input value={connSearch} onChange={e => handleConnSearch(e.target.value)}
+                          placeholder="Type to search contacts..."
+                          className="w-full mt-1 px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                        {connSearchResults.length > 0 && (
+                          <div className="mt-1 bg-white border border-gray-100 rounded-lg max-h-32 overflow-y-auto shadow-sm">
+                            {connSearchResults.map(c => (
+                              <button key={c.id} onClick={() => { setConnForm(p => ({ ...p, to_contact_id: c.id })); setConnSearch(`${c.first_name} ${c.last_name}`); setConnSearchResults([]) }}
+                                className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 flex items-center gap-2 ${connForm.to_contact_id === c.id ? 'bg-np-blue/5' : ''}`}>
+                                <div className="w-5 h-5 rounded-full bg-np-blue/10 flex items-center justify-center text-[8px] font-bold text-np-blue">
+                                  {c.first_name?.[0]}{c.last_name?.[0]}
+                                </div>
+                                {c.first_name} {c.last_name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        {connSearching && <p className="text-[9px] text-gray-400 mt-1">Searching...</p>}
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Relationship</label>
+                        <select value={connForm.relationship_type} onChange={e => setConnForm(p => ({ ...p, relationship_type: e.target.value }))}
+                          className="w-full mt-1 px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30">
+                          <option value="">Select type...</option>
+                          {relTypes.map(rt => <option key={rt.id} value={rt.name}>{rt.label}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Strength</label>
+                        <div className="flex gap-1 mt-1">
+                          {[1,2,3,4,5].map(s => (
+                            <button key={s} onClick={() => setConnForm(p => ({ ...p, strength: s }))}
+                              className={`w-7 h-7 rounded text-[10px] font-bold ${connForm.strength >= s ? 'bg-np-blue text-white' : 'bg-gray-100 text-gray-400'}`}>
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Notes</label>
+                        <input value={connForm.notes} onChange={e => setConnForm(p => ({ ...p, notes: e.target.value }))}
+                          placeholder="Optional notes..." className="w-full mt-1 px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                      </div>
+                      <div className="flex justify-end gap-2 pt-1">
+                        <button onClick={() => { setShowAddConnection(false); setConnSearch(''); setConnSearchResults([]) }}
+                          className="px-3 py-1.5 text-[10px] text-gray-400 hover:text-np-dark">Cancel</button>
+                        <button onClick={handleAddConnection} disabled={!connForm.to_contact_id || !connForm.relationship_type}
+                          className="px-3 py-1.5 bg-np-blue text-white text-[10px] font-medium rounded-lg disabled:opacity-40">Create</button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    {relationships.map(rel => {
+                      const isFrom = rel.from_contact_id === contactId
+                      const other = isFrom ? (rel as any).to_contact : (rel as any).from_contact
+                      const rtConfig = relTypes.find(rt => rt.name === rel.relationship_type)
+                      const label = isFrom ? (rtConfig?.label || rel.relationship_type) : (rtConfig?.reverse_label || rtConfig?.label || rel.relationship_type)
+                      if (!other) return null
+                      return (
+                        <div key={rel.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-gray-50 group">
+                          <div className="w-8 h-8 rounded-full flex items-center justify-center text-[9px] font-bold text-white"
+                            style={{ backgroundColor: rtConfig?.color || '#6366f1' }}>
+                            {other.first_name?.[0]}{other.last_name?.[0]}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[11px] font-medium text-np-dark">{other.first_name} {other.last_name}</p>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full" style={{ backgroundColor: (rtConfig?.color || '#6366f1') + '18', color: rtConfig?.color || '#6366f1' }}>
+                                {label}
+                              </span>
+                              <span className="text-[8px] text-gray-400">Strength {rel.strength}/5</span>
+                              {rel.notes && <span className="text-[8px] text-gray-400 truncate max-w-[100px]">{rel.notes}</span>}
+                            </div>
+                          </div>
+                          <button onClick={() => handleDeleteConnection(rel.id)}
+                            className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-50 text-gray-300 hover:text-red-500 transition-all">
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {relationships.length === 0 && !showAddConnection && (
+                    <p className="text-center text-[10px] text-gray-400 py-8">No connections yet. Add one above.</p>
+                  )}
                 </>
               )}
 
