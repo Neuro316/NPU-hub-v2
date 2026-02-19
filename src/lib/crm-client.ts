@@ -529,13 +529,15 @@ export async function fetchRelationshipTypes(orgId?: string) {
 
 export async function fetchNetworkGraph(orgId: string): Promise<NetworkGraphData> {
   const sb = supabase()
-  const [contactsRes, relsRes, scoresRes] = await Promise.all([
+  const [contactsRes, relsRes, scoresRes, typesRes] = await Promise.all([
     sb.from('contacts').select('id,first_name,last_name,tags,pipeline_stage,last_contacted_at,phone,email,address_city,address_state,preferred_name,reason_for_contact,occupation,instagram_handle,linkedin_url').eq('org_id', orgId).is('merged_into_id', null),
-    sb.from('contact_relationships').select('*, type_config:relationship_types(*)').eq('org_id', orgId),
+    sb.from('contact_relationships').select('*').eq('org_id', orgId),
     sb.from('contact_interaction_score').select('*').eq('org_id', orgId),
+    sb.from('relationship_types').select('*').eq('org_id', orgId),
   ])
 
   const scoreMap = new Map((scoresRes.data || []).map((s: any) => [s.contact_id, s]))
+  const typeMap = new Map((typesRes.data || []).map((t: any) => [t.name, t]))
 
   const nodes: NetworkNode[] = (contactsRes.data || []).map((c: any) => {
     const score = scoreMap.get(c.id) as any
@@ -557,12 +559,26 @@ export async function fetchNetworkGraph(orgId: string): Promise<NetworkGraphData
     }
   })
 
-  const edges: NetworkEdge[] = (relsRes.data || []).map((r: any) => ({
-    id: r.id, from: r.from_contact_id, to: r.to_contact_id,
-    type: r.relationship_type,
-    label: r.type_config?.label || r.relationship_type,
-    strength: r.strength, color: r.type_config?.color,
-  }))
+  const edges: NetworkEdge[] = (relsRes.data || []).map((r: any) => {
+    const typeConfig = typeMap.get(r.relationship_type)
+    return {
+      id: r.id, from: r.from_contact_id, to: r.to_contact_id,
+      type: r.relationship_type,
+      label: typeConfig?.label || r.relationship_type,
+      strength: r.strength, color: typeConfig?.color,
+    }
+  })
+
+  // Recompute relationship counts from actual edges (scores table may be stale)
+  const edgeCounts = new Map<string, number>()
+  edges.forEach(e => {
+    edgeCounts.set(e.from, (edgeCounts.get(e.from) || 0) + 1)
+    edgeCounts.set(e.to, (edgeCounts.get(e.to) || 0) + 1)
+  })
+  nodes.forEach(n => {
+    const fromEdges = edgeCounts.get(n.id) || 0
+    if (fromEdges > n.relationship_count) n.relationship_count = fromEdges
+  })
 
   const clusters = detectClusters(nodes, edges)
   return { nodes, edges, clusters }
