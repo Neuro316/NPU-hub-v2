@@ -42,6 +42,12 @@ export interface CrmContact {
   mastermind_status?: 'prospect' | 'enrolled' | 'active' | 'completed' | 'graduated' | 'alumni' | null
   // Sensorium EHR (future)
   ehr_patient_id?: string | null
+  // Contact card fields
+  address_street?: string | null
+  address_city?: string | null
+  address_state?: string | null
+  address_zip?: string | null
+  reason_for_contact?: string | null
 }
 
 export interface TeamMember {

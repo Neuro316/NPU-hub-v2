@@ -26,8 +26,9 @@ interface NewContactForm {
   company: string; source: string; pipeline_stage: string; assigned_to: string
   tags: string[]; newTag: string
   connect_to_id: string; connect_to_name: string; connect_type: string; connect_strength: number
+  address_street: string; address_city: string; address_state: string; address_zip: string; reason_for_contact: string
 }
-const emptyForm: NewContactForm = { first_name:'', last_name:'', email:'', phone:'', company:'', source:'', pipeline_stage:'', assigned_to:'', tags:[], newTag:'', connect_to_id:'', connect_to_name:'', connect_type:'', connect_strength:3 }
+const emptyForm: NewContactForm = { first_name:'', last_name:'', email:'', phone:'', company:'', source:'', pipeline_stage:'', assigned_to:'', tags:[], newTag:'', connect_to_id:'', connect_to_name:'', connect_type:'', connect_strength:3, address_street:'', address_city:'', address_state:'', address_zip:'', reason_for_contact:'' }
 
 export default function ContactsPage() {
   const { currentOrg } = useWorkspace()
@@ -86,7 +87,12 @@ export default function ContactsPage() {
         pipeline_stage: form.pipeline_stage || 'New Lead', assigned_to: form.assigned_to || undefined,
         tags: form.tags, custom_fields: form.company ? { company: form.company } : undefined,
         sms_consent: false, email_consent: true, do_not_contact: false,
-      })
+        address_street: form.address_street || undefined,
+        address_city: form.address_city || undefined,
+        address_state: form.address_state || undefined,
+        address_zip: form.address_zip || undefined,
+        reason_for_contact: form.reason_for_contact || undefined,
+      } as any)
       if (form.connect_to_id && form.connect_type && newContact?.id) {
         await createRelationship({
           org_id: currentOrg.id,
@@ -254,6 +260,17 @@ export default function ContactsPage() {
                 <select value={form.assigned_to} onChange={e => setForm(p=>({...p,assigned_to:e.target.value}))} className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30">
                   <option value="">Unassigned</option>{teamMembers.map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
                 </select></div>
+              <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Primary Reason for Contact</label>
+                <input value={form.reason_for_contact} onChange={e => setForm(p=>({...p,reason_for_contact:e.target.value}))} placeholder="e.g. Interested in Immersive Mastermind" className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
+              <div>
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Mailing Address</label>
+                <input value={form.address_street} onChange={e => setForm(p=>({...p,address_street:e.target.value}))} placeholder="Street" className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" />
+                <div className="grid grid-cols-3 gap-2 mt-1.5">
+                  <input value={form.address_city} onChange={e => setForm(p=>({...p,address_city:e.target.value}))} placeholder="City" className="px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" />
+                  <input value={form.address_state} onChange={e => setForm(p=>({...p,address_state:e.target.value}))} placeholder="State" className="px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" />
+                  <input value={form.address_zip} onChange={e => setForm(p=>({...p,address_zip:e.target.value}))} placeholder="Zip" className="px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" />
+                </div>
+              </div>
               <div>
                 <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Tags</label>
                 <div className="flex gap-1 flex-wrap mt-1 mb-1.5">

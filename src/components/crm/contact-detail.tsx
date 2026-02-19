@@ -6,7 +6,7 @@ import {
   X, Phone, Mail, MessageCircle, Tag, Clock, CheckCircle2, AlertTriangle,
   TrendingUp, Send, Pencil, Trash2, Plus, User, Activity, Brain,
   Route, Target, Calendar, FileText, Sparkles, ChevronRight, Heart,
-  ArrowRightLeft, GraduationCap, BarChart3, Shield, ExternalLink, Paperclip, GitBranch
+  ArrowRightLeft, GraduationCap, BarChart3, Shield, ExternalLink, Paperclip, GitBranch, MapPin, ChevronDown
 } from 'lucide-react'
 import {
   fetchContact, updateContact, fetchNotes, createNote,
@@ -94,6 +94,10 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
   const [connSearch, setConnSearch] = useState('')
   const [allContacts, setAllContacts] = useState<CrmContact[]>([])
   const [connSearching, setConnSearching] = useState(false)
+  const [expandedComm, setExpandedComm] = useState<'calls' | 'texts' | 'emails' | null>(null)
+  const [conversations, setConversations] = useState<any[]>([])
+  const [editingInfo, setEditingInfo] = useState(false)
+  const [infoForm, setInfoForm] = useState({ address_street: '', address_city: '', address_state: '', address_zip: '', reason_for_contact: '' })
 
   const load = useCallback(async () => {
     if (!contactId) return
@@ -101,11 +105,21 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
     try {
       const c = await fetchContact(contactId)
       setContact(c)
+      setInfoForm({
+        address_street: c.address_street || '',
+        address_city: c.address_city || '',
+        address_state: c.address_state || '',
+        address_zip: c.address_zip || '',
+        reason_for_contact: c.reason_for_contact || '',
+      })
 
       // Load supplemental data independently
       fetchNotes(contactId).then(setNotes).catch(e => console.warn('Notes load skipped:', e))
       fetchTasks({ contact_id: contactId }).then(setTasks).catch(e => console.warn('Tasks load skipped:', e))
-      fetchCallLogs(contactId, 10).then(setCalls).catch(e => console.warn('Calls load skipped:', e))
+      fetchCallLogs(contactId, 20).then(setCalls).catch(e => console.warn('Calls load skipped:', e))
+      fetchConversations().then(convs => {
+        setConversations(convs.filter(cv => cv.contact_id === contactId))
+      }).catch(e => console.warn('Conversations load skipped:', e))
       fetchContactRelationships(contactId).then(setRelationships).catch(e => console.warn('Relationships load skipped:', e))
       fetchRelationshipTypes(c.org_id).then(setRelTypes).catch(e => console.warn('RelTypes load skipped:', e))
       fetchContacts({ limit: 200 }).then(res => setAllContacts(res.contacts.filter(ct => ct.id !== contactId))).catch(e => console.warn('Contacts load skipped:', e))
@@ -229,6 +243,22 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
     catch (e) { console.error(e) }
   }
 
+  const handleSaveInfo = async () => {
+    if (!contact) return
+    try {
+      await updateContact(contact.id, {
+        address_street: infoForm.address_street || null,
+        address_city: infoForm.address_city || null,
+        address_state: infoForm.address_state || null,
+        address_zip: infoForm.address_zip || null,
+        reason_for_contact: infoForm.reason_for_contact || null,
+      } as any)
+      setEditingInfo(false)
+      load()
+      onUpdate?.()
+    } catch (e) { console.error(e) }
+  }
+
   const TABS = [
     { key: 'overview', label: 'Overview', icon: User },
     { key: 'connections', label: 'Connections', icon: GitBranch },
@@ -320,6 +350,100 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
               {/* OVERVIEW TAB */}
               {tab === 'overview' && (
                 <>
+                  {/* Contact Info Card */}
+                  <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
+                    {contact.phone && (
+                      <div className="flex items-center gap-3 px-3 py-2.5">
+                        <Phone className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
+                        <div className="flex-1">
+                          <p className="text-[9px] text-gray-400 uppercase tracking-wider">Phone</p>
+                          <p className="text-[12px] font-medium text-np-dark">{contact.phone}</p>
+                        </div>
+                      </div>
+                    )}
+                    {contact.email && (
+                      <div className="flex items-center gap-3 px-3 py-2.5">
+                        <Mail className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                        <div className="flex-1">
+                          <p className="text-[9px] text-gray-400 uppercase tracking-wider">Email</p>
+                          <p className="text-[12px] font-medium text-np-dark">{contact.email}</p>
+                        </div>
+                      </div>
+                    )}
+                    {(contact.address_street || contact.address_city) && (
+                      <div className="flex items-center gap-3 px-3 py-2.5">
+                        <MapPin className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+                        <div className="flex-1">
+                          <p className="text-[9px] text-gray-400 uppercase tracking-wider">Address</p>
+                          <p className="text-[12px] font-medium text-np-dark">
+                            {[contact.address_street, contact.address_city, contact.address_state, contact.address_zip].filter(Boolean).join(', ')}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {contact.reason_for_contact && (
+                      <div className="flex items-center gap-3 px-3 py-2.5">
+                        <Target className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" />
+                        <div className="flex-1">
+                          <p className="text-[9px] text-gray-400 uppercase tracking-wider">Primary Reason</p>
+                          <p className="text-[12px] font-medium text-np-dark">{contact.reason_for_contact}</p>
+                        </div>
+                      </div>
+                    )}
+                    {contact.custom_fields?.company && (
+                      <div className="flex items-center gap-3 px-3 py-2.5">
+                        <User className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                        <div className="flex-1">
+                          <p className="text-[9px] text-gray-400 uppercase tracking-wider">Company</p>
+                          <p className="text-[12px] font-medium text-np-dark">{contact.custom_fields.company as string}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Edit Info */}
+                  {!editingInfo ? (
+                    <button onClick={() => setEditingInfo(true)}
+                      className="flex items-center gap-1 text-[9px] text-gray-400 hover:text-np-blue transition-colors">
+                      <Pencil className="w-2.5 h-2.5" /> Edit address & reason
+                    </button>
+                  ) : (
+                    <div className="bg-gray-50 rounded-xl p-3 space-y-2 border border-gray-100">
+                      <div>
+                        <label className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Street</label>
+                        <input value={infoForm.address_street} onChange={e => setInfoForm(p => ({ ...p, address_street: e.target.value }))}
+                          className="w-full mt-0.5 px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">City</label>
+                          <input value={infoForm.address_city} onChange={e => setInfoForm(p => ({ ...p, address_city: e.target.value }))}
+                            className="w-full mt-0.5 px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">State</label>
+                          <input value={infoForm.address_state} onChange={e => setInfoForm(p => ({ ...p, address_state: e.target.value }))}
+                            className="w-full mt-0.5 px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Zip</label>
+                          <input value={infoForm.address_zip} onChange={e => setInfoForm(p => ({ ...p, address_zip: e.target.value }))}
+                            className="w-full mt-0.5 px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Primary Reason for Contact</label>
+                        <input value={infoForm.reason_for_contact} onChange={e => setInfoForm(p => ({ ...p, reason_for_contact: e.target.value }))}
+                          placeholder="e.g. Interested in Immersive Mastermind"
+                          className="w-full mt-0.5 px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                      </div>
+                      <div className="flex justify-end gap-2 pt-1">
+                        <button onClick={() => setEditingInfo(false)} className="px-2.5 py-1 text-[10px] text-gray-400">Cancel</button>
+                        <button onClick={handleSaveInfo} className="px-2.5 py-1 bg-np-blue text-white text-[10px] font-medium rounded-lg">Save</button>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Attribution */}
                   {(contact.acquisition_source || contact.acquisition_campaign) && (
                     <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-xl p-3 border border-purple-100/50">
@@ -332,9 +456,6 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
                         )}
                         {contact.acquisition_campaign && (
                           <div className="text-[10px]"><span className="text-gray-400">Campaign:</span> <span className="font-medium text-np-dark">{contact.acquisition_campaign}</span></div>
-                        )}
-                        {contact.acquisition_utm && (
-                          <div className="text-[10px]"><span className="text-gray-400">UTM:</span> <span className="font-mono text-gray-500">{JSON.stringify(contact.acquisition_utm)}</span></div>
                         )}
                       </div>
                     </div>
@@ -353,10 +474,6 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
                         }}>
                           {mastermind?.label || 'Unknown'}
                         </span>
-                        <Link href={`/crm/contacts?id=${contact.id}&view=mastermind`}
-                          className="text-[10px] text-emerald-600 hover:underline flex items-center gap-0.5">
-                          View program data <ChevronRight className="w-3 h-3" />
-                        </Link>
                       </div>
                     </div>
                   )}
@@ -381,28 +498,96 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
                     </div>
                   </div>
 
-                  {/* Recent Activity — LIVE COUNTERS */}
+                  {/* Clickable Communication Counters */}
                   <div className="space-y-2">
                     <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
                       <Activity className="w-3 h-3" /> Communication Activity
                     </h4>
                     <div className="grid grid-cols-3 gap-2">
-                      <div className="bg-green-50/50 rounded-lg p-2.5 text-center border border-green-100/50">
+                      <button onClick={() => setExpandedComm(expandedComm === 'calls' ? null : 'calls')}
+                        className={`rounded-lg p-2.5 text-center border transition-all ${expandedComm === 'calls' ? 'bg-green-100 border-green-300 ring-1 ring-green-200' : 'bg-green-50/50 border-green-100/50 hover:bg-green-100/50'}`}>
                         <Phone className="w-3.5 h-3.5 mx-auto text-green-500 mb-1" />
                         <p className="text-lg font-bold text-np-dark">{(contact as any).total_calls || 0}</p>
                         <p className="text-[9px] text-gray-400">Calls</p>
-                      </div>
-                      <div className="bg-blue-50/50 rounded-lg p-2.5 text-center border border-blue-100/50">
+                      </button>
+                      <button onClick={() => setExpandedComm(expandedComm === 'texts' ? null : 'texts')}
+                        className={`rounded-lg p-2.5 text-center border transition-all ${expandedComm === 'texts' ? 'bg-blue-100 border-blue-300 ring-1 ring-blue-200' : 'bg-blue-50/50 border-blue-100/50 hover:bg-blue-100/50'}`}>
                         <MessageCircle className="w-3.5 h-3.5 mx-auto text-blue-500 mb-1" />
                         <p className="text-lg font-bold text-np-dark">{(contact as any).total_texts || 0}</p>
                         <p className="text-[9px] text-gray-400">Texts</p>
-                      </div>
-                      <div className="bg-amber-50/50 rounded-lg p-2.5 text-center border border-amber-100/50">
+                      </button>
+                      <button onClick={() => setExpandedComm(expandedComm === 'emails' ? null : 'emails')}
+                        className={`rounded-lg p-2.5 text-center border transition-all ${expandedComm === 'emails' ? 'bg-amber-100 border-amber-300 ring-1 ring-amber-200' : 'bg-amber-50/50 border-amber-100/50 hover:bg-amber-100/50'}`}>
                         <Mail className="w-3.5 h-3.5 mx-auto text-amber-500 mb-1" />
                         <p className="text-lg font-bold text-np-dark">{(contact as any).total_emails || 0}</p>
                         <p className="text-[9px] text-gray-400">Emails</p>
-                      </div>
+                      </button>
                     </div>
+
+                    {/* Expanded Call History */}
+                    {expandedComm === 'calls' && (
+                      <div className="bg-green-50/30 rounded-xl p-2 space-y-1.5 border border-green-100/50 max-h-48 overflow-y-auto">
+                        <p className="text-[9px] font-bold text-green-600 uppercase tracking-wider px-1">Call History</p>
+                        {calls.length === 0 ? (
+                          <p className="text-[10px] text-gray-400 text-center py-3">No calls recorded</p>
+                        ) : calls.map(call => (
+                          <div key={call.id} className="flex items-center gap-2 px-2 py-1.5 bg-white rounded-lg">
+                            <div className={`w-5 h-5 rounded-full flex items-center justify-center ${call.direction === 'inbound' ? 'bg-green-100' : 'bg-blue-100'}`}>
+                              <Phone className={`w-2.5 h-2.5 ${call.direction === 'inbound' ? 'text-green-600' : 'text-blue-600'}`} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[10px] font-medium text-np-dark">
+                                {call.direction === 'inbound' ? 'Inbound' : 'Outbound'}
+                                {(call.duration_seconds ?? 0) > 0 && ` · ${Math.floor((call.duration_seconds ?? 0) / 60)}:${String((call.duration_seconds ?? 0) % 60).padStart(2, '0')}`}
+                              </p>
+                              {call.ai_summary && <p className="text-[9px] text-gray-400 truncate">{call.ai_summary}</p>}
+                            </div>
+                            <span className="text-[8px] text-gray-300 flex-shrink-0">{new Date(call.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Expanded Text History */}
+                    {expandedComm === 'texts' && (
+                      <div className="bg-blue-50/30 rounded-xl p-2 space-y-1.5 border border-blue-100/50 max-h-48 overflow-y-auto">
+                        <p className="text-[9px] font-bold text-blue-600 uppercase tracking-wider px-1">Text Messages</p>
+                        {conversations.filter(cv => cv.channel === 'sms').length === 0 ? (
+                          <p className="text-[10px] text-gray-400 text-center py-3">No text messages</p>
+                        ) : conversations.filter(cv => cv.channel === 'sms').map(cv => (
+                          <Link key={cv.id} href={`/crm/conversations?id=${cv.id}`}
+                            className="flex items-center gap-2 px-2 py-1.5 bg-white rounded-lg hover:bg-blue-50/50 transition-colors">
+                            <MessageCircle className="w-3 h-3 text-blue-500 flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[10px] font-medium text-np-dark">{cv.unread_count > 0 ? `${cv.unread_count} unread` : 'View thread'}</p>
+                            </div>
+                            <span className="text-[8px] text-gray-300">{cv.last_message_at ? new Date(cv.last_message_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}</span>
+                            <ChevronRight className="w-3 h-3 text-gray-300" />
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Expanded Email History */}
+                    {expandedComm === 'emails' && (
+                      <div className="bg-amber-50/30 rounded-xl p-2 space-y-1.5 border border-amber-100/50 max-h-48 overflow-y-auto">
+                        <p className="text-[9px] font-bold text-amber-600 uppercase tracking-wider px-1">Email History</p>
+                        {conversations.filter(cv => cv.channel === 'email').length === 0 ? (
+                          <p className="text-[10px] text-gray-400 text-center py-3">No emails</p>
+                        ) : conversations.filter(cv => cv.channel === 'email').map(cv => (
+                          <Link key={cv.id} href={`/crm/conversations?id=${cv.id}`}
+                            className="flex items-center gap-2 px-2 py-1.5 bg-white rounded-lg hover:bg-amber-50/50 transition-colors">
+                            <Mail className="w-3 h-3 text-amber-500 flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[10px] font-medium text-np-dark">{cv.unread_count > 0 ? `${cv.unread_count} unread` : 'View thread'}</p>
+                            </div>
+                            <span className="text-[8px] text-gray-300">{cv.last_message_at ? new Date(cv.last_message_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}</span>
+                            <ChevronRight className="w-3 h-3 text-gray-300" />
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+
                     <div className="grid grid-cols-2 gap-2">
                       <div className="bg-gray-50 rounded-lg p-2 text-center">
                         <p className="text-sm font-bold text-np-dark">{tasks.length}</p>
@@ -416,11 +601,11 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
                   </div>
 
                   {/* Custom Fields */}
-                  {contact.custom_fields && Object.keys(contact.custom_fields).length > 0 && (
+                  {contact.custom_fields && Object.keys(contact.custom_fields).filter(k => k !== 'company').length > 0 && (
                     <div className="space-y-2">
                       <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Custom Fields</h4>
                       <div className="space-y-1">
-                        {Object.entries(contact.custom_fields).map(([key, val]) => (
+                        {Object.entries(contact.custom_fields).filter(([k]) => k !== 'company').map(([key, val]) => (
                           <div key={key} className="flex justify-between text-[10px]">
                             <span className="text-gray-400">{key}:</span>
                             <span className="font-medium text-np-dark">{String(val)}</span>
@@ -430,7 +615,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
                     </div>
                   )}
 
-                  {/* Lifecycle Events */}
+                  {/* Lifecycle */}
                   <div className="space-y-2">
                     <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Lifecycle</h4>
                     <div className="text-[10px] text-gray-500">

@@ -610,3 +610,29 @@ export async function computeNetworkScores(orgId: string) {
   const { error } = await supabase().rpc('compute_contact_network_scores', { p_org_id: orgId })
   if (error) throw error
 }
+
+// ── Phone Lookup (for dialer auto-match) ──
+
+export async function lookupContactByPhone(phone: string, orgId?: string): Promise<CrmContact | null> {
+  const sb = supabase()
+  // Strip to digits, match last 10
+  const clean = phone.replace(/[^0-9]/g, '')
+  const last10 = clean.length > 10 ? clean.slice(-10) : clean
+  if (last10.length < 7) return null
+
+  const { data, error } = await sb
+    .from('contacts')
+    .select('*')
+    .is('merged_into_id', null)
+    .not('phone', 'is', null)
+    .filter('phone', 'neq', '')
+  if (error || !data) return null
+
+  // Client-side match on last 10 digits
+  const match = data.find(c => {
+    const cClean = (c.phone || '').replace(/[^0-9]/g, '')
+    const cLast10 = cClean.length > 10 ? cClean.slice(-10) : cClean
+    return cLast10 === last10
+  })
+  return match ? match as CrmContact : null
+}

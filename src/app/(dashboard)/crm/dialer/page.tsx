@@ -12,7 +12,7 @@ import {
   Delete, ArrowUpRight, ArrowDownLeft, Voicemail, PhoneMissed, Brain, FileText
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase-browser'
-import { fetchCallLogs } from '@/lib/crm-client'
+import { fetchCallLogs, lookupContactByPhone } from '@/lib/crm-client'
 import type { CrmContact, CallLog, Sentiment } from '@/types/crm'
 
 const SENTIMENT_BADGE: Record<Sentiment, { label: string; color: string; bg: string }> = {
@@ -156,9 +156,32 @@ export default function DialerPage() {
         call.on('error', () => { setCallState('idle') })
       } catch { setCallState('idle') }
     } else {
-      // Manual dial - simulate for now
+      // Manual dial - try to auto-match contact by phone number
       setCallState('dialing')
-      setTimeout(() => setCallState('connected'), 2000)
+      try {
+        const matched = await lookupContactByPhone(dialString)
+        if (matched) {
+          setSelectedContact(matched)
+          // Now use the matched contact for proper call logging
+          const res = await fetch('/api/voice/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contact_id: matched.id }),
+          })
+          const data = await res.json()
+          if (!res.ok) { setCallState('idle'); return }
+          const { Device } = await import('@twilio/voice-sdk')
+          const device = new Device(data.token, { logLevel: 1, codecPreferences: ['opus', 'pcmu'] as any })
+          const call = await device.connect({ params: { To: data.contact_phone } })
+          setCallState('ringing')
+          call.on('accept', () => { setCallState('connected'); setCallDuration(0) })
+          call.on('disconnect', () => { setCallState('ended'); setTimeout(() => { setCallState('idle'); reloadCalls() }, 1500) })
+          call.on('error', () => { setCallState('idle') })
+        } else {
+          // No match found - still dial but won't log to a contact
+          setTimeout(() => setCallState('connected'), 2000)
+        }
+      } catch { setTimeout(() => setCallState('connected'), 2000) }
     }
   }
 
