@@ -107,9 +107,9 @@ export default function ContactsPage() {
     try {
       const newContact = await createContact({
         org_id: currentOrg.id, first_name: form.first_name, last_name: form.last_name,
-        email: form.email, phone: form.phone || undefined, source: form.source || undefined,
-        pipeline_stage: form.pipeline_stage || 'New Lead', pipeline_id: form.pipeline_id || undefined, assigned_to: form.assigned_to || undefined,
-        tags: form.tags, custom_fields: form.company ? { company: form.company } : undefined,
+        email: form.email || undefined, phone: form.phone || undefined, source: form.source || undefined,
+        pipeline_stage: form.pipeline_stage || undefined, pipeline_id: form.pipeline_id || undefined, assigned_to: form.assigned_to || undefined,
+        tags: form.tags, company: form.company || undefined,
         sms_consent: false, email_consent: true, do_not_contact: false,
         address_street: form.address_street || undefined, address_city: form.address_city || undefined,
         address_state: form.address_state || undefined, address_zip: form.address_zip || undefined,
@@ -132,7 +132,7 @@ export default function ContactsPage() {
         }).catch(e => console.warn('Connection create skipped:', e))
       }
       setShowCreate(false); setForm(emptyForm); setConnSearchResults([]); setConnSearchQuery(''); load()
-    } catch (e) { console.error(e); alert('Failed to create contact') }
+    } catch (e: any) { console.error(e); alert('Failed to create contact: ' + (e?.message || e?.details || JSON.stringify(e))) }
     finally { setCreating(false) }
   }
 
