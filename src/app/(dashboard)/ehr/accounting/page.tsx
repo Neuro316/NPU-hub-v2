@@ -3,20 +3,23 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
-import { DollarSign, Users, TrendingUp, ChevronLeft, Plus, X, Settings as SettingsIcon, BarChart3, LayoutDashboard, Search } from 'lucide-react'
+import { DollarSign, Users, TrendingUp, ChevronLeft, Plus, X, Settings as SettingsIcon, BarChart3, LayoutDashboard, Search, Wallet, Megaphone, Trash2 } from 'lucide-react'
 
 interface AcctLocation { id: string; name: string; short_code: string; color: string; clinic_id: string | null; org_id: string }
 interface AcctClinic { id: string; org_id: string; name: string; contact_name: string; ein: string; corp_type: string; has_w9: boolean; has_1099: boolean; address: string; city: string; state: string; zip: string; phone: string; email: string; website: string; notes: string; split_snw: number; split_clinic: number; split_dr: number }
 interface AcctPayment { id: string; service_id: string; client_id: string; amount: number; payment_date: string; notes: string; split_snw: number; split_clinic: number; split_dr: number; clinic_id: string | null; payout_date: string; payout_period: string; is_paid_out: boolean }
 interface AcctService { id: string; client_id: string; service_type: 'Map' | 'Program'; amount: number; service_date: string; notes: string; payments: AcctPayment[] }
 interface AcctClient { id: string; name: string; location_id: string; org_id: string; notes: string; services: AcctService[] }
-interface AcctConfig { map_splits: { snw: number; dr: number }; default_map_price: number; default_program_price: number; payout_agreement: string }
+interface AcctConfig { map_splits: { snw: number; dr: number }; default_map_price: number; default_program_price: number; payout_agreement: string; marketing?: { monthly_total: number; clinic_share: number; dr_share: number } }
+interface AcctCheck { id: string; org_id: string; payee_type: 'clinic' | 'dr'; payee_clinic_id: string | null; check_number: string; check_date: string; amount: number; memo: string; created_at: string }
+interface AcctMktgCharge { id: string; org_id: string; month: string; payee_type: 'clinic' | 'dr'; payee_clinic_id: string | null; amount: number; description: string }
 
 const $$ = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n)
 const fD = (d: string) => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''
 const fMoL = (m: string) => { const [y, mo] = m.split('-'); return new Date(+y, +mo - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) }
 const gI = (n: string) => n.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
 const td = () => new Date().toISOString().split('T')[0]
+const curMonth = () => td().substring(0, 7)
 const COLORS = ['#f0b429','#f472b6','#a78bfa','#4dcfcf','#e8864a','#3dd68c','#ef6b6b','#60a5fa','#f9a8d4','#a3e635']
 const stClr: Record<string,{bg:string;tx:string}> = { 'Paid in Full':{bg:'bg-green-50',tx:'text-green-700'}, 'Payment Plan':{bg:'bg-amber-50',tx:'text-amber-700'}, 'Stopped/Incomplete':{bg:'bg-red-50',tx:'text-red-600'}, 'Map Only':{bg:'bg-gray-100',tx:'text-gray-600'}, Trade:{bg:'bg-purple-50',tx:'text-purple-600'}, 'No Services':{bg:'bg-gray-50',tx:'text-gray-400'} }
 
@@ -206,37 +209,13 @@ function ReconView({clients,locs,clinics,mapSp}:{clients:AcctClient[];locs:AcctL
       months[mk].det.push({client:cl.name,svc:sv.service_type,amt:pm.amount,d:pm.payment_date,loc:cl.location_id,snw:sp.snw,dr:sp.dr,clinicAmts:sp.clinicAmts,payoutDate:pm.payout_date||getPayoutDate(pm.payment_date)})
     })));return Object.entries(months).sort(([a],[b])=>a.localeCompare(b)).map(([mo,d])=>({mo,...d}))
   },[clients,locs,clinics,mapSp])
-  const periods=useMemo(()=>{
-    const p:Record<string,any>={};data.forEach((m:any)=>m.det.forEach((d:any)=>{
-      const pd=d.payoutDate;if(!p[pd])p[pd]={total:0,snw:0,dr:0,clinicAmts:{} as Record<string,number>,items:[] as any[]}
-      p[pd].total+=d.amt;p[pd].snw+=d.snw;p[pd].dr+=d.dr
-      Object.entries(d.clinicAmts).forEach(([cid,ca])=>{p[pd].clinicAmts[cid]=(p[pd].clinicAmts[cid]||0)+(ca as number)});p[pd].items.push(d)
-    }));return Object.entries(p).sort(([a],[b])=>a.localeCompare(b)).map(([pd,v])=>({payoutDate:pd,...v}))
-  },[data])
   const totRev=data.reduce((s:number,m:any)=>s+m.total,0);const totSnw=data.reduce((s:number,m:any)=>s+m.snw,0);const totDr=data.reduce((s:number,m:any)=>s+m.dr,0)
   const totCl:Record<string,number>={};clinics.forEach(c=>{totCl[c.id]=data.reduce((s:number,m:any)=>s+(m.clinicAmts[c.id]||0),0)})
-  const today=td();const nextPayout=periods.find((p:any)=>p.payoutDate>=today)
 
   return <div className="space-y-5">
-    <div><h2 className="text-base font-bold text-np-dark">Reconciliation</h2><p className="text-xs text-gray-400 mt-0.5">Revenue splits and payout schedule</p></div>
+    <div><h2 className="text-base font-bold text-np-dark">Reconciliation</h2><p className="text-xs text-gray-400 mt-0.5">Monthly revenue breakdown by splits</p></div>
     <div className="flex gap-3 flex-wrap"><Stat label="Total Revenue" value={$$(totRev)} icon={DollarSign}/><Stat label="SNW (retained)" value={$$(totSnw)} color="#386797"/>
-      {clinics.map(c=><Stat key={c.id} label={c.name.length>20?c.name.split('(')[0].trim():c.name} value={$$(totCl[c.id]||0)} color="#d97706" sub="Total owed"/>)}<Stat label="Dr. Yonce" value={$$(totDr)} color="#9333ea" sub="Total owed"/></div>
-    {nextPayout&&<div className="rounded-xl border-2 border-np-blue/20 bg-np-blue/5 overflow-hidden">
-      <div className="px-4 py-3 border-b border-np-blue/10"><h3 className="text-sm font-bold text-np-dark">Next Payout Due: {fD(nextPayout.payoutDate)}</h3></div>
-      <div className="p-4"><p className="text-xs text-gray-500 mb-3">Collected: {$$(nextPayout.total)} from {nextPayout.items.length} payment{nextPayout.items.length!==1?'s':''}</p>
-        <div className="flex gap-3 flex-wrap">
-          {clinics.map(c=>(nextPayout.clinicAmts[c.id]||0)>0?<div key={c.id} className="flex-1 min-w-[140px] p-3 bg-white rounded-xl border border-gray-100 text-center"><p className="text-[10px] font-semibold text-amber-600 mb-1">Pay {c.name.split('(')[0].trim()}</p><p className="text-lg font-bold text-amber-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(nextPayout.clinicAmts[c.id])}</p></div>:null)}
-          {nextPayout.dr>0&&<div className="flex-1 min-w-[140px] p-3 bg-white rounded-xl border border-gray-100 text-center"><p className="text-[10px] font-semibold text-purple-600 mb-1">Pay Dr. Yonce</p><p className="text-lg font-bold text-purple-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(nextPayout.dr)}</p></div>}
-          <div className="flex-1 min-w-[140px] p-3 bg-white rounded-xl border border-gray-100 text-center"><p className="text-[10px] font-semibold text-np-blue mb-1">SNW Retains</p><p className="text-lg font-bold text-np-blue" style={{fontFeatureSettings:'"tnum"'}}>{$$(nextPayout.snw)}</p></div></div></div></div>}
-    <div className="rounded-xl border border-gray-100 bg-white overflow-hidden">
-      <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50"><h3 className="text-sm font-semibold text-np-dark">Payout Schedule</h3></div>
-      <div className="overflow-auto"><table className="w-full text-left"><thead><tr className="border-b border-gray-100 bg-gray-50/30"><TH>Payout Date</TH><TH>Activity</TH><TH className="text-right text-np-blue">SNW</TH>{clinics.map(c=><TH key={c.id} className="text-right text-amber-600">{c.name.split('(')[0].trim()}</TH>)}<TH className="text-right text-purple-600">Dr. Yonce</TH></tr></thead>
-        <tbody>{periods.map((p:any)=>{const past=p.payoutDate<today;return<tr key={p.payoutDate} className={`border-b border-gray-50 hover:bg-gray-50/50 ${past?'opacity-50':''}`}>
-          <td className="py-2 px-3 text-xs font-semibold text-np-dark">{fD(p.payoutDate)}{past&&<span className="ml-1.5 text-[10px] text-green-600">paid</span>}</td>
-          <td className="py-2 px-3 text-xs font-semibold text-np-dark" style={{fontFeatureSettings:'"tnum"'}}>{$$(p.total)}<span className="text-gray-400 font-normal ml-1">{p.items.length} pmt{p.items.length!==1?'s':''}</span></td>
-          <td className="py-2 px-3 text-xs text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(p.snw)}</td>
-          {clinics.map(c=><td key={c.id} className="py-2 px-3 text-xs text-right" style={{color:(p.clinicAmts[c.id]||0)>0?'#d97706':'#d1d5db',fontFeatureSettings:'"tnum"'}}>{(p.clinicAmts[c.id]||0)>0?$$(p.clinicAmts[c.id]):'\u2014'}</td>)}
-          <td className="py-2 px-3 text-xs text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(p.dr)}</td></tr>})}</tbody></table></div></div>
+      {clinics.map(c=><Stat key={c.id} label={c.name.length>20?c.name.split('(')[0].trim():c.name} value={$$(totCl[c.id]||0)} color="#d97706" sub="Split total"/>)}<Stat label="Dr. Yonce" value={$$(totDr)} color="#9333ea" sub="Split total"/></div>
     <div className="rounded-xl border border-gray-100 bg-white overflow-hidden">
       <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50"><h3 className="text-sm font-semibold text-np-dark">Monthly Revenue Detail</h3></div>
       <div className="overflow-auto"><table className="w-full text-left"><thead><tr className="border-b border-gray-100 bg-gray-50/30"><TH>Month</TH><TH>Collected</TH><TH className="text-np-blue">SNW</TH>{clinics.map(c=><TH key={c.id} className="text-amber-600">{c.name.split('(')[0].trim()}</TH>)}<TH className="text-purple-600">Dr.Y</TH></tr></thead>
@@ -248,36 +227,183 @@ function ReconView({clients,locs,clinics,mapSp}:{clients:AcctClient[];locs:AcctL
             {clinics.map(c=><td key={c.id} className="py-2.5 px-3 text-xs" style={{color:(r.clinicAmts[c.id]||0)>0?'#d97706':'#d1d5db',fontFeatureSettings:'"tnum"'}}>{(r.clinicAmts[c.id]||0)>0?$$(r.clinicAmts[c.id]):'\u2014'}</td>)}
             <td className="py-2.5 px-3 text-xs text-purple-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(r.dr)}</td></tr>,
           exp===r.mo?<tr key={r.mo+'-d'}><td colSpan={3+clinics.length+1} className="p-0 border-none"><div className="bg-gray-50/70 px-4 py-3 border-b border-gray-100">
-            <table className="w-full text-left"><thead><tr className="border-b border-gray-100"><TH>Date</TH><TH>Client</TH><TH>Svc</TH><TH>Loc</TH><TH className="text-right">Amt</TH><TH>Payout</TH></tr></thead>
+            <table className="w-full text-left"><thead><tr className="border-b border-gray-100"><TH>Date</TH><TH>Client</TH><TH>Svc</TH><TH>Loc</TH><TH className="text-right">Amt</TH></tr></thead>
               <tbody>{r.det.sort((a:any,b:any)=>a.d.localeCompare(b.d)).map((d:any,j:number)=><tr key={j} className="border-b border-gray-100/50">
                 <td className="py-1.5 px-3 text-xs text-gray-600">{fD(d.d)}</td><td className="py-1.5 px-3 text-xs font-semibold text-np-dark">{d.client}</td>
                 <td className="py-1.5 px-3 text-[11px] text-gray-400">{d.svc}</td><td className="py-1.5 px-3"><LocTag loc={d.loc} locs={locs}/></td>
-                <td className="py-1.5 px-3 text-xs font-semibold text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(d.amt)}</td><td className="py-1.5 px-3 text-[10px] text-gray-400">{fD(d.payoutDate)}</td></tr>)}</tbody></table></div></td></tr>:null
+                <td className="py-1.5 px-3 text-xs font-semibold text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(d.amt)}</td></tr>)}</tbody></table></div></td></tr>:null
         ])}
         <tr className="bg-gray-50/50 border-t border-gray-200"><td className="py-2.5 px-3 text-xs font-bold text-np-dark">TOTAL</td><td className="py-2.5 px-3 text-xs font-bold" style={{fontFeatureSettings:'"tnum"'}}>{$$(totRev)}</td><td className="py-2.5 px-3 text-xs font-bold text-np-blue" style={{fontFeatureSettings:'"tnum"'}}>{$$(totSnw)}</td>{clinics.map(c=><td key={c.id} className="py-2.5 px-3 text-xs font-bold text-amber-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(totCl[c.id]||0)}</td>)}<td className="py-2.5 px-3 text-xs font-bold text-purple-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(totDr)}</td></tr>
         </tbody></table></div></div></div>
 }
 
+/* ── Payouts (checks + marketing + ledger) ─────────── */
+function PayView({clients,locs,clinics,mapSp,checks,mktg,onAddCheck,onDeleteCheck}:
+  {clients:AcctClient[];locs:AcctLocation[];clinics:AcctClinic[];mapSp:{snw:number;dr:number};checks:AcctCheck[];mktg:AcctMktgCharge[];onAddCheck:(d:any)=>void;onDeleteCheck:(id:string)=>void}) {
+  const [showAdd,setAdd]=useState(false)
+  const [cf,setCF]=useState({payeeType:'dr' as string,clinicId:'',checkNum:'',date:td(),amount:'',memo:''})
+
+  // Compute total owed per payee from revenue splits
+  const owed=useMemo(()=>{
+    const o:{dr:number;clinics:Record<string,number>}={dr:0,clinics:{}}
+    clients.forEach(cl=>cl.services.forEach(sv=>sv.payments.forEach(pm=>{
+      if(pm.amount===0)return
+      const sp=calcSplit(pm.amount,sv.service_type,cl.location_id,locs,clinics,mapSp)
+      o.dr+=sp.dr;Object.entries(sp.clinicAmts).forEach(([cid,ca])=>{o.clinics[cid]=(o.clinics[cid]||0)+ca})
+    })));return o
+  },[clients,locs,clinics,mapSp])
+
+  // Marketing deductions per payee
+  const mktgTotals=useMemo(()=>{
+    const m:{dr:number;clinics:Record<string,number>}={dr:0,clinics:{}}
+    mktg.forEach(c=>{if(c.payee_type==='dr')m.dr+=c.amount;else if(c.payee_clinic_id)m.clinics[c.payee_clinic_id]=(m.clinics[c.payee_clinic_id]||0)+c.amount})
+    return m
+  },[mktg])
+
+  // Checks paid per payee
+  const checkTotals=useMemo(()=>{
+    const c:{dr:number;clinics:Record<string,number>}={dr:0,clinics:{}}
+    checks.forEach(ch=>{if(ch.payee_type==='dr')c.dr+=ch.amount;else if(ch.payee_clinic_id)c.clinics[ch.payee_clinic_id]=(c.clinics[ch.payee_clinic_id]||0)+ch.amount})
+    return c
+  },[checks])
+
+  // Build payee list
+  type Payee={type:'clinic'|'dr';id:string|null;name:string;color:string;owedAmt:number;mktgAmt:number;checkAmt:number;net:number}
+  const payees:Payee[]=useMemo(()=>{
+    const list:Payee[]=[]
+    clinics.forEach(c=>{const o=owed.clinics[c.id]||0;const m=mktgTotals.clinics[c.id]||0;const ch=checkTotals.clinics[c.id]||0;list.push({type:'clinic',id:c.id,name:c.name.split('(')[0].trim(),color:'#d97706',owedAmt:o,mktgAmt:m,checkAmt:ch,net:o-m-ch})})
+    const drO=owed.dr;const drM=mktgTotals.dr;const drC=checkTotals.dr
+    list.push({type:'dr',id:null,name:'Dr. Yonce',color:'#9333ea',owedAmt:drO,mktgAmt:drM,checkAmt:drC,net:drO-drM-drC})
+    return list
+  },[clinics,owed,mktgTotals,checkTotals])
+
+  const doAdd=async()=>{
+    const a=parseFloat(cf.amount)||0;if(a<=0)return
+    await onAddCheck({payee_type:cf.payeeType,payee_clinic_id:cf.payeeType==='clinic'?cf.clinicId:null,check_number:cf.checkNum,check_date:cf.date,amount:a,memo:cf.memo})
+    setAdd(false);setCF({payeeType:'dr',clinicId:'',checkNum:'',date:td(),amount:'',memo:''})
+  }
+
+  // Get payee name for check display
+  const payeeName=(ch:AcctCheck)=>ch.payee_type==='dr'?'Dr. Yonce':clinics.find(c=>c.id===ch.payee_clinic_id)?.name.split('(')[0].trim()||'Clinic'
+
+  return <div className="space-y-5">
+    <div className="flex items-center justify-between">
+      <div><h2 className="text-base font-bold text-np-dark">Payouts</h2><p className="text-xs text-gray-400 mt-0.5">Checks, marketing deductions, and running balances</p></div>
+      <button onClick={()=>setAdd(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-np-blue rounded-lg hover:bg-np-accent transition-colors"><Plus className="w-3.5 h-3.5"/>Record Check</button>
+    </div>
+
+    {/* Payee ledger cards */}
+    {payees.map(p=><div key={p.id||'dr'} className="rounded-xl border border-gray-100 bg-white overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
+        <h3 className="text-sm font-bold" style={{color:p.color}}>{p.name}</h3>
+        <span className={`text-sm font-bold ${p.net>0.01?'text-red-500':p.net<-0.01?'text-green-600':'text-gray-400'}`} style={{fontFeatureSettings:'"tnum"'}}>
+          {p.net>0.01?`${$$(p.net)} owed`:p.net<-0.01?`${$$(-p.net)} overpaid`:'Settled'}
+        </span>
+      </div>
+      <div className="p-4">
+        <div className="flex gap-3 flex-wrap mb-4">
+          <div className="flex-1 min-w-[120px] p-3 rounded-lg bg-gray-50 border border-gray-100 text-center"><p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Split Owed</p><p className="text-base font-bold" style={{color:p.color,fontFeatureSettings:'"tnum"'}}>{$$(p.owedAmt)}</p></div>
+          <div className="flex-1 min-w-[120px] p-3 rounded-lg bg-red-50 border border-red-100 text-center"><p className="text-[9px] font-semibold uppercase tracking-wider text-red-400 mb-1">Marketing Ded.</p><p className="text-base font-bold text-red-600" style={{fontFeatureSettings:'"tnum"'}}>-{$$(p.mktgAmt)}</p></div>
+          <div className="flex-1 min-w-[120px] p-3 rounded-lg bg-green-50 border border-green-100 text-center"><p className="text-[9px] font-semibold uppercase tracking-wider text-green-500 mb-1">Checks Paid</p><p className="text-base font-bold text-green-600" style={{fontFeatureSettings:'"tnum"'}}>-{$$(p.checkAmt)}</p></div>
+          <div className={`flex-1 min-w-[120px] p-3 rounded-lg border text-center ${p.net>0.01?'bg-amber-50 border-amber-200':p.net<-0.01?'bg-green-50 border-green-200':'bg-gray-50 border-gray-100'}`}><p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Net Balance</p><p className={`text-base font-bold ${p.net>0.01?'text-amber-600':p.net<-0.01?'text-green-600':'text-gray-400'}`} style={{fontFeatureSettings:'"tnum"'}}>{$$(p.net)}</p></div>
+        </div>
+        {/* Checks for this payee */}
+        {(()=>{const pChecks=checks.filter(ch=>ch.payee_type===p.type&&(p.type==='dr'||ch.payee_clinic_id===p.id)).sort((a,b)=>a.check_date.localeCompare(b.check_date));
+          const pMktg=mktg.filter(m=>m.payee_type===p.type&&(p.type==='dr'||m.payee_clinic_id===p.id)).sort((a,b)=>a.month.localeCompare(b.month))
+          return <div className="space-y-3">
+            {pMktg.length>0&&<div><p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Marketing Deductions</p>
+              {pMktg.map(m=><div key={m.id} className="flex items-center justify-between py-1.5 border-b border-gray-50 text-xs">
+                <span className="text-gray-400">{fMoL(m.month)}</span><span className="text-gray-500">{m.description}</span><span className="font-semibold text-red-500" style={{fontFeatureSettings:'"tnum"'}}>-{$$(m.amount)}</span></div>)}</div>}
+            {pChecks.length>0&&<div><p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Checks Written</p>
+              <table className="w-full text-left"><thead><tr className="border-b border-gray-100"><TH>Date</TH><TH>Check #</TH><TH className="text-right">Amount</TH><TH>Memo</TH><TH></TH></tr></thead>
+                <tbody>{pChecks.map(ch=><tr key={ch.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                  <td className="py-2 px-3 text-xs text-gray-600">{fD(ch.check_date)}</td>
+                  <td className="py-2 px-3 text-xs font-semibold text-np-dark">{ch.check_number||'\u2014'}</td>
+                  <td className="py-2 px-3 text-xs font-semibold text-green-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(ch.amount)}</td>
+                  <td className="py-2 px-3 text-[11px] text-gray-400">{ch.memo}</td>
+                  <td className="py-2 px-1"><button onClick={()=>{if(confirm('Delete this check?'))onDeleteCheck(ch.id)}} className="p-1 rounded hover:bg-red-50"><Trash2 className="w-3 h-3 text-gray-300 hover:text-red-400"/></button></td>
+                </tr>)}</tbody></table></div>}
+            {pChecks.length===0&&pMktg.length===0&&<p className="text-xs text-gray-400 italic">No checks or deductions recorded yet.</p>}
+          </div>
+        })()}
+      </div>
+    </div>)}
+
+    {showAdd&&<Mdl title="Record Check Payment" onClose={()=>setAdd(false)}>
+      <FS label="Pay To" value={cf.payeeType} onChange={(v:string)=>setCF(p=>({...p,payeeType:v,clinicId:v==='clinic'?(clinics[0]?.id||''):'select'}))} options={[{v:'dr',l:'Dr. Yonce'},...clinics.map(c=>({v:'clinic',l:c.name}))]}/>
+      {cf.payeeType==='clinic'&&clinics.length>1&&<FS label="Clinic" value={cf.clinicId} onChange={(v:string)=>setCF(p=>({...p,clinicId:v}))} options={clinics.map(c=>({v:c.id,l:c.name}))}/>}
+      <div className="flex gap-3"><FI half label="Check #" value={cf.checkNum} onChange={(v:string)=>setCF(p=>({...p,checkNum:v}))} placeholder="e.g. 1042"/><FI half label="Check Date" value={cf.date} onChange={(v:string)=>setCF(p=>({...p,date:v}))} type="date"/></div>
+      <FI label="Amount ($)" value={cf.amount} onChange={(v:string)=>setCF(p=>({...p,amount:v}))} type="number"/>
+      <FI label="Memo / Note" value={cf.memo} onChange={(v:string)=>setCF(p=>({...p,memo:v}))} placeholder="Optional"/>
+      {/* Show what the balance would be after this check */}
+      {(()=>{const a=parseFloat(cf.amount)||0;if(a<=0)return null
+        const payee=cf.payeeType==='dr'?payees.find(p=>p.type==='dr'):payees.find(p=>p.type==='clinic'&&p.id===cf.clinicId)
+        if(!payee)return null;const newNet=payee.net-a
+        return <div className="p-3 bg-gray-50 rounded-xl border border-gray-100 mt-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">After This Check</p>
+          <div className="flex justify-between text-xs mb-1"><span className="text-gray-400">Current balance:</span><span className="font-semibold" style={{fontFeatureSettings:'"tnum"'}}>{$$(payee.net)}</span></div>
+          <div className="flex justify-between text-xs mb-1"><span className="text-gray-400">This check:</span><span className="font-semibold text-green-600" style={{fontFeatureSettings:'"tnum"'}}>-{$$(a)}</span></div>
+          <div className="flex justify-between text-xs pt-1 border-t border-gray-200"><span className="text-gray-500 font-semibold">New balance:</span>
+            <span className={`font-bold ${newNet>0.01?'text-amber-600':newNet<-0.01?'text-green-600':'text-gray-400'}`} style={{fontFeatureSettings:'"tnum"'}}>{$$(newNet)}{newNet<-0.01?' (overpaid)':''}</span></div>
+        </div>})()}
+      <div className="flex gap-2 mt-4 justify-end"><Btn outline onClick={()=>setAdd(false)}>Cancel</Btn><Btn onClick={doAdd}>Record Check</Btn></div>
+    </Mdl>}
+  </div>
+}
+
 /* ── Settings ──────────────────────────────────────── */
-function SetView({locs,clinics,mapSp,setMapSp,clients,agreement,setAgreement,onSaveConfig,onSaveLoc,onDeleteLoc,onSaveClinic}:any) {
+function SetView({locs,clinics,mapSp,setMapSp,clients,agreement,setAgreement,config,setConfig,onSaveConfig,onSaveLoc,onDeleteLoc,onSaveClinic,mktg,onAddMktg,onDeleteMktg}:any) {
   const [modal,setMo]=useState<any>(null);const [form,setF]=useState<any>({});const [editAgr,setEA]=useState(false)
   const mT=mapSp.snw+mapSp.dr
+  const [mktgForm,setMF]=useState({month:curMonth(),clinicId:clinics[0]?.id||'',clinicAmt:'1000',drAmt:'1000',desc:'Social media marketing - SNW covered'})
   const open=(type:string,data:any)=>{setMo({type});setF(data||{})};const close=()=>{setMo(null);setF({})}
   const saveLoc=async()=>{if(!form.name?.trim()||!form.short?.trim())return;await onSaveLoc(modal.type==='addLoc'?null:form.id,{name:form.name.trim(),short_code:form.short.trim().toUpperCase(),color:form.color||COLORS[locs.length%COLORS.length],clinic_id:form.clinicId||null});close()}
   const deleteLoc=async(lid:string)=>{const n=clients.filter((c:AcctClient)=>c.location_id===lid).length;if(n>0){alert(`Cannot delete: ${n} client(s) assigned.`);return};await onDeleteLoc(lid);close()}
   const saveClinic=async()=>{if(!form.name?.trim())return;await onSaveClinic(modal.type==='addClinic'?null:form.id,{name:form.name.trim(),contact_name:form.contactName||'',ein:form.ein||'',corp_type:form.corpType||'',has_w9:!!form.hasW9,has_1099:!!form.has1099,address:form.address||'',city:form.city||'',state:form.state||'',zip:form.zip||'',phone:form.phone||'',email:form.email||'',website:form.website||'',notes:form.notes||'',split_snw:form.snw||26,split_clinic:form.clinic||55.01,split_dr:form.drY||18.99});close()}
+  const addMktg=async()=>{
+    const ca=parseFloat(mktgForm.clinicAmt)||0;const da=parseFloat(mktgForm.drAmt)||0;if(ca<=0&&da<=0)return
+    await onAddMktg(mktgForm.month,mktgForm.clinicId,ca,da,mktgForm.desc)
+    setMF(p=>({...p,month:curMonth()}))
+  }
 
   return <div className="space-y-5">
     <h2 className="text-base font-bold text-np-dark">Settings</h2>
+    {/* Marketing Charges */}
+    <div className="rounded-xl border-2 border-orange-200 bg-orange-50/30 overflow-hidden">
+      <div className="px-4 py-3 border-b border-orange-200 bg-orange-50/50 flex items-center gap-2"><Megaphone className="w-4 h-4 text-orange-500"/><h3 className="text-sm font-semibold text-np-dark">Marketing Reimbursements to SNW</h3></div>
+      <div className="p-4 space-y-4">
+        <p className="text-xs text-gray-500">When SNW covers marketing costs, charge the clinic and/or Dr. Yonce. These deduct from their payout balance.</p>
+        <div className="flex gap-3 flex-wrap items-end">
+          <FI label="Month" value={mktgForm.month} onChange={(v:string)=>setMF(p=>({...p,month:v}))} type="month"/>
+          <FI label="Clinic Share ($)" value={mktgForm.clinicAmt} onChange={(v:string)=>setMF(p=>({...p,clinicAmt:v}))} type="number"/>
+          <FI label="Dr. Yonce Share ($)" value={mktgForm.drAmt} onChange={(v:string)=>setMF(p=>({...p,drAmt:v}))} type="number"/>
+          <div className="mb-3"><Btn onClick={addMktg}>Add Charge</Btn></div>
+        </div>
+        {clinics.length>1&&<FS label="Which Clinic" value={mktgForm.clinicId} onChange={(v:string)=>setMF(p=>({...p,clinicId:v}))} options={clinics.map((c:AcctClinic)=>({v:c.id,l:c.name}))}/>}
+        <FI label="Description" value={mktgForm.desc} onChange={(v:string)=>setMF(p=>({...p,desc:v}))}/>
+        {mktg.length>0&&<div>
+          <p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Active Charges</p>
+          <table className="w-full text-left"><thead><tr className="border-b border-gray-200"><TH>Month</TH><TH>Payee</TH><TH className="text-right">Amount</TH><TH>Description</TH><TH></TH></tr></thead>
+            <tbody>{mktg.sort((a:AcctMktgCharge,b:AcctMktgCharge)=>a.month.localeCompare(b.month)||a.payee_type.localeCompare(b.payee_type)).map((m:AcctMktgCharge)=><tr key={m.id} className="border-b border-gray-100">
+              <td className="py-2 px-3 text-xs font-semibold">{fMoL(m.month)}</td>
+              <td className="py-2 px-3 text-xs" style={{color:m.payee_type==='dr'?'#9333ea':'#d97706'}}>{m.payee_type==='dr'?'Dr. Yonce':clinics.find((c:AcctClinic)=>c.id===m.payee_clinic_id)?.name.split('(')[0].trim()||'Clinic'}</td>
+              <td className="py-2 px-3 text-xs font-semibold text-red-500 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(m.amount)}</td>
+              <td className="py-2 px-3 text-[11px] text-gray-400">{m.description}</td>
+              <td className="py-2 px-1"><button onClick={()=>{if(confirm('Remove this charge?'))onDeleteMktg(m.id)}} className="p-1 rounded hover:bg-red-50"><Trash2 className="w-3 h-3 text-gray-300 hover:text-red-400"/></button></td>
+            </tr>)}</tbody></table></div>}
+      </div></div>
+    {/* Payout Agreement */}
     <div className="rounded-xl border border-gray-100 bg-white overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50/50"><h3 className="text-sm font-semibold text-np-dark">Payout Agreement</h3><Btn sm outline onClick={()=>{if(editAgr)onSaveConfig();setEA(!editAgr)}}>{editAgr?'Done':'Edit'}</Btn></div>
       <div className="p-4">{editAgr?<textarea value={agreement} onChange={e=>setAgreement(e.target.value)} className="w-full min-h-[200px] p-3 text-xs leading-relaxed border border-gray-200 rounded-lg bg-white text-np-dark focus:outline-none focus:ring-2 focus:ring-np-blue/20 resize-y" style={{fontFeatureSettings:'"tnum"'}}/>:<pre className="text-xs text-gray-500 leading-relaxed whitespace-pre-wrap">{agreement||'No agreement set.'}</pre>}</div></div>
+    {/* Map Splits */}
     <div className="rounded-xl border border-gray-100 bg-white overflow-hidden">
       <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50"><h3 className="text-sm font-semibold text-np-dark">Map Splits (Global)</h3></div>
       <div className="p-4"><p className="text-xs text-gray-400 mb-3">Maps always split between SNW and Dr. Yonce only.</p>
         <SplitIn label="SNW" value={mapSp.snw} onChange={v=>setMapSp({...mapSp,snw:v})}/><SplitIn label="Dr. Yonce" value={mapSp.dr} onChange={v=>setMapSp({...mapSp,dr:v})}/>
         <p className={`text-xs font-semibold mt-2 ${mT===100?'text-green-600':'text-red-500'}`}>Total: {mT}%{mT!==100&&' (should be 100%)'}</p>
         <div className="mt-3"><Btn sm onClick={onSaveConfig}>Save Splits</Btn></div></div></div>
+    {/* Clinic Entities */}
     <div className="rounded-xl border border-gray-100 bg-white overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50/50"><h3 className="text-sm font-semibold text-np-dark">Clinic Entities</h3><button onClick={()=>open('addClinic',{snw:26,clinic:55.01,drY:18.99})} className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold text-np-blue bg-np-blue/10 rounded-md hover:bg-np-blue/20"><Plus className="w-3 h-3"/>Create Clinic</button></div>
       {clinics.map((cl:AcctClinic)=>{const locsUsing=locs.filter((l:AcctLocation)=>l.clinic_id===cl.id);const isCorp=cl.corp_type==='ccorp'||cl.corp_type==='scorp'
@@ -288,11 +414,13 @@ function SetView({locs,clinics,mapSp,setMapSp,clients,agreement,setAgreement,onS
           <p className="text-xs mt-1"><span className="text-np-blue">SNW {cl.split_snw}%</span> / <span className="text-amber-600">Clinic {cl.split_clinic}%</span> / <span className="text-purple-600">Dr.Y {cl.split_dr}%</span></p>
           <p className="text-[11px] text-gray-400 mt-0.5">Locations: {locsUsing.length>0?locsUsing.map((l:AcctLocation)=>l.name).join(', '):<span className="text-amber-500">None</span>}</p>
         </div><Btn sm outline onClick={()=>open('editClinic',{...cl,contactName:cl.contact_name,corpType:cl.corp_type,hasW9:cl.has_w9,has1099:cl.has_1099,snw:cl.split_snw,clinic:cl.split_clinic,drY:cl.split_dr})}>Edit</Btn></div></div>})}</div>
+    {/* Locations */}
     <div className="rounded-xl border border-gray-100 bg-white overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50/50"><h3 className="text-sm font-semibold text-np-dark">Locations</h3><button onClick={()=>open('addLoc',{color:COLORS[locs.length%COLORS.length]})} className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold text-np-blue bg-np-blue/10 rounded-md hover:bg-np-blue/20"><Plus className="w-3 h-3"/>Add Location</button></div>
       {locs.map((loc:AcctLocation)=>{const cl=loc.clinic_id?clinics.find((c:AcctClinic)=>c.id===loc.clinic_id):null;const n=clients.filter((c:AcctClient)=>c.location_id===loc.id).length
         return <div key={loc.id} className="px-4 py-3 border-b border-gray-50 flex justify-between items-center"><div className="flex items-center gap-3"><div className="w-3 h-3 rounded" style={{background:loc.color}}/><div><div className="flex items-center gap-2"><span className="text-sm font-bold text-np-dark">{loc.name}</span><span className="text-[10px] text-gray-400 px-1.5 py-0.5 bg-gray-50 rounded">{loc.short_code}</span><span className="text-[10px] text-gray-400">{n} client{n!==1?'s':''}</span></div><p className={`text-[11px] mt-0.5 ${cl?'text-green-600':'text-amber-500'}`}>{cl?`Clinic: ${cl.name}`:'No clinic'}</p></div></div>
           <div className="flex gap-1.5"><Btn sm outline onClick={()=>open('editLoc',{...loc,short:loc.short_code,clinicId:loc.clinic_id})}>Edit</Btn><BtnDanger sm onClick={()=>deleteLoc(loc.id)}>Delete</BtnDanger></div></div>})}</div>
+    {/* Modals */}
     {(modal?.type==='addLoc'||modal?.type==='editLoc')&&<Mdl title={modal.type==='addLoc'?'Add Location':'Edit Location'} onClose={close}>
       <FI label="Name" value={form.name||''} onChange={(v:string)=>setF((p:any)=>({...p,name:v}))} placeholder="e.g. Greenville"/>
       <FI label="Short Code" value={form.short||''} onChange={(v:string)=>setF((p:any)=>({...p,short:v.toUpperCase()}))} placeholder="e.g. GVL"/>
@@ -326,18 +454,22 @@ export default function AccountingPage() {
   const {currentOrg}=useWorkspace();const supabase=createClient()
   const [clients,setClients]=useState<AcctClient[]>([]);const [locs,setLocs]=useState<AcctLocation[]>([]);const [clinics,setClinics]=useState<AcctClinic[]>([])
   const [config,setConfig]=useState<AcctConfig>({map_splits:{snw:23,dr:77},default_map_price:600,default_program_price:5400,payout_agreement:''})
+  const [checks,setChecks]=useState<AcctCheck[]>([]);const [mktg,setMktg]=useState<AcctMktgCharge[]>([])
   const [loading,setLoading]=useState(true);const [vw,sV]=useState('dash');const [sel,sS]=useState<string|null>(null);const [q,sQ]=useState('')
   const [showAC,setSAC]=useState(false);const [nc,setNC]=useState({nm:'',loc:''})
   const orgId=currentOrg?.id
 
   const loadData=useCallback(async()=>{
     if(!orgId)return;setLoading(true)
-    try{const [locsR,clinicsR,clientsR,svcsR,pmtsR,cfgR]=await Promise.all([
+    try{const [locsR,clinicsR,clientsR,svcsR,pmtsR,cfgR,chkR,mkR]=await Promise.all([
       supabase.from('acct_locations').select('*').eq('org_id',orgId),supabase.from('acct_clinics').select('*').eq('org_id',orgId),
       supabase.from('acct_clients').select('*').eq('org_id',orgId).order('name'),supabase.from('acct_services').select('*').eq('org_id',orgId),
       supabase.from('acct_payments').select('*').eq('org_id',orgId).order('payment_date'),
-      supabase.from('org_settings').select('setting_value').eq('org_id',orgId).eq('setting_key','acct_config').maybeSingle()])
+      supabase.from('org_settings').select('setting_value').eq('org_id',orgId).eq('setting_key','acct_config').maybeSingle(),
+      supabase.from('acct_checks').select('*').eq('org_id',orgId).order('check_date'),
+      supabase.from('acct_marketing_charges').select('*').eq('org_id',orgId)])
     setLocs(locsR.data||[]);setClinics(clinicsR.data||[]);if(cfgR.data?.setting_value)setConfig(cfgR.data.setting_value)
+    setChecks(chkR.data||[]);setMktg(mkR.data||[])
     const svcs=svcsR.data||[];const pmts=pmtsR.data||[]
     setClients((clientsR.data||[]).map((c:any)=>({...c,services:svcs.filter((s:any)=>s.client_id===c.id).map((s:any)=>({...s,payments:pmts.filter((p:any)=>p.service_id===s.id)}))})))}catch(e){console.error('Load failed',e)}
     setLoading(false)},[orgId])
@@ -351,15 +483,23 @@ export default function AccountingPage() {
   const saveLoc=async(id:string|null,data:any)=>{if(!orgId)return;if(id)await supabase.from('acct_locations').update(data).eq('id',id);else await supabase.from('acct_locations').insert({id:data.short_code,org_id:orgId,...data});loadData()}
   const deleteLoc=async(id:string)=>{await supabase.from('acct_locations').delete().eq('id',id);loadData()}
   const saveClinic=async(id:string|null,data:any)=>{if(!orgId)return;if(id)await supabase.from('acct_clinics').update(data).eq('id',id);else await supabase.from('acct_clinics').insert({id:`clinic-${Date.now()}`,org_id:orgId,...data});loadData()}
+  const addCheck=async(data:any)=>{if(!orgId)return;await supabase.from('acct_checks').insert({org_id:orgId,...data});loadData()}
+  const deleteCheck=async(id:string)=>{await supabase.from('acct_checks').delete().eq('id',id);loadData()}
+  const addMktg=async(month:string,clinicId:string,clinicAmt:number,drAmt:number,desc:string)=>{
+    if(!orgId)return
+    if(clinicAmt>0&&clinicId)await supabase.from('acct_marketing_charges').upsert({org_id:orgId,month,payee_type:'clinic',payee_clinic_id:clinicId,amount:clinicAmt,description:desc},{onConflict:'org_id,month,payee_type,payee_clinic_id'})
+    if(drAmt>0)await supabase.from('acct_marketing_charges').upsert({org_id:orgId,month,payee_type:'dr',payee_clinic_id:null,amount:drAmt,description:desc},{onConflict:'org_id,month,payee_type,payee_clinic_id'})
+    loadData()
+  }
+  const deleteMktg=async(id:string)=>{await supabase.from('acct_marketing_charges').delete().eq('id',id);loadData()}
 
   const fl=clients.filter(c=>c.name.toLowerCase().includes(q.toLowerCase()));const ac=clients.find(c=>c.id===sel);const mapSp=config.map_splits
-  const navItems=[{k:'dash',icon:LayoutDashboard,l:'Dashboard'},{k:'recon',icon:BarChart3,l:'Reconciliation'},{k:'settings',icon:SettingsIcon,l:'Settings'}]
+  const navItems=[{k:'dash',icon:LayoutDashboard,l:'Dashboard'},{k:'payouts',icon:Wallet,l:'Payouts'},{k:'recon',icon:BarChart3,l:'Reconciliation'},{k:'settings',icon:SettingsIcon,l:'Settings'}]
 
   if(loading)return<div className="flex items-center justify-center h-64"><div className="w-8 h-8 rounded-lg bg-np-blue/20 animate-pulse"/></div>
 
   return <div className="space-y-0">
     <div className="flex" style={{minHeight:'calc(100vh - 80px)'}}>
-      {/* Inner sidebar */}
       <div className="w-56 min-w-[224px] border-r border-gray-100 bg-white flex flex-col -ml-6 -mt-5 -mb-5">
         <div className="px-3 pt-4 pb-2 border-b border-gray-100">
           <h1 className="text-sm font-bold text-np-dark">Satellite Accounting</h1>
@@ -374,12 +514,11 @@ export default function AccountingPage() {
             <div className="flex-1 min-w-0"><p className="text-xs font-semibold text-np-dark truncate">{c.name}</p>
               <div className="flex items-center justify-between"><span className="text-[10px] text-gray-400" style={{fontFeatureSettings:'"tnum"'}}>{$$(t)}</span>
                 <div className="flex gap-1"><div className="w-1.5 h-1.5 rounded-full" style={{background:lo?.color||'#999'}}/><div className="w-1.5 h-1.5 rounded-full" style={{background:sc?.tx==='text-green-700'?'#34A853':sc?.tx==='text-amber-700'?'#FBBC04':sc?.tx==='text-red-600'?'#EA4335':'#999'}}/></div></div></div></button>})}</div></div>
-
-      {/* Main content */}
       <div className="flex-1 overflow-y-auto p-5">
         {ac?<DetView cl={ac} locs={locs} clinics={clinics} mapSp={mapSp} onBack={()=>sS(null)} onAddSvc={addService} onAddPmt={addPayment}/>
+          :vw==='payouts'?<PayView clients={clients} locs={locs} clinics={clinics} mapSp={mapSp} checks={checks} mktg={mktg} onAddCheck={addCheck} onDeleteCheck={deleteCheck}/>
           :vw==='recon'?<ReconView clients={clients} locs={locs} clinics={clinics} mapSp={mapSp}/>
-          :vw==='settings'?<SetView locs={locs} clinics={clinics} mapSp={mapSp} setMapSp={(v:any)=>setConfig(p=>({...p,map_splits:v}))} clients={clients} agreement={config.payout_agreement} setAgreement={(v:string)=>setConfig(p=>({...p,payout_agreement:v}))} onSaveConfig={saveConfig} onSaveLoc={saveLoc} onDeleteLoc={deleteLoc} onSaveClinic={saveClinic}/>
+          :vw==='settings'?<SetView locs={locs} clinics={clinics} mapSp={mapSp} setMapSp={(v:any)=>setConfig(p=>({...p,map_splits:v}))} clients={clients} agreement={config.payout_agreement} setAgreement={(v:string)=>setConfig(p=>({...p,payout_agreement:v}))} config={config} setConfig={setConfig} onSaveConfig={saveConfig} onSaveLoc={saveLoc} onDeleteLoc={deleteLoc} onSaveClinic={saveClinic} mktg={mktg} onAddMktg={addMktg} onDeleteMktg={deleteMktg}/>
           :<DashView clients={clients} locs={locs} onSel={id=>{sS(id);sV('dash')}} onAdd={()=>{setSAC(true);setNC({nm:'',loc:locs[0]?.id||''})}}/>}
       </div></div>
     {showAC&&<Mdl title="Add Client" onClose={()=>setSAC(false)}>
