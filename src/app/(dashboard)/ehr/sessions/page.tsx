@@ -12,7 +12,7 @@ import {
 /* ═══ TYPES ═══ */
 interface EnrolledClient {
   id: string; first_name: string; last_name: string; email?: string; phone?: string
-  pipeline_stage?: string; tags: string[]; custom_fields?: Record<string, any>
+  pipeline_stage?: string; pipeline_id?: string; tags: string[]; custom_fields?: Record<string, any>
 }
 
 interface Protocol {
@@ -97,17 +97,22 @@ export default function SessionNotesPage() {
   const [view, setView] = useState<'note' | 'protocol' | 'history'>('note')
   const [showProtocolEditor, setShowProtocolEditor] = useState(false)
 
+  const [clientFilter, setClientFilter] = useState<'pipeline'|'all'>('pipeline')
+
   /* ─── Load enrolled clients ─── */
   const loadClients = useCallback(async () => {
     if (!currentOrg) return
-    const { data } = await supabase
+    let query = supabase
       .from('contacts')
-      .select('id, first_name, last_name, email, phone, pipeline_stage, tags, custom_fields')
+      .select('id, first_name, last_name, email, phone, pipeline_stage, pipeline_id, tags, custom_fields')
       .eq('org_id', currentOrg.id)
-      .or('pipeline_stage.ilike.%enroll%,pipeline_stage.ilike.%active%,pipeline_stage.ilike.%program%,tags.cs.{enrolled}')
-      .order('last_name', { ascending: true })
+    if (clientFilter === 'pipeline') {
+      // Show anyone assigned to a pipeline (pipeline_id not null) OR matching stage keywords
+      query = query.or('pipeline_id.not.is.null,pipeline_stage.ilike.%enroll%,pipeline_stage.ilike.%active%,pipeline_stage.ilike.%program%,pipeline_stage.ilike.%deposit%,tags.cs.{enrolled}')
+    }
+    const { data } = await query.order('last_name', { ascending: true })
     setClients(data || [])
-  }, [currentOrg?.id])
+  }, [currentOrg?.id, clientFilter])
 
   useEffect(() => { loadClients() }, [loadClients])
 
@@ -321,8 +326,12 @@ Keep responses concise. Use clinical but accessible language. No em dashes.`
       <div className="w-72 flex-shrink-0 bg-white border border-gray-100 rounded-2xl flex flex-col overflow-hidden">
         <div className="p-3 border-b border-gray-50">
           <h2 className="text-xs font-bold text-np-dark mb-2 flex items-center gap-1.5">
-            <Users className="w-3.5 h-3.5 text-np-blue" /> Enrolled Clients
+            <Users className="w-3.5 h-3.5 text-np-blue" /> Clients
           </h2>
+          <div className="flex gap-1 mb-2">
+            <button onClick={() => setClientFilter('pipeline')} className={`flex-1 text-[10px] font-medium py-1 rounded-md transition-colors ${clientFilter === 'pipeline' ? 'bg-np-blue text-white' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}`}>In Pipeline</button>
+            <button onClick={() => setClientFilter('all')} className={`flex-1 text-[10px] font-medium py-1 rounded-md transition-colors ${clientFilter === 'all' ? 'bg-np-blue text-white' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}`}>All Contacts</button>
+          </div>
           <div className="relative">
             <Search className="w-3.5 h-3.5 text-gray-300 absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input value={search} onChange={e => setSearch(e.target.value)}
@@ -342,8 +351,8 @@ Keep responses concise. Use clinical but accessible language. No em dashes.`
           {filteredClients.length === 0 ? (
             <div className="p-6 text-center">
               <Users className="w-8 h-8 text-gray-200 mx-auto mb-2" />
-              <p className="text-xs text-gray-400">No enrolled clients found</p>
-              <p className="text-[10px] text-gray-300 mt-1">Add contacts to the Enrolled pipeline stage in CRM</p>
+              <p className="text-xs text-gray-400">No clients found</p>
+              <p className="text-[10px] text-gray-300 mt-1">{clientFilter === 'pipeline' ? 'Assign contacts to a pipeline in CRM' : 'No contacts in this organization'}</p>
             </div>
           ) : (
             filteredClients.map(c => (
@@ -351,14 +360,14 @@ Keep responses concise. Use clinical but accessible language. No em dashes.`
                 className={`w-full text-left px-3 py-2.5 border-b border-gray-50 hover:bg-gray-50 transition-colors
                   ${selectedClient?.id === c.id ? 'bg-np-blue/5 border-l-2 border-l-np-blue' : ''}`}>
                 <p className="text-xs font-semibold text-np-dark">{c.last_name}, {c.first_name}</p>
-                <p className="text-[10px] text-gray-400 mt-0.5">{c.pipeline_stage || 'Enrolled'}</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">{c.pipeline_stage || '--'}</p>
               </button>
             ))
           )}
         </div>
 
         <div className="p-2 border-t border-gray-50 text-center">
-          <p className="text-[9px] text-gray-300">{filteredClients.length} enrolled</p>
+          <p className="text-[9px] text-gray-300">{filteredClients.length} client{filteredClients.length !== 1 ? 's' : ''}</p>
         </div>
       </div>
 
