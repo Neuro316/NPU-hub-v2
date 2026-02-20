@@ -173,10 +173,10 @@ export default function ContactsPage() {
       case 'assigned': return <span className="text-[10px] text-gray-600">{(c.assigned_member as any)?.display_name || '--'}</span>
       case 'preferred_name': return <span className="text-[10px] text-gray-500">{c.preferred_name || '--'}</span>
       case 'date_of_birth': return <span className="text-[10px] text-gray-500">{c.date_of_birth ? new Date(c.date_of_birth).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '--'}</span>
-      case 'city': return <span className="text-[10px] text-gray-500">{c.address_city || '--'}</span>
-      case 'state': return <span className="text-[10px] text-gray-500">{c.address_state || '--'}</span>
-      case 'occupation': return <span className="text-[10px] text-gray-500">{c.occupation || '--'}</span>
-      case 'industry': return <span className="text-[10px] text-gray-500">{c.industry || '--'}</span>
+      case 'city': return <span className="text-[10px] text-gray-500">{c.address_city || (c.custom_fields as any)?.address_city || '--'}</span>
+      case 'state': return <span className="text-[10px] text-gray-500">{c.address_state || (c.custom_fields as any)?.address_state || '--'}</span>
+      case 'occupation': return <span className="text-[10px] text-gray-500">{c.occupation || (c.custom_fields as any)?.occupation || '--'}</span>
+      case 'industry': return <span className="text-[10px] text-gray-500">{c.industry || (c.custom_fields as any)?.industry || '--'}</span>
       case 'instagram': return <span className="text-[10px] text-gray-500">{c.instagram_handle || '--'}</span>
       case 'linkedin': return c.linkedin_url ? <a href={c.linkedin_url} target="_blank" rel="noopener" className="text-[10px] text-np-blue hover:underline" onClick={e => e.stopPropagation()}>Profile</a> : <span className="text-[10px] text-gray-400">--</span>
       case 'created': return <span className="text-[10px] text-gray-400">{new Date(c.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>
@@ -234,22 +234,29 @@ export default function ContactsPage() {
       if (form.referred_by_name) customFields.referred_by_name = form.referred_by_name
       if (form.referred_by_contact_id) customFields.referred_by_contact_id = form.referred_by_contact_id
       if (form.source_other) customFields.source_other = form.source_other
+      if (form.address_street) customFields.address_street = form.address_street
+      if (form.address_city) customFields.address_city = form.address_city
+      if (form.address_state) customFields.address_state = form.address_state
+      if (form.address_zip) customFields.address_zip = form.address_zip
+      if (form.reason_for_contact) customFields.reason_for_contact = form.reason_for_contact
+      if (form.preferred_name) customFields.preferred_name = form.preferred_name
+      if (form.date_of_birth) customFields.date_of_birth = form.date_of_birth
+      if (form.timezone) customFields.timezone = form.timezone
+      if (form.preferred_contact_method) customFields.preferred_contact_method = form.preferred_contact_method
+      if (form.occupation) customFields.occupation = form.occupation
+      if (form.industry) customFields.industry = form.industry
+      if (form.how_heard_about_us) customFields.how_heard_about_us = form.how_heard_about_us
+      if (form.instagram_handle) customFields.instagram_handle = form.instagram_handle
+      if (form.linkedin_url) customFields.linkedin_url = form.linkedin_url
+      if (form.emergency_contact_name) customFields.emergency_contact_name = form.emergency_contact_name
+      if (form.emergency_contact_phone) customFields.emergency_contact_phone = form.emergency_contact_phone
       const newContact = await createContact({
         org_id: currentOrg.id, first_name: form.first_name, last_name: form.last_name,
         email: form.email || undefined, phone: form.phone || undefined, source: form.source || undefined,
-        pipeline_stage: form.pipeline_stage || undefined, pipeline_id: form.pipeline_id || undefined, assigned_to: form.assigned_to || undefined,
-        tags: form.tags, custom_fields: Object.keys(customFields).length > 0 ? customFields : undefined,
-        sms_consent: false, email_consent: true, do_not_contact: false,
-        address_street: form.address_street || undefined, address_city: form.address_city || undefined,
-        address_state: form.address_state || undefined, address_zip: form.address_zip || undefined,
-        reason_for_contact: form.reason_for_contact || undefined,
-        preferred_name: form.preferred_name || undefined, date_of_birth: form.date_of_birth || undefined,
-        timezone: form.timezone || undefined, preferred_contact_method: form.preferred_contact_method || undefined,
-        occupation: form.occupation || undefined, industry: form.industry || undefined,
-        how_heard_about_us: form.how_heard_about_us || undefined,
-        instagram_handle: form.instagram_handle || undefined, linkedin_url: form.linkedin_url || undefined,
-        emergency_contact_name: form.emergency_contact_name || undefined,
-        emergency_contact_phone: form.emergency_contact_phone || undefined,
+        pipeline_stage: form.pipeline_stage || undefined, pipeline_id: form.pipeline_id || undefined,
+        assigned_to: form.assigned_to || undefined,
+        tags: form.tags,
+        custom_fields: Object.keys(customFields).length > 0 ? customFields : undefined,
       } as any)
       if (form.connect_to_id && form.connect_type && newContact?.id) {
         await createRelationship({
