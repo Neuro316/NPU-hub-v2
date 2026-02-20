@@ -241,7 +241,7 @@ export default function ContactsPage() {
       if (form.reason_for_contact) customFields.reason_for_contact = form.reason_for_contact
       if (form.preferred_name) customFields.preferred_name = form.preferred_name
       if (form.date_of_birth) customFields.date_of_birth = form.date_of_birth
-      if (form.timezone) customFields.timezone = form.timezone
+      if (form.timezone && form.timezone !== 'America/New_York') customFields.timezone = form.timezone
       if (form.preferred_contact_method) customFields.preferred_contact_method = form.preferred_contact_method
       if (form.occupation) customFields.occupation = form.occupation
       if (form.industry) customFields.industry = form.industry
@@ -250,14 +250,37 @@ export default function ContactsPage() {
       if (form.linkedin_url) customFields.linkedin_url = form.linkedin_url
       if (form.emergency_contact_name) customFields.emergency_contact_name = form.emergency_contact_name
       if (form.emergency_contact_phone) customFields.emergency_contact_phone = form.emergency_contact_phone
-      const newContact = await createContact({
-        org_id: currentOrg.id, first_name: form.first_name, last_name: form.last_name,
-        email: form.email || undefined, phone: form.phone || undefined, source: form.source || undefined,
-        pipeline_stage: form.pipeline_stage || undefined, pipeline_id: form.pipeline_id || undefined,
-        assigned_to: form.assigned_to || undefined,
-        tags: form.tags,
-        custom_fields: Object.keys(customFields).length > 0 ? customFields : undefined,
-      } as any)
+      if (form.pipeline_id) customFields.pipeline_id = form.pipeline_id
+      if (form.pipeline_stage) customFields.pipeline_stage = form.pipeline_stage
+      if (form.assigned_to) customFields.assigned_to = form.assigned_to
+
+      // Debug: log auth state
+      const sb = (await import('@/lib/supabase-browser')).createClient()
+      const { data: { user } } = await sb.auth.getUser()
+      console.log('Auth user:', user?.id, 'Org:', currentOrg.id)
+
+      // Build minimal payload
+      const payload: Record<string, any> = {
+        org_id: currentOrg.id,
+        first_name: form.first_name,
+        last_name: form.last_name || '',
+        email: form.email || null,
+        phone: form.phone || null,
+        source: form.source || null,
+        tags: form.tags?.length ? form.tags : [],
+        sms_consent: false,
+        email_consent: true,
+        do_not_contact: false,
+      }
+      if (Object.keys(customFields).length > 0) payload.custom_fields = customFields
+      console.log('Insert payload:', JSON.stringify(payload, null, 2))
+
+      // Try direct insert for better error details
+      const { data: newContact, error } = await sb.from('contacts').insert(payload).select().single()
+      if (error) {
+        console.error('Supabase insert error:', { message: error.message, details: error.details, hint: error.hint, code: error.code })
+        throw error
+      }
       if (form.connect_to_id && form.connect_type && newContact?.id) {
         await createRelationship({
           org_id: currentOrg.id,
@@ -268,7 +291,7 @@ export default function ContactsPage() {
         }).catch(e => console.warn('Connection create skipped:', e))
       }
       setShowCreate(false); setForm(emptyForm); setConnSearchResults([]); setConnSearchQuery(''); setRefSearchResults([]); setRefSearchQuery(''); setAiResult(null); load()
-    } catch (e: any) { console.error(e); alert('Failed to create contact: ' + (e?.message || e?.details || JSON.stringify(e))) }
+    } catch (e: any) { console.error('Full create error:', e); alert('Failed to create contact: ' + (e?.message || '') + (e?.details ? ' | Details: ' + e.details : '') + (e?.hint ? ' | Hint: ' + e.hint : '') + (e?.code ? ' | Code: ' + e.code : '')) }
     finally { setCreating(false) }
   }
 
