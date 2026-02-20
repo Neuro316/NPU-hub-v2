@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import {
-  Search, Plus, Tag, X, Settings2, GripVertical, Check, Eye, EyeOff
+  Search, Plus, Tag, X, Settings2, GripVertical, Check, Eye, EyeOff, Sparkles, Loader2
 } from 'lucide-react'
 import { fetchContacts, bulkUpdateContacts, createContact, fetchTeamMembers, fetchRelationshipTypes, createRelationship } from '@/lib/crm-client'
 import type { CrmContact, ContactSearchParams, TeamMember, RelationshipType } from '@/types/crm'
@@ -32,6 +32,7 @@ interface NewContactForm {
   occupation: string; industry: string; how_heard_about_us: string
   instagram_handle: string; linkedin_url: string
   emergency_contact_name: string; emergency_contact_phone: string
+  referred_by_name: string; referred_by_contact_id: string; source_other: string
 }
 const emptyForm: NewContactForm = {
   first_name:'', last_name:'', email:'', phone:'', company:'', source:'', pipeline_id:'', pipeline_stage:'', assigned_to:'',
@@ -40,6 +41,7 @@ const emptyForm: NewContactForm = {
   preferred_name:'', date_of_birth:'', timezone:'America/New_York', preferred_contact_method:'',
   occupation:'', industry:'', how_heard_about_us:'',
   instagram_handle:'', linkedin_url:'', emergency_contact_name:'', emergency_contact_phone:'',
+  referred_by_name:'', referred_by_contact_id:'', source_other:'',
 }
 
 export default function ContactsPage() {
@@ -65,6 +67,10 @@ export default function ContactsPage() {
   const [bulkPipelineId, setBulkPipelineId] = useState('')
   const [bulkPipelineStage, setBulkPipelineStage] = useState('')
   const [showColumnConfig, setShowColumnConfig] = useState(false)
+  const [aiLooking, setAiLooking] = useState(false)
+  const [aiResult, setAiResult] = useState<string | null>(null)
+  const [refSearchResults, setRefSearchResults] = useState<CrmContact[]>([])
+  const [refSearchQuery, setRefSearchQuery] = useState('')
 
   // ── Column configuration ──
   interface ColumnDef { key: string; label: string; defaultVisible: boolean }
@@ -75,6 +81,7 @@ export default function ContactsPage() {
     { key: 'company', label: 'Company', defaultVisible: true },
     { key: 'source', label: 'Source', defaultVisible: true },
     { key: 'stage', label: 'Stage', defaultVisible: true },
+    { key: 'pipeline', label: 'Pipeline', defaultVisible: false },
     { key: 'tags', label: 'Tags', defaultVisible: true },
     { key: 'last_contact', label: 'Last Contact', defaultVisible: true },
     { key: 'assigned', label: 'Assigned', defaultVisible: true },
@@ -157,6 +164,10 @@ export default function ContactsPage() {
       case 'company': return <span className="text-xs text-gray-600">{(c.custom_fields as any)?.company || '--'}</span>
       case 'source': return <span className="text-[10px] px-1.5 py-0.5 bg-np-blue/8 text-np-blue rounded-full font-medium">{c.source || '--'}</span>
       case 'stage': return c.pipeline_stage ? <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: sc + '18', color: sc }}>{c.pipeline_stage}</span> : <span className="text-[10px] text-gray-400">--</span>
+      case 'pipeline': {
+        const pl = pipelineConfigs.find((p: any) => p.id === c.pipeline_id)
+        return pl ? <span className="text-[10px] px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded-full font-medium">{pl.name}</span> : <span className="text-[10px] text-gray-400">--</span>
+      }
       case 'tags': return <div className="flex gap-0.5 flex-wrap">{c.tags?.slice(0,2).map(t => <ContactTag key={t} tag={t} />)}{(c.tags?.length||0)>2 && <span className="text-[9px] text-gray-400">+{c.tags!.length-2}</span>}</div>
       case 'last_contact': return <span className="text-[10px] text-gray-400">{c.last_contacted_at ? new Date(c.last_contacted_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : 'Never'}</span>
       case 'assigned': return <span className="text-[10px] text-gray-600">{(c.assigned_member as any)?.display_name || '--'}</span>
@@ -218,11 +229,16 @@ export default function ContactsPage() {
     if (!form.first_name || !currentOrg) return
     setCreating(true)
     try {
+      const customFields: Record<string, any> = {}
+      if (form.company) customFields.company = form.company
+      if (form.referred_by_name) customFields.referred_by_name = form.referred_by_name
+      if (form.referred_by_contact_id) customFields.referred_by_contact_id = form.referred_by_contact_id
+      if (form.source_other) customFields.source_other = form.source_other
       const newContact = await createContact({
         org_id: currentOrg.id, first_name: form.first_name, last_name: form.last_name,
         email: form.email || undefined, phone: form.phone || undefined, source: form.source || undefined,
         pipeline_stage: form.pipeline_stage || undefined, pipeline_id: form.pipeline_id || undefined, assigned_to: form.assigned_to || undefined,
-        tags: form.tags, company: form.company || undefined,
+        tags: form.tags, custom_fields: Object.keys(customFields).length > 0 ? customFields : undefined,
         sms_consent: false, email_consent: true, do_not_contact: false,
         address_street: form.address_street || undefined, address_city: form.address_city || undefined,
         address_state: form.address_state || undefined, address_zip: form.address_zip || undefined,
@@ -244,7 +260,7 @@ export default function ContactsPage() {
           strength: form.connect_strength,
         }).catch(e => console.warn('Connection create skipped:', e))
       }
-      setShowCreate(false); setForm(emptyForm); setConnSearchResults([]); setConnSearchQuery(''); load()
+      setShowCreate(false); setForm(emptyForm); setConnSearchResults([]); setConnSearchQuery(''); setRefSearchResults([]); setRefSearchQuery(''); setAiResult(null); load()
     } catch (e: any) { console.error(e); alert('Failed to create contact: ' + (e?.message || e?.details || JSON.stringify(e))) }
     finally { setCreating(false) }
   }
@@ -255,6 +271,55 @@ export default function ContactsPage() {
     setConnSearchQuery(q)
     if (q.length < 2) { setConnSearchResults([]); return }
     try { const res = await fetchContacts({ org_id: currentOrg?.id, q, limit: 6 }); setConnSearchResults(res.contacts) } catch (e) { console.error(e) }
+  }
+
+  const handleRefSearch = async (q: string) => {
+    setRefSearchQuery(q)
+    setForm(p => ({ ...p, referred_by_name: q, referred_by_contact_id: '' }))
+    if (q.length < 2) { setRefSearchResults([]); return }
+    try { const res = await fetchContacts({ org_id: currentOrg?.id, q, limit: 6 }); setRefSearchResults(res.contacts) } catch (e) { console.error(e) }
+  }
+
+  const handleAiLookup = async () => {
+    const name = `${form.first_name} ${form.last_name}`.trim()
+    if (!name || name.length < 3) { setAiResult('Enter a first and last name first.'); return }
+    setAiLooking(true); setAiResult(null)
+    try {
+      const company = form.company ? ` at ${form.company}` : ''
+      const res = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          campaignContext: {
+            systemOverride: `You are a contact research assistant. Given a person's name, search the web for their professional information. Return ONLY a JSON object with these fields (use empty string if not found): {"email":"","phone":"","company":"","occupation":"","industry":"","linkedin_url":"","instagram_handle":"","address_city":"","address_state":"","summary":"brief 1-sentence description of who they are"}. No markdown, no explanation, just the JSON object.`
+          },
+          messages: [{ role: 'user', content: `Find professional contact information for: ${name}${company}` }],
+        }),
+      })
+      const data = await res.json()
+      const text = data?.response || data?.content?.[0]?.text || ''
+      // Try to parse JSON from the response
+      const jsonMatch = text.match(/\{[\s\S]*\}/)
+      if (jsonMatch) {
+        const info = JSON.parse(jsonMatch[0])
+        setForm(p => ({
+          ...p,
+          email: p.email || info.email || '',
+          phone: p.phone || info.phone || '',
+          company: p.company || info.company || '',
+          occupation: p.occupation || info.occupation || '',
+          industry: p.industry || info.industry || '',
+          linkedin_url: p.linkedin_url || info.linkedin_url || '',
+          instagram_handle: p.instagram_handle || info.instagram_handle || '',
+          address_city: p.address_city || info.address_city || '',
+          address_state: p.address_state || info.address_state || '',
+        }))
+        setAiResult(info.summary || 'Fields populated from web search.')
+      } else {
+        setAiResult('Could not parse results. Try adding a company name.')
+      }
+    } catch (e) { console.error(e); setAiResult('Lookup failed. Check API key or try again.') }
+    finally { setAiLooking(false) }
   }
 
   const allTags = useMemo(() => {
@@ -432,15 +497,26 @@ export default function ContactsPage() {
           <div className="w-full max-w-lg bg-white rounded-xl shadow-2xl border border-gray-100 p-5 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-bold text-np-dark">New Contact</h3>
-              <button onClick={() => { setShowCreate(false); setForm(emptyForm) }} className="p-1 rounded hover:bg-gray-50"><X size={14} /></button>
+              <button onClick={() => { setShowCreate(false); setForm(emptyForm); setAiResult(null); setRefSearchQuery(''); setRefSearchResults([]) }} className="p-1 rounded hover:bg-gray-50"><X size={14} /></button>
             </div>
             <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">First Name *</label>
+              <div className="flex gap-3 items-end">
+                <div className="flex-1"><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">First Name *</label>
                   <input value={form.first_name} onChange={e => setForm(p=>({...p,first_name:e.target.value}))} placeholder="Jane" className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
-                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Last Name</label>
+                <div className="flex-1"><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Last Name</label>
                   <input value={form.last_name} onChange={e => setForm(p=>({...p,last_name:e.target.value}))} placeholder="Smith" className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
+                <button onClick={handleAiLookup} disabled={aiLooking || !form.first_name}
+                  title="AI web search to auto-fill contact info"
+                  className="mb-0.5 flex items-center gap-1 px-2.5 py-2 text-[10px] font-semibold text-purple-600 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 disabled:opacity-40 transition-colors whitespace-nowrap">
+                  {aiLooking ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                  {aiLooking ? 'Looking up...' : 'AI Lookup'}
+                </button>
               </div>
+              {aiResult && (
+                <div className={`px-3 py-2 rounded-lg text-[11px] ${aiResult.includes('fail') || aiResult.includes('Could not') ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-purple-50 text-purple-700 border border-purple-200'}`}>
+                  <Sparkles size={10} className="inline mr-1" />{aiResult}
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Email</label>
                   <input type="email" value={form.email} onChange={e => setForm(p=>({...p,email:e.target.value}))} placeholder="jane@example.com" className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
@@ -451,7 +527,7 @@ export default function ContactsPage() {
                 <input value={form.company} onChange={e => setForm(p=>({...p,company:e.target.value}))} placeholder="Acme Corp" className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Source</label>
-                  <select value={form.source} onChange={e => setForm(p=>({...p,source:e.target.value}))} className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30">
+                  <select value={form.source} onChange={e => setForm(p=>({...p,source:e.target.value,referred_by_name:'',referred_by_contact_id:'',source_other:''}))} className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30">
                     <option value="">Select source</option>{SOURCE_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                   </select></div>
                 <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Pipeline</label>
@@ -469,6 +545,37 @@ export default function ContactsPage() {
                     {(pipelineConfigs.find((p: any) => p.id === form.pipeline_id)?.stages || []).map((s: any) => <option key={s.name} value={s.name}>{s.name}</option>)}
                   </select></div>
               </div>
+              {/* Conditional source fields */}
+              {form.source === 'Referral' && (
+                <div className="p-3 bg-indigo-50 rounded-lg border border-indigo-100">
+                  <label className="text-[10px] font-semibold uppercase tracking-wider text-indigo-500">Referred By</label>
+                  <div className="relative mt-1">
+                    <input value={refSearchQuery || form.referred_by_name} onChange={e => handleRefSearch(e.target.value)}
+                      placeholder="Search existing contacts or type a name..." className="w-full px-3 py-2 text-xs border border-indigo-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-indigo-300" />
+                    {refSearchResults.length > 0 && (
+                      <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-100 rounded-lg max-h-32 overflow-y-auto shadow-lg z-10">
+                        {refSearchResults.map(c => (
+                          <button key={c.id} onClick={() => { setForm(p=>({...p,referred_by_contact_id:c.id,referred_by_name:`${c.first_name} ${c.last_name}`})); setRefSearchQuery(`${c.first_name} ${c.last_name}`); setRefSearchResults([]) }}
+                            className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 flex items-center gap-2">
+                            <div className="w-5 h-5 rounded-full bg-indigo-100 flex items-center justify-center text-[8px] font-bold text-indigo-600">{c.first_name?.[0]}{c.last_name?.[0]}</div>
+                            {c.first_name} {c.last_name}
+                            {c.source && <span className="text-[9px] text-gray-400 ml-auto">{c.source}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {form.referred_by_contact_id && <p className="text-[10px] text-indigo-500 mt-1">Linked to existing contact</p>}
+                  {!form.referred_by_contact_id && form.referred_by_name && <p className="text-[10px] text-gray-400 mt-1">Will be saved as a name (not linked to a contact)</p>}
+                </div>
+              )}
+              {form.source === 'Other' && (
+                <div className="p-3 bg-amber-50 rounded-lg border border-amber-100">
+                  <label className="text-[10px] font-semibold uppercase tracking-wider text-amber-600">Please Specify Source</label>
+                  <input value={form.source_other} onChange={e => setForm(p=>({...p,source_other:e.target.value}))}
+                    placeholder="How did this contact find you?" className="w-full mt-1 px-3 py-2 text-xs border border-amber-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-amber-300" />
+                </div>
+              )}
               <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Assigned To</label>
                 <select value={form.assigned_to} onChange={e => setForm(p=>({...p,assigned_to:e.target.value}))} className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30">
                   <option value="">Unassigned</option>{teamMembers.map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
@@ -570,7 +677,7 @@ export default function ContactsPage() {
               </div>
             </div>
             <div className="flex justify-end gap-2 mt-5">
-              <button onClick={() => { setShowCreate(false); setForm(emptyForm) }} className="px-3 py-2 text-xs text-gray-400 hover:text-np-dark">Cancel</button>
+              <button onClick={() => { setShowCreate(false); setForm(emptyForm); setAiResult(null); setRefSearchQuery(''); setRefSearchResults([]) }} className="px-3 py-2 text-xs text-gray-400 hover:text-np-dark">Cancel</button>
               <button onClick={handleCreate} disabled={!form.first_name || creating}
                 className="px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark disabled:opacity-40 transition-colors">
                 {creating ? 'Creating...' : 'Create Contact'}
