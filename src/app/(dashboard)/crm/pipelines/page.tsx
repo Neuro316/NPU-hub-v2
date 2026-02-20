@@ -1,17 +1,18 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import Link from 'next/link'
+import { useEffect, useState, useRef } from 'react'
+import ContactDetail from '@/components/crm/contact-detail'
 import {
-  Plus, MoreHorizontal, Phone, Mail, ChevronDown, GripVertical,
-  X, DollarSign, Pencil, Trash2, Settings, BarChart3,
-  Clock, TrendingUp, Target, Percent, Save, Palette
+  Plus, MoreHorizontal, ChevronDown, GripVertical,
+  X, DollarSign, Trash2, Settings, BarChart3,
+  Clock, TrendingUp, Target, Percent, Save, User, ArrowRightLeft
 } from 'lucide-react'
 import { fetchContacts, updateContact } from '@/lib/crm-client'
 import type { CrmContact } from '@/types/crm'
 import { PIPELINE_STAGES, STAGE_COLORS } from '@/types/crm'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
+import { ContactCommsButtons } from '@/components/crm/twilio-comms'
 
 interface PipelineStageConfig {
   id: string; name: string; color: string; is_closed_won?: boolean; is_closed_lost?: boolean; position: number
@@ -51,21 +52,35 @@ const TEMPLATES: Record<string, PipelineStageConfig[]> = {
   ],
 }
 
-function ContactCard({ contact, stages, onMove }: { contact: CrmContact; stages: PipelineStageConfig[]; onMove: (stage: string) => void }) {
+function ContactCard({ contact, stages, pipelines, activePipelineId, onMove, onMovePipeline, onRemovePipeline, onOpenContact }: { contact: CrmContact; stages: PipelineStageConfig[]; pipelines: PipelineConfig[]; activePipelineId: string; onMove: (stage: string) => void; onMovePipeline: (pipelineId: string, firstStage: string) => void; onRemovePipeline: () => void; onOpenContact: (id: string) => void }) {
   const [showMenu, setShowMenu] = useState(false)
+  const [menuSection, setMenuSection] = useState<'main'|'stage'|'pipeline'>('main')
   const initials = `${contact.first_name?.[0] || ''}${contact.last_name?.[0] || ''}`.toUpperCase()
   const value = contact.custom_fields?.value as number | undefined
   const daysSince = contact.last_contacted_at ? Math.floor((Date.now() - new Date(contact.last_contacted_at).getTime()) / 86400000) : null
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!showMenu) return
+    const handler = (e: MouseEvent) => { if (menuRef.current && !menuRef.current.contains(e.target as Node)) { setShowMenu(false); setMenuSection('main') } }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showMenu])
 
   return (
-    <div className="group relative bg-white rounded-lg border border-gray-100/60 p-3 hover:shadow-md hover:border-np-blue/30 transition-all cursor-pointer">
+    <div
+      draggable
+      onDragStart={e => { e.dataTransfer.setData('contactId', contact.id); e.dataTransfer.effectAllowed = 'move' }}
+      className="group relative bg-white rounded-lg border border-gray-100/60 p-3 hover:shadow-md hover:border-np-blue/30 transition-all cursor-grab active:cursor-grabbing active:opacity-70"
+    >
       <div className="flex items-start gap-2.5">
         <div className="w-7 h-7 rounded-full bg-gradient-to-br from-teal/80 to-np-dark/80 flex items-center justify-center text-[9px] font-bold text-white flex-shrink-0">{initials}</div>
         <div className="flex-1 min-w-0">
-          <Link href={`/crm/contacts?id=${contact.id}`} className="text-xs font-semibold text-np-dark hover:text-np-blue truncate block">{contact.first_name} {contact.last_name}</Link>
+          <button onClick={e => { e.stopPropagation(); onOpenContact(contact.id) }} className="text-xs font-semibold text-np-dark hover:text-np-blue truncate block text-left w-full">{contact.first_name} {contact.last_name}</button>
           {contact.custom_fields?.company && <p className="text-[10px] text-gray-400 truncate">{contact.custom_fields.company as string}</p>}
+          {contact.email && <p className="text-[9px] text-gray-400 truncate">{contact.email}</p>}
         </div>
-        <button onClick={e => { e.stopPropagation(); setShowMenu(!showMenu) }} className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-gray-50 transition-all"><MoreHorizontal size={12} className="text-gray-400" /></button>
+        <button onClick={e => { e.stopPropagation(); setShowMenu(!showMenu); setMenuSection('main') }} className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-gray-50 transition-all"><MoreHorizontal size={12} className="text-gray-400" /></button>
       </div>
       <div className="flex items-center gap-1.5 mt-2">
         {contact.tags?.slice(0,2).map(t => <span key={t} className="text-[8px] font-semibold px-1 py-0.5 rounded-full bg-np-blue/8 text-np-blue">{t}</span>)}
@@ -73,19 +88,40 @@ function ContactCard({ contact, stages, onMove }: { contact: CrmContact; stages:
         {daysSince !== null && daysSince > 7 && <span className="text-[9px] text-orange-400">{daysSince}d</span>}
         {value && <span className="text-[10px] font-semibold text-green-600 flex items-center gap-0.5"><DollarSign size={9} />{(value/1000).toFixed(0)}k</span>}
       </div>
-      <div className="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-all">
-        <button className="p-1 rounded bg-gray-50 hover:bg-np-blue/10 transition-colors"><Phone size={10} className="text-gray-400" /></button>
-        <button className="p-1 rounded bg-gray-50 hover:bg-np-blue/10 transition-colors"><Mail size={10} className="text-gray-400" /></button>
+      <div className="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-all" onClick={e => e.stopPropagation()}>
+        <ContactCommsButtons contact={contact} size="sm" />
       </div>
       {showMenu && (
-        <div className="absolute right-0 top-8 z-20 w-36 bg-white rounded-lg shadow-xl border border-gray-100 py-1 animate-in fade-in zoom-in-95 duration-150">
-          <p className="px-3 py-1 text-[9px] font-semibold uppercase tracking-wider text-gray-400">Move to</p>
-          {stages.map(s => (
-            <button key={s.id} onClick={e => { e.stopPropagation(); onMove(s.name); setShowMenu(false) }}
-              className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50 transition-colors flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full" style={{ background: s.color }} />{s.name}
-            </button>
-          ))}
+        <div ref={menuRef} className="absolute right-0 top-8 z-20 w-48 bg-white rounded-lg shadow-xl border border-gray-100 py-1 animate-in fade-in zoom-in-95 duration-150" onClick={e => e.stopPropagation()}>
+          {menuSection === 'main' && <>
+            <button onClick={() => onOpenContact(contact.id)} className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50 flex items-center gap-2"><User size={11} className="text-gray-400" /> View Details</button>
+            <button onClick={() => setMenuSection('stage')} className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50 flex items-center gap-2"><ArrowRightLeft size={11} className="text-gray-400" /> Move to Stage <ChevronDown size={9} className="ml-auto text-gray-300 -rotate-90" /></button>
+            <button onClick={() => setMenuSection('pipeline')} className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50 flex items-center gap-2"><Target size={11} className="text-gray-400" /> Change Pipeline <ChevronDown size={9} className="ml-auto text-gray-300 -rotate-90" /></button>
+            <div className="border-t border-gray-100 my-1" />
+            <button onClick={() => { onRemovePipeline(); setShowMenu(false) }} className="w-full text-left px-3 py-1.5 text-[11px] text-red-500 hover:bg-red-50 flex items-center gap-2"><X size={11} /> Remove from Pipeline</button>
+          </>}
+          {menuSection === 'stage' && <>
+            <button onClick={() => setMenuSection('main')} className="w-full text-left px-3 py-1.5 text-[10px] text-gray-400 hover:bg-gray-50 flex items-center gap-1"><ChevronDown size={9} className="rotate-90" /> Back</button>
+            <p className="px-3 py-1 text-[9px] font-semibold uppercase tracking-wider text-gray-400">Move to Stage</p>
+            {stages.map(s => (
+              <button key={s.id} onClick={() => { onMove(s.name); setShowMenu(false); setMenuSection('main') }}
+                className={`w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50 flex items-center gap-2 ${contact.pipeline_stage === s.name ? 'font-semibold text-np-blue' : ''}`}>
+                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: s.color }} />{s.name}
+                {contact.pipeline_stage === s.name && <span className="ml-auto text-[9px] text-gray-300">current</span>}
+              </button>
+            ))}
+          </>}
+          {menuSection === 'pipeline' && <>
+            <button onClick={() => setMenuSection('main')} className="w-full text-left px-3 py-1.5 text-[10px] text-gray-400 hover:bg-gray-50 flex items-center gap-1"><ChevronDown size={9} className="rotate-90" /> Back</button>
+            <p className="px-3 py-1 text-[9px] font-semibold uppercase tracking-wider text-gray-400">Move to Pipeline</p>
+            {pipelines.map(p => (
+              <button key={p.id} onClick={() => { onMovePipeline(p.id, p.stages[0]?.name || 'New Lead'); setShowMenu(false); setMenuSection('main') }}
+                className={`w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50 flex items-center gap-2 ${p.id === activePipelineId ? 'font-semibold text-np-blue' : ''}`}>
+                {p.name}
+                <span className="ml-auto text-[9px] text-gray-300">{p.stages.length} stages</span>
+              </button>
+            ))}
+          </>}
         </div>
       )}
     </div>
@@ -222,6 +258,7 @@ export default function PipelinesPage() {
   const [loading, setLoading] = useState(true)
   const [pipelines, setPipelines] = useState<PipelineConfig[]>([DEFAULT_PIPELINE])
   const [activePipelineId, setActivePipelineId] = useState('default')
+  const [selectedContactId, setSelectedContactId] = useState<string | null>(null)
   const [showDropdown, setShowDropdown] = useState(false)
   const [showStageEditor, setShowStageEditor] = useState(false)
   const [showNewPipeline, setShowNewPipeline] = useState(false)
@@ -247,15 +284,38 @@ export default function PipelinesPage() {
   }
 
   useEffect(() => {
-    fetchContacts({ limit: 500 }).then(r => setContacts(r.contacts)).catch(console.error).finally(() => setLoading(false))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    if (!currentOrg) return
+    fetchContacts({ org_id: currentOrg.id, limit: 500 }).then(r => setContacts(r.contacts)).catch(console.error).finally(() => setLoading(false))
+  }, [currentOrg?.id])
 
   const moveContact = async (id: string, stage: string) => {
-    try { await updateContact(id, { pipeline_stage: stage }); setContacts(prev => prev.map(c => c.id === id ? { ...c, pipeline_stage: stage } : c)) } catch (e) { console.error(e) }
+    try {
+      await updateContact(id, { pipeline_stage: stage, pipeline_id: activePipelineId } as any)
+      setContacts(prev => prev.map(c => c.id === id ? { ...c, pipeline_stage: stage, pipeline_id: activePipelineId } : c))
+    } catch (e) { console.error(e) }
   }
 
-  const stageContacts = (name: string) => contacts.filter(c => (c.pipeline_stage || activePipeline.stages[0]?.name || 'New Lead') === name)
+  const moveToPipeline = async (id: string, pipelineId: string, firstStage: string) => {
+    try {
+      await updateContact(id, { pipeline_id: pipelineId, pipeline_stage: firstStage } as any)
+      setContacts(prev => prev.map(c => c.id === id ? { ...c, pipeline_id: pipelineId, pipeline_stage: firstStage } : c))
+    } catch (e) { console.error(e) }
+  }
+
+  const removeFromPipeline = async (id: string) => {
+    try {
+      await updateContact(id, { pipeline_id: null, pipeline_stage: null } as any)
+      setContacts(prev => prev.map(c => c.id === id ? { ...c, pipeline_id: undefined as any, pipeline_stage: undefined as any } : c))
+    } catch (e) { console.error(e) }
+  }
+
+  const pipelineContacts = contacts.filter(c => {
+    // Show contact in this pipeline only if explicitly assigned
+    // Contacts with no pipeline_id show only in the default pipeline
+    if (c.pipeline_id) return c.pipeline_id === activePipelineId
+    return activePipeline.is_default === true
+  })
+  const stageContacts = (name: string) => pipelineContacts.filter(c => (c.pipeline_stage || activePipeline.stages[0]?.name || 'New Lead') === name)
   const stageValue = (name: string) => stageContacts(name).reduce((s,c) => s + ((c.custom_fields?.value as number)||0), 0)
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 rounded-lg bg-np-blue/20 animate-pulse" /></div>
@@ -282,7 +342,7 @@ export default function PipelinesPage() {
               </div>
             )}
           </div>
-          <p className="text-[11px] text-gray-400">{contacts.length} contacts</p>
+          <p className="text-[11px] text-gray-400">{pipelineContacts.length} contacts</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setShowMetrics(!showMetrics)} className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg transition-colors ${showMetrics ? 'bg-np-blue/10 text-np-blue' : 'bg-gray-50 text-gray-400'}`}><BarChart3 size={13} /> Metrics</button>
@@ -290,7 +350,7 @@ export default function PipelinesPage() {
         </div>
       </div>
 
-      {showMetrics && <PipelineMetrics contacts={contacts} stages={activePipeline.stages} />}
+      {showMetrics && <PipelineMetrics contacts={pipelineContacts} stages={activePipeline.stages} />}
 
       <div className="flex gap-3 overflow-x-auto pb-4" style={{ minHeight: 'calc(100vh - 380px)' }}>
         {activePipeline.stages.map(stage => {
@@ -304,8 +364,13 @@ export default function PipelinesPage() {
                 <div className="flex-1" />
                 {sv > 0 && <span className="text-[10px] font-medium text-green-600">${(sv/1000).toFixed(0)}k</span>}
               </div>
-              <div className="space-y-2 min-h-[200px] rounded-xl bg-gray-50/50 p-2 border border-gray-100/30">
-                {sc.map(c => <ContactCard key={c.id} contact={c} stages={activePipeline.stages} onMove={s => moveContact(c.id, s)} />)}
+              <div
+                className="space-y-2 min-h-[200px] rounded-xl bg-gray-50/50 p-2 border-2 border-dashed border-gray-100/50 transition-all duration-200"
+                onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; e.currentTarget.classList.add('bg-np-blue/10', 'border-np-blue/40', 'scale-[1.01]'); e.currentTarget.classList.remove('bg-gray-50/50', 'border-gray-100/50') }}
+                onDragLeave={e => { e.currentTarget.classList.remove('bg-np-blue/10', 'border-np-blue/40', 'scale-[1.01]'); e.currentTarget.classList.add('bg-gray-50/50', 'border-gray-100/50') }}
+                onDrop={e => { e.preventDefault(); e.currentTarget.classList.remove('bg-np-blue/10', 'border-np-blue/40', 'scale-[1.01]'); e.currentTarget.classList.add('bg-gray-50/50', 'border-gray-100/50'); const cid = e.dataTransfer.getData('contactId'); if (cid) moveContact(cid, stage.name) }}
+              >
+                {sc.map(c => <ContactCard key={c.id} contact={c} stages={activePipeline.stages} pipelines={pipelines} activePipelineId={activePipelineId} onMove={s => moveContact(c.id, s)} onMovePipeline={(pid, fs) => moveToPipeline(c.id, pid, fs)} onRemovePipeline={() => removeFromPipeline(c.id)} onOpenContact={setSelectedContactId} />)}
                 {sc.length === 0 && <div className="text-center py-8 text-[10px] text-gray-400">No contacts</div>}
               </div>
             </div>
@@ -315,6 +380,9 @@ export default function PipelinesPage() {
 
       {showStageEditor && <StageEditor stages={activePipeline.stages} onSave={s => { savePipelines(pipelines.map(p => p.id===activePipelineId ? { ...p, stages:s } : p)); setShowStageEditor(false) }} onClose={() => setShowStageEditor(false)} />}
       {showNewPipeline && <NewPipelineModal onSave={p => { savePipelines([...pipelines, p], p.id); setShowNewPipeline(false) }} onClose={() => setShowNewPipeline(false)} />}
+      {selectedContactId && <ContactDetail contactId={selectedContactId} onClose={() => setSelectedContactId(null)} onUpdate={() => {
+        if (currentOrg) fetchContacts({ org_id: currentOrg.id, limit: 500 }).then(r => setContacts(r.contacts)).catch(console.error)
+      }} />}
     </div>
   )
 }
