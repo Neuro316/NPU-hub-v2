@@ -173,6 +173,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     if (org) {
       setCurrentOrg(org)
       localStorage.setItem('npu_hub_current_org', orgId)
+      // Reset to dashboard to prevent viewing stale data from the previous org
+      if (window.location.pathname !== '/') {
+        window.location.href = '/'
+      }
     }
   }, [organizations])
 
