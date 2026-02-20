@@ -82,7 +82,8 @@ function ContactCard({ contact, stages, pipelines, activePipelineId, onMove, onM
         </div>
         <button onClick={e => { e.stopPropagation(); setShowMenu(!showMenu); setMenuSection('main') }} className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-gray-50 transition-all"><MoreHorizontal size={12} className="text-gray-400" /></button>
       </div>
-      <div className="flex items-center gap-1.5 mt-2">
+      <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+        {contact.pipeline_stage && <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full bg-teal/10 text-teal">{contact.pipeline_stage}</span>}
         {contact.tags?.slice(0,2).map(t => <span key={t} className="text-[8px] font-semibold px-1 py-0.5 rounded-full bg-np-blue/8 text-np-blue">{t}</span>)}
         <div className="flex-1" />
         {daysSince !== null && daysSince > 7 && <span className="text-[9px] text-orange-400">{daysSince}d</span>}

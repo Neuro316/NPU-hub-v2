@@ -157,7 +157,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
 
       // Load pipeline configurations
       supabase.from('org_settings').select('setting_value')
-        .eq('setting_key', 'crm_pipelines').maybeSingle()
+        .eq('org_id', c.org_id).eq('setting_key', 'crm_pipelines').maybeSingle()
         .then(({ data }) => {
           if (data?.setting_value?.pipelines) setPipelineConfigs(data.setting_value.pipelines)
         })
