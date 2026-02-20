@@ -16,6 +16,7 @@ interface WorkspaceContextType {
   currentOrg: Organization | null
   switchOrg: (orgId: string) => void
   loading: boolean
+  enabledModules: string[]
 }
 
 const WorkspaceContext = createContext<WorkspaceContextType>({
@@ -24,6 +25,7 @@ const WorkspaceContext = createContext<WorkspaceContextType>({
   currentOrg: null,
   switchOrg: () => {},
   loading: true,
+  enabledModules: [],
 })
 
 export function useWorkspace() {
@@ -35,6 +37,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [organizations, setOrganizations] = useState<Organization[]>([])
   const [currentOrg, setCurrentOrg] = useState<Organization | null>(null)
   const [loading, setLoading] = useState(true)
+  const [enabledModules, setEnabledModules] = useState<string[]>([])
 
   const supabase = createClient()
 
@@ -55,20 +58,13 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
           const orgs = memberships
             .map((m: any) => m.organization)
             .filter(Boolean) as Organization[]
-
+          
           setOrganizations(orgs)
 
-          // Check URL param first (from cross-app navigation), then localStorage
-          const urlOrg = typeof window !== 'undefined'
-            ? new URLSearchParams(window.location.search).get('org')
+          // Restore last workspace or use first
+          const lastOrgId = typeof window !== 'undefined' 
+            ? localStorage.getItem('npu_hub_current_org') 
             : null
-          const lastOrgId = urlOrg
-            || (typeof window !== 'undefined' ? localStorage.getItem('npu_hub_current_org') : null)
-          // Save the URL org to localStorage so it persists
-          if (urlOrg && typeof window !== 'undefined') {
-            localStorage.setItem('npu_hub_current_org', urlOrg)
-          }
-
           const savedOrg = orgs.find(o => o.id === lastOrgId)
           setCurrentOrg(savedOrg || orgs[0])
 
@@ -81,7 +77,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
               .eq('org_id', targetOrg.id)
               .eq('user_id', user.id)
               .maybeSingle()
-
+            
             if (!existingProfile) {
               await supabase.from('team_profiles').insert({
                 org_id: targetOrg.id,
@@ -92,6 +88,67 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
                 status: 'active',
               })
             }
+          }
+        } else {
+          // No memberships: auto-join the default org
+          const { data: allOrgs } = await supabase
+            .from('organizations')
+            .select('id, name, slug')
+            .limit(1)
+            .single()
+
+          if (allOrgs) {
+            // Add user to org_members
+            await supabase.from('org_members').insert({
+              org_id: allOrgs.id,
+              user_id: user.id,
+              role: 'member',
+            })
+
+            // Create team profile
+            await supabase.from('team_profiles').insert({
+              org_id: allOrgs.id,
+              user_id: user.id,
+              display_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'New Member',
+              email: user.email,
+              role: 'team_member',
+              status: 'active',
+            })
+
+            setOrganizations([allOrgs])
+            setCurrentOrg(allOrgs)
+
+            // Auto-send team welcome email
+            try {
+              const { data: brandData } = await supabase
+                .from('brand_profiles')
+                .select('guidelines')
+                .eq('org_id', allOrgs.id)
+                .eq('brand_key', 'np')
+                .single()
+
+              const templates = brandData?.guidelines?.email_templates || []
+              const welcomeTmpl = templates.find((t: any) => t.trigger === 'team_join' && t.enabled)
+
+              if (welcomeTmpl && user.email) {
+                const recipientName = user.user_metadata?.full_name || user.email.split('@')[0] || 'there'
+                fetch('/api/send-resources', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    recipientName,
+                    recipientEmail: user.email,
+                    personalNote: welcomeTmpl.body
+                      .replace(/\{\{recipientName\}\}/g, recipientName)
+                      .replace(/\{\{senderName\}\}/g, 'Cameron Allen'),
+                    resources: [{ name: 'NPU Hub', url: 'https://hub.neuroprogeny.com', type: 'link' }],
+                    cardName: 'Team Welcome',
+                    orgId: allOrgs.id,
+                    useSenderFromSettings: true,
+                  }),
+                }).catch(() => {}) // fire and forget
+              }
+            } catch {} // non-blocking
           }
         }
       }
@@ -119,8 +176,26 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     }
   }, [organizations])
 
+  // Load enabled modules when org changes
+  useEffect(() => {
+    if (!currentOrg) { setEnabledModules([]); return }
+    supabase
+      .from('org_settings')
+      .select('setting_value')
+      .eq('org_id', currentOrg.id)
+      .eq('setting_key', 'enabled_modules')
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.setting_value && Array.isArray(data.setting_value)) {
+          setEnabledModules(data.setting_value)
+        } else {
+          setEnabledModules([])
+        }
+      })
+  }, [currentOrg?.id])
+
   return (
-    <WorkspaceContext.Provider value={{ user, organizations, currentOrg, switchOrg, loading }}>
+    <WorkspaceContext.Provider value={{ user, organizations, currentOrg, switchOrg, loading, enabledModules }}>
       {children}
     </WorkspaceContext.Provider>
   )
