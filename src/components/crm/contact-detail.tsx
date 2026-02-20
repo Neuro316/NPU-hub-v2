@@ -445,6 +445,9 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
                         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: health.bg, color: health.color }}>
                           {health.label} ({contact.health_score || 50})
                         </span>
+                        {(contact as any).archived_at && (
+                          <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Archived</span>
+                        )}
                       </div>
                     </div>
                   )}
@@ -500,6 +503,46 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
               {/* Quick action buttons */}
               <div className="flex gap-2 mt-3 flex-wrap">
                 <ContactCommsButtons contact={contact} size="md" onEmailClick={() => setShowEmailComposer(true)} />
+                <div className="w-px h-6 bg-gray-200 self-center" />
+                <button onClick={() => {
+                  setHeaderForm({
+                    first_name: contact.first_name || '',
+                    last_name: contact.last_name || '',
+                    email: contact.email || '',
+                    phone: contact.phone || '',
+                    company: (contact as any).company || '',
+                  })
+                  setEditingHeader(true)
+                }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                  <Pencil className="w-3 h-3" /> Edit
+                </button>
+                {!(contact as any).archived_at ? (
+                  <button onClick={async () => {
+                    if (!confirm('Archive this contact? They will be hidden from the main list.')) return
+                    try {
+                      await updateContact(contact.id, { archived_at: new Date().toISOString() } as any)
+                      load(); onUpdate?.()
+                    } catch (e: any) { alert('Archive failed: ' + (e?.message || '')) }
+                  }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-medium text-amber-600 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors">
+                    <Shield className="w-3 h-3" /> Archive
+                  </button>
+                ) : (
+                  <button onClick={async () => {
+                    try {
+                      await updateContact(contact.id, { archived_at: null } as any)
+                      load(); onUpdate?.()
+                    } catch (e: any) { alert('Restore failed: ' + (e?.message || '')) }
+                  }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-medium text-green-600 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors">
+                    <Shield className="w-3 h-3" /> Restore
+                  </button>
+                )}
+                <button onClick={() => setShowDeleteConfirm(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-medium text-red-500 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors">
+                  <Trash2 className="w-3 h-3" /> Delete
+                </button>
               </div>
 
               {/* Tags */}

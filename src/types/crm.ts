@@ -563,6 +563,7 @@ export interface ContactSearchParams {
   has_email?: boolean
   sms_consent?: boolean
   email_consent?: boolean
+  include_archived?: boolean
   limit?: number
   offset?: number
 }

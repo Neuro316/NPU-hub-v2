@@ -27,6 +27,7 @@ export async function fetchContacts(params: ContactSearchParams = {}) {
     .order('updated_at', { ascending: false })
 
   if (params.org_id) query = query.eq('org_id', params.org_id)
+  if (!params.include_archived) query = query.is('archived_at', null)
 
   if (params.q) {
     // Try ilike on name/email first (more reliable than search_vector which may not be populated)
