@@ -12,7 +12,7 @@ interface AcctService { id: string; client_id: string; service_type: 'Map' | 'Pr
 interface AcctClient { id: string; name: string; location_id: string; org_id: string; notes: string; services: AcctService[] }
 interface AcctConfig { map_splits: { snw: number; dr: number }; default_map_price: number; default_program_price: number; payout_agreement: string; marketing?: { monthly_total: number; clinic_share: number; dr_share: number } }
 interface AcctCheck { id: string; org_id: string; payee_type: 'clinic' | 'dr'; payee_clinic_id: string | null; check_number: string; check_date: string; amount: number; memo: string; created_at: string }
-interface AcctMktgCharge { id: string; org_id: string; month: string; payee_type: 'clinic' | 'dr'; payee_clinic_id: string | null; amount: number; description: string }
+interface AcctMktgCharge { id: string; org_id: string; month: string; payee_type: 'clinic' | 'dr'; payee_clinic_id: string | null; amount: number; description: string; waived: boolean }
 
 const $$ = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n)
 const fD = (d: string) => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''
@@ -256,7 +256,7 @@ function PayView({clients,locs,clinics,mapSp,checks,mktg,onAddCheck,onDeleteChec
   // Marketing deductions per payee
   const mktgTotals=useMemo(()=>{
     const m:{dr:number;clinics:Record<string,number>}={dr:0,clinics:{}}
-    mktg.forEach(c=>{if(c.payee_type==='dr')m.dr+=c.amount;else if(c.payee_clinic_id)m.clinics[c.payee_clinic_id]=(m.clinics[c.payee_clinic_id]||0)+c.amount})
+    mktg.filter(c=>!c.waived).forEach(c=>{if(c.payee_type==='dr')m.dr+=c.amount;else if(c.payee_clinic_id)m.clinics[c.payee_clinic_id]=(m.clinics[c.payee_clinic_id]||0)+c.amount})
     return m
   },[mktg])
 
@@ -312,8 +312,8 @@ function PayView({clients,locs,clinics,mapSp,checks,mktg,onAddCheck,onDeleteChec
           const pMktg=mktg.filter(m=>m.payee_type===p.type&&(p.type==='dr'||m.payee_clinic_id===p.id)).sort((a,b)=>a.month.localeCompare(b.month))
           return <div className="space-y-3">
             {pMktg.length>0&&<div><p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Marketing Deductions</p>
-              {pMktg.map(m=><div key={m.id} className="flex items-center justify-between py-1.5 border-b border-gray-50 text-xs">
-                <span className="text-gray-400">{fMoL(m.month)}</span><span className="text-gray-500">{m.description}</span><span className="font-semibold text-red-500" style={{fontFeatureSettings:'"tnum"'}}>-{$$(m.amount)}</span></div>)}</div>}
+              {pMktg.map(m=><div key={m.id} className={`flex items-center justify-between py-1.5 border-b border-gray-50 text-xs ${m.waived?'opacity-40':''}`}>
+                <span className="text-gray-400">{fMoL(m.month)}</span><span className="text-gray-500">{m.description}</span>{m.waived?<span className="px-2 py-0.5 rounded bg-gray-100 text-gray-400 text-[10px] font-semibold">Waived</span>:<span className="font-semibold text-red-500" style={{fontFeatureSettings:'"tnum"'}}>-{$$(m.amount)}</span>}</div>)}</div>}
             {pChecks.length>0&&<div><p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Checks Written</p>
               <table className="w-full text-left"><thead><tr className="border-b border-gray-100"><TH>Date</TH><TH>Check #</TH><TH className="text-right">Amount</TH><TH>Memo</TH><TH></TH></tr></thead>
                 <tbody>{pChecks.map(ch=><tr key={ch.id} className="border-b border-gray-50 hover:bg-gray-50/50">
@@ -352,19 +352,26 @@ function PayView({clients,locs,clinics,mapSp,checks,mktg,onAddCheck,onDeleteChec
 }
 
 /* ── Settings ──────────────────────────────────────── */
-function SetView({locs,clinics,mapSp,setMapSp,clients,agreement,setAgreement,config,setConfig,onSaveConfig,onSaveLoc,onDeleteLoc,onSaveClinic,mktg,onAddMktg,onDeleteMktg}:any) {
+function SetView({locs,clinics,mapSp,setMapSp,clients,agreement,setAgreement,config,setConfig,onSaveConfig,onSaveLoc,onDeleteLoc,onSaveClinic,mktg,onAddMktg,onDeleteMktg,onToggleWaive}:any) {
   const [modal,setMo]=useState<any>(null);const [form,setF]=useState<any>({});const [editAgr,setEA]=useState(false)
   const mT=mapSp.snw+mapSp.dr
-  const [mktgForm,setMF]=useState({month:curMonth(),clinicId:clinics[0]?.id||'',clinicAmt:'1000',drAmt:'1000',desc:'Social media marketing - SNW covered'})
+  const [mktgMonth,setMM]=useState(curMonth())
   const open=(type:string,data:any)=>{setMo({type});setF(data||{})};const close=()=>{setMo(null);setF({})}
   const saveLoc=async()=>{if(!form.name?.trim()||!form.short?.trim())return;await onSaveLoc(modal.type==='addLoc'?null:form.id,{name:form.name.trim(),short_code:form.short.trim().toUpperCase(),color:form.color||COLORS[locs.length%COLORS.length],clinic_id:form.clinicId||null});close()}
   const deleteLoc=async(lid:string)=>{const n=clients.filter((c:AcctClient)=>c.location_id===lid).length;if(n>0){alert(`Cannot delete: ${n} client(s) assigned.`);return};await onDeleteLoc(lid);close()}
   const saveClinic=async()=>{if(!form.name?.trim())return;await onSaveClinic(modal.type==='addClinic'?null:form.id,{name:form.name.trim(),contact_name:form.contactName||'',ein:form.ein||'',corp_type:form.corpType||'',has_w9:!!form.hasW9,has_1099:!!form.has1099,address:form.address||'',city:form.city||'',state:form.state||'',zip:form.zip||'',phone:form.phone||'',email:form.email||'',website:form.website||'',notes:form.notes||'',split_snw:form.snw||26,split_clinic:form.clinic||55.01,split_dr:form.drY||18.99});close()}
-  const addMktg=async()=>{
-    const ca=parseFloat(mktgForm.clinicAmt)||0;const da=parseFloat(mktgForm.drAmt)||0;if(ca<=0&&da<=0)return
-    await onAddMktg(mktgForm.month,mktgForm.clinicId,ca,da,mktgForm.desc)
-    setMF(p=>({...p,month:curMonth()}))
-  }
+  const addMktgMonth=async()=>{await onAddMktg(mktgMonth);setMM(curMonth())}
+
+  // Group marketing charges by month
+  const mktgByMonth=useMemo(()=>{
+    const m:Record<string,AcctMktgCharge[]>={}
+    mktg.forEach((c:AcctMktgCharge)=>{if(!m[c.month])m[c.month]=[];m[c.month].push(c)})
+    return Object.entries(m).sort(([a],[b])=>a.localeCompare(b))
+  },[mktg])
+
+  // Check if a month has all charges waived
+  const isMonthWaived=(charges:AcctMktgCharge[])=>charges.length>0&&charges.every(c=>c.waived)
+  const monthTotal=(charges:AcctMktgCharge[])=>charges.filter(c=>!c.waived).reduce((s,c)=>s+c.amount,0)
 
   return <div className="space-y-5">
     <h2 className="text-base font-bold text-np-dark">Settings</h2>
@@ -372,25 +379,41 @@ function SetView({locs,clinics,mapSp,setMapSp,clients,agreement,setAgreement,con
     <div className="rounded-xl border-2 border-orange-200 bg-orange-50/30 overflow-hidden">
       <div className="px-4 py-3 border-b border-orange-200 bg-orange-50/50 flex items-center gap-2"><Megaphone className="w-4 h-4 text-orange-500"/><h3 className="text-sm font-semibold text-np-dark">Marketing Reimbursements to SNW</h3></div>
       <div className="p-4 space-y-4">
-        <p className="text-xs text-gray-500">When SNW covers marketing costs, charge the clinic and/or Dr. Yonce. These deduct from their payout balance.</p>
-        <div className="flex gap-3 flex-wrap items-end">
-          <FI label="Month" value={mktgForm.month} onChange={(v:string)=>setMF(p=>({...p,month:v}))} type="month"/>
-          <FI label="Clinic Share ($)" value={mktgForm.clinicAmt} onChange={(v:string)=>setMF(p=>({...p,clinicAmt:v}))} type="number"/>
-          <FI label="Dr. Yonce Share ($)" value={mktgForm.drAmt} onChange={(v:string)=>setMF(p=>({...p,drAmt:v}))} type="number"/>
-          <div className="mb-3"><Btn onClick={addMktg}>Add Charge</Btn></div>
+        <div className="p-3 bg-white rounded-lg border border-orange-100">
+          <p className="text-xs text-gray-500 mb-1">SNW covers social media marketing. Each clinic owes <span className="font-semibold text-amber-600">$500/mo</span> and Dr. Yonce owes <span className="font-semibold text-purple-600">$500 per clinic/mo</span>.</p>
+          <p className="text-[11px] text-gray-400">{clinics.length} clinic{clinics.length!==1?'s':''} = <span className="font-semibold">{$$(clinics.length*500)}/mo clinics + {$$(clinics.length*500)}/mo Dr. Yonce = {$$(clinics.length*1000)}/mo total</span></p>
         </div>
-        {clinics.length>1&&<FS label="Which Clinic" value={mktgForm.clinicId} onChange={(v:string)=>setMF(p=>({...p,clinicId:v}))} options={clinics.map((c:AcctClinic)=>({v:c.id,l:c.name}))}/>}
-        <FI label="Description" value={mktgForm.desc} onChange={(v:string)=>setMF(p=>({...p,desc:v}))}/>
-        {mktg.length>0&&<div>
-          <p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Active Charges</p>
-          <table className="w-full text-left"><thead><tr className="border-b border-gray-200"><TH>Month</TH><TH>Payee</TH><TH className="text-right">Amount</TH><TH>Description</TH><TH></TH></tr></thead>
-            <tbody>{mktg.sort((a:AcctMktgCharge,b:AcctMktgCharge)=>a.month.localeCompare(b.month)||a.payee_type.localeCompare(b.payee_type)).map((m:AcctMktgCharge)=><tr key={m.id} className="border-b border-gray-100">
-              <td className="py-2 px-3 text-xs font-semibold">{fMoL(m.month)}</td>
-              <td className="py-2 px-3 text-xs" style={{color:m.payee_type==='dr'?'#9333ea':'#d97706'}}>{m.payee_type==='dr'?'Dr. Yonce':clinics.find((c:AcctClinic)=>c.id===m.payee_clinic_id)?.name.split('(')[0].trim()||'Clinic'}</td>
-              <td className="py-2 px-3 text-xs font-semibold text-red-500 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(m.amount)}</td>
-              <td className="py-2 px-3 text-[11px] text-gray-400">{m.description}</td>
-              <td className="py-2 px-1"><button onClick={()=>{if(confirm('Remove this charge?'))onDeleteMktg(m.id)}} className="p-1 rounded hover:bg-red-50"><Trash2 className="w-3 h-3 text-gray-300 hover:text-red-400"/></button></td>
-            </tr>)}</tbody></table></div>}
+        <div className="flex gap-3 items-end">
+          <FI label="Add Month" value={mktgMonth} onChange={(v:string)=>setMM(v)} type="month"/>
+          <div className="mb-3"><Btn onClick={addMktgMonth}>Generate Charges</Btn></div>
+        </div>
+        {mktgByMonth.length>0&&<div>
+          <p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Monthly Marketing Schedule</p>
+          {mktgByMonth.map(([mo,charges])=>{const allWaived=isMonthWaived(charges);const tot=monthTotal(charges)
+            return <div key={mo} className={`rounded-lg border mb-2 overflow-hidden ${allWaived?'border-gray-200 bg-gray-50/50':'border-orange-100 bg-white'}`}>
+              <div className="flex items-center justify-between px-4 py-2.5">
+                <div className="flex items-center gap-3">
+                  <span className={`text-xs font-bold ${allWaived?'text-gray-400 line-through':'text-np-dark'}`}>{fMoL(mo)}</span>
+                  {allWaived?<span className="px-2 py-0.5 rounded bg-gray-100 text-gray-400 text-[10px] font-semibold">Waived</span>
+                    :<span className="text-xs font-semibold text-red-500" style={{fontFeatureSettings:'"tnum"'}}>{$$(tot)} total</span>}
+                </div>
+                <button onClick={()=>onToggleWaive(charges.map((c:AcctMktgCharge)=>c.id),!allWaived)}
+                  className={`px-3 py-1 text-[10px] font-semibold rounded-md transition-colors ${allWaived?'text-orange-600 bg-orange-50 border border-orange-200 hover:bg-orange-100':'text-gray-500 bg-gray-50 border border-gray-200 hover:bg-gray-100'}`}>
+                  {allWaived?'Restore':'Waive Month'}
+                </button>
+              </div>
+              {!allWaived&&<div className="px-4 pb-3 pt-0">
+                <div className="flex gap-2 flex-wrap">{charges.map((c:AcctMktgCharge)=>{
+                  const name=c.payee_type==='dr'?'Dr. Yonce':clinics.find((x:AcctClinic)=>x.id===c.payee_clinic_id)?.name.split('(')[0].trim()||'Clinic'
+                  const clRef=c.payee_type==='dr'&&c.payee_clinic_id?` (re: ${clinics.find((x:AcctClinic)=>x.id===c.payee_clinic_id)?.name.split('(')[0].trim()||'clinic'})`:''
+                  return <div key={c.id} className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[11px] border ${c.waived?'bg-gray-50 border-gray-200 opacity-50':'bg-white border-gray-100'}`}>
+                    <span style={{color:c.payee_type==='dr'?'#9333ea':'#d97706'}} className="font-semibold">{name}{clRef}</span>
+                    <span className="font-semibold" style={{fontFeatureSettings:'"tnum"',color:c.waived?'#9ca3af':'#ef4444'}}>{c.waived?'waived':$$(-c.amount)}</span>
+                    <button onClick={()=>onToggleWaive([c.id],!c.waived)} className="text-[10px] text-gray-400 hover:text-np-blue underline">{c.waived?'restore':'waive'}</button>
+                  </div>})}</div>
+              </div>}
+            </div>})}
+        </div>}
       </div></div>
     {/* Payout Agreement */}
     <div className="rounded-xl border border-gray-100 bg-white overflow-hidden">
@@ -485,10 +508,17 @@ export default function AccountingPage() {
   const saveClinic=async(id:string|null,data:any)=>{if(!orgId)return;if(id)await supabase.from('acct_clinics').update(data).eq('id',id);else await supabase.from('acct_clinics').insert({id:`clinic-${Date.now()}`,org_id:orgId,...data});loadData()}
   const addCheck=async(data:any)=>{if(!orgId)return;await supabase.from('acct_checks').insert({org_id:orgId,...data});loadData()}
   const deleteCheck=async(id:string)=>{await supabase.from('acct_checks').delete().eq('id',id);loadData()}
-  const addMktg=async(month:string,clinicId:string,clinicAmt:number,drAmt:number,desc:string)=>{
+  const addMktg=async(month:string)=>{
     if(!orgId)return
-    if(clinicAmt>0&&clinicId)await supabase.from('acct_marketing_charges').upsert({org_id:orgId,month,payee_type:'clinic',payee_clinic_id:clinicId,amount:clinicAmt,description:desc},{onConflict:'org_id,month,payee_type,payee_clinic_id'})
-    if(drAmt>0)await supabase.from('acct_marketing_charges').upsert({org_id:orgId,month,payee_type:'dr',payee_clinic_id:null,amount:drAmt,description:desc},{onConflict:'org_id,month,payee_type,payee_clinic_id'})
+    // For each clinic: clinic owes $500, Dr. Yonce owes $500 per clinic
+    for(const c of clinics){
+      await supabase.from('acct_marketing_charges').upsert({org_id:orgId,month,payee_type:'clinic',payee_clinic_id:c.id,amount:500,description:'Social media marketing'},{onConflict:'org_id,month,payee_type,payee_clinic_id'})
+      await supabase.from('acct_marketing_charges').upsert({org_id:orgId,month,payee_type:'dr',payee_clinic_id:c.id,amount:500,description:'Social media marketing'},{onConflict:'org_id,month,payee_type,payee_clinic_id'})
+    }
+    loadData()
+  }
+  const toggleWaive=async(ids:string[],waived:boolean)=>{
+    for(const id of ids){await supabase.from('acct_marketing_charges').update({waived}).eq('id',id)}
     loadData()
   }
   const deleteMktg=async(id:string)=>{await supabase.from('acct_marketing_charges').delete().eq('id',id);loadData()}
@@ -518,7 +548,7 @@ export default function AccountingPage() {
         {ac?<DetView cl={ac} locs={locs} clinics={clinics} mapSp={mapSp} onBack={()=>sS(null)} onAddSvc={addService} onAddPmt={addPayment}/>
           :vw==='payouts'?<PayView clients={clients} locs={locs} clinics={clinics} mapSp={mapSp} checks={checks} mktg={mktg} onAddCheck={addCheck} onDeleteCheck={deleteCheck}/>
           :vw==='recon'?<ReconView clients={clients} locs={locs} clinics={clinics} mapSp={mapSp}/>
-          :vw==='settings'?<SetView locs={locs} clinics={clinics} mapSp={mapSp} setMapSp={(v:any)=>setConfig(p=>({...p,map_splits:v}))} clients={clients} agreement={config.payout_agreement} setAgreement={(v:string)=>setConfig(p=>({...p,payout_agreement:v}))} config={config} setConfig={setConfig} onSaveConfig={saveConfig} onSaveLoc={saveLoc} onDeleteLoc={deleteLoc} onSaveClinic={saveClinic} mktg={mktg} onAddMktg={addMktg} onDeleteMktg={deleteMktg}/>
+          :vw==='settings'?<SetView locs={locs} clinics={clinics} mapSp={mapSp} setMapSp={(v:any)=>setConfig(p=>({...p,map_splits:v}))} clients={clients} agreement={config.payout_agreement} setAgreement={(v:string)=>setConfig(p=>({...p,payout_agreement:v}))} config={config} setConfig={setConfig} onSaveConfig={saveConfig} onSaveLoc={saveLoc} onDeleteLoc={deleteLoc} onSaveClinic={saveClinic} mktg={mktg} onAddMktg={addMktg} onDeleteMktg={deleteMktg} onToggleWaive={toggleWaive}/>
           :<DashView clients={clients} locs={locs} onSel={id=>{sS(id);sV('dash')}} onAdd={()=>{setSAC(true);setNC({nm:'',loc:locs[0]?.id||''})}}/>}
       </div></div>
     {showAC&&<Mdl title="Add Client" onClose={()=>setSAC(false)}>
