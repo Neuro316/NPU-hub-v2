@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
-import { DollarSign, Users, TrendingUp, ChevronLeft, Plus, X, Settings as SettingsIcon, BarChart3, LayoutDashboard, Search, Wallet, Megaphone, Trash2 } from 'lucide-react'
+import { DollarSign, Users, TrendingUp, ChevronLeft, Plus, X, Settings as SettingsIcon, BarChart3, LayoutDashboard, Search, Wallet, Megaphone, Trash2, Pencil } from 'lucide-react'
 
 interface AcctLocation { id: string; name: string; short_code: string; color: string; clinic_id: string | null; org_id: string }
 interface AcctClinic { id: string; org_id: string; name: string; contact_name: string; ein: string; corp_type: string; has_w9: boolean; has_1099: boolean; address: string; city: string; state: string; zip: string; phone: string; email: string; website: string; notes: string; split_snw: number; split_clinic: number; split_dr: number; flat_snw: number; flat_clinic: number; flat_dr: number }
@@ -238,14 +238,20 @@ function DashView({clients,locs,onSel,onAdd}:{clients:AcctClient[];locs:AcctLoca
 }
 
 /* ── Detail ────────────────────────────────────────── */
-function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onAddPmt}:any) {
+function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onAddPmt,onEditPmt,onDeletePmt}:any) {
   const [tab,setTab]=useState('svc');const [showAS,setSAS]=useState(false);const [showAP,setSAP]=useState<string|null>(null)
   const [sf,setSF]=useState({t:'Map',a:'600',d:td(),n:''})
   const [pf,setPF]=useState({a:'',d:td(),n:''})
+  const [editPm,setEditPm]=useState<AcctPayment|null>(null)
+  const [ef,setEF]=useState({a:'',d:'',n:''})
   const st=getStatus(cl);const tO=cl.services.reduce((s:number,v:AcctService)=>s+v.amount,0);const tP=cl.services.reduce((s:number,v:AcctService)=>s+v.payments.reduce((p:number,x:AcctPayment)=>p+x.amount,0),0);const bal=tO-tP;const pct=tO>0?(tP/tO)*100:100
   const doAS=async()=>{await onAddSvc(cl.id,{service_type:sf.t,amount:parseFloat(sf.a)||0,service_date:sf.d,notes:sf.n});setSAS(false);setSF({t:'Map',a:'600',d:td(),n:''})}
   const doAP=async(sid:string)=>{const a=parseFloat(pf.a)||0;if(a<=0)return;await onAddPmt(cl.id,sid,{amount:a,payment_date:pf.d,notes:pf.n});setSAP(null);setPF({a:'',d:td(),n:''})}
+  const openEdit=(pm:AcctPayment)=>{setEditPm(pm);setEF({a:String(pm.amount),d:pm.payment_date,n:pm.notes||''})}
+  const doEdit=async()=>{if(!editPm)return;const a=parseFloat(ef.a)||0;if(a<=0)return;await onEditPmt(editPm.id,{amount:a,payment_date:ef.d,notes:ef.n});setEditPm(null)}
+  const doDelete=async(pm:AcctPayment)=>{if(!confirm(`Delete ${$$(pm.amount)} payment from ${fD(pm.payment_date)}?`))return;await onDeletePmt(pm.id)}
   const tSvc=showAP?cl.services.find((s:AcctService)=>s.id===showAP):null
+  const editSvc=editPm?cl.services.find((s:AcctService)=>s.id===editPm.service_id):null
   const loc=locs.find((l:AcctLocation)=>l.id===cl.location_id);const clObj=loc?.clinic_id?clinics.find((c:AcctClinic)=>c.id===loc.clinic_id):null
 
   return <div className="space-y-5">
@@ -279,17 +285,28 @@ function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onAddPmt}:any) {
               <span><span className="text-gray-400">Dr.Y: </span><span className="font-semibold text-purple-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(sp.dr)}</span></span>
             </div></div>
           {sv.payments.length>0&&<div><p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Payments</p>
-            {sv.payments.map(pm=><div key={pm.id} className="flex items-center justify-between py-1.5 border-b border-gray-50 text-xs">
-              <span className="text-gray-400">{fD(pm.payment_date)}</span><span className="font-semibold text-green-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(pm.amount)}</span><span className="text-gray-400 text-[11px]">{pm.notes}</span><span className="text-gray-300 text-[10px]">pays out {fD(pm.payout_date||getPayoutDate(pm.payment_date))}</span></div>)}</div>}
+            {sv.payments.map(pm=><div key={pm.id} className="group flex items-center justify-between py-1.5 border-b border-gray-50 text-xs">
+              <span className="text-gray-400 w-20">{fD(pm.payment_date)}</span><span className="font-semibold text-green-600 w-20" style={{fontFeatureSettings:'"tnum"'}}>{$$(pm.amount)}</span><span className="text-gray-400 text-[11px] flex-1 truncate">{pm.notes||''}</span><span className="text-gray-300 text-[10px] mr-2">pays out {fD(pm.payout_date||getPayoutDate(pm.payment_date))}</span>
+              <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button onClick={()=>openEdit(pm)} className="p-1 rounded hover:bg-np-blue/10" title="Edit"><Pencil className="w-3 h-3 text-gray-400 hover:text-np-blue"/></button>
+                <button onClick={()=>doDelete(pm)} className="p-1 rounded hover:bg-red-50" title="Delete"><Trash2 className="w-3 h-3 text-gray-300 hover:text-red-500"/></button>
+              </div>
+            </div>)}</div>}
           <button onClick={()=>{setSAP(sv.id);setPF({a:rem>0?String(rem):'',d:td(),n:''})}} className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold text-np-blue border border-np-blue/30 rounded-md hover:bg-np-blue/5"><Plus className="w-3 h-3"/>Add Payment</button>
         </div></div>})}
-    {tab==='pmt'&&<div className="rounded-xl border border-gray-100 bg-white overflow-hidden"><div className="overflow-auto"><table className="w-full text-left"><thead><tr className="border-b border-gray-100 bg-gray-50/30"><TH>Date</TH><TH>Service</TH><TH className="text-right">Amount</TH><TH className="text-right text-np-blue">SNW</TH>{clObj&&<TH className="text-right text-amber-600">Clinic</TH>}<TH className="text-right text-purple-600">Dr.Y</TH><TH>Payout</TH></tr></thead>
-      <tbody>{cl.services.flatMap((sv:AcctService)=>sv.payments.map((pm:AcctPayment)=>{const sp=calcSplit(pm.amount,sv.service_type,cl.location_id,locs,clinics,cfg);return{...pm,svc:sv.service_type,...sp}})).sort((a:any,b:any)=>a.payment_date.localeCompare(b.payment_date)).map((pm:any,i:number)=>{
+    {tab==='pmt'&&<div className="rounded-xl border border-gray-100 bg-white overflow-hidden"><div className="overflow-auto"><table className="w-full text-left"><thead><tr className="border-b border-gray-100 bg-gray-50/30"><TH>Date</TH><TH>Service</TH><TH className="text-right">Amount</TH><TH className="text-right text-np-blue">SNW</TH>{clObj&&<TH className="text-right text-amber-600">Clinic</TH>}<TH className="text-right text-purple-600">Dr.Y</TH><TH>Payout</TH><TH></TH></tr></thead>
+      <tbody>{cl.services.flatMap((sv:AcctService)=>sv.payments.map((pm:AcctPayment)=>{const sp=calcSplit(pm.amount,sv.service_type,cl.location_id,locs,clinics,cfg);return{...pm,svc:sv.service_type,...sp,_orig:pm}})).sort((a:any,b:any)=>a.payment_date.localeCompare(b.payment_date)).map((pm:any,i:number)=>{
         const clA=Object.values(pm.clinicAmts).reduce((s:number,v:any)=>s+v,0) as number
-        return <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50"><td className="py-2 px-3 text-xs text-gray-600">{fD(pm.payment_date)}</td><td className="py-2 px-3 text-xs text-gray-400">{pm.svc}</td>
+        return <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50 group"><td className="py-2 px-3 text-xs text-gray-600">{fD(pm.payment_date)}</td><td className="py-2 px-3 text-xs text-gray-400">{pm.svc}</td>
           <td className="py-2 px-3 text-xs font-semibold text-green-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(pm.amount)}</td><td className="py-2 px-3 text-xs text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(pm.snw)}</td>
           {clObj&&<td className="py-2 px-3 text-xs text-right" style={{color:clA>0?'#d97706':'#d1d5db',fontFeatureSettings:'"tnum"'}}>{clA>0?$$(clA):'\u2014'}</td>}
-          <td className="py-2 px-3 text-xs text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(pm.dr)}</td><td className="py-2 px-3 text-[10px] text-gray-400">{fD(pm.payout_date||getPayoutDate(pm.payment_date))}</td></tr>})}</tbody></table></div></div>}
+          <td className="py-2 px-3 text-xs text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(pm.dr)}</td><td className="py-2 px-3 text-[10px] text-gray-400">{fD(pm.payout_date||getPayoutDate(pm.payment_date))}</td>
+          <td className="py-2 px-1">
+            <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button onClick={()=>openEdit(pm._orig)} className="p-1 rounded hover:bg-np-blue/10" title="Edit"><Pencil className="w-3 h-3 text-gray-400 hover:text-np-blue"/></button>
+              <button onClick={()=>doDelete(pm._orig)} className="p-1 rounded hover:bg-red-50" title="Delete"><Trash2 className="w-3 h-3 text-gray-300 hover:text-red-500"/></button>
+            </div>
+          </td></tr>})}</tbody></table></div></div>}
     {showAS&&<Mdl title="Add Service" onClose={()=>setSAS(false)}>
       <FS label="Type" value={sf.t} onChange={(v:string)=>setSF(p=>({...p,t:v,a:v==='Map'?'600':'5400'}))} options={[{v:'Map',l:'Initial Map (qEEG)'},{v:'Program',l:'Neuro Program'}]}/>
       <FI label="Amount ($)" value={sf.a} onChange={(v:string)=>setSF(p=>({...p,a:v}))} type="number"/><FI label="Date" value={sf.d} onChange={(v:string)=>setSF(p=>({...p,d:v}))} type="date"/><FI label="Notes" value={sf.n} onChange={(v:string)=>setSF(p=>({...p,n:v}))}/>
@@ -303,6 +320,21 @@ function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onAddPmt}:any) {
       <FI label="Amount ($)" value={pf.a} onChange={(v:string)=>setPF(p=>({...p,a:v}))} type="number"/><FI label="Date" value={pf.d} onChange={(v:string)=>setPF(p=>({...p,d:v}))} type="date"/><FI label="Note" value={pf.n} onChange={(v:string)=>setPF(p=>({...p,n:v}))}/>
       <SplitPrev amt={parseFloat(pf.a)||0} svcType={tSvc.service_type} locId={cl.location_id} locs={locs} clinics={clinics} cfg={cfg}/>
       <div className="flex gap-2 mt-4 justify-end"><Btn outline onClick={()=>setSAP(null)}>Cancel</Btn><Btn onClick={()=>doAP(showAP!)}>Record</Btn></div></Mdl>}
+    {editPm&&<Mdl title="Edit Payment" onClose={()=>setEditPm(null)}>
+      {editSvc&&<div className="p-3 bg-gray-50 rounded-xl border border-gray-100 mb-4 space-y-1">
+        <div className="flex justify-between text-xs"><span className="text-gray-400">Service:</span><span className="font-semibold">{editSvc.service_type==='Map'?'Initial Map':'Neuro Program'} ({$$(editSvc.amount)})</span></div>
+        <div className="flex justify-between text-xs"><span className="text-gray-400">Original amount:</span><span className="font-semibold text-green-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(editPm.amount)}</span></div>
+        <div className="flex justify-between text-xs"><span className="text-gray-400">Original date:</span><span className="text-gray-600">{fD(editPm.payment_date)}</span></div></div>}
+      <FI label="Amount ($)" value={ef.a} onChange={(v:string)=>setEF(p=>({...p,a:v}))} type="number"/>
+      <FI label="Date" value={ef.d} onChange={(v:string)=>setEF(p=>({...p,d:v}))} type="date"/>
+      <FI label="Note" value={ef.n} onChange={(v:string)=>setEF(p=>({...p,n:v}))}/>
+      {editSvc&&<SplitPrev amt={parseFloat(ef.a)||0} svcType={editSvc.service_type} locId={cl.location_id} locs={locs} clinics={clinics} cfg={cfg}/>}
+      <div className="flex gap-2 mt-4 justify-end">
+        <BtnDanger onClick={()=>{doDelete(editPm);setEditPm(null)}}>Delete Payment</BtnDanger>
+        <div className="flex-1"/>
+        <Btn outline onClick={()=>setEditPm(null)}>Cancel</Btn>
+        <Btn onClick={doEdit}>Save Changes</Btn>
+      </div></Mdl>}
   </div>
 }
 
@@ -612,7 +644,7 @@ function SetView({locs,clinics,clients,agreement,setAgreement,config,setConfig,o
       {/* Mode toggle */}
       <div className="flex gap-2 mb-3">{[{k:'waterfall',l:'Waterfall (Flat Clinic + % Remainder)'},{k:'pct',l:'All Percentages'}].map(m=>{
         const active=(m.k==='waterfall')?((form.flatClinic||0)>0):((form.flatClinic||0)===0)
-        return <button key={m.k} onClick={()=>{if(m.k==='waterfall'){setF((p:any)=>({...p,flatClinic:p.flatClinic||3395,snw:23,drY:77,clinic:0,flatSnw:0,flatDr:0}))}else{setF((p:any)=>({...p,flatClinic:0,snw:26,clinic:55.01,drY:18.99,flatSnw:0,flatDr:0}))}}} className={`flex-1 px-3 py-2 text-[11px] font-semibold rounded-lg border transition-colors ${active?'bg-np-blue/10 border-np-blue/30 text-np-blue':'bg-white border-gray-200 text-gray-400 hover:bg-gray-50'}`}>{m.l}</button>})}</div>
+        return <button key={m.k} onClick={()=>{if(m.k==='waterfall'){setF((p:any)=>({...p,flatClinic:p.flatClinic||3395,snw:26,drY:74,clinic:0,flatSnw:0,flatDr:0}))}else{setF((p:any)=>({...p,flatClinic:0,snw:26,clinic:55.01,drY:18.99,flatSnw:0,flatDr:0}))}}} className={`flex-1 px-3 py-2 text-[11px] font-semibold rounded-lg border transition-colors ${active?'bg-np-blue/10 border-np-blue/30 text-np-blue':'bg-white border-gray-200 text-gray-400 hover:bg-gray-50'}`}>{m.l}</button>})}</div>
 
       {(form.flatClinic||0)>0 ? <>
         {/* ── WATERFALL MODE ── */}
@@ -679,6 +711,8 @@ export default function AccountingPage() {
   const addClient=async()=>{if(!nc.nm.trim()||!nc.loc||!orgId)return;await supabase.from('acct_clients').insert({org_id:orgId,name:nc.nm.trim(),location_id:nc.loc});setSAC(false);setNC({nm:'',loc:''});loadData()}
   const addService=async(cid:string,svc:any)=>{if(!orgId)return;await supabase.from('acct_services').insert({org_id:orgId,client_id:cid,...svc});loadData()}
   const addPayment=async(cid:string,sid:string,pmt:any)=>{if(!orgId)return;await supabase.from('acct_payments').insert({org_id:orgId,service_id:sid,client_id:cid,...pmt});loadData()}
+  const editPayment=async(pmtId:string,data:any)=>{if(!orgId)return;await supabase.from('acct_payments').update(data).eq('id',pmtId);loadData()}
+  const deletePayment=async(pmtId:string)=>{if(!orgId)return;await supabase.from('acct_payments').delete().eq('id',pmtId);loadData()}
   const saveConfig=async()=>{if(!orgId)return;await supabase.from('org_settings').upsert({org_id:orgId,setting_key:'acct_config',setting_value:config},{onConflict:'org_id,setting_key'})}
   const saveLoc=async(id:string|null,data:any)=>{if(!orgId)return;if(id)await supabase.from('acct_locations').update(data).eq('id',id);else await supabase.from('acct_locations').insert({id:data.short_code,org_id:orgId,...data});loadData()}
   const deleteLoc=async(id:string)=>{await supabase.from('acct_locations').delete().eq('id',id);loadData()}
@@ -722,7 +756,7 @@ export default function AccountingPage() {
               <div className="flex items-center justify-between"><span className="text-[10px] text-gray-400" style={{fontFeatureSettings:'"tnum"'}}>{$$(t)}</span>
                 <div className="flex gap-1"><div className="w-1.5 h-1.5 rounded-full" style={{background:lo?.color||'#999'}}/><div className="w-1.5 h-1.5 rounded-full" style={{background:sc?.tx==='text-green-700'?'#34A853':sc?.tx==='text-amber-700'?'#FBBC04':sc?.tx==='text-red-600'?'#EA4335':'#999'}}/></div></div></div></button>})}</div></div>
       <div className="flex-1 overflow-y-auto p-5">
-        {ac?<DetView cl={ac} locs={locs} clinics={clinics} cfg={config} onBack={()=>sS(null)} onAddSvc={addService} onAddPmt={addPayment}/>
+        {ac?<DetView cl={ac} locs={locs} clinics={clinics} cfg={config} onBack={()=>sS(null)} onAddSvc={addService} onAddPmt={addPayment} onEditPmt={editPayment} onDeletePmt={deletePayment}/>
           :vw==='payouts'?<PayView clients={clients} locs={locs} clinics={clinics} cfg={config} checks={checks} mktg={mktg} onAddCheck={addCheck} onDeleteCheck={deleteCheck}/>
           :vw==='recon'?<ReconView clients={clients} locs={locs} clinics={clinics} cfg={config}/>
           :vw==='settings'?<SetView locs={locs} clinics={clinics} config={config} setConfig={setConfig} clients={clients} agreement={config.payout_agreement} setAgreement={(v:string)=>setConfig(p=>({...p,payout_agreement:v}))} onSaveConfig={saveConfig} onSaveLoc={saveLoc} onDeleteLoc={deleteLoc} onSaveClinic={saveClinic} mktg={mktg} onAddMktg={addMktg} onDeleteMktg={deleteMktg} onToggleWaive={toggleWaive}/>
