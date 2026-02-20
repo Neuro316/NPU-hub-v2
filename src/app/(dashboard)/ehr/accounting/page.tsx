@@ -37,15 +37,11 @@ function calcSplit(amt: number, svcType: string, locId: string, locs: AcctLocati
   if (amt <= 0) return { snw: 0, dr: 0, cc: 0, snwService: 0, clinicAmts: {} as Record<string, number> }
   const ccPct = cfg.cc_processing_fee ?? 3
 
-  // ── MAP (qEEG): SNW 23%, Dr.Y 77% (no clinic, no CC breakdown) ──
+  // ── MAP (qEEG): percentage split, SNW + Dr.Y only ──
   if (svcType === 'Map') {
     const ms = cfg.map_splits
-    const snwFlat = ms.snw_flat || 0; const drFlat = ms.dr_flat || 0
-    let snwAmt: number; let drAmt: number
-    if (snwFlat > 0 && drFlat > 0) { snwAmt = snwFlat; drAmt = drFlat }
-    else if (snwFlat > 0) { snwAmt = snwFlat; drAmt = r2(amt - snwFlat) }
-    else if (drFlat > 0) { drAmt = drFlat; snwAmt = r2(amt - drFlat) }
-    else { snwAmt = r2(amt * ms.snw / 100); drAmt = r2(amt - snwAmt) }
+    const snwAmt = r2(amt * ms.snw / 100)
+    const drAmt = r2(amt - snwAmt)
     return { snw: Math.max(snwAmt, 0), dr: Math.max(drAmt, 0), cc: 0, snwService: 0, clinicAmts: {} as Record<string, number> }
   }
 
@@ -565,12 +561,11 @@ function SetView({locs,clinics,clients,agreement,setAgreement,config,setConfig,o
     </div>
     {/* Map Splits */}
     <div className="rounded-xl border border-gray-100 bg-white overflow-hidden">
-      <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50"><h3 className="text-sm font-semibold text-np-dark">Map Splits (Global)</h3></div>
-      <div className="p-4"><p className="text-xs text-gray-400 mb-3">Maps split between SNW and Dr. Yonce. Set a flat $ to override percentage.</p>
-        <SplitIn label="SNW" value={ms.snw} onChange={v=>setMS({snw:v})} flatValue={ms.snw_flat||0} onFlatChange={v=>setMS({snw_flat:v})}/>
-        <SplitIn label="Dr. Yonce" value={ms.dr} onChange={v=>setMS({dr:v})} flatValue={ms.dr_flat||0} onFlatChange={v=>setMS({dr_flat:v})}/>
-        <p className={`text-xs font-semibold mt-2 ${mT===100?'text-green-600':'text-red-500'}`}>Pct Total: {mT}%{mT!==100&&' (should be 100% for pct-based splits)'}</p>
-        {((ms.snw_flat||0)>0||(ms.dr_flat||0)>0)&&<p className="text-[10px] text-green-600 mt-1">Flat rate active. Remaining amount goes to percentage-based party.</p>}
+      <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50"><h3 className="text-sm font-semibold text-np-dark">qEEG / Map Splits (Global)</h3></div>
+      <div className="p-4"><p className="text-xs text-gray-400 mb-3">Maps split between SNW and Dr. Yonce by percentage. No clinic involvement.</p>
+        <SplitIn label="SNW" value={ms.snw} onChange={v=>setMS({snw:v})}/>
+        <SplitIn label="Dr. Yonce" value={ms.dr} onChange={v=>setMS({dr:v})}/>
+        <p className={`text-xs font-semibold mt-2 ${mT===100?'text-green-600':'text-red-500'}`}>Total: {mT}%{mT!==100&&' (must equal 100%)'}</p>
         <div className="mt-3"><Btn sm onClick={onSaveConfig}>Save Splits</Btn></div></div></div>
     {/* Clinic Entities */}
     <div className="rounded-xl border border-gray-100 bg-white overflow-hidden">
