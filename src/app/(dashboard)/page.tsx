@@ -188,17 +188,17 @@ export default function DashboardPage() {
 
                 {/* Values */}
                 {(overview.companyValues.length > 0 || overview.teamValues.length > 0) && (
-                  <div className="border-t border-gray-50 pt-5 grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="border-t border-gray-100 pt-5 grid grid-cols-1 md:grid-cols-2 gap-8">
                     {overview.companyValues.length > 0 && (
                       <div>
-                        <h3 className="text-[10px] font-bold text-np-blue tracking-wider uppercase mb-2.5 flex items-center gap-1.5">
-                          <Globe className="w-3 h-3" /> Company Values
+                        <h3 className="text-xs font-bold text-np-blue tracking-wider uppercase mb-3 flex items-center gap-2">
+                          <Globe className="w-3.5 h-3.5" /> Company Values
                         </h3>
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                        <div className="grid grid-cols-2 gap-x-6 gap-y-2">
                           {overview.companyValues.map((v, i) => (
-                            <div key={i} className="flex items-center gap-2">
-                              <div className="w-1.5 h-1.5 rounded-full bg-np-blue/40 flex-shrink-0" />
-                              <span className="text-sm text-np-dark font-medium">{v}</span>
+                            <div key={i} className="flex items-center gap-2.5">
+                              <span className="text-emerald-400 text-sm flex-shrink-0">&#9670;</span>
+                              <span className="text-sm text-np-dark font-semibold">{v}</span>
                             </div>
                           ))}
                         </div>
@@ -206,14 +206,14 @@ export default function DashboardPage() {
                     )}
                     {overview.teamValues.length > 0 && (
                       <div>
-                        <h3 className="text-[10px] font-bold text-purple-500 tracking-wider uppercase mb-2.5 flex items-center gap-1.5">
-                          <Users className="w-3 h-3" /> Team Values
+                        <h3 className="text-xs font-bold text-rose-500 tracking-wider uppercase mb-3 flex items-center gap-2">
+                          <Users className="w-3.5 h-3.5" /> Team Values
                         </h3>
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                        <div className="grid grid-cols-2 gap-x-6 gap-y-2">
                           {overview.teamValues.map((v, i) => (
-                            <div key={i} className="flex items-center gap-2">
-                              <div className="w-1.5 h-1.5 rounded-full bg-purple-400 flex-shrink-0" />
-                              <span className="text-sm text-np-dark font-medium">{v}</span>
+                            <div key={i} className="flex items-center gap-2.5">
+                              <span className="text-rose-400 text-sm flex-shrink-0">&#9670;</span>
+                              <span className="text-sm text-np-dark font-semibold">{v}</span>
                             </div>
                           ))}
                         </div>
