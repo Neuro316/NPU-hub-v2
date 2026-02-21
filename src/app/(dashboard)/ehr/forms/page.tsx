@@ -380,7 +380,7 @@ export default function FormsPage() {
                       </div>
                     </div>
                   </>) : (
-                    <textarea value={editHtml} onChange={e => setEditHtml(e.target.value)} className="flex-1 mx-4 mb-4 px-4 py-3 text-[11px] font-mono border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-np-blue/20 resize-none bg-gray-900 text-green-400" spellCheck={false} />
+                    <textarea value={editHtml} onChange={e => setEditHtml(e.target.value)} className="flex-1 mx-4 mb-4 px-4 py-3 text-[11px] font-mono border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-np-blue/20 resize-none bg-white text-np-dark" spellCheck={false} />
                   )}
                 </div>
               )}
