@@ -114,6 +114,10 @@ export default function SessionNotesPage() {
   const [reportText, setReportText] = useState('')
   const [reportSaving, setReportSaving] = useState(false)
 
+  // Intake data (pulled from form submissions)
+  const [intakeData, setIntakeData] = useState<Record<string, any> | null>(null)
+  const [intakeLoading, setIntakeLoading] = useState(false)
+
   // Protocol AI
   const [protoAiProcessing, setProtoAiProcessing] = useState(false)
   const [protoAiPrompt, setProtoAiPrompt] = useState('')
@@ -168,14 +172,23 @@ export default function SessionNotesPage() {
     setSelectedClient(c)
     loadClientData(c.id)
     setShowContactDetail(false)
-    // Load report
-    const loadReport = async () => {
+    // Load report + intake data
+    const loadExtra = async () => {
       try {
-        const { data } = await supabase.from('ehr_reports').select('report_text').eq('contact_id', c.id).eq('org_id', currentOrg!.id).order('created_at', { ascending: false }).limit(1).maybeSingle()
-        setReportText(data?.report_text || '')
-      } catch { setReportText('') }
+        const [reportRes, intakeRes] = await Promise.all([
+          supabase.from('ehr_reports').select('report_text').eq('contact_id', c.id).eq('org_id', currentOrg!.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+          supabase.from('ehr_form_submissions').select('submission_data, created_at')
+            .eq('contact_id', c.id).eq('org_id', currentOrg!.id).eq('status', 'completed')
+            .order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        ])
+        setReportText(reportRes.data?.report_text || '')
+        setIntakeData(intakeRes.data?.submission_data || null)
+      } catch {
+        setReportText('')
+        setIntakeData(null)
+      }
     }
-    loadReport()
+    loadExtra()
   }
 
   /* ─── Filter + sort clients ─── */
@@ -278,8 +291,10 @@ AVAILABLE MODALITIES AND THEIR PROTOCOL FIELDS:
 
 ${protocol ? `CURRENT PROTOCOL:\n${JSON.stringify(protocol, null, 2)}` : 'No existing protocol.'}
 
+${intakeData ? `CLIENT INTAKE DATA (from completed intake form):\n${JSON.stringify(intakeData, null, 2)}` : 'No intake data available.'}
+
 YOUR JOB:
-Based on the ${source === 'report' ? 'qEEG report findings' : 'clinical input'} provided, generate a comprehensive treatment protocol.
+Based on the ${source === 'report' ? 'qEEG report findings' : 'clinical input'} provided${intakeData ? ', combined with the client intake data,' : ''} generate a comprehensive treatment protocol.
 ${source === 'prompt' ? 'The user has provided specific instructions for protocol changes.' : ''}
 Enable the appropriate modalities and fill in all relevant fields with clinical recommendations.
 Use evidence-based parameters. Standard session durations: NF 20-30min, VR 15-20min, tDCS 20min, HBOT 60min.
@@ -451,6 +466,7 @@ CURRENT PROTOCOL:
 ${protocolSummary}
 
 SESSION DATE: ${note.session_date}
+${intakeData ? `\nCLIENT INTAKE DATA:\n${Object.entries(intakeData).filter(([k]) => !k.startsWith('_')).map(([k, v]) => `${k}: ${v}`).join('\n')}` : ''}
 
 MODALITIES AVAILABLE: ${MODALITIES.map(m => m.label).join(', ')}
 
@@ -944,10 +960,33 @@ Keep responses concise. Use clinical but accessible language. No em dashes.`
                   <div className="bg-np-blue/5 border border-np-blue/20 rounded-xl p-4 mb-4">
                     <p className="text-xs text-np-dark font-medium mb-1">How this works</p>
                     <p className="text-[10px] text-gray-500 leading-relaxed">
-                      Paste or type the qEEG report findings below. The AI can then use this report to automatically generate a treatment protocol
+                      Paste or type the qEEG report findings below. The AI can then use this report{intakeData ? ' combined with the client\'s intake data' : ''} to automatically generate a treatment protocol
                       tailored to the client's brain mapping results. You can also upload updates after follow-up assessments to adjust the protocol.
                     </p>
                   </div>
+
+                  {/* Intake Data Summary */}
+                  {intakeData && (
+                    <div className="mb-4 border border-green-200 rounded-xl overflow-hidden">
+                      <div className="px-4 py-2.5 bg-green-50 flex items-center justify-between">
+                        <p className="text-[10px] font-bold text-green-700 uppercase tracking-wider flex items-center gap-1.5">
+                          <ClipboardList className="w-3 h-3" /> Completed Intake Data
+                        </p>
+                        <span className="text-[9px] text-green-600 bg-green-100 px-1.5 py-0.5 rounded">Auto-imported from intake form</span>
+                      </div>
+                      <div className="p-4 grid grid-cols-3 gap-x-4 gap-y-2 bg-white">
+                        {Object.entries(intakeData).filter(([k]) => !k.startsWith('_')).map(([k, v]) => (
+                          <div key={k} className={typeof v === 'string' && v.length > 60 ? 'col-span-3' : ''}>
+                            <p className="text-[8px] text-gray-400 uppercase tracking-wider">{k.replace(/[_-]/g, ' ')}</p>
+                            <p className="text-[10px] text-np-dark mt-0.5">{typeof v === 'boolean' ? (v ? 'Yes' : 'No') : String(v || '--')}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="px-4 py-2 bg-green-50/50 border-t border-green-100">
+                        <p className="text-[9px] text-green-600">This data will be included when AI generates protocols from the report below.</p>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="mb-4">
                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 block">Report Findings / Clinical Notes</label>

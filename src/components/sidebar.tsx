@@ -33,6 +33,7 @@ import {
   HeartPulse,
   DollarSign,
   ClipboardList,
+  FileCheck,
 } from 'lucide-react'
 
 /* ─────────────────────────────────────────────────────
@@ -131,6 +132,7 @@ interface EhrItem {
 const ehrItems: EhrItem[] = [
   { label: 'NeuroReport', href: '/ehr/neuroreport', icon: Brain, forAllOrgs: true },
   { label: 'Session Notes', href: '/ehr/sessions', icon: ClipboardList, forAllOrgs: true },
+  { label: 'Forms', href: '/ehr/forms', icon: FileCheck, forAllOrgs: true },
   { label: 'Accounting', href: '/ehr/accounting', icon: DollarSign, requireModule: 'accounting' },
 ]
 
