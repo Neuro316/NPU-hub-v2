@@ -34,6 +34,7 @@ import {
   DollarSign,
   ClipboardList,
   FileCheck,
+  Shield,
 } from 'lucide-react'
 
 /* ─────────────────────────────────────────────────────
@@ -115,6 +116,7 @@ const navCategories: NavCategory[] = [
     items: [
       { label: 'Team', href: '/team', icon: Users, moduleKey: 'team' },
       { label: 'Integrations', href: '/integrations', icon: Activity, moduleKey: 'integrations' },
+      { label: 'System Auditor', href: '/auditor', icon: Shield, moduleKey: 'auditor' },
       { label: 'Settings', href: '/settings', icon: Settings, moduleKey: 'settings' },
     ],
   },
