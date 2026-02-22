@@ -7,13 +7,13 @@ import Link from 'next/link'
 import {
   Route, CheckSquare, Megaphone, Target, Brain, Image, BarChart3, Users,
   Lightbulb, ArrowRight, Sparkles, TrendingUp, Zap, Pencil, X, Save,
-  Plus, Trash2, Quote, Heart, Globe, Rocket, Eye
+  Plus, Trash2, Quote, Heart, Globe, Rocket, Eye, Contact2, Activity
 } from 'lucide-react'
 
 /* --- Types --- */
 interface Stats {
-  journeyCards: number; tasks: number; campaigns: number; posts: number
-  mediaAssets: number; ideas: number; teamMembers: number
+  contacts: number; journeyCards: number; tasks: number; campaigns: number; posts: number
+  mediaAssets: number; ideas: number; teamMembers: number; sessions: number
 }
 
 interface CompanyOverview {
@@ -37,7 +37,7 @@ const PILLARS = [
 
 export default function DashboardPage() {
   const { currentOrg, user, loading: orgLoading } = useWorkspace()
-  const [stats, setStats] = useState<Stats>({ journeyCards: 0, tasks: 0, campaigns: 0, posts: 0, mediaAssets: 0, ideas: 0, teamMembers: 0 })
+  const [stats, setStats] = useState<Stats>({ contacts: 0, journeyCards: 0, tasks: 0, campaigns: 0, posts: 0, mediaAssets: 0, ideas: 0, teamMembers: 0, sessions: 0 })
   const supabase = createClient()
 
   /* --- Company Overview state --- */
@@ -98,6 +98,7 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!currentOrg) return
     Promise.all([
+      supabase.from('contacts').select('id', { count: 'exact', head: true }).eq('org_id', currentOrg.id),
       supabase.from('journey_cards').select('id', { count: 'exact', head: true }).eq('org_id', currentOrg.id),
       supabase.from('kanban_tasks').select('id', { count: 'exact', head: true }).eq('org_id', currentOrg.id),
       supabase.from('campaigns').select('id', { count: 'exact', head: true }).eq('org_id', currentOrg.id),
@@ -105,12 +106,14 @@ export default function DashboardPage() {
       supabase.from('media_assets').select('id', { count: 'exact', head: true }).eq('org_id', currentOrg.id),
       supabase.from('ideas').select('id', { count: 'exact', head: true }).eq('org_id', currentOrg.id),
       supabase.from('team_profiles').select('id', { count: 'exact', head: true }).eq('org_id', currentOrg.id),
-    ]).then(([cards, tasks, campaigns, posts, media, ideas, team]) => {
+      supabase.from('ehr_session_notes').select('id', { count: 'exact', head: true }).eq('org_id', currentOrg.id),
+    ]).then(([contacts, cards, tasks, campaigns, posts, media, ideas, team, sessions]) => {
       setStats({
+        contacts: contacts.count || 0,
         journeyCards: cards.count || 0, tasks: tasks.count || 0,
         campaigns: campaigns.count || 0, posts: posts.count || 0,
         mediaAssets: media.count || 0, ideas: ideas.count || 0,
-        teamMembers: team.count || 0,
+        teamMembers: team.count || 0, sessions: sessions.count || 0,
       })
     }).catch(() => {})
   }, [currentOrg?.id])
@@ -322,8 +325,10 @@ export default function DashboardPage() {
       </div>
 
       {/* ======= STATS GRID ======= */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-8">
         {[
+          { label: 'Contacts', value: stats.contacts, icon: Contact2, color: '#2A9D8F', href: '/crm/contacts' },
+          { label: 'Sessions', value: stats.sessions, icon: Activity, color: '#228DC4', href: '/ehr/sessions' },
           { label: 'Journey Cards', value: stats.journeyCards, icon: Route, color: '#386797', href: '/journeys' },
           { label: 'Active Tasks', value: stats.tasks, icon: CheckSquare, color: '#F59E0B', href: '/tasks' },
           { label: 'Campaigns', value: stats.campaigns, icon: Megaphone, color: '#8B5CF6', href: '/campaigns' },
@@ -346,10 +351,10 @@ export default function DashboardPage() {
         <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Quick Actions</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { label: 'Create Post', icon: Target, href: '/social', color: '#E4405F' },
-            { label: 'New Campaign', icon: Megaphone, href: '/campaigns', color: '#8B5CF6' },
+            { label: 'New Contact', icon: Contact2, href: '/crm/contacts', color: '#2A9D8F' },
+            { label: 'View Pipeline', icon: Target, href: '/crm/pipelines', color: '#386797' },
+            { label: 'Create Post', icon: Megaphone, href: '/social', color: '#E4405F' },
             { label: 'Add Task', icon: CheckSquare, href: '/tasks', color: '#F59E0B' },
-            { label: 'Upload Media', icon: Image, href: '/media', color: '#10B981' },
           ].map((action, i) => (
             <Link key={i} href={action.href}
               className="bg-white border border-gray-100 rounded-xl p-4 flex items-center gap-3 hover:shadow-sm hover:border-gray-200 transition-all">

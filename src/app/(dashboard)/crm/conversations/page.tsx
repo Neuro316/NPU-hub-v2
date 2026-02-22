@@ -7,11 +7,13 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { useEffect, useState, useRef } from 'react'
+import Link from 'next/link'
 import {
   Search, Phone, MessageCircle, Mail, Filter, Send, X, Check, CheckCheck, Clock,
-  ArrowUpRight, ArrowDownLeft, PhoneMissed, Voicemail, Archive, User, RefreshCw
+  ArrowUpRight, ArrowDownLeft, PhoneMissed, Voicemail, Archive, User, RefreshCw, Plus
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase-browser'
+import { createConversation, fetchContacts } from '@/lib/crm-client'
 import type { CrmContact, Conversation, Message, CallLog } from '@/types/crm'
 
 type ChannelFilter = 'all' | 'sms' | 'voice' | 'email'
@@ -74,6 +76,12 @@ export default function ConversationsPage() {
   const [showFilters, setShowFilters] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  // New conversation state
+  const [showNewConv, setShowNewConv] = useState(false)
+  const [contactSearch, setContactSearch] = useState('')
+  const [contactResults, setContactResults] = useState<CrmContact[]>([])
+  const [searchingContacts, setSearchingContacts] = useState(false)
 
   // Load threads from existing conversations table
   useEffect(() => { loadThreads() }, [channelFilter])
@@ -191,6 +199,37 @@ export default function ConversationsPage() {
 
   const unreadTotal = threads.reduce((s, t) => s + t.unread_count, 0)
 
+  // ── New conversation: contact search ──
+  const searchNewContacts = async (q: string) => {
+    setContactSearch(q)
+    if (q.length < 2) { setContactResults([]); return }
+    setSearchingContacts(true)
+    try {
+      const res = await fetchContacts({ q, limit: 10 })
+      setContactResults(res.contacts)
+    } catch (e) { console.error(e) }
+    finally { setSearchingContacts(false) }
+  }
+
+  const startConversation = async (contact: CrmContact) => {
+    try {
+      const convId = await createConversation(contact.id, 'sms', '')
+      setShowNewConv(false)
+      setContactSearch('')
+      setContactResults([])
+      await loadThreads()
+      const thread = threads.find(t => t.id === convId) || {
+        id: convId, contact_id: contact.id,
+        contact_name: `${contact.first_name} ${contact.last_name}`,
+        contact_initials: `${contact.first_name?.[0] || ''}${contact.last_name?.[0] || ''}`,
+        contact_phone: contact.phone, channel: 'sms',
+        last_message_at: new Date().toISOString(), unread_count: 0,
+        snoozed_until: null, last_preview: '',
+      }
+      setSelectedThread(thread)
+    } catch (e) { console.error(e); alert('Failed to start conversation') }
+  }
+
   return (
     <div className="flex h-[calc(100vh-200px)] gap-0 rounded-xl overflow-hidden border border-gray-100 bg-white animate-in fade-in duration-300">
       {/* ─── LEFT: Thread List ─── */}
@@ -205,6 +244,10 @@ export default function ConversationsPage() {
               )}
             </h2>
             <div className="flex gap-1">
+              <button onClick={() => setShowNewConv(true)} title="New conversation"
+                className="p-1.5 rounded-md bg-np-blue text-white hover:bg-np-dark transition-colors">
+                <Plus size={13} />
+              </button>
               <button onClick={() => setShowFilters(!showFilters)}
                 className={`p-1.5 rounded-md transition-colors ${showFilters ? 'bg-np-blue/10 text-np-blue' : 'hover:bg-gray-50 text-gray-400'}`}>
                 <Filter size={13} />
@@ -321,8 +364,14 @@ export default function ConversationsPage() {
                 </div>
               </div>
               <div className="flex gap-1">
-                <button className="p-1.5 hover:bg-gray-50 rounded-lg text-gray-400"><User size={14} /></button>
-                <button className="p-1.5 hover:bg-gray-50 rounded-lg text-gray-400"><Archive size={14} /></button>
+                <Link href={`/crm/contacts?open=${selectedThread.contact_id}`}
+                  className="p-1.5 hover:bg-gray-50 rounded-lg text-gray-400" title="View contact"><User size={14} /></Link>
+                <button onClick={async () => {
+                  if (!confirm('Archive this conversation? It will be hidden from the list.')) return
+                  await supabase.from('conversations').update({ status: 'archived' }).eq('id', selectedThread.id)
+                  setSelectedThread(null)
+                  loadThreads()
+                }} className="p-1.5 hover:bg-gray-50 rounded-lg text-gray-400" title="Archive"><Archive size={14} /></button>
               </div>
             </div>
 
@@ -407,6 +456,44 @@ export default function ConversationsPage() {
           </>
         )}
       </div>
+
+      {/* ── New Conversation Modal ── */}
+      {showNewConv && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-sm bg-white rounded-xl shadow-2xl border border-gray-100 p-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-bold text-np-dark">New Conversation</h3>
+              <button onClick={() => { setShowNewConv(false); setContactSearch(''); setContactResults([]) }} className="p-1 rounded hover:bg-gray-50"><X size={14} /></button>
+            </div>
+            <div>
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Search Contact</label>
+              <div className="relative mt-1">
+                <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input value={contactSearch} onChange={e => searchNewContacts(e.target.value)} placeholder="Name, email, or phone..."
+                  className="w-full pl-8 pr-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" autoFocus />
+              </div>
+            </div>
+            <div className="mt-2 max-h-60 overflow-y-auto space-y-1">
+              {searchingContacts && <p className="text-[10px] text-gray-400 text-center py-3">Searching...</p>}
+              {contactResults.map(c => (
+                <button key={c.id} onClick={() => startConversation(c)}
+                  className="w-full flex items-center gap-2.5 p-2.5 rounded-lg hover:bg-gray-50 text-left transition-colors">
+                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-teal to-np-dark flex items-center justify-center text-[9px] font-bold text-white">
+                    {`${c.first_name?.[0] || ''}${c.last_name?.[0] || ''}`.toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-np-dark">{c.first_name} {c.last_name}</p>
+                    <p className="text-[10px] text-gray-400">{c.phone || c.email || 'No contact info'}</p>
+                  </div>
+                </button>
+              ))}
+              {contactSearch.length >= 2 && !searchingContacts && contactResults.length === 0 && (
+                <p className="text-[10px] text-gray-400 text-center py-3">No contacts found</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -49,9 +49,9 @@ function CampaignCard({ campaign }: { campaign: EmailCampaign }) {
       <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100/50">
         <span className="text-[10px] text-gray-400">{campaign.created_at ? new Date(campaign.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : ''}</span>
         <div className="flex gap-1">
-          <button className="p-1 rounded hover:bg-gray-50 transition-colors" title="Preview"><Eye size={12} className="text-gray-400" /></button>
-          <button className="p-1 rounded hover:bg-gray-50 transition-colors" title="Duplicate"><Copy size={12} className="text-gray-400" /></button>
-          <button className="p-1 rounded hover:bg-gray-50 transition-colors" title="Stats"><BarChart3 size={12} className="text-gray-400" /></button>
+          <button disabled className="p-1 rounded text-gray-300 cursor-not-allowed" title="Preview — coming soon"><Eye size={12} /></button>
+          <button disabled className="p-1 rounded text-gray-300 cursor-not-allowed" title="Duplicate — coming soon"><Copy size={12} /></button>
+          <button disabled className="p-1 rounded text-gray-300 cursor-not-allowed" title="Stats — coming soon"><BarChart3 size={12} /></button>
         </div>
       </div>
     </div>
