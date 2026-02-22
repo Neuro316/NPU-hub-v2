@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase-browser'
 import { createConversation, fetchContacts } from '@/lib/crm-client'
+import { useWorkspace } from '@/lib/workspace-context'
 import type { CrmContact, Conversation, Message, CallLog } from '@/types/crm'
 
 type ChannelFilter = 'all' | 'sms' | 'voice' | 'email'
@@ -64,6 +65,7 @@ function fmtDuration(s: number) { return `${Math.floor(s / 60)}:${String(s % 60)
 
 export default function ConversationsPage() {
   const supabase = createClient()
+  const { currentOrg } = useWorkspace()
   const [threads, setThreads] = useState<ThreadItem[]>([])
   const [timeline, setTimeline] = useState<TimelineEntry[]>([])
   const [selectedThread, setSelectedThread] = useState<ThreadItem | null>(null)
@@ -205,7 +207,7 @@ export default function ConversationsPage() {
     if (q.length < 2) { setContactResults([]); return }
     setSearchingContacts(true)
     try {
-      const res = await fetchContacts({ q, limit: 10 })
+      const res = await fetchContacts({ org_id: currentOrg?.id, q, limit: 10 })
       setContactResults(res.contacts)
     } catch (e) { console.error(e) }
     finally { setSearchingContacts(false) }
@@ -213,7 +215,7 @@ export default function ConversationsPage() {
 
   const startConversation = async (contact: CrmContact) => {
     try {
-      const convId = await createConversation(contact.id, 'sms', '')
+      const convId = await createConversation(contact.id, 'sms', currentOrg?.id || '')
       setShowNewConv(false)
       setContactSearch('')
       setContactResults([])
