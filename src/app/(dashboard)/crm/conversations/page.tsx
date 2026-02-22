@@ -222,7 +222,7 @@ export default function ConversationsPage() {
         id: convId, contact_id: contact.id,
         contact_name: `${contact.first_name} ${contact.last_name}`,
         contact_initials: `${contact.first_name?.[0] || ''}${contact.last_name?.[0] || ''}`,
-        contact_phone: contact.phone, channel: 'sms',
+        contact_phone: contact.phone || null, channel: 'sms',
         last_message_at: new Date().toISOString(), unread_count: 0,
         snoozed_until: null, last_preview: '',
       }
