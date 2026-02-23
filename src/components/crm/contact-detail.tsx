@@ -7,7 +7,7 @@ import {
   TrendingUp, Send, Pencil, Trash2, Plus, User, Activity, Brain,
   Route, Target, Calendar, FileText, Sparkles, ChevronRight, Heart,
   ArrowRightLeft, GraduationCap, BarChart3, Shield, ExternalLink, Paperclip, GitBranch, MapPin, ChevronDown,
-  Globe, Lightbulb, Linkedin, Instagram, Twitter, Youtube, BookOpen, Mic, Link2, ThumbsUp, ThumbsDown
+  Globe, Lightbulb, Linkedin, Instagram, Twitter, Youtube, BookOpen, Mic, Link2, ThumbsUp, ThumbsDown, Workflow
 } from 'lucide-react'
 import {
   fetchContact, updateContact, deleteContact, fetchNotes, createNote,
@@ -110,6 +110,9 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
   const [tagCategories, setTagCategories] = useState<ContactTagCategory[]>([])
   const [contactTagIds, setContactTagIds] = useState<Set<string>>(new Set())
   const [showTagPicker, setShowTagPicker] = useState(false)
+  const [showSeqEnroll, setShowSeqEnroll] = useState(false)
+  const [availableSequences, setAvailableSequences] = useState<{ id: string; name: string }[]>([])
+  const [enrollingSeq, setEnrollingSeq] = useState(false)
   const [pipelineConfigs, setPipelineConfigs] = useState<{ id: string; name: string; stages: { name: string; color: string }[]; is_default?: boolean }[]>([])
   const [infoForm, setInfoForm] = useState({
     address_street: '', address_city: '', address_state: '', address_zip: '',
@@ -299,6 +302,29 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
   const handleDeleteConnection = async (relId: string) => {
     try { await deleteRelationship(relId); load() }
     catch (e) { console.error(e) }
+  }
+
+  const openSeqEnroll = async () => {
+    setShowSeqEnroll(true)
+    const { data } = await supabase.from('sequences').select('id, name').eq('is_active', true).order('name')
+    setAvailableSequences(data || [])
+  }
+
+  const handleSeqEnroll = async (sequenceId: string) => {
+    if (!contact) return
+    setEnrollingSeq(true)
+    try {
+      const res = await fetch('/api/sequences/enroll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sequence_id: sequenceId, contact_id: contact.id }),
+      })
+      const data = await res.json()
+      if (!res.ok) { alert(data.error || 'Failed to enroll'); return }
+      setShowSeqEnroll(false)
+      load()
+    } catch (e) { console.error(e); alert('Failed to enroll') }
+    finally { setEnrollingSeq(false) }
   }
 
   const handleSaveInfo = async () => {
@@ -543,6 +569,25 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
                   className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-medium text-red-500 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors">
                   <Trash2 className="w-3 h-3" /> Delete
                 </button>
+                <div className="relative">
+                  <button onClick={openSeqEnroll}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-medium text-purple-600 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 transition-colors">
+                    <Workflow className="w-3 h-3" /> Sequence
+                  </button>
+                  {showSeqEnroll && (
+                    <div className="absolute top-full mt-1 right-0 w-56 bg-white rounded-xl shadow-xl border border-gray-100 p-2 z-50">
+                      <p className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider px-2 py-1">Enroll in Sequence</p>
+                      {availableSequences.length === 0 && <p className="text-[10px] text-gray-400 px-2 py-3 text-center">No active sequences</p>}
+                      {availableSequences.map(seq => (
+                        <button key={seq.id} onClick={() => handleSeqEnroll(seq.id)} disabled={enrollingSeq}
+                          className="w-full text-left px-2.5 py-2 text-xs text-np-dark hover:bg-gray-50 rounded-lg transition-colors disabled:opacity-50">
+                          {seq.name}
+                        </button>
+                      ))}
+                      <button onClick={() => setShowSeqEnroll(false)} className="w-full text-center text-[10px] text-gray-400 mt-1 py-1 hover:text-gray-600">Cancel</button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Tags */}

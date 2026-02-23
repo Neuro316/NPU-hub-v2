@@ -3,10 +3,10 @@
 import { useEffect, useState } from 'react'
 import {
   Plus, Workflow, Mail, MessageCircle, Clock, Play, Pause,
-  ChevronRight, Users, X, ArrowDown
+  ChevronRight, Users, X, ArrowDown, Search, UserPlus, Power
 } from 'lucide-react'
-import { fetchSequences, fetchEnrollments, createSequence, createSequenceStep } from '@/lib/crm-client'
-import type { Sequence, SequenceStep, SequenceEnrollment } from '@/types/crm'
+import { fetchSequences, fetchEnrollments, createSequence, createSequenceStep, fetchContacts } from '@/lib/crm-client'
+import type { Sequence, SequenceStep, SequenceEnrollment, CrmContact } from '@/types/crm'
 import { useWorkspace } from '@/lib/workspace-context'
 
 const TRIGGER_TYPES = [
@@ -97,6 +97,10 @@ export default function SequencesPage() {
   const [activeSeq, setActiveSeq] = useState<Sequence | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [showAddStep, setShowAddStep] = useState(false)
+  const [showEnroll, setShowEnroll] = useState(false)
+  const [enrollSearch, setEnrollSearch] = useState('')
+  const [enrollResults, setEnrollResults] = useState<CrmContact[]>([])
+  const [enrolling, setEnrolling] = useState(false)
   const [creating, setCreating] = useState(false)
 
   const [seqForm, setSeqForm] = useState({ name: '', description: '', trigger_type: 'manual' })
@@ -158,6 +162,49 @@ export default function SequencesPage() {
     finally { setCreating(false) }
   }
 
+  // ── Enroll contact search ──
+  const searchEnrollContacts = async (q: string) => {
+    setEnrollSearch(q)
+    if (q.length < 2) { setEnrollResults([]); return }
+    try {
+      const res = await fetchContacts({ org_id: currentOrg?.id, q, limit: 10 })
+      setEnrollResults(res.contacts)
+    } catch (e) { console.error(e) }
+  }
+
+  const handleEnroll = async (contact: CrmContact) => {
+    if (!activeSeq) return
+    setEnrolling(true)
+    try {
+      const res = await fetch('/api/sequences/enroll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sequence_id: activeSeq.id, contact_id: contact.id }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        alert(data.error || 'Failed to enroll')
+        return
+      }
+      setShowEnroll(false)
+      setEnrollSearch('')
+      setEnrollResults([])
+      reload()
+    } catch (e) { console.error(e); alert('Failed to enroll contact') }
+    finally { setEnrolling(false) }
+  }
+
+  // ── Toggle sequence active/inactive ──
+  const toggleActive = async () => {
+    if (!activeSeq) return
+    const supabase = (await import('@/lib/supabase-browser')).createClient()
+    const newActive = !activeSeq.is_active
+    await supabase.from('sequences').update({ is_active: newActive }).eq('id', activeSeq.id)
+    const updated = { ...activeSeq, is_active: newActive }
+    setActiveSeq(updated)
+    setSequences(prev => prev.map(s => s.id === updated.id ? updated : s))
+  }
+
   if (loading) return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 rounded-lg bg-np-blue/20 animate-pulse" /></div>
 
   return (
@@ -175,9 +222,18 @@ export default function SequencesPage() {
               </div>
             </div>
             <div className="flex gap-2">
-              <span className={`text-xs font-semibold px-3 py-1.5 rounded-full ${activeSeq.is_active ? 'bg-green-50 text-green-600' : 'bg-gray-50 text-gray-500'}`}>
-                {activeSeq.is_active ? '● Active' : '○ Inactive'}
-              </span>
+              <button onClick={toggleActive}
+                className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${
+                  activeSeq.is_active
+                    ? 'bg-green-50 text-green-600 hover:bg-green-100'
+                    : 'bg-gray-50 text-gray-500 hover:bg-gray-100'
+                }`}>
+                <Power size={12} /> {activeSeq.is_active ? 'Active' : 'Inactive'}
+              </button>
+              <button onClick={() => setShowEnroll(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark transition-colors">
+                <UserPlus size={12} /> Enroll Contact
+              </button>
             </div>
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -323,6 +379,50 @@ export default function SequencesPage() {
                 className="px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg disabled:opacity-40 hover:bg-np-dark transition-colors">
                 {creating ? 'Adding...' : 'Add Step'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Enroll Contact Modal ── */}
+      {showEnroll && activeSeq && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-sm bg-white rounded-xl shadow-2xl border border-gray-100 p-5 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-base font-bold text-np-dark">Enroll Contact</h3>
+                <p className="text-[10px] text-gray-400 mt-0.5">into {activeSeq.name}</p>
+              </div>
+              <button onClick={() => { setShowEnroll(false); setEnrollSearch(''); setEnrollResults([]) }} className="p-1 rounded hover:bg-gray-50"><X size={14} /></button>
+            </div>
+            <div>
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Search Contact</label>
+              <div className="relative mt-1">
+                <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input value={enrollSearch} onChange={e => searchEnrollContacts(e.target.value)} placeholder="Name, email, or phone..."
+                  className="w-full pl-8 pr-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" autoFocus />
+              </div>
+            </div>
+            <div className="mt-2 max-h-60 overflow-y-auto space-y-1">
+              {enrollResults.map(c => {
+                const alreadyEnrolled = enrollments.some(e => e.contact_id === c.id && e.sequence_id === activeSeq.id && e.status === 'active')
+                return (
+                  <button key={c.id} onClick={() => !alreadyEnrolled && handleEnroll(c)} disabled={alreadyEnrolled || enrolling}
+                    className={`w-full flex items-center gap-2.5 p-2.5 rounded-lg text-left transition-colors ${alreadyEnrolled ? 'opacity-50 cursor-not-allowed bg-gray-50' : 'hover:bg-gray-50'}`}>
+                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-teal to-np-dark flex items-center justify-center text-[9px] font-bold text-white">
+                      {`${c.first_name?.[0] || ''}${c.last_name?.[0] || ''}`.toUpperCase()}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-xs font-semibold text-np-dark">{c.first_name} {c.last_name}</p>
+                      <p className="text-[10px] text-gray-400">{c.phone || c.email || 'No contact info'}</p>
+                    </div>
+                    {alreadyEnrolled && <span className="text-[9px] font-medium text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full">Enrolled</span>}
+                  </button>
+                )
+              })}
+              {enrollSearch.length >= 2 && enrollResults.length === 0 && (
+                <p className="text-[10px] text-gray-400 text-center py-3">No contacts found</p>
+              )}
             </div>
           </div>
         </div>
