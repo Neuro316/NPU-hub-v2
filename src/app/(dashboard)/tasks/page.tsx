@@ -1,6 +1,8 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { useTaskData } from '@/lib/hooks/use-task-data'
 import { useWorkspace } from '@/lib/workspace-context'
 import { useTeamData } from '@/lib/hooks/use-team-data'
@@ -13,6 +15,7 @@ import { notifyTaskMoved } from '@/lib/slack-notifications'
 export default function TasksPage() {
   const { currentOrg, user, loading: orgLoading } = useWorkspace()
   const { members } = useTeamData()
+  const searchParams = useSearchParams()
   const {
     columns, tasks, loading,
     addColumn, updateColumn, deleteColumn,
@@ -25,6 +28,15 @@ export default function TasksPage() {
   const [addingColumn, setAddingColumn] = useState(false)
   const [newColTitle, setNewColTitle] = useState('')
   const [filterMember, setFilterMember] = useState<string | null>(null)
+
+  // Deep link: auto-open task from ?task=<id> (from Rock detail)
+  useEffect(() => {
+    const taskId = searchParams.get('task')
+    if (taskId && tasks.length > 0 && !selectedTask) {
+      const found = tasks.find(t => t.id === taskId)
+      if (found) setSelectedTask(found)
+    }
+  }, [searchParams, tasks, selectedTask])
 
   const teamMemberNames = members.map(m => m.display_name)
   const currentUser = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Unknown'
@@ -84,7 +96,8 @@ export default function TasksPage() {
         <div>
           <h1 className="text-xl font-semibold text-np-dark">Task Manager</h1>
           <p className="text-xs text-gray-400 mt-0.5">
-            {currentOrg?.name} · {columns.length} columns · {tasks.length} tasks
+            Internal team projects &amp; operations · {columns.length} columns · {tasks.length} tasks
+            <Link href="/crm/tasks" className="ml-2 text-np-blue hover:underline">Client Tasks →</Link>
           </p>
         </div>
         <div className="flex gap-2">

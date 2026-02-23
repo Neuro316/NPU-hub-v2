@@ -2,12 +2,23 @@ export type MeetingTemplate = 'level_10' | 'one_on_one' | 'standup' | 'quarterly
 export type MeetingStatus = 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
 export type AttendeeRole = 'facilitator' | 'attendee' | 'optional'
 export type RsvpStatus = 'pending' | 'accepted' | 'declined' | 'tentative'
+export type IdsStatus = 'identified' | 'discussing' | 'solved' | 'deferred'
 
 export interface AgendaSection {
   section: string
   duration_min: number
   notes: string
   completed: boolean
+}
+
+export interface IdsItem {
+  id: string
+  issue: string
+  owner: string
+  owner_name: string
+  status: IdsStatus
+  resolution: string
+  created_at: string
 }
 
 export interface Meeting {
@@ -22,6 +33,7 @@ export interface Meeting {
   notes: string | null
   read_ai_data: Record<string, any> | null
   agenda: AgendaSection[]
+  ids_items: IdsItem[]
   created_by: string | null
   created_at: string
   updated_at: string
@@ -34,7 +46,6 @@ export interface MeetingAttendee {
   role: AttendeeRole
   rsvp: RsvpStatus
   created_at: string
-  // Joined fields
   display_name?: string
   avatar_url?: string
 }
@@ -52,7 +63,6 @@ export interface MeetingWithAttendees extends Meeting {
   attendees: MeetingAttendee[]
 }
 
-// Template configs for meeting creation
 export const MEETING_TEMPLATES: Record<MeetingTemplate, {
   label: string
   color: string
