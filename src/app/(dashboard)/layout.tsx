@@ -1,9 +1,7 @@
-export const dynamic = 'force-dynamic'
 import { WorkspaceProvider } from '@/lib/workspace-context'
 import { PermissionsProvider } from '@/lib/hooks/use-permissions'
-import { CollaborationProvider } from '@/lib/hooks/use-collaboration'
 import { Sidebar } from '@/components/sidebar'
-import { CollaborationBar } from '@/components/collaboration-bar'
+import { TrackerInit } from '@/components/tracker-init'
 
 export default function DashboardLayout({
   children,
@@ -13,15 +11,13 @@ export default function DashboardLayout({
   return (
     <WorkspaceProvider>
       <PermissionsProvider>
-        <CollaborationProvider>
-          <div className="min-h-screen bg-np-light">
-            <Sidebar />
-            <CollaborationBar />
-            <main className="ml-64 pt-10 p-6">
-              {children}
-            </main>
-          </div>
-        </CollaborationProvider>
+        <TrackerInit />
+        <div className="min-h-screen bg-np-light">
+          <Sidebar />
+          <main className="ml-64 p-6">
+            {children}
+          </main>
+        </div>
       </PermissionsProvider>
     </WorkspaceProvider>
   )

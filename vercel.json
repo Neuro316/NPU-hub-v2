@@ -6,6 +6,7 @@
     { "path": "/api/webhooks/dispatch", "schedule": "* * * * *" },
     { "path": "/api/inbox/process-unsnooze", "schedule": "*/5 * * * *" },
     { "path": "/api/stats/daily-rollup", "schedule": "0 1 * * *" },
+    { "path": "/api/usage/rollup", "schedule": "0 2 * * *" },
     { "path": "/api/maintenance/cleanup-recordings", "schedule": "0 3 * * *" }
   ]
 }
