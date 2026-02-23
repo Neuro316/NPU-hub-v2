@@ -118,6 +118,7 @@ const navCategories: NavCategory[] = [
     items: [
       { label: 'Team', href: '/team', icon: Users, moduleKey: 'team' },
       { label: 'Integrations', href: '/integrations', icon: Activity, moduleKey: 'integrations' },
+      { label: 'Platform Advisor', href: '/platform-advisor', icon: Brain, moduleKey: 'platform_advisor' },
       { label: 'Activity Log', href: '/activity-log', icon: History, moduleKey: 'activity_log' },
       { label: 'Usage Analytics', href: '/usage-analytics', icon: BarChart3, moduleKey: 'usage_analytics' },
       { label: 'System Auditor', href: '/auditor', icon: Shield, moduleKey: 'auditor' },
