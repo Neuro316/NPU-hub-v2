@@ -2,40 +2,23 @@ export type MeetingTemplate = 'level_10' | 'one_on_one' | 'standup' | 'quarterly
 export type MeetingStatus = 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
 export type AttendeeRole = 'facilitator' | 'attendee' | 'optional'
 export type RsvpStatus = 'pending' | 'accepted' | 'declined' | 'tentative'
-export type IdsStatus = 'identified' | 'discussing' | 'solved' | 'deferred'
 
 export interface AgendaSection {
   section: string
   duration_min: number
   notes: string
   completed: boolean
+  talking_points?: string[]  // AI-populated from pasted/uploaded agenda
 }
 
-// Rich IDS Item matching Mentor IDS Capture List format
-export interface IdsItem {
-  id: string
-  issue_category: string
-  description: string
-  dependencies_context: string
-  decisions_needed: string
-  action_items: string
-  due_date: string
-  owner: string
-  owner_name: string
-  status: IdsStatus
-  resolution: string
-  created_at: string
-}
-
-// Action item extracted from IDS or meeting
 export interface MeetingActionItem {
   id: string
   title: string
   owner: string
   owner_name: string
   due_date: string
-  task_id: string | null // linked kanban_tasks id
-  completed: boolean
+  status: 'pending' | 'approved' | 'deferred' | 'deleted'
+  task_id: string | null  // linked kanban_tasks id after approval
 }
 
 export interface Meeting {
@@ -50,10 +33,9 @@ export interface Meeting {
   notes: string | null
   read_ai_data: Record<string, any> | null
   agenda: AgendaSection[]
-  ids_items: IdsItem[]
-  action_items: MeetingActionItem[]
-  next_meeting_id: string | null
-  prev_meeting_id: string | null
+  action_items?: MeetingActionItem[]
+  next_meeting_id?: string | null
+  prev_meeting_id?: string | null
   created_by: string | null
   created_at: string
   updated_at: string
