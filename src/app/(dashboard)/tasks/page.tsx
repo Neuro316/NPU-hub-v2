@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useTaskData } from '@/lib/hooks/use-task-data'
@@ -12,7 +12,7 @@ import type { KanbanTask } from '@/lib/types/tasks'
 import { Plus, Filter, Bot, CheckSquare } from 'lucide-react'
 import { notifyTaskMoved } from '@/lib/slack-notifications'
 
-export default function TasksPage() {
+function TasksPageInner() {
   const { currentOrg, user, loading: orgLoading } = useWorkspace()
   const { members } = useTeamData()
   const searchParams = useSearchParams()
@@ -196,5 +196,13 @@ export default function TasksPage() {
         orgId={currentOrg?.id || ''}
       />
     </div>
+  )
+}
+
+export default function TasksPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="animate-pulse text-gray-400">Loading tasks...</div></div>}>
+      <TasksPageInner />
+    </Suspense>
   )
 }
