@@ -35,7 +35,9 @@ import {
   ClipboardList,
   FileCheck,
   Shield,
+  History,
 } from 'lucide-react'
+import { NotificationBell } from '@/components/notification-bell'
 
 /* ─────────────────────────────────────────────────────
    Category-grouped navigation
@@ -94,7 +96,7 @@ const navCategories: NavCategory[] = [
     label: 'OPERATE',
     collapsible: true,
     items: [
-      { label: 'Task Manager', href: '/tasks', icon: CheckSquare, moduleKey: 'tasks' },
+      { label: 'Project Board', href: '/tasks', icon: CheckSquare, moduleKey: 'tasks' },
       { label: 'Journey Builder', href: '/journeys', icon: Route, moduleKey: 'journeys' },
       { label: 'SOPs', href: '/sops', icon: FileText, moduleKey: 'sops' },
       { label: 'Support Tickets', href: '/tickets', icon: TicketCheck, moduleKey: 'tickets' },
@@ -116,6 +118,7 @@ const navCategories: NavCategory[] = [
     items: [
       { label: 'Team', href: '/team', icon: Users, moduleKey: 'team' },
       { label: 'Integrations', href: '/integrations', icon: Activity, moduleKey: 'integrations' },
+      { label: 'Activity Log', href: '/activity-log', icon: History, moduleKey: 'activity_log' },
       { label: 'System Auditor', href: '/auditor', icon: Shield, moduleKey: 'auditor' },
       { label: 'Settings', href: '/settings', icon: Settings, moduleKey: 'settings' },
     ],
@@ -178,10 +181,11 @@ export function Sidebar() {
           <div className="w-9 h-9 bg-np-blue rounded-xl flex items-center justify-center">
             <span className="text-white text-sm font-bold">NP</span>
           </div>
-          <div>
+          <div className="flex-1">
             <h1 className="text-sm font-semibold text-np-dark">NPU Hub</h1>
             <p className="text-xs text-gray-400">Operations</p>
           </div>
+          <NotificationBell />
         </div>
       </div>
 
