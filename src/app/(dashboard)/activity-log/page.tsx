@@ -2,8 +2,8 @@
 
 // ═══════════════════════════════════════════════════════════════
 // Activity Log — Org-wide timeline of all CRM/EHR activity
-// Route: /activity-log
-// Queries: activity_log with contact join
+// Route: /activity-log — ADMIN ONLY
+// Queries: activity_log with contact + team_profiles join
 // ═══════════════════════════════════════════════════════════════
 
 import { useEffect, useState, useCallback } from 'react'
@@ -11,10 +11,13 @@ import Link from 'next/link'
 import {
   Activity, Phone, MessageCircle, Mail, UserPlus, CheckCircle2,
   Brain, Workflow, FileText, Shield, AlertTriangle, Search,
-  Filter, RefreshCw, ChevronDown, PhoneMissed, ArrowUpRight
+  Filter, RefreshCw, ChevronDown, PhoneMissed, ArrowUpRight, Users
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
+import { PermissionGate } from '@/lib/hooks/use-permissions'
+import { fetchTeamMembers } from '@/lib/crm-client'
+import type { TeamMember } from '@/types/crm'
 
 interface ActivityEntry {
   id: string
@@ -93,14 +96,28 @@ function groupByDate(entries: ActivityEntry[]): { date: string; items: ActivityE
   return Object.entries(groups).map(([date, items]) => ({ date, items }))
 }
 
-export default function ActivityLogPage() {
+function ActivityLogContent() {
   const supabase = createClient()
   const { currentOrg } = useWorkspace()
   const [entries, setEntries] = useState<ActivityEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('')
   const [search, setSearch] = useState('')
+  const [actorFilter, setActorFilter] = useState('')
   const [limit, setLimit] = useState(100)
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
+  const [actorMap, setActorMap] = useState<Record<string, string>>({})
+
+  // Load team members for actor filter + name mapping
+  useEffect(() => {
+    if (!currentOrg) return
+    fetchTeamMembers(currentOrg.id).then(members => {
+      setTeamMembers(members)
+      const map: Record<string, string> = {}
+      members.forEach(m => { if (m.user_id) map[m.user_id] = m.display_name })
+      setActorMap(map)
+    })
+  }, [currentOrg?.id])
 
   const load = useCallback(async () => {
     if (!currentOrg) return
@@ -115,11 +132,16 @@ export default function ActivityLogPage() {
     if (filter) {
       query = query.like('event_type', `${filter}%`)
     }
+    if (actorFilter === '__system__') {
+      query = query.is('actor_id', null)
+    } else if (actorFilter) {
+      query = query.eq('actor_id', actorFilter)
+    }
 
     const { data } = await query
     setEntries((data as ActivityEntry[]) || [])
     setLoading(false)
-  }, [currentOrg?.id, filter, limit])
+  }, [currentOrg?.id, filter, actorFilter, limit])
 
   useEffect(() => { load() }, [load])
 
@@ -145,7 +167,8 @@ export default function ActivityLogPage() {
     ? entries.filter(e => {
         const name = e.contacts ? `${e.contacts.first_name} ${e.contacts.last_name}`.toLowerCase() : ''
         const type = (EVENT_CONFIG[e.event_type]?.label || e.event_type).toLowerCase()
-        return name.includes(search.toLowerCase()) || type.includes(search.toLowerCase())
+        const actor = (e.actor_id && actorMap[e.actor_id]) ? actorMap[e.actor_id].toLowerCase() : ''
+        return name.includes(search.toLowerCase()) || type.includes(search.toLowerCase()) || actor.includes(search.toLowerCase())
       })
     : entries
 
@@ -165,7 +188,7 @@ export default function ActivityLogPage() {
           <h1 className="text-lg font-bold text-np-dark flex items-center gap-2">
             <Activity size={20} className="text-np-blue" /> Activity Log
           </h1>
-          <p className="text-xs text-gray-400 mt-0.5">Real-time feed of all CRM activity across your organization</p>
+          <p className="text-xs text-gray-400 mt-0.5">Real-time feed of all CRM activity across your organization · Admin only</p>
         </div>
         <button onClick={load} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-500 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
           <RefreshCw size={12} /> Refresh
@@ -193,10 +216,10 @@ export default function ActivityLogPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-xs">
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[180px] max-w-xs">
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or event..."
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name, event, or team member..."
             className="w-full pl-8 pr-3 py-2 text-xs bg-white border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
         </div>
         <div className="flex gap-1">
@@ -206,6 +229,19 @@ export default function ActivityLogPage() {
                 filter === f.value ? 'bg-np-blue text-white' : 'bg-gray-50 text-gray-400 hover:text-gray-600'
               }`}>{f.label}</button>
           ))}
+        </div>
+        {/* Team member filter */}
+        <div className="relative">
+          <select value={actorFilter} onChange={e => setActorFilter(e.target.value)}
+            className="appearance-none pl-7 pr-6 py-1.5 text-[10px] font-medium bg-gray-50 border border-gray-100 rounded-lg text-gray-600 focus:outline-none focus:ring-1 focus:ring-np-blue/30 cursor-pointer">
+            <option value="">All Team Members</option>
+            {teamMembers.filter(m => m.user_id).map(m => (
+              <option key={m.user_id} value={m.user_id!}>{m.display_name}</option>
+            ))}
+            <option value="__system__">System (automated)</option>
+          </select>
+          <Users size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
         </div>
       </div>
 
@@ -236,6 +272,7 @@ export default function ActivityLogPage() {
                   const contactName = entry.contacts
                     ? `${entry.contacts.first_name} ${entry.contacts.last_name}`
                     : null
+                  const actorName = entry.actor_id ? actorMap[entry.actor_id] || null : null
                   const eventData = entry.event_data || {}
 
                   return (
@@ -253,8 +290,14 @@ export default function ActivityLogPage() {
                             </Link>
                           )}
                         </div>
-                        {/* Event details */}
+                        {/* Event details + actor */}
                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                          {actorName && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-500 font-medium">{actorName}</span>
+                          )}
+                          {!actorName && !entry.actor_id && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-50 text-gray-400 font-medium">System</span>
+                          )}
                           {(eventData as any).channel && (
                             <span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-50 text-gray-500">{String((eventData as any).channel).toUpperCase()}</span>
                           )}
@@ -286,5 +329,13 @@ export default function ActivityLogPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function ActivityLogPage() {
+  return (
+    <PermissionGate module="activity_log" level="view">
+      <ActivityLogContent />
+    </PermissionGate>
   )
 }

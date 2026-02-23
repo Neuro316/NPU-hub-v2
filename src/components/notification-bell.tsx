@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
+import { usePermissions } from '@/lib/hooks/use-permissions'
 
 interface NotifEntry {
   id: string
@@ -64,6 +65,7 @@ function fmtTime(d: string) {
 export function NotificationBell() {
   const supabase = createClient()
   const { currentOrg } = useWorkspace()
+  const { isAdmin } = usePermissions()
   const [open, setOpen] = useState(false)
   const [entries, setEntries] = useState<NotifEntry[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
@@ -145,6 +147,9 @@ export function NotificationBell() {
       setUnreadCount(0)
     }
   }
+
+  // Hide bell for non-admins
+  if (!isAdmin) return null
 
   return (
     <div ref={ref} className="relative">
