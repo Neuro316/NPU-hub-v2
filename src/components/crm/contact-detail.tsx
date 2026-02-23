@@ -115,7 +115,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
   const [enrollingSeq, setEnrollingSeq] = useState(false)
   const [pipelineConfigs, setPipelineConfigs] = useState<{ id: string; name: string; stages: { name: string; color: string }[]; is_default?: boolean }[]>([])
   const [infoForm, setInfoForm] = useState({
-    address_street: '', address_city: '', address_state: '', address_zip: '',
+    source: '', address_street: '', address_city: '', address_state: '', address_zip: '',
     reason_for_contact: '', date_of_birth: '', preferred_name: '', timezone: 'America/New_York',
     preferred_contact_method: '', occupation: '', industry: '', how_heard_about_us: '',
     instagram_handle: '', linkedin_url: '', emergency_contact_name: '', emergency_contact_phone: '',
@@ -133,6 +133,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
       const c = await fetchContact(contactId)
       setContact(c)
       setInfoForm({
+        source: c.source || '',
         address_street: c.address_street || '', address_city: c.address_city || '',
         address_state: c.address_state || '', address_zip: c.address_zip || '',
         reason_for_contact: c.reason_for_contact || '', date_of_birth: c.date_of_birth || '',
@@ -331,6 +332,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
     if (!contact) return
     try {
       await updateContact(contact.id, {
+        source: infoForm.source || null,
         address_street: infoForm.address_street || null,
         address_city: infoForm.address_city || null,
         address_state: infoForm.address_state || null,
@@ -828,6 +830,16 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
                   ) : (
                     <div className="bg-gray-50 rounded-xl p-3 space-y-2.5 border border-gray-100">
                       <h5 className="text-[10px] font-bold text-np-dark">Edit Contact Info</h5>
+                      <div>
+                        <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Source</label>
+                        <select value={infoForm.source} onChange={e => setInfoForm(p => ({ ...p, source: e.target.value }))}
+                          className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30">
+                          <option value="">Select source...</option>
+                          {['Website','Referral','Social Media','Event','Cold Outreach','Podcast','Workshop','Mastermind Alumni','Partner','Google Search','Conference','YouTube','Other'].map(o =>
+                            <option key={o} value={o}>{o}</option>
+                          )}
+                        </select>
+                      </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Preferred Name</label>

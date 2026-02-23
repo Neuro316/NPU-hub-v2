@@ -564,6 +564,8 @@ export interface ContactSearchParams {
   sms_consent?: boolean
   email_consent?: boolean
   include_archived?: boolean
+  sort_by?: string
+  sort_dir?: 'asc' | 'desc'
   limit?: number
   offset?: number
 }

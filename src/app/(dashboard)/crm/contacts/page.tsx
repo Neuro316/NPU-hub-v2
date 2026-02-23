@@ -2,9 +2,10 @@
 
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import {
-  Search, Plus, Tag, X, Settings2, GripVertical, Check, Eye, EyeOff, Sparkles, Loader2
+  Search, Plus, Tag, X, Settings2, GripVertical, Check, Eye, EyeOff, Sparkles, Loader2,
+  ArrowUp, ArrowDown, ArrowUpDown, Pencil
 } from 'lucide-react'
-import { fetchContacts, bulkUpdateContacts, createContact, fetchTeamMembers, fetchRelationshipTypes, createRelationship } from '@/lib/crm-client'
+import { fetchContacts, bulkUpdateContacts, createContact, fetchTeamMembers, fetchRelationshipTypes, createRelationship, updateContact } from '@/lib/crm-client'
 import type { CrmContact, ContactSearchParams, TeamMember, RelationshipType } from '@/types/crm'
 import { STAGE_COLORS } from '@/types/crm'
 import ContactDetail from '@/components/crm/contact-detail'
@@ -14,7 +15,7 @@ const TAG_COLORS: Record<string, string> = {
   VIP: '#FBBF24', 'Hot Lead': '#F87171', Partner: '#34D399', Referral: '#2A9D8F',
   Practitioner: '#9CAF88', Investor: '#A78BFA', Speaker: '#E76F51', Collaborator: '#228DC4',
 }
-const SOURCE_OPTIONS = ['Website','Referral','Social Media','Event','Cold Outreach','Podcast','Workshop','Mastermind Alumni','Partner','Other']
+const SOURCE_OPTIONS = ['Website','Referral','Social Media','Event','Cold Outreach','Podcast','Workshop','Mastermind Alumni','Partner','Google Search','Conference','YouTube','Other']
 
 function ContactTag({ tag }: { tag: string }) {
   const color = TAG_COLORS[tag] || '#94a3b8'
@@ -71,6 +72,66 @@ export default function ContactsPage() {
   const [aiResult, setAiResult] = useState<string | null>(null)
   const [refSearchResults, setRefSearchResults] = useState<CrmContact[]>([])
   const [refSearchQuery, setRefSearchQuery] = useState('')
+
+  // ── Sorting ──
+  const [sortBy, setSortBy] = useState<string>('updated_at')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+
+  const SORT_COLUMN_MAP: Record<string, string> = {
+    name: 'first_name', email: 'email', phone: 'phone', company: 'source', // company is custom_fields, fallback
+    source: 'source', stage: 'pipeline_stage', last_contact: 'last_contacted_at',
+    assigned: 'assigned_to', preferred_name: 'preferred_name', date_of_birth: 'date_of_birth',
+    city: 'address_city', state: 'address_state', occupation: 'occupation', industry: 'industry',
+    instagram: 'instagram_handle', created: 'created_at', timezone: 'timezone',
+    contact_method: 'preferred_contact_method', how_heard: 'how_heard_about_us',
+    reason: 'reason_for_contact', pipeline: 'pipeline_id',
+  }
+
+  const toggleSort = (colKey: string) => {
+    const dbCol = SORT_COLUMN_MAP[colKey]
+    if (!dbCol) return
+    if (sortBy === dbCol) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortBy(dbCol)
+      setSortDir('asc')
+    }
+  }
+
+  // ── Inline editing ──
+  const [editingCell, setEditingCell] = useState<{ contactId: string; colKey: string } | null>(null)
+  const [editValue, setEditValue] = useState('')
+
+  const startEdit = (contactId: string, colKey: string, currentValue: string) => {
+    setEditingCell({ contactId, colKey })
+    setEditValue(currentValue)
+  }
+
+  const cancelEdit = () => { setEditingCell(null); setEditValue('') }
+
+  const saveEdit = async () => {
+    if (!editingCell) return
+    const { contactId, colKey } = editingCell
+    const fieldMap: Record<string, string> = {
+      email: 'email', phone: 'phone', source: 'source',
+      preferred_name: 'preferred_name', occupation: 'occupation',
+      industry: 'industry', instagram: 'instagram_handle', linkedin: 'linkedin_url',
+      city: 'address_city', state: 'address_state', timezone: 'timezone',
+      contact_method: 'preferred_contact_method', how_heard: 'how_heard_about_us',
+      reason: 'reason_for_contact',
+    }
+    const dbField = fieldMap[colKey]
+    if (!dbField) { cancelEdit(); return }
+
+    try {
+      await updateContact(contactId, { [dbField]: editValue || null } as any)
+      // Update local state immediately for responsiveness
+      setContacts(prev => prev.map(c => c.id === contactId ? { ...c, [dbField]: editValue || null } : c))
+      cancelEdit()
+    } catch (e) { console.error('Inline edit error:', e); cancelEdit() }
+  }
+
+  const EDITABLE_COLUMNS = new Set(['email', 'phone', 'source', 'preferred_name', 'occupation', 'industry', 'instagram', 'linkedin', 'city', 'state', 'timezone', 'contact_method', 'how_heard', 'reason'])
 
   // ── Column configuration ──
   interface ColumnDef { key: string; label: string; defaultVisible: boolean }
@@ -189,6 +250,27 @@ export default function ContactsPage() {
     }
   }
 
+  // Get raw string value for inline editing
+  const getCellRawValue = (c: CrmContact, key: string): string => {
+    switch (key) {
+      case 'email': return c.email || ''
+      case 'phone': return c.phone || ''
+      case 'source': return c.source || ''
+      case 'preferred_name': return c.preferred_name || ''
+      case 'occupation': return c.occupation || (c.custom_fields as any)?.occupation || ''
+      case 'industry': return c.industry || (c.custom_fields as any)?.industry || ''
+      case 'instagram': return c.instagram_handle || ''
+      case 'linkedin': return c.linkedin_url || ''
+      case 'city': return c.address_city || (c.custom_fields as any)?.address_city || ''
+      case 'state': return c.address_state || (c.custom_fields as any)?.address_state || ''
+      case 'timezone': return c.timezone || ''
+      case 'contact_method': return c.preferred_contact_method || ''
+      case 'how_heard': return c.how_heard_about_us || ''
+      case 'reason': return c.reason_for_contact || ''
+      default: return ''
+    }
+  }
+
   useEffect(() => { fetchTeamMembers().then(setTeamMembers).catch(console.error) }, [])
   useEffect(() => { if (currentOrg) fetchRelationshipTypes(currentOrg.id).then(setRelTypes).catch(console.error) }, [currentOrg])
   useEffect(() => {
@@ -204,7 +286,7 @@ export default function ContactsPage() {
     if (!currentOrg) return
     setLoading(true)
     try {
-      const params: ContactSearchParams = { org_id: currentOrg.id, limit, offset: page * limit }
+      const params: ContactSearchParams = { org_id: currentOrg.id, limit, offset: page * limit, sort_by: sortBy, sort_dir: sortDir }
       if (search) params.q = search
       if (stageFilter) params.pipeline_stage = stageFilter
       if (tagFilter) params.tags = [tagFilter]
@@ -212,7 +294,7 @@ export default function ContactsPage() {
       setContacts(res.contacts); setTotal(res.total)
     } catch (e) { console.error('Contact load error:', e) }
     finally { setLoading(false) }
-  }, [currentOrg?.id, search, stageFilter, tagFilter, page])
+  }, [currentOrg?.id, search, stageFilter, tagFilter, page, sortBy, sortDir])
 
   useEffect(() => { load() }, [load])
 
@@ -437,12 +519,19 @@ export default function ContactsPage() {
                       onDragOver={e => { e.preventDefault(); handleColumnDragOver(idx) }}
                       onDrop={() => handleColumnDrop(idx)}
                       onDragEnd={() => { setDragColIdx(null); setDragOverColIdx(null) }}
-                      className={`py-2 px-3 text-[9px] font-semibold uppercase tracking-wider text-gray-400 cursor-grab active:cursor-grabbing select-none whitespace-nowrap transition-colors
+                      onClick={() => toggleSort(colKey)}
+                      className={`py-2 px-3 text-[9px] font-semibold uppercase tracking-wider text-gray-400 cursor-pointer select-none whitespace-nowrap transition-colors hover:text-np-dark hover:bg-gray-50
                         ${dragOverColIdx === idx && dragColIdx !== null ? 'bg-np-blue/10' : ''}
-                        ${dragColIdx === idx ? 'opacity-40' : ''}`}>
+                        ${dragColIdx === idx ? 'opacity-40' : ''}
+                        ${SORT_COLUMN_MAP[colKey] === sortBy ? 'text-np-blue' : ''}`}>
                       <div className="flex items-center gap-1">
                         <GripVertical className="w-2.5 h-2.5 text-gray-300 flex-shrink-0" />
                         {col.label}
+                        {SORT_COLUMN_MAP[colKey] === sortBy ? (
+                          sortDir === 'asc' ? <ArrowUp className="w-2.5 h-2.5 text-np-blue" /> : <ArrowDown className="w-2.5 h-2.5 text-np-blue" />
+                        ) : SORT_COLUMN_MAP[colKey] ? (
+                          <ArrowUpDown className="w-2.5 h-2.5 text-gray-200" />
+                        ) : null}
                       </div>
                     </th>
                   )
@@ -456,13 +545,73 @@ export default function ContactsPage() {
             </thead>
             <tbody>
               {contacts.map(c => (
-                <tr key={c.id} onClick={() => setSelectedContactId(c.id)} className="border-b border-gray-100/30 hover:bg-gray-50/30 transition-colors cursor-pointer">
+                <tr key={c.id} onClick={() => setSelectedContactId(c.id)} className="border-b border-gray-100/30 hover:bg-gray-50/30 transition-colors cursor-pointer group">
                   <td className="py-2 px-3" onClick={e => e.stopPropagation()}>
                     <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleSelect(c.id)} className="accent-teal w-3 h-3" />
                   </td>
-                  {activeColumns.map(colKey => (
-                    <td key={colKey} className="py-2 px-3">{renderCell(c, colKey)}</td>
-                  ))}
+                  {activeColumns.map(colKey => {
+                    const isEditing = editingCell?.contactId === c.id && editingCell?.colKey === colKey
+                    const isEditable = EDITABLE_COLUMNS.has(colKey)
+
+                    if (isEditing) {
+                      return (
+                        <td key={colKey} className="py-1 px-2" onClick={e => e.stopPropagation()}>
+                          {colKey === 'source' ? (
+                            <select value={editValue} onChange={e => setEditValue(e.target.value)}
+                              onBlur={saveEdit} onKeyDown={e => { if (e.key === 'Escape') cancelEdit() }}
+                              autoFocus
+                              className="w-full px-1.5 py-1 text-[10px] border border-np-blue rounded-md focus:outline-none focus:ring-1 focus:ring-np-blue/40 bg-white">
+                              <option value="">--</option>
+                              {SOURCE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                            </select>
+                          ) : colKey === 'how_heard' ? (
+                            <select value={editValue} onChange={e => setEditValue(e.target.value)}
+                              onBlur={saveEdit} onKeyDown={e => { if (e.key === 'Escape') cancelEdit() }}
+                              autoFocus
+                              className="w-full px-1.5 py-1 text-[10px] border border-np-blue rounded-md focus:outline-none focus:ring-1 focus:ring-np-blue/40 bg-white">
+                              <option value="">--</option>
+                              {['Referral','Social Media','Podcast','Workshop','Google Search','Conference','YouTube','Other'].map(o =>
+                                <option key={o} value={o}>{o}</option>
+                              )}
+                            </select>
+                          ) : colKey === 'contact_method' ? (
+                            <select value={editValue} onChange={e => setEditValue(e.target.value)}
+                              onBlur={saveEdit} onKeyDown={e => { if (e.key === 'Escape') cancelEdit() }}
+                              autoFocus
+                              className="w-full px-1.5 py-1 text-[10px] border border-np-blue rounded-md focus:outline-none focus:ring-1 focus:ring-np-blue/40 bg-white">
+                              <option value="">No preference</option>
+                              <option value="call">Call</option><option value="text">Text</option><option value="email">Email</option>
+                            </select>
+                          ) : (
+                            <input value={editValue} onChange={e => setEditValue(e.target.value)}
+                              onBlur={saveEdit}
+                              onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit() }}
+                              autoFocus
+                              className="w-full px-1.5 py-1 text-[10px] border border-np-blue rounded-md focus:outline-none focus:ring-1 focus:ring-np-blue/40 bg-white" />
+                          )}
+                        </td>
+                      )
+                    }
+
+                    return (
+                      <td key={colKey} className="py-2 px-3 relative"
+                        onDoubleClick={isEditable ? (e) => {
+                          e.stopPropagation()
+                          const rawVal = getCellRawValue(c, colKey)
+                          startEdit(c.id, colKey, rawVal)
+                        } : undefined}
+                      >
+                        {renderCell(c, colKey)}
+                        {isEditable && (
+                          <button onClick={(e) => { e.stopPropagation(); startEdit(c.id, colKey, getCellRawValue(c, colKey)) }}
+                            className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-300 hover:text-np-blue opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Edit">
+                            <Pencil className="w-2.5 h-2.5" />
+                          </button>
+                        )}
+                      </td>
+                    )
+                  })}
                   <td className="w-8" />
                 </tr>
               ))}

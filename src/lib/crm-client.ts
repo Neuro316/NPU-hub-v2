@@ -24,7 +24,11 @@ export async function fetchContacts(params: ContactSearchParams = {}) {
     .from('contacts')
     .select('*', { count: 'exact' })
     .is('merged_into_id', null)
-    .order('updated_at', { ascending: false })
+
+  // Dynamic sorting (default: updated_at desc)
+  const sortColumn = params.sort_by || 'updated_at'
+  const sortAsc = params.sort_dir === 'asc'
+  query = query.order(sortColumn, { ascending: sortAsc })
 
   if (params.org_id) query = query.eq('org_id', params.org_id)
   if (!params.include_archived) query = query.is('archived_at', null)
