@@ -314,6 +314,15 @@ export default function TasksPage() {
 
   return (
     <div className="space-y-4 animate-in fade-in duration-300">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-lg font-bold text-np-dark">Client Tasks</h1>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Contact-linked follow-ups, resource delivery &amp; action items
+            <Link href="/tasks" className="ml-2 text-np-blue hover:underline">Task Manager →</Link>
+          </p>
+        </div>
+      </div>
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[180px]">
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />

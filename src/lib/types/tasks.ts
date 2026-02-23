@@ -19,6 +19,8 @@ export interface KanbanTask {
   sort_order: number
   custom_fields: Record<string, any>
   created_by: string | null
+  rock_id: string | null
+  source: string | null
   created_at: string
   updated_at: string
 }

@@ -24,4 +24,22 @@
   .card {
     @apply bg-white rounded-xl border border-gray-100 shadow-sm;
   }
+
+  .btn-teal {
+    @apply bg-teal text-white px-4 py-2 rounded-lg font-medium
+           hover:bg-teal/90 transition-colors duration-150
+           focus:outline-none focus:ring-2 focus:ring-teal/50;
+  }
+
+  .card-warm {
+    @apply bg-warm rounded-xl border border-warm-border;
+  }
+
+  .badge-pill {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold;
+  }
+
+  .status-dot {
+    @apply w-2 h-2 rounded-full flex-shrink-0;
+  }
 }
