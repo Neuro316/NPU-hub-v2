@@ -249,7 +249,7 @@ export default function MeetingDetailPage() {
   }
   const addActionItem = () => {
     if (!secActionText.trim() || !meeting) return
-    const item: MeetingActionItem = { id: crypto.randomUUID(), title: secActionText.trim(), owner: '', owner_name: '', due_date: '', status: 'pending', task_id: null, source: 'captured' }
+    const item: MeetingActionItem = { id: crypto.randomUUID(), title: secActionText.trim(), owner: '', owner_name: '', due_date: '', status: 'pending', task_id: null }
     save({ action_items: [...(meeting.action_items || []), item] }); setSecActionText('')
   }
   const updateIds = (itemId: string, u: Partial<IdsItem>) => { if (!meeting) return; save({ ids_items: (meeting.ids_items || []).map(i => i.id === itemId ? { ...i, ...u } : i) }) }
@@ -269,7 +269,7 @@ export default function MeetingDetailPage() {
     const freshAgenda = templateAgenda.map(s => ({ ...s, notes: '', completed: false, talking_points: [] as string[] }))
     let finalAgenda = [...freshAgenda]
     if (deferredItems.length > 0) { const ei = finalAgenda.findIndex(s => s.section.toLowerCase().includes('deferred')); if (ei >= 0) finalAgenda[ei] = { ...finalAgenda[ei], talking_points: deferredItems.map(d => `🔄 ${d.title}`) }; else finalAgenda.unshift({ section: 'Review Deferred Items', duration_min: 10, notes: '', completed: false, talking_points: deferredItems.map(d => `🔄 ${d.title}`) }) }
-    const { data: nm } = await supabase.from('meetings').insert({ org_id: currentOrg.id, title: meeting.title, template: meeting.template, scheduled_at: new Date(`${date}T${time}:00`).toISOString(), duration_minutes: meeting.duration_minutes, status: 'scheduled', prev_meeting_id: meeting.id, agenda: finalAgenda, action_items: deferredItems.map(d => ({ ...d, status: 'pending', source: 'deferred_prev' })) }).select().single()
+    const { data: nm } = await supabase.from('meetings').insert({ org_id: currentOrg.id, title: meeting.title, template: meeting.template, scheduled_at: new Date(`${date}T${time}:00`).toISOString(), duration_minutes: meeting.duration_minutes, status: 'scheduled', prev_meeting_id: meeting.id, agenda: finalAgenda, action_items: deferredItems.map(d => ({ ...d, status: 'pending' })) }).select().single()
     if (nm) { await supabase.from('meetings').update({ next_meeting_id: nm.id }).eq('id', meeting.id); if (attendees.length > 0) await supabase.from('meeting_attendees').insert(attendees.map(a => ({ meeting_id: nm.id, user_id: a.user_id }))); setShowSched(false); router.push(`/meetings/${nm.id}`) }
   }
 
