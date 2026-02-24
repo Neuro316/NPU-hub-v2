@@ -95,7 +95,7 @@ export default function CrossOrgContactsPanel({ orgId }: { orgId: string }) {
                     <th className="px-5 py-2">Name</th>
                     <th className="px-3 py-2">Email</th>
                     <th className="px-3 py-2">Phone</th>
-                    <th className="px-3 py-2">Company</th>
+                    <th className="px-3 py-2">Occupation</th>
                     <th className="px-3 py-2">Stage</th>
                     <th className="px-3 py-2">Matched Tags</th>
                     <th className="px-3 py-2">Source</th>
@@ -119,7 +119,7 @@ export default function CrossOrgContactsPanel({ orgId }: { orgId: string }) {
                         </td>
                         <td className="px-3 py-2.5 text-[10px] text-gray-600">{c.email || '—'}</td>
                         <td className="px-3 py-2.5 text-[10px] text-gray-600">{c.phone || '—'}</td>
-                        <td className="px-3 py-2.5 text-[10px] text-gray-600">{c.company || '—'}</td>
+                        <td className="px-3 py-2.5 text-[10px] text-gray-600">{c.occupation || '—'}</td>
                         <td className="px-3 py-2.5">
                           {c.pipeline_stage ? (
                             <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: stageColor + '15', color: stageColor }}>{c.pipeline_stage}</span>
