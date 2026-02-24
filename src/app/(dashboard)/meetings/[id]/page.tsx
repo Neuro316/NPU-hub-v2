@@ -285,8 +285,9 @@ export default function MeetingDetailPage() {
   const tmpl = MEETING_TEMPLATES[meeting.template as MeetingTemplate] || MEETING_TEMPLATES.custom
   const live = meeting.status === 'in_progress'; const done = meeting.status === 'completed'
   const allActs = (meeting.action_items || []).filter(a => a.status !== 'deleted')
-  const deferredActs = allActs.filter(a => a.source === 'deferred_prev')
-  const newActs = allActs.filter(a => a.source !== 'deferred_prev')
+  const deferredIds = new Set(prevActions.map(a => a.id))
+  const deferredActs = allActs.filter(a => deferredIds.has(a.id))
+  const newActs = allActs.filter(a => !deferredIds.has(a.id))
   const ids = meeting.ids_items || []
   const isRock = (s: AgendaSection) => s.section.toLowerCase().includes('rock')
 
