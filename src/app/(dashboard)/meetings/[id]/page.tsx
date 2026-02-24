@@ -81,9 +81,9 @@ function IdsTable({ items, onUpdate, onRemove }: {
               <div className="col-span-1"><button onClick={e => { e.stopPropagation(); onUpdate(item.id, { status: advance(item.status) }) }} className="px-1.5 py-0.5 rounded-full text-[7px] font-bold" style={{ background: s.bg, color: s.fg }}>{s.label.slice(0, 4)}</button></div>
               <div className="col-span-2"><input value={item.issue_category} onChange={e => onUpdate(item.id, { issue_category: e.target.value })} onClick={e => e.stopPropagation()} placeholder="Category" className="w-full text-[10px] font-semibold text-np-dark bg-transparent focus:outline-none focus:bg-gray-50 rounded px-1" /></div>
               <div className="col-span-3 text-[10px] text-gray-600 truncate">{item.description || '—'}</div>
-              <div className="col-span-2 text-[10px] text-gray-500 truncate">{item.action_items || '—'}</div>
+              <div className="col-span-2 text-[10px] text-gray-500 truncate">{item.action_items_text || '—'}</div>
               <div className="col-span-1"><input value={item.due_date} onChange={e => onUpdate(item.id, { due_date: e.target.value })} onClick={e => e.stopPropagation()} placeholder="Due" className="w-full text-[9px] text-gray-400 bg-transparent focus:outline-none focus:bg-gray-50 rounded px-0.5" /></div>
-              <div className="col-span-2"><input value={item.owner} onChange={e => onUpdate(item.id, { owner: e.target.value })} onClick={e => e.stopPropagation()} placeholder="Owner" className="w-full text-[10px] font-medium text-np-dark bg-transparent focus:outline-none focus:bg-gray-50 rounded px-1" /></div>
+              <div className="col-span-2"><input value={item.owner_name} onChange={e => onUpdate(item.id, { owner_name: e.target.value })} onClick={e => e.stopPropagation()} placeholder="Owner" className="w-full text-[10px] font-medium text-np-dark bg-transparent focus:outline-none focus:bg-gray-50 rounded px-1" /></div>
               <div className="col-span-1 flex items-center gap-1 justify-end">
                 <ChevronDown size={10} className={`text-gray-300 transition-transform ${isExp ? 'rotate-180' : ''}`} />
                 <button onClick={e => { e.stopPropagation(); onRemove(item.id) }} className="text-gray-200 hover:text-red-400 p-0.5"><X size={10} /></button>
@@ -100,7 +100,7 @@ function IdsTable({ items, onUpdate, onRemove }: {
                     <textarea value={item.decisions_needed} onChange={e => onUpdate(item.id, { decisions_needed: e.target.value })} rows={2} className="w-full mt-0.5 px-2 py-1.5 text-[10px] border border-gray-100 rounded-lg bg-white focus:outline-none resize-none" /></div>
                 </div>
                 <div><label className="text-[8px] font-bold text-gray-400 uppercase">Action Items</label>
-                  <textarea value={item.action_items} onChange={e => onUpdate(item.id, { action_items: e.target.value })} rows={2} placeholder="Concrete next steps..." className="w-full mt-0.5 px-2 py-1.5 text-[10px] border border-gray-100 rounded-lg bg-white focus:outline-none resize-none" /></div>
+                  <textarea value={item.action_items_text} onChange={e => onUpdate(item.id, { action_items_text: e.target.value })} rows={2} placeholder="Concrete next steps..." className="w-full mt-0.5 px-2 py-1.5 text-[10px] border border-gray-100 rounded-lg bg-white focus:outline-none resize-none" /></div>
               </div>
             )}
           </div>
