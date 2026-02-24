@@ -416,7 +416,7 @@ export default function MeetingDetailPage() {
       const taskIds = approvedWithTasks.map(a => a.task_id!).filter(Boolean)
       const { data: tasks } = await supabase.from('kanban_tasks').select('id, column_id').in('id', taskIds)
       if (tasks && tasks.length > 0) {
-        const colIds = [...new Set(tasks.map(t => t.column_id))]
+        const colIds = Array.from(new Set(tasks.map(t => t.column_id)))
         const { data: cols } = await supabase.from('kanban_columns').select('id, title').in('id', colIds)
         const colMap: Record<string, string> = {}; (cols || []).forEach(c => { colMap[c.id] = c.title })
         let changed = false
