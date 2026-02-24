@@ -98,14 +98,16 @@ Platform context is provided below. Cross-reference everything. If a rock, task,
 
 Return ONLY valid JSON:
 {
-  "issue_category": "2-4 word category label",
-  "description": "Detailed strategic analysis of the issue (2-4 sentences). Reference specific platform data.",
-  "dependencies_context": "What this depends on or connects to — reference specific tasks, rocks, contacts, or docs by name.",
-  "decisions_needed": "The specific decisions leadership must make. Frame as clear choices.",
-  "action_items_text": "Concrete next steps with specific names/resources. Semicolon-separated.",
-  "due_date": "Recommended timeline (e.g., '2 weeks', 'Before Q2', 'Advisor meeting')",
-  "suggested_owner": "Best person from the team to own this based on roles and current workload"
-}`
+  "issue_category": "2-5 word strategic category label (e.g. 'Revenue Velocity', 'Founder Bottleneck', 'Product-Market Fit')",
+  "description": "2-4 sentences of strategic analysis. Be specific about the current state, what's working, what's not, and why this matters now. Reference concrete platform data (specific tasks, rocks, contacts, metrics). Example quality: 'Strong resonance signals, but unclear if PMF is sufficient for paid scale. Early conversions and improved call quality suggest traction, but sample size remains small.'",
+  "dependencies_context": "List every dependency: related tasks by name, rocks that overlap, contacts who are involved, documents that inform this, and any timing constraints. Use semicolons to separate. Example: 'Mastermind program; therapist-partnership development (~2 weeks dev); HRV + LF/HF metrics; participant feedback.'",
+  "decisions_needed": "Frame as specific choices leadership must make. Be direct. Example: 'Determine realistic monthly target; decide whether to integrate upsell + partnership strategies into pro forma.' or 'Launch now vs. design-only vs. defer.'",
+  "action_items_text": "Concrete, executable next steps. Each should name who does what. Semicolons between items. Example: 'Build upsell model; explore therapist partnerships; adjust financial projections.' or 'Analyze calls + NSCI data → write 1-page ICP definition (language, pain, readiness).'",
+  "due_date": "Specific timeline: '2 weeks', '2-3 weeks', 'Before Q2', 'Advisor meeting', 'Before build', etc.",
+  "suggested_owner": "Name + role if multiple people needed, e.g. 'Cameron' or 'Cameron + Paul' or 'Shane + Cameron'"
+}
+
+CRITICAL: Even if the user's issue is brief or simple (e.g. "find a marketer"), your analysis must be thorough and strategic. Expand the brief issue into a full strategic assessment by cross-referencing all platform data. A 5-word issue should still produce paragraph-length descriptions and multiple concrete action items.`
 
   const userPrompt = `ISSUE TO ANALYZE:
 "${issue_description}"
@@ -121,7 +123,7 @@ Analyze this issue strategically. Cross-reference with all platform data. Fill a
       headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 1500,
+        max_tokens: 2500,
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }],
       }),

@@ -9,7 +9,7 @@ export interface AgendaSection {
   notes: string
   completed: boolean
   talking_points?: string[]
-  prompts?: string[]         // AI-generated facilitator questions per section
+  prompts?: string[]
 }
 
 export interface MeetingActionItem {
@@ -18,20 +18,28 @@ export interface MeetingActionItem {
   owner: string
   owner_name: string
   due_date: string
-  status: 'pending' | 'approved' | 'deferred' | 'deleted'
+  status: 'pending' | 'approved' | 'deferred' | 'deleted' | 'completed'
   task_id: string | null
+  // Extended fields for Task Manager card population
+  description: string
+  priority: 'low' | 'medium' | 'high' | 'urgent'
+  raci_responsible: string
+  raci_accountable: string
+  raci_consulted: string
+  raci_informed: string
+  task_column: string       // synced from Task Manager column title
 }
 
 export interface IdsItem {
   id: string
-  issue_category: string        // Column 1: Issue Category
-  description: string            // Column 2: Description
-  dependencies_context: string   // Column 3: Dependencies / Context
-  decisions_needed: string       // Column 4: Decisions Needed
-  action_items_text: string      // Column 5: Action Items
-  due_date: string               // Column 6: Due Date
-  owner: string                  // Column 7: Owner (user_id)
-  owner_name: string             // Column 7: Owner (display name)
+  issue_category: string
+  description: string
+  dependencies_context: string
+  decisions_needed: string
+  action_items_text: string
+  due_date: string
+  owner: string
+  owner_name: string
   status: 'identified' | 'discussed' | 'solved'
   resolution: string
   created_at: string
@@ -116,7 +124,7 @@ export const MEETING_TEMPLATES: Record<MeetingTemplate, {
   quarterly: {
     label: 'Quarterly', color: '#2A9D8F', defaultDuration: 480,
     defaultAgenda: [
-      { section: 'Review Previous Quarter', duration_min: 60, notes: '', completed: false, prompts: ['What worked?', 'What didn\'t?', 'What did we learn?'] },
+      { section: 'Review Previous Quarter', duration_min: 60, notes: '', completed: false, prompts: ['What worked?', "What didn't?", 'What did we learn?'] },
       { section: 'SWOT Analysis', duration_min: 60, notes: '', completed: false, prompts: ['What are our strengths?', 'Weaknesses?', 'Opportunities?', 'Threats?'] },
       { section: 'Set New Rocks', duration_min: 120, notes: '', completed: false, prompts: ['What are the 3-7 most important things for next quarter?'] },
       { section: 'Team Health Check', duration_min: 30, notes: '', completed: false, prompts: ['Rate team health 1-10.', 'What would make it a 10?'] },
