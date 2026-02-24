@@ -95,7 +95,7 @@ export default function CrossOrgContactsPanel({ orgId }: { orgId: string }) {
                     <th className="px-5 py-2">Name</th>
                     <th className="px-3 py-2">Email</th>
                     <th className="px-3 py-2">Phone</th>
-                    <th className="px-3 py-2">Company</th>
+                    <th className="px-3 py-2">Occupation</th>
                     <th className="px-3 py-2">Stage</th>
                     <th className="px-3 py-2">Matched Tags</th>
                     <th className="px-3 py-2">Source</th>
