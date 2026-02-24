@@ -244,7 +244,7 @@ export default function MeetingDetailPage() {
 
   const addIdsItem = () => {
     if (!secIdsText.trim() || !meeting) return
-    const item: IdsItem = { id: crypto.randomUUID(), issue_category: '', description: secIdsText.trim(), dependencies_context: '', decisions_needed: '', action_items: '', due_date: '', owner: '', status: 'identified', created_at: new Date().toISOString() }
+    const item: IdsItem = { id: crypto.randomUUID(), issue_category: '', description: secIdsText.trim(), dependencies_context: '', decisions_needed: '', action_items_text: '', due_date: '', owner: '', owner_name: '', status: 'identified', resolution: '', created_at: new Date().toISOString() }
     save({ ids_items: [...(meeting.ids_items || []), item] }); setSecIdsText('')
   }
   const addActionItem = () => {
