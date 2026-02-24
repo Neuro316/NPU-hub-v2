@@ -9,6 +9,7 @@ import { fetchContacts, bulkUpdateContacts, createContact, fetchTeamMembers, fet
 import type { CrmContact, ContactSearchParams, TeamMember, RelationshipType } from '@/types/crm'
 import { STAGE_COLORS } from '@/types/crm'
 import ContactDetail from '@/components/crm/contact-detail'
+import CrossOrgContactsPanel from '@/components/crm/cross-org-contacts-panel'
 import { useWorkspace } from '@/lib/workspace-context'
 
 const TAG_COLORS: Record<string, string> = {
@@ -668,6 +669,8 @@ export default function ContactsPage() {
           </div>
         </div>
       )}
+
+      {currentOrg && <CrossOrgContactsPanel orgId={currentOrg.id} />}
 
       <ContactDetail contactId={selectedContactId} onClose={() => setSelectedContactId(null)} onUpdate={load} />
 
