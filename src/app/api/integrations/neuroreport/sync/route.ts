@@ -230,7 +230,7 @@ export async function POST(req: NextRequest) {
               email: p.email || null,
               phone: p.phone || null,
               pipeline_id: 'pipeline-1771530511407',
-              pipeline_stage: 'Enrolled',
+              pipeline_stage: 'Signed up',
               tags: [],
               auto_tags: [],
               neuroreport_linked: true,
