@@ -656,7 +656,7 @@ export default function MeetingDetailPage() {
                       </h4>
                       <div className="space-y-3">
                         {aiResult.recommended_actions.map((action: any, i: number) => {
-                          const priColor = { low: '#9CA3AF', medium: '#3B82F6', high: '#F59E0B', urgent: '#EF4444' }[action.suggested_priority || 'medium'] || '#3B82F6'
+                          const priColor = ({ low: '#9CA3AF', medium: '#3B82F6', high: '#F59E0B', urgent: '#EF4444' } as Record<string, string>)[action.suggested_priority || 'medium'] || '#3B82F6'
                           return (
                             <div key={i} className="bg-white border border-gray-100 rounded-xl p-4 space-y-2">
                               <div className="flex items-start gap-2">
