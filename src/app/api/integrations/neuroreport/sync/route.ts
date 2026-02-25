@@ -229,6 +229,7 @@ export async function POST(req: NextRequest) {
               last_name: p.last_name,
               email: p.email || null,
               phone: p.phone || null,
+              pipeline_id: 'pipeline-1771530511407',
               pipeline_stage: 'Enrolled',
               tags: [],
               auto_tags: [],
