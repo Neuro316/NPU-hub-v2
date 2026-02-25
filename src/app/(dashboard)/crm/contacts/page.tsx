@@ -18,6 +18,8 @@ const TAG_COLORS: Record<string, string> = {
 }
 const SOURCE_OPTIONS = ['Website','Referral','Social Media','Event','Cold Outreach','Podcast','Workshop','Mastermind Alumni','Partner','Google Search','Conference','YouTube','Other']
 
+import { DataApiBadge, AutoTagIndicator, EnrollmentTypeBadge } from '@/components/crm/data-api-badge'
+
 function ContactTag({ tag }: { tag: string }) {
   const color = TAG_COLORS[tag] || '#94a3b8'
   return <span className="inline-flex px-1.5 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: color + '18', color }}>{tag}</span>
@@ -145,6 +147,8 @@ export default function ContactsPage() {
     { key: 'stage', label: 'Stage', defaultVisible: true },
     { key: 'pipeline', label: 'Pipeline', defaultVisible: false },
     { key: 'tags', label: 'Tags', defaultVisible: true },
+    { key: 'api_status', label: 'Data API', defaultVisible: true },
+    { key: 'enrollment', label: 'Enrollment', defaultVisible: false },
     { key: 'last_contact', label: 'Last Contact', defaultVisible: true },
     { key: 'assigned', label: 'Assigned', defaultVisible: true },
     { key: 'preferred_name', label: 'Preferred Name', defaultVisible: false },
@@ -230,7 +234,9 @@ export default function ContactsPage() {
         const pl = pipelineConfigs.find((p: any) => p.id === c.pipeline_id)
         return pl ? <span className="text-[10px] px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded-full font-medium">{pl.name}</span> : <span className="text-[10px] text-gray-400">--</span>
       }
-      case 'tags': return <div className="flex gap-0.5 flex-wrap">{c.tags?.slice(0,2).map(t => <ContactTag key={t} tag={t} />)}{(c.tags?.length||0)>2 && <span className="text-[9px] text-gray-400">+{c.tags!.length-2}</span>}</div>
+      case 'tags': return <div className="flex gap-0.5 flex-wrap">{c.tags?.slice(0,2).map(t => (c as any).auto_tags?.includes(t) ? <AutoTagIndicator key={t} tag={t} source="stripe" /> : <ContactTag key={t} tag={t} />)}{(c.tags?.length||0)>2 && <span className="text-[9px] text-gray-400">+{c.tags!.length-2}</span>}</div>
+      case 'api_status': return <DataApiBadge linked={(c as any).neuroreport_linked} linkedAt={(c as any).neuroreport_linked_at} program={(c as any).neuroreport_program} patientId={(c as any).neuroreport_patient_id} compact />
+      case 'enrollment': return <EnrollmentTypeBadge type={(c as any).enrollment_type} />
       case 'last_contact': return <span className="text-[10px] text-gray-400">{c.last_contacted_at ? new Date(c.last_contacted_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : 'Never'}</span>
       case 'assigned': return <span className="text-[10px] text-gray-600">{(c.assigned_member as any)?.display_name || '--'}</span>
       case 'preferred_name': return <span className="text-[10px] text-gray-500">{c.preferred_name || '--'}</span>
