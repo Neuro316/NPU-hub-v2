@@ -36,6 +36,7 @@ import {
   FileCheck,
   Shield,
   History,
+  Wallet,
 } from 'lucide-react'
 import { NotificationBell } from '@/components/notification-bell'
 
@@ -114,6 +115,14 @@ const navCategories: NavCategory[] = [
     ],
   },
   {
+    id: 'finance',
+    label: 'FINANCE',
+    collapsible: true,
+    items: [
+      { label: 'NP Financial', href: '/financial/np', icon: Wallet, moduleKey: 'np_financial' },
+    ],
+  },
+  {
     id: 'admin',
     label: 'ADMIN',
     collapsible: true,
@@ -129,16 +138,17 @@ const navCategories: NavCategory[] = [
   },
 ]
 
-/* EHR items are conditional on org and feature flags */
+/* ECR = Electronic Client Records (payment-gated client data view) */
 interface EhrItem {
   label: string
   href: string
   icon: any
-  requireModule?: string   // feature flag from enabled_modules
-  forAllOrgs?: boolean     // true = show for any org (NP + Sensorium)
+  requireModule?: string
+  forAllOrgs?: boolean
 }
 
 const ehrItems: EhrItem[] = [
+  { label: 'Client Records', href: '/ehr/ecr', icon: HeartPulse, forAllOrgs: true },
   { label: 'NeuroReport', href: '/ehr/neuroreport', icon: Brain, forAllOrgs: true },
   { label: 'Session Notes', href: '/ehr/sessions', icon: ClipboardList, forAllOrgs: true },
   { label: 'Forms', href: '/ehr/forms', icon: FileCheck, forAllOrgs: true },
@@ -162,11 +172,9 @@ export function Sidebar() {
     window.location.href = '/login'
   }
 
-  // Determine if current org is a clinical org (show EHR section)
   const orgSlug = currentOrg?.slug || ''
   const isClinicalOrg = orgSlug.includes('sensorium') || orgSlug.includes('neuro-progeny') || orgSlug.includes('neuro_progeny') || orgSlug.includes('nprogeny') || enabledModules.includes('ehr')
 
-  // Filter EHR items based on org + feature flags
   const visibleEhrItems = ehrItems.filter(item => {
     if (item.requireModule && !enabledModules.includes(item.requireModule)) return false
     if (item.forAllOrgs && isClinicalOrg) return true
@@ -174,7 +182,6 @@ export function Sidebar() {
     return false
   })
 
-  // Always show EHR section if there's at least one visible EHR item
   const showEhr = visibleEhrItems.length > 0
 
   return (
