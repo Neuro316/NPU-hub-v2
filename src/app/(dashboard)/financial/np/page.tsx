@@ -34,7 +34,7 @@ const STATUS_COLORS: Record<string, string> = { active: 'bg-emerald-100 text-eme
 const EXPENSE_CATS = ['equipment','marketing','software','travel','supplies','personal_offset','reimbursement','cross_entity','other']
 
 export default function NPFinancialPage() {
-  const { activeOrg } = useWorkspace()
+  const { currentOrg } = useWorkspace()
   const supabase = createClient()
 
   const [tab, setTab] = useState<Tab>('overview')
@@ -61,7 +61,7 @@ export default function NPFinancialPage() {
   const [formData, setFormData] = useState<any>({})
   const [expandedPayout, setExpandedPayout] = useState<string | null>(null)
 
-  const orgId = activeOrg?.id
+  const orgId = currentOrg?.id
 
   // ═══ Data Loading ═══════════════════════════════════════════
   const loadAll = useCallback(async () => {
