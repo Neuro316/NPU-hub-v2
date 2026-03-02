@@ -80,7 +80,7 @@ export default function NPFinancialPage() {
         supabase.from('enrollments').select('*'),
         supabase.from('cohorts').select('*').order('start_date', { ascending: false }),
         supabase.from('profiles').select('id, full_name, email'),
-        supabase.rpc('get_1099_report', { p_org_id: orgId }).catch(() => ({ data: [] }))
+        supabase.rpc('get_1099_report', { p_org_id: orgId }).then(r => r, () => ({ data: [] }))
       ])
 
       setRates(rRes.data || [])
@@ -737,3 +737,4 @@ export default function NPFinancialPage() {
     </div>
   )
 }
+
