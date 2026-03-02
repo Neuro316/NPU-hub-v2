@@ -16,9 +16,9 @@ import {
   Link2, Zap, ExternalLink
 } from 'lucide-react'
 
-/* ═══════════════════════════════════════════════
-   RACI PILLS — compact row for task list
-   ═══════════════════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   RACI PILLS â€” compact row for task list
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function RaciPills({ fields }: { fields: Record<string, any> }) {
   const roles = [
     { key: 'raci_responsible', label: 'R', color: '#2563EB' },
@@ -38,9 +38,9 @@ function RaciPills({ fields }: { fields: Record<string, any> }) {
   )
 }
 
-/* ═══════════════════════════════════════════════
-   RACI FORM — used in add task + edit
-   ═══════════════════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   RACI FORM â€” used in add task + edit
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function RaciForm({ raci, teamMembers, onChange }: {
   raci: Record<string, string>
   teamMembers: { user_id: string | null; display_name: string }[]
@@ -75,9 +75,9 @@ function RaciForm({ raci, teamMembers, onChange }: {
   )
 }
 
-/* ═══════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    AI ADVISOR PANEL
-   ═══════════════════════════════════════════════ */
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 interface RockAnalysis {
   dependencies: Array<{ rock_title: string; rock_index: number; relationship: string; explanation: string }>
   risk_assessment: { level: string; factors: string[]; mitigation: string }
@@ -165,11 +165,11 @@ function AiAdvisorPanel({ analysis, loading, error, onAddTask, onSaveDeps, depsL
             </span>
             <ul className="mt-1 space-y-0.5">
               {analysis.risk_assessment.factors?.map((f, i) => (
-                <li key={i} className="text-[11px] text-np-dark">• {f}</li>
+                <li key={i} className="text-[11px] text-np-dark">â€¢ {f}</li>
               ))}
             </ul>
             {analysis.risk_assessment.mitigation && (
-              <p className="text-[11px] text-gray-500 mt-1.5 italic">💡 {analysis.risk_assessment.mitigation}</p>
+              <p className="text-[11px] text-gray-500 mt-1.5 italic">ðŸ’¡ {analysis.risk_assessment.mitigation}</p>
             )}
           </div>
         </div>
@@ -196,7 +196,7 @@ function AiAdvisorPanel({ analysis, loading, error, onAddTask, onSaveDeps, depsL
                     'bg-blue-100 text-blue-600'
                   }`}>{dep.relationship.replace('_', ' ').toUpperCase()}</span>
                   <span className="font-medium text-np-dark">{dep.rock_title}</span>
-                  <span className="text-gray-400 flex-1 truncate">— {dep.explanation}</span>
+                  <span className="text-gray-400 flex-1 truncate">â€” {dep.explanation}</span>
                 </div>
               ))}
             </div>
@@ -247,9 +247,9 @@ function AiAdvisorPanel({ analysis, loading, error, onAddTask, onSaveDeps, depsL
   )
 }
 
-/* ═══════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    MAIN PAGE
-   ═══════════════════════════════════════════════ */
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 export default function RockDetailPage() {
   const { id } = useParams() as { id: string }
   const router = useRouter()
@@ -341,6 +341,12 @@ export default function RockDetailPage() {
       rock_id: id, source: 'rock', priority: taskPriority,
       assignee: assigneeId || null, visibility: 'everyone', sort_order: tasks.length,
       custom_fields: Object.keys(customFields).length > 0 ? customFields : {},
+      raci_responsible: raciData.responsible || null,
+      raci_accountable: raciData.accountable || null,
+      raci_consulted: raciData.consulted ? [String(raciData.consulted)] : [],
+      raci_informed: raciData.informed ? [String(raciData.informed)] : [],
+      rock_tags: rock ? [rock.title] : [],
+      ai_generated: false,
     })
     if (!error) {
       setNewTaskTitle(''); setNewTaskPriority('medium'); setNewTaskAssignee(''); setNewTaskRaci({}); setShowRaci(false)
@@ -416,7 +422,7 @@ export default function RockDetailPage() {
       <div className="text-center py-16">
         <Target size={40} className="mx-auto text-gray-200 mb-3" />
         <p className="text-sm text-gray-400">Rock not found</p>
-        <button onClick={() => router.push('/rocks')} className="text-xs text-np-blue mt-2">← Back to Rocks</button>
+        <button onClick={() => router.push('/rocks')} className="text-xs text-np-blue mt-2">â† Back to Rocks</button>
       </div>
     )
   }
@@ -483,7 +489,7 @@ export default function RockDetailPage() {
         <ProgressBar pct={rock.progress_pct} height={10} />
         {rock.description && <p className="text-xs text-gray-500 mt-3 leading-relaxed">{rock.description}</p>}
 
-        {/* AI ADVISOR BUTTON — always visible, prominent */}
+        {/* AI ADVISOR BUTTON â€” always visible, prominent */}
         <div className="mt-4 pt-4 border-t border-gray-100">
           <button onClick={runAiAdvisor} disabled={advisorLoading}
             className="w-full flex items-center justify-center gap-2 px-4 py-3 text-sm font-semibold text-violet-700 bg-violet-50 hover:bg-violet-100 rounded-xl border border-violet-200 transition-colors disabled:opacity-50">
@@ -581,7 +587,7 @@ export default function RockDetailPage() {
             return (
               <div key={t.id} className="flex items-center gap-2 py-2 border-b border-gray-100/70 last:border-0 group">
                 <span className="text-sm font-semibold w-5 text-center" style={{ color: st === 'done' ? '#16A34A' : '#9CA3AF' }}>
-                  {st === 'done' ? '✓' : '○'}
+                  {st === 'done' ? 'âœ“' : 'â—‹'}
                 </span>
                 <button onClick={() => router.push(`/tasks?task=${t.id}`)}
                   className={`text-xs text-left flex-1 hover:text-np-blue hover:underline transition-colors ${

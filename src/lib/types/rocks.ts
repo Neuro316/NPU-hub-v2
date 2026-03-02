@@ -11,6 +11,9 @@ export interface Rock {
   due_date: string | null
   color: string
   core_value: string | null
+  notes: string | null
+  ai_analysis: any | null
+  ai_analyzed_at: string | null
   created_at: string
   updated_at: string
   // Joined / computed fields
@@ -24,6 +27,42 @@ export interface RockWithProgress extends Rock {
   progress_pct: number
   task_count: number
   tasks_done: number
+}
+
+export interface RockTaskProposal {
+  id: string
+  org_id: string
+  rock_id: string
+  title: string
+  description: string | null
+  priority: string
+  estimated_hours: number | null
+  sequence_order: number | null
+  raci_responsible: string | null
+  raci_accountable: string | null
+  raci_consulted: string[]
+  raci_informed: string[]
+  depends_on_proposals: string[]
+  cross_rock_deps: any[]
+  rationale: string | null
+  status: 'pending' | 'approved' | 'rejected' | 'modified'
+  created_task_id: string | null
+  batch_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface RockOutcome {
+  id: string
+  org_id: string
+  rock_id: string
+  metric_name: string
+  target_value: number | null
+  current_value: number
+  unit: string | null
+  tracking_source: string | null
+  last_measured_at: string | null
+  created_at: string
 }
 
 export const ROCK_STATUS_CONFIG: Record<RockStatus, { label: string; color: string; bg: string }> = {

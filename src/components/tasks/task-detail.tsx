@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import type { KanbanTask, KanbanColumn, TaskComment } from '@/lib/types/tasks'
 import { PRIORITY_CONFIG } from '@/lib/types/tasks'
-import { X, Trash2, MessageSquare, Plus, Link2, Calendar, User, Flag, Eye, FileText, ExternalLink } from 'lucide-react'
+import { X, Trash2, MessageSquare, Plus, Link2, Calendar, User, Flag, Eye, FileText, ExternalLink, Clock, Zap, AlertTriangle } from 'lucide-react'
 import { notifyTaskAssigned, notifyTaskMoved, notifyRACIAssigned } from '@/lib/slack-notifications'
 
 interface TaskDetailProps {
@@ -19,7 +19,12 @@ interface TaskDetailProps {
   orgId: string
 }
 
-// Team members passed as prop
+const RACI_ROLES = [
+  { key: 'raci_responsible', label: 'Responsible', short: 'R', color: '#2563EB', desc: 'Does the work' },
+  { key: 'raci_accountable', label: 'Accountable', short: 'A', color: '#DC2626', desc: 'Ultimately answerable' },
+  { key: 'raci_consulted', label: 'Consulted', short: 'C', color: '#D97706', desc: 'Input sought' },
+  { key: 'raci_informed', label: 'Informed', short: 'I', color: '#6B7280', desc: 'Kept updated' },
+]
 
 export function TaskDetail({
   task, columns, onClose, onUpdate, onDelete,
@@ -37,6 +42,15 @@ export function TaskDetail({
   const [newComment, setNewComment] = useState('')
   const [loadingComments, setLoadingComments] = useState(false)
 
+  // New RACI + intelligence fields
+  const [raciResponsible, setRaciResponsible] = useState('')
+  const [raciAccountable, setRaciAccountable] = useState('')
+  const [raciConsulted, setRaciConsulted] = useState('')
+  const [raciInformed, setRaciInformed] = useState('')
+  const [estimatedHours, setEstimatedHours] = useState('')
+  const [actualHours, setActualHours] = useState('')
+  const [rockTags, setRockTags] = useState<string[]>([])
+
   useEffect(() => {
     if (task) {
       setTitle(task.title)
@@ -47,6 +61,14 @@ export function TaskDetail({
       setDueDate(task.due_date || '')
       setVisibility(task.visibility)
       setFields(task.custom_fields || {})
+      // RACI — prefer new columns, fall back to custom_fields
+      setRaciResponsible(task.raci_responsible || task.custom_fields?.raci_responsible || '')
+      setRaciAccountable(task.raci_accountable || task.custom_fields?.raci_accountable || '')
+      setRaciConsulted(task.raci_consulted?.[0] || task.custom_fields?.raci_consulted || '')
+      setRaciInformed(task.raci_informed?.[0] || task.custom_fields?.raci_informed || '')
+      setEstimatedHours(task.estimated_hours?.toString() || '')
+      setActualHours(task.actual_hours?.toString() || '')
+      setRockTags(task.rock_tags || [])
       loadComments(task.id)
     }
   }, [task])
@@ -68,6 +90,22 @@ export function TaskDetail({
     const merged = { ...fields, ...updates }
     setFields(merged)
     await save('custom_fields', merged)
+  }
+
+  const saveRaci = async (role: string, value: string) => {
+    // Save to both new column AND custom_fields for backward compat
+    if (role === 'raci_consulted' || role === 'raci_informed') {
+      await onUpdate(task.id, {
+        [role]: value ? [value] : [],
+        custom_fields: { ...fields, [role]: value },
+      })
+    } else {
+      await onUpdate(task.id, {
+        [role]: value || null,
+        custom_fields: { ...fields, [role]: value },
+      })
+    }
+    setFields(prev => ({ ...prev, [role]: value }))
   }
 
   const handleAddComment = async () => {
@@ -99,6 +137,16 @@ export function TaskDetail({
             <span className="text-xs font-bold uppercase tracking-wider" style={{ color: currentCol?.color }}>
               {currentCol?.title}
             </span>
+            {task.ai_generated && (
+              <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 flex items-center gap-0.5">
+                <Zap className="w-3 h-3" /> AI Generated
+              </span>
+            )}
+            {task.milestone && (
+              <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">
+                ◆ Milestone
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1.5">
             <button onClick={handleDelete} className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500">
@@ -113,6 +161,17 @@ export function TaskDetail({
         {/* Content */}
         <div className="flex-1 overflow-y-auto">
           <div className="p-6 space-y-5">
+
+            {/* Rock Tags */}
+            {rockTags.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {rockTags.map((tag, i) => (
+                  <span key={i} className="text-[9px] font-bold px-2 py-1 rounded-full bg-violet-50 text-violet-700 border border-violet-200">
+                    🎯 {tag}
+                  </span>
+                ))}
+              </div>
+            )}
 
             {/* Title */}
             <input
@@ -137,10 +196,10 @@ export function TaskDetail({
                     save('column_id', newColId)
                     if (newColId !== task.column_id) {
                       const raciRoles = {
-                        responsible: fields.raci_responsible || '',
-                        accountable: fields.raci_accountable || '',
-                        consulted: fields.raci_consulted || '',
-                        informed: fields.raci_informed || '',
+                        responsible: raciResponsible,
+                        accountable: raciAccountable,
+                        consulted: raciConsulted,
+                        informed: raciInformed,
                       }
                       notifyTaskMoved(orgId, task.title, task.id, fromCol, toCol, currentUser, assignee, raciRoles)
                     }
@@ -185,8 +244,8 @@ export function TaskDetail({
               </div>
             </div>
 
-            {/* Due Date + Visibility */}
-            <div className="grid grid-cols-2 gap-3">
+            {/* Due Date + Time Tracking */}
+            <div className="grid grid-cols-3 gap-3">
               <div>
                 <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">
                   <Calendar className="w-3 h-3 inline mr-0.5" /> Due Date
@@ -195,6 +254,30 @@ export function TaskDetail({
                   onChange={e => { setDueDate(e.target.value); save('due_date', e.target.value || null) }}
                   className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
               </div>
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">
+                  <Clock className="w-3 h-3 inline mr-0.5" /> Est. Hours
+                </label>
+                <input type="number" step="0.5" min="0" value={estimatedHours}
+                  onChange={e => setEstimatedHours(e.target.value)}
+                  onBlur={() => save('estimated_hours', estimatedHours ? parseFloat(estimatedHours) : null)}
+                  placeholder="0"
+                  className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">
+                  <Clock className="w-3 h-3 inline mr-0.5" /> Actual Hours
+                </label>
+                <input type="number" step="0.5" min="0" value={actualHours}
+                  onChange={e => setActualHours(e.target.value)}
+                  onBlur={() => save('actual_hours', actualHours ? parseFloat(actualHours) : null)}
+                  placeholder="0"
+                  className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+              </div>
+            </div>
+
+            {/* Visibility */}
+            <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">
                   <Eye className="w-3 h-3 inline mr-0.5" /> Visibility
@@ -206,6 +289,16 @@ export function TaskDetail({
                   <option value="private">Private</option>
                   <option value="specific">Specific People</option>
                 </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">
+                  Sequence #
+                </label>
+                <input type="number" min="1"
+                  value={task.sequence_order ?? ''}
+                  onChange={e => save('sequence_order', e.target.value ? parseInt(e.target.value) : null)}
+                  placeholder="--"
+                  className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
               </div>
             </div>
 
@@ -219,28 +312,44 @@ export function TaskDetail({
                 className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 resize-none" />
             </div>
 
-            {/* RACI */}
+            {/* RACI Assignment — dedicated columns */}
             <div>
-              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">RACI Assignment</label>
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-2">RACI Assignment</label>
               <div className="grid grid-cols-4 gap-2">
-                {['responsible', 'accountable', 'consulted', 'informed'].map(role => (
-                  <div key={role}>
-                    <label className="text-[9px] text-gray-500 capitalize block mb-0.5">{role}</label>
-                    <select
-                      value={fields[`raci_${role}`] || ''}
-                      onChange={e => {
-                        const newPerson = e.target.value
-                        saveFields({ [`raci_${role}`]: newPerson })
-                        if (newPerson && newPerson !== fields[`raci_${role}`]) {
-                          notifyRACIAssigned(orgId, task.title, task.id, role, newPerson, currentUser)
-                        }
-                      }}
-                      className="w-full text-[10px] border border-gray-200 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-np-blue/30">
-                      <option value="">--</option>
-                      {teamMembers.map(m => <option key={m} value={m}>{m}</option>)}
-                    </select>
-                  </div>
-                ))}
+                {RACI_ROLES.map(role => {
+                  const stateMap: Record<string, [string, (v: string) => void]> = {
+                    raci_responsible: [raciResponsible, setRaciResponsible],
+                    raci_accountable: [raciAccountable, setRaciAccountable],
+                    raci_consulted: [raciConsulted, setRaciConsulted],
+                    raci_informed: [raciInformed, setRaciInformed],
+                  }
+                  const [val, setVal] = stateMap[role.key]
+
+                  return (
+                    <div key={role.key}>
+                      <label className="flex items-center gap-1 mb-1">
+                        <span className="w-4 h-4 rounded text-[9px] font-bold text-white flex items-center justify-center"
+                          style={{ background: role.color }}>{role.short}</span>
+                        <span className="text-[9px] font-semibold" style={{ color: role.color }}>{role.label}</span>
+                      </label>
+                      <select
+                        value={val}
+                        onChange={e => {
+                          const newPerson = e.target.value
+                          setVal(newPerson)
+                          saveRaci(role.key, newPerson)
+                          if (newPerson && newPerson !== val) {
+                            notifyRACIAssigned(orgId, task.title, task.id, role.label.toLowerCase(), newPerson, currentUser)
+                          }
+                        }}
+                        className="w-full text-[10px] border border-gray-200 rounded px-1.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30">
+                        <option value="">--</option>
+                        {teamMembers.map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                      <p className="text-[8px] text-gray-400 mt-0.5">{role.desc}</p>
+                    </div>
+                  )
+                })}
               </div>
             </div>
 
@@ -314,6 +423,8 @@ export function TaskDetail({
         {/* Footer */}
         <div className="px-6 py-3 border-t border-gray-100 text-[10px] text-gray-400">
           Created {new Date(task.created_at).toLocaleDateString()} · Updated {new Date(task.updated_at).toLocaleDateString()}
+          {task.ai_generated && ' · AI Generated'}
+          {task.approved_at && ` · Approved ${new Date(task.approved_at).toLocaleDateString()}`}
         </div>
       </div>
     </div>

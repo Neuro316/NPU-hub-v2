@@ -21,6 +21,24 @@ export interface KanbanTask {
   created_by: string | null
   rock_id: string | null
   source: string | null
+  // New RACI columns
+  raci_responsible: string | null
+  raci_accountable: string | null
+  raci_consulted: string[]
+  raci_informed: string[]
+  // New task intelligence columns
+  rock_tags: string[]
+  estimated_hours: number | null
+  actual_hours: number | null
+  depends_on: string[]
+  blocked_by: string[]
+  sequence_order: number | null
+  milestone: boolean
+  ai_generated: boolean
+  approved_at: string | null
+  approved_by: string | null
+  started_at: string | null
+  completed_at: string | null
   created_at: string
   updated_at: string
 }
