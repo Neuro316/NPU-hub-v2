@@ -5,7 +5,7 @@ import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
 import {
   HeartPulse, Activity, Brain, Users, ExternalLink, Search,
-  ChevronRight, Eye, X,
+  ChevronRight, Eye, X, AlertCircle,
   Send, Mail, Phone, FileText, ClipboardList, Plus, Mic,
   MessageSquare, RefreshCw, Sparkles,
 } from 'lucide-react'
@@ -68,6 +68,8 @@ interface ServiceEntry {
   id: string; contact_id: string; service_type: string; service_date: string
   duration_minutes: number; provider_name: string; notes: string; status: string
   ai_generated: boolean; amount_cents: number
+  priority: string; recommendation_source: string; recommendation_text: string
+  neuroreport_report_id: string
 }
 
 interface SessionNote {
@@ -80,6 +82,14 @@ interface AssessmentLink {
   id: string; contact_id: string; assessment_type: string; assessment_name: string
   status: string; send_url: string; report_url: string; sent_at: string
   completed_at: string; sent_via: string; score: any; created_at: string
+}
+
+interface CarePlan {
+  id: string; org_id: string; contact_id: string
+  neuroreport_report_id: string; report_type: string; report_date: string
+  title: string; raw_recommendations: string; parsed_services: any[]
+  status: string; reviewed_by: string; reviewed_at: string; review_notes: string
+  created_at: string
 }
 
 export default function EcrPage() {
@@ -98,6 +108,7 @@ export default function EcrPage() {
   const [notes, setNotes] = useState<SessionNote[]>([])
   const [assessments, setAssessments] = useState<AssessmentLink[]>([])
   const [serviceTypes, setServiceTypes] = useState<any[]>([])
+  const [carePlans, setCarePlans] = useState<CarePlan[]>([])
 
   // UI State
   const [search, setSearch] = useState('')
@@ -115,6 +126,9 @@ export default function EcrPage() {
   const [noteText, setNoteText] = useState('')
   const [aiProcessing, setAiProcessing] = useState(false)
   const [aiNote, setAiNote] = useState('')
+  const [showPasteRecs, setShowPasteRecs] = useState(false)
+  const [pasteText, setPasteText] = useState('')
+  const [parsingRecs, setParsingRecs] = useState(false)
 
   // ─── Data Loading ──────────────────────────────────────────
   const loadData = useCallback(async () => {
@@ -147,17 +161,19 @@ export default function EcrPage() {
         clientQuery = clientQuery.in('pipeline_stage', pipelineStages)
       }
 
-      const [cR, sR, nR, aR] = await Promise.all([
+      const [cR, sR, nR, aR, cpR] = await Promise.all([
         clientQuery,
         supabase.from('ecr_service_entries').select('*').eq('org_id', orgId).order('service_date', { ascending: false }).limit(1000),
         supabase.from('ecr_session_notes').select('*').eq('org_id', orgId).order('session_date', { ascending: false }).limit(500),
         supabase.from('ecr_assessment_links').select('*').eq('org_id', orgId).order('created_at', { ascending: false }),
+        supabase.from('ecr_care_plans').select('*').eq('org_id', orgId).order('created_at', { ascending: false }),
       ])
 
       setClients(cR.data || [])
       setServices(sR.data || [])
       setNotes(nR.data || [])
       setAssessments(aR.data || [])
+      setCarePlans(cpR.data || [])
 
       // Load service types for Sensorium
       if (isSensorium) {
@@ -203,6 +219,8 @@ export default function EcrPage() {
   const clientServices = (id: string) => services.filter(s => s.contact_id === id)
   const clientNotes = (id: string) => notes.filter(n => n.contact_id === id)
   const clientAssessments = (id: string) => assessments.filter(a => a.contact_id === id)
+  const pendingCarePlans = (id: string) => carePlans.filter(cp => cp.contact_id === id && cp.status === 'pending')
+  const recommendedServices = (id: string) => services.filter(s => s.contact_id === id && s.status === 'recommended')
   const selected = clients.find(c => c.id === selectedClient)
 
   // ─── Pipeline Stats ────────────────────────────────────────
@@ -311,6 +329,55 @@ export default function EcrPage() {
     setShowAddNote(false)
     setNoteText('')
     setAiNote('')
+    loadData()
+  }
+
+  // ─── Care Plan Actions ──────────────────────────────────────
+  const confirmService = async (serviceId: string) => {
+    await supabase.from('ecr_service_entries').update({
+      status: 'scheduled', confirmed_by: user?.id, confirmed_at: new Date().toISOString(),
+    }).eq('id', serviceId)
+    loadData()
+  }
+
+  const declineService = async (serviceId: string) => {
+    await supabase.from('ecr_service_entries').update({ status: 'declined' }).eq('id', serviceId)
+    loadData()
+  }
+
+  const approveCarePlan = async (planId: string) => {
+    if (!currentOrg || !selectedClient) return
+    const recs = recommendedServices(selectedClient)
+    for (const svc of recs) {
+      await supabase.from('ecr_service_entries').update({
+        status: 'scheduled', confirmed_by: user?.id, confirmed_at: new Date().toISOString(),
+      }).eq('id', svc.id)
+    }
+    await supabase.from('ecr_care_plans').update({
+      status: 'approved', reviewed_by: user?.id, reviewed_at: new Date().toISOString(),
+    }).eq('id', planId)
+    loadData()
+  }
+
+  const parseRecommendations = async () => {
+    if (!pasteText.trim() || !selected || !currentOrg) return
+    setParsingRecs(true)
+    try {
+      const { data: cp } = await supabase.from('ecr_care_plans').insert({
+        org_id: currentOrg.id, contact_id: selected.id,
+        title: `Manual Recommendations - ${selected.first_name} ${selected.last_name}`,
+        raw_recommendations: pasteText, status: 'pending',
+      }).select().single()
+      if (cp) {
+        await fetch('/api/neuroreport/parse-recommendations', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ care_plan_id: cp.id, org_id: currentOrg.id, contact_id: selected.id, recommendation_text: pasteText }),
+        })
+      }
+    } catch (err) { console.error('Parse error:', err) }
+    setParsingRecs(false)
+    setShowPasteRecs(false)
+    setPasteText('')
     loadData()
   }
 
@@ -547,6 +614,31 @@ export default function EcrPage() {
               )}
             </div>
 
+            {/* Care Plan Banner */}
+            {selected && pendingCarePlans(selected.id).length > 0 && (
+              <div className="mx-5 mt-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-amber-800 flex items-center gap-1.5">
+                      <AlertCircle className="w-4 h-4" />
+                      {pendingCarePlans(selected.id).length} Pending Care Plan{pendingCarePlans(selected.id).length > 1 ? 's' : ''}
+                    </p>
+                    <p className="text-xs text-amber-600 mt-0.5">
+                      NeuroReport recommendations awaiting review. {recommendedServices(selected.id).length} services recommended.
+                    </p>
+                  </div>
+                  <div className="flex gap-1.5">
+                    {pendingCarePlans(selected.id).map(cp => (
+                      <button key={cp.id} onClick={() => approveCarePlan(cp.id)}
+                        className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-medium hover:bg-amber-700">
+                        Approve All
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Card Tabs */}
             <div className="flex border-b border-gray-100">
               {[
@@ -631,6 +723,10 @@ export default function EcrPage() {
                         className="flex items-center gap-1.5 px-3 py-2 bg-orange-50 text-orange-700 rounded-lg text-xs font-medium hover:bg-orange-100">
                         <Brain className="w-3 h-3" /> Open in NeuroReport
                       </a>
+                      <button onClick={() => { setShowPasteRecs(true); setPasteText('') }}
+                        className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-medium hover:bg-indigo-100">
+                        <ClipboardList className="w-3 h-3" /> Paste Recommendations
+                      </button>
                     </div>
                   </div>
 
@@ -676,9 +772,49 @@ export default function EcrPage() {
                       <Plus className="w-3 h-3" /> Add
                     </button>
                   </div>
-                  {clientServices(selected.id).length === 0 ? (
+                  {/* Recommended Services from NeuroReport / Care Plans */}
+                  {selected && recommendedServices(selected.id).length > 0 && (
+                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-sm font-semibold text-amber-800 flex items-center gap-1.5">
+                          <Sparkles className="w-4 h-4" /> Recommended Services ({recommendedServices(selected.id).length})
+                        </h4>
+                        <span className="text-[10px] text-amber-500">From NeuroReport assessment</span>
+                      </div>
+                      <div className="space-y-2">
+                        {recommendedServices(selected.id).map(svc => (
+                          <div key={svc.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-amber-100">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium text-np-dark capitalize">{(svc.service_type || '').replace(/_/g, ' ')}</p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full
+                                  ${svc.priority === 'critical' ? 'bg-red-100 text-red-700' :
+                                    svc.priority === 'high' ? 'bg-orange-100 text-orange-700' :
+                                    svc.priority === 'standard' ? 'bg-blue-100 text-blue-600' :
+                                    'bg-gray-100 text-gray-600'}`}>
+                                  {svc.priority || 'standard'}
+                                </span>
+                                {svc.notes && <span className="text-[10px] text-gray-400 truncate">{svc.notes}</span>}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5 ml-3 flex-shrink-0">
+                              <button onClick={() => confirmService(svc.id)}
+                                className="px-2.5 py-1 bg-emerald-100 text-emerald-700 rounded-md text-[10px] font-medium hover:bg-emerald-200">
+                                Schedule
+                              </button>
+                              <button onClick={() => declineService(svc.id)}
+                                className="px-2.5 py-1 bg-gray-100 text-gray-500 rounded-md text-[10px] font-medium hover:bg-gray-200">
+                                Decline
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {clientServices(selected.id).filter(s => s.status !== 'recommended').length === 0 && recommendedServices(selected.id).length === 0 ? (
                     <p className="text-xs text-gray-400 text-center py-8">No {isSensorium ? 'services' : 'sessions'} recorded yet</p>
-                  ) : clientServices(selected.id).map(svc => {
+                  ) : clientServices(selected.id).filter(s => s.status !== 'recommended' && s.status !== 'declined').map(svc => {
                     const stColor = serviceTypes.find(st => st.key === svc.service_type)?.color || '#6B7280'
                     return (
                       <div key={svc.id} className="border border-gray-100 rounded-xl p-4">
@@ -990,7 +1126,33 @@ export default function EcrPage() {
           </div>
         </div>
       )}
+      {/* Paste Recommendations Modal */}
+      {showPasteRecs && selected && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowPasteRecs(false)}>
+          <div className="bg-white rounded-2xl w-[520px] p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-semibold text-np-dark flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-indigo-500" /> Parse Recommendations
+              </h3>
+              <button onClick={() => setShowPasteRecs(false)} className="p-1 rounded hover:bg-gray-100"><X className="w-4 h-4 text-gray-400" /></button>
+            </div>
+            <p className="text-xs text-gray-400 mb-3">
+              Paste recommendation text from an assessment report, referral note, or clinical summary.
+              The AI agent will extract structured services and create a care plan for review.
+            </p>
+            <textarea value={pasteText} onChange={e => setPasteText(e.target.value)} rows={8}
+              placeholder={"Paste clinical recommendations here...\n\nExample: Recommend neurofeedback 2x/week for 12 weeks targeting SMR at Cz. HBOT 3x/week. Consider SSP protocol for auditory processing. Follow-up qEEG in 90 days."}
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+            <div className="flex justify-end gap-2 mt-4">
+              <button onClick={() => setShowPasteRecs(false)} className="px-4 py-2 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg">Cancel</button>
+              <button onClick={parseRecommendations} disabled={!pasteText.trim() || parsingRecs}
+                className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-medium disabled:opacity-40 hover:bg-indigo-700">
+                <Sparkles className="w-3.5 h-3.5" /> {parsingRecs ? 'Parsing...' : 'Parse & Create Care Plan'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
-
