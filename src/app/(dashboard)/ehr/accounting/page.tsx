@@ -403,70 +403,7 @@ function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onAddPmt,onEditPmt,onDelet
 
 
 
-/* ══ COMPREHENSIVE REPORTING SUITE ══════════════════════════════ */
-function generateCSV(headers: string[], rows: any[][]): string {
-  const esc = (v: any) => { const s = String(v ?? ''); return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s }
-  return [headers.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))].join('\n')
-}
-function downloadCSV(fn: string, csv: string) {
-  const b = new Blob([csv], { type: 'text/csv;charset=utf-8;' }); const u = URL.createObjectURL(b)
-  const a = document.createElement('a'); a.href = u; a.download = fn; a.click(); URL.revokeObjectURL(u)
-}
 
-type RptType = 'summary' | 'by_center' | 'by_client' | 'by_month' | 'payments' | 'payout_ledger'
-
-function ReportView({ clients, locs, clinics, cfg }: { clients: AcctClient[]; locs: AcctLocation[]; clinics: AcctClinic[]; cfg: AcctConfig }) {
-  const [rpt, setRpt] = useState<RptType>('summary')
-  const [dFrom, setDFrom] = useState('')
-  const [dTo, setDTo] = useState('')
-  const [selCtr, setSelCtr] = useState<string>('all')
-
-  const allRows = useMemo(() => {
-    const rows: any[] = []
-    clients.forEach(cl => {
-      const loc = locs.find(l => l.id === cl.location_id)
-      const clinic = loc?.clinic_id ? clinics.find(c => c.id === loc.clinic_id) : null
-      cl.services.forEach(sv => { sv.payments.forEach(pm => {
-        if (pm.amount === 0) return
-        if (dFrom && pm.payment_date < dFrom) return
-        if (dTo && pm.payment_date > dTo) return
-        if (selCtr !== 'all' && cl.location_id !== selCtr) return
-        const sp = calcSplit(pm.amount, sv.service_type, cl.location_id, locs, clinics, cfg, sv.amount, sv.service_date)
-        const clAmt = Object.values(sp.clinicAmts).reduce((s, v) => s + v, 0)
-        rows.push({ client: cl.name, location: loc?.name || '', locationId: cl.location_id, clinic: clinic?.name || 'No clinic', clinicId: clinic?.id || '', serviceType: sv.service_type, serviceTotal: sv.amount, serviceDate: sv.service_date, paymentDate: pm.payment_date, paymentAmt: pm.amount, snw: sp.snw, cc: sp.cc, snwService: sp.snwService, clinicAmt: clAmt, dr: sp.dr, isLegacy: sv.service_date < PRE_AUG_CUTOFF, payoutDate: pm.payout_date || getPayoutDate(pm.payment_date), notes: pm.notes || '' })
-      })})
-    })
-    return rows.sort((a, b) => a.paymentDate.localeCompare(b.paymentDate))
-  }, [clients, locs, clinics, cfg, dFrom, dTo, selCtr])
-
-  const totals = useMemo(() => {
-    const t = { revenue: 0, snw: 0, cc: 0, snwService: 0, dr: 0, clinics: {} as Record<string, number> }
-    allRows.forEach(r => { t.revenue += r.paymentAmt; t.snw += r.snw; t.cc += r.cc; t.snwService += r.snwService; t.dr += r.dr; if (r.clinicId) t.clinics[r.clinicId] = (t.clinics[r.clinicId] || 0) + r.clinicAmt })
-    return t
-  }, [allRows])
-
-  const byCenterData = useMemo(() => {
-    const m: Record<string, { loc: string; rev: number; snw: number; cli: number; dr: number; cls: Set<string>; n: number }> = {}
-    allRows.forEach(r => { if (!m[r.locationId]) m[r.locationId] = { loc: r.location, rev: 0, snw: 0, cli: 0, dr: 0, cls: new Set(), n: 0 }; const x = m[r.locationId]; x.rev += r.paymentAmt; x.snw += r.snw; x.cli += r.clinicAmt; x.dr += r.dr; x.cls.add(r.client); x.n++ })
-    return Object.entries(m).map(([id, d]) => ({ id, ...d, cc: d.cls.size }))
-  }, [allRows])
-
-  const byClientData = useMemo(() => {
-    const m: Record<string, { name: string; loc: string; rev: number; snw: number; cli: number; dr: number; n: number; leg: boolean }> = {}
-    allRows.forEach(r => { if (!m[r.client]) m[r.client] = { name: r.client, loc: r.location, rev: 0, snw: 0, cli: 0, dr: 0, n: 0, leg: r.isLegacy }; const x = m[r.client]; x.rev += r.paymentAmt; x.snw += r.snw; x.cli += r.clinicAmt; x.dr += r.dr; x.n++ })
-    return Object.values(m).sort((a, b) => b.rev - a.rev)
-  }, [allRows])
-
-  const byMonthData = useMemo(() => {
-    const m: Record<string, { rev: number; snw: number; cli: number; dr: number; n: number; leg: number; cur: number }> = {}
-    allRows.forEach(r => { const mo = r.paymentDate.substring(0, 7); if (!m[mo]) m[mo] = { rev: 0, snw: 0, cli: 0, dr: 0, n: 0, leg: 0, cur: 0 }; const x = m[mo]; x.rev += r.paymentAmt; x.snw += r.snw; x.cli += r.clinicAmt; x.dr += r.dr; x.n++; if (r.isLegacy) x.leg += r.paymentAmt; else x.cur += r.paymentAmt })
-    return Object.entries(m).sort(([a], [b]) => a.localeCompare(b)).map(([mo, d]) => ({ mo, ...d }))
-  }, [allRows])
-
-  const doExport = () => {
-    if (rpt === 'summary') downloadCSV('accounting-summary.csv', generateCSV(['Metric','Amount'], [['Total Revenue',r2(totals.revenue)],['SNW Total',r2(totals.snw)],['CC Processing',r2(totals.cc)],['SNW Services',r2(totals.snwService)],['Dr. Yonce',r2(totals.dr)],...clinics.map(c=>['Clinic: '+c.name,r2(totals.clinics[c.id]||0)])]))
-    else if (rpt === 'by_center') downloadCSV('accounting-by-center.csv', generateCSV(['Center','Revenue','SNW','Clinic','Dr.Y','Clients','Payments'], byCenterData.map(d => [d.loc, r2(d.rev), r2(d.snw), r2(d.cli), r2(d.dr), d.cc, d.n])))
-    else if (rpt === 'by_client') downloadCSV('accounting-by-client.csv', generateCSV(['Client','Center','Revenue','SNW','Clinic','Dr.Y','Payments','Era'], byClientData.map(d => [d.name, d.loc, r2(d.rev), r2(d.snw), r2(d.cli), r2(d.dr), d.n, d.leg?'Pre-Aug 10%':'Current 26%'])))
 
 
 /* ══ COMPREHENSIVE REPORTING SUITE ══════════════════════════════ */
@@ -615,6 +552,7 @@ function ReportView({ clients, locs, clinics, cfg }: { clients: AcctClient[]; lo
     </div>}
   </div>
 }
+
 
 
 /* ── Reconciliation ────────────────────────────────── */
