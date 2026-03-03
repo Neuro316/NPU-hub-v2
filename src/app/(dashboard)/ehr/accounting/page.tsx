@@ -721,7 +721,7 @@ function ReportView({ clients, locs, clinics, cfg, checks, mktg }: { clients: Ac
         const net = r2(owed.dr - (paid.dr||0) - (mktgTotals.dr||0))
         entities.push({ name: 'Dr. Yonce', key: 'dr', color: 'text-purple-600', splitOwed: r2(owed.dr), checksPaid: r2(paid.dr||0), mktgDed: r2(mktgTotals.dr||0), net })
       }
-      const activeEntities = entities.filter(e => e.splitOwed > 0 || e.checksPaid > 0 || e.mktgDed > 0)
+      const activeEntities = entities.filter(e => e.splitOwed > 0.01 || e.checksPaid > 0.01)
       const grandOwed = r2(activeEntities.reduce((s,e)=>s+e.splitOwed,0))
       const grandPaid = r2(activeEntities.reduce((s,e)=>s+e.checksPaid,0))
       const grandMktg = r2(activeEntities.reduce((s,e)=>s+e.mktgDed,0))
@@ -774,6 +774,14 @@ function ReportView({ clients, locs, clinics, cfg, checks, mktg }: { clients: Ac
           </tbody></table></div></div>}
 
         {/* 3. Reconciliation Summary - split owed vs paid vs net */}
+        {/* Summary Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="rounded-xl border border-gray-200 bg-white p-4 text-center"><p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Total Split</p><p className="text-lg font-bold text-np-dark" style={{fontFeatureSettings:'"tnum"'}}>{F(grandOwed)}</p></div>
+          <div className="rounded-xl border border-gray-200 bg-white p-4 text-center"><p className="text-[10px] font-semibold uppercase tracking-wider text-green-500 mb-1">Total Payout</p><p className="text-lg font-bold text-green-600" style={{fontFeatureSettings:'"tnum"'}}>{F(grandPaid)}</p></div>
+          <div className="rounded-xl border border-gray-200 bg-white p-4 text-center"><p className="text-[10px] font-semibold uppercase tracking-wider text-red-400 mb-1">Total Ad Spend</p><p className="text-lg font-bold text-red-500" style={{fontFeatureSettings:'"tnum"'}}>{grandMktg>0.01?'-'+F(grandMktg):'$0.00'}</p></div>
+          <div className="rounded-xl border-2 bg-white p-4 text-center" style={{borderColor:Math.abs(grandNet)<0.01?'#16a34a':grandNet>0?'#d97706':'#dc2626'}}><p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Still Owed</p><p className="text-lg font-bold" style={{fontFeatureSettings:'"tnum"',color:Math.abs(grandNet)<0.01?'#16a34a':grandNet>0?'#d97706':'#dc2626'}}>{Math.abs(grandNet)<0.01?'Settled':F(grandNet)}</p></div>
+        </div>
+
         <div className="rounded-xl border-2 border-gray-200 bg-white overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50"><h3 className="text-sm font-bold text-np-dark">Reconciliation Summary</h3></div>
           <div className="overflow-auto"><table className="w-full text-left"><thead><tr className="border-b border-gray-100 bg-gray-50/30">
