@@ -36,7 +36,8 @@ import {
   FileCheck,
   Shield,
   History,
-  Wallet,
+  UserCheck,
+  ExternalLink,
 } from 'lucide-react'
 import { NotificationBell } from '@/components/notification-bell'
 
@@ -119,7 +120,7 @@ const navCategories: NavCategory[] = [
     label: 'FINANCE',
     collapsible: true,
     items: [
-      { label: 'NP Financial', href: '/financial/np', icon: Wallet, moduleKey: 'np_financial' },
+      { label: 'NP Financial', href: '/financial/np', icon: DollarSign, moduleKey: 'np_financial' },
     ],
   },
   {
@@ -138,18 +139,19 @@ const navCategories: NavCategory[] = [
   },
 ]
 
-/* ECR = Electronic Client Records (payment-gated client data view) */
+/* EHR items are conditional on org and feature flags */
 interface EhrItem {
   label: string
   href: string
   icon: any
-  requireModule?: string
-  forAllOrgs?: boolean
+  requireModule?: string   // feature flag from enabled_modules
+  forAllOrgs?: boolean     // true = show for any org (NP + Sensorium)
+  external?: boolean       // true = opens in new tab
 }
 
 const ehrItems: EhrItem[] = [
-  { label: 'Client Records', href: '/ehr/ecr', icon: HeartPulse, forAllOrgs: true },
-  { label: 'NeuroReport', href: '/ehr/neuroreport', icon: Brain, forAllOrgs: true },
+  { label: 'Client Records', href: '/ehr/ecr', icon: UserCheck, forAllOrgs: true },
+  { label: 'NeuroReport', href: 'https://reports.neuroprogeny.com', icon: Brain, forAllOrgs: true, external: true },
   { label: 'Session Notes', href: '/ehr/sessions', icon: ClipboardList, forAllOrgs: true },
   { label: 'Forms', href: '/ehr/forms', icon: FileCheck, forAllOrgs: true },
   { label: 'Accounting', href: '/ehr/accounting', icon: DollarSign, requireModule: 'accounting' },
@@ -172,9 +174,11 @@ export function Sidebar() {
     window.location.href = '/login'
   }
 
+  // Determine if current org is a clinical org (show EHR section)
   const orgSlug = currentOrg?.slug || ''
   const isClinicalOrg = orgSlug.includes('sensorium') || orgSlug.includes('neuro-progeny') || orgSlug.includes('neuro_progeny') || orgSlug.includes('nprogeny') || enabledModules.includes('ehr')
 
+  // Filter EHR items based on org + feature flags
   const visibleEhrItems = ehrItems.filter(item => {
     if (item.requireModule && !enabledModules.includes(item.requireModule)) return false
     if (item.forAllOrgs && isClinicalOrg) return true
@@ -182,6 +186,7 @@ export function Sidebar() {
     return false
   })
 
+  // Always show EHR section if there's at least one visible EHR item
   const showEhr = visibleEhrItems.length > 0
 
   return (
@@ -316,7 +321,23 @@ export function Sidebar() {
               <div className="space-y-0.5">
                 {visibleEhrItems.map((item) => {
                   const Icon = item.icon
-                  const isActive = pathname.startsWith(item.href)
+                  const isActive = !item.external && pathname.startsWith(item.href)
+
+                  if (item.external) {
+                    return (
+                      <a
+                        key={item.href}
+                        href={item.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors text-gray-600 hover:bg-gray-50 hover:text-np-dark"
+                      >
+                        <Icon className="w-4 h-4 flex-shrink-0" />
+                        <span className="flex-1">{item.label}</span>
+                        <ExternalLink className="w-3 h-3 text-gray-300" />
+                      </a>
+                    )
+                  }
 
                   return (
                     <Link
