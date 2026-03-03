@@ -1006,6 +1006,7 @@ export default function AccountingPage() {
         {ac?<DetView cl={ac} locs={locs} clinics={clinics} cfg={config} onBack={()=>sS(null)} onAddSvc={addService} onAddPmt={addPayment} onEditPmt={editPayment} onDeletePmt={deletePayment}/>
           :vw==='payouts'?<PayView clients={clients} locs={locs} clinics={clinics} cfg={config} checks={checks} mktg={mktg} onAddCheck={addCheck} onDeleteCheck={deleteCheck}/>
           :vw==='recon'?<ReconView clients={clients} locs={locs} clinics={clinics} cfg={config}/>
+          :vw==='reports'?<ReportView clients={clients} locs={locs} clinics={clinics} cfg={config}/>
           :vw==='settings'?<SetView locs={locs} clinics={clinics} config={config} setConfig={setConfig} clients={clients} agreement={config.payout_agreement} setAgreement={(v:string)=>setConfig(p=>({...p,payout_agreement:v}))} onSaveConfig={saveConfig} onSaveLoc={saveLoc} onDeleteLoc={deleteLoc} onSaveClinic={saveClinic} mktg={mktg} onAddMktg={addMktg} onDeleteMktg={deleteMktg} onToggleWaive={toggleWaive}/>
           :<DashView clients={clients} locs={locs} onSel={id=>{sS(id);sV('dash')}} onAdd={()=>{setSAC(true);setNC({nm:'',loc:locs[0]?.id||''})}}/>}
       </div></div>
@@ -1015,3 +1016,5 @@ export default function AccountingPage() {
       <div className="flex gap-2 mt-4 justify-end"><Btn outline onClick={()=>setSAC(false)}>Cancel</Btn><Btn onClick={addClient}>Add Client</Btn></div></Mdl>}
   </div>
 }
+
+
