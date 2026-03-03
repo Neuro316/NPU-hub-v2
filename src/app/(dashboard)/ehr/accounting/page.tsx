@@ -589,9 +589,9 @@ function ReportView({ clients, locs, clinics, cfg }: { clients: AcctClient[]; lo
           <td className="py-2 px-3"><span className={'text-[9px] font-bold px-1.5 py-0.5 rounded '+(d.svcType==='Program'?'bg-blue-50 text-blue-600':'bg-gray-100 text-gray-500')}>{d.svcType}</span></td>
           <td className="py-2 px-3 text-xs font-semibold text-right" style={{fontFeatureSettings:'"tnum"'}}>{ $$(r2(d.progTotal))}</td>
           <td className="py-2 px-3 text-xs font-semibold text-green-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{ $$(r2(d.collected))}</td>
-          <td className="py-2 px-3 text-xs font-semibold text-right" style={{fontFeatureSettings:'"tnum"',color:bal>0?'#ef4444':'#22c55e'}}>{bal>0?$(bal):'Paid'}</td>
+          <td className="py-2 px-3 text-xs font-semibold text-right" style={{fontFeatureSettings:'"tnum"',color:bal>0?'#ef4444':'#22c55e'}}>{bal>0?$$(bal):'Paid'}</td>
           {showEnt.snw&&<td className="py-2 px-3 text-xs text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{ $$(r2(d.snw))}</td>}
-          {showEnt.cli&&<td className="py-2 px-3 text-xs text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{d.cli>0?$(r2(d.cli)):'\u2014'}</td>}
+          {showEnt.cli&&<td className="py-2 px-3 text-xs text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{d.cli>0?$$(r2(d.cli)):'\u2014'}</td>}
           {showEnt.dr&&<td className="py-2 px-3 text-xs text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{ $$(r2(d.dr))}</td>}
           <td className="py-2 px-3 text-xs text-gray-400 text-right">{d.n}</td></tr>})}
         <tr className="bg-gray-50/50 border-t border-gray-200">
@@ -627,7 +627,7 @@ function ReportView({ clients, locs, clinics, cfg }: { clients: AcctClient[]; lo
           <td className="py-2.5 px-3 text-xs font-bold text-np-dark whitespace-nowrap">{fMoL(d.mo)}</td>
           <td className="py-2.5 px-3 text-xs font-semibold text-green-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{ $$(r2(d.collected))}</td>
           {showEnt.snw&&<td className="py-2.5 px-3 text-xs text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{ $$(r2(d.snw))}</td>}
-          {showEnt.cli&&<td className="py-2.5 px-3 text-xs text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{d.cli>0?$(r2(d.cli)):'\u2014'}</td>}
+          {showEnt.cli&&<td className="py-2.5 px-3 text-xs text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{d.cli>0?$$(r2(d.cli)):'\u2014'}</td>}
           {showEnt.dr&&<td className="py-2.5 px-3 text-xs text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{ $$(r2(d.dr))}</td>}
           <td className="py-2.5 px-3 text-xs text-gray-500 text-right">{d.cc}</td>
           <td className="py-2.5 px-3 text-xs text-gray-400 text-right">{d.n}</td></tr>)}
