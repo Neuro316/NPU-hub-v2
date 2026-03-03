@@ -1,0 +1,278 @@
+// patch-reporting.mjs
+import { readFileSync, writeFileSync } from 'fs';
+
+const FILE = 'src/app/(dashboard)/ehr/accounting/page.tsx';
+let code = readFileSync(FILE, 'utf-8');
+let patches = 0;
+
+function patch(label, old, replacement) {
+  if (code.includes(old)) {
+    code = code.replace(old, replacement);
+    patches++;
+    console.log(`  ✓ ${label}`);
+  } else {
+    console.log(`  ✗ SKIP: ${label}`);
+  }
+}
+
+console.log('=== Patch: Service-date legacy + Reporting Suite ===\n');
+
+// ══════════════════════════════════════════════════
+// FIX 1: Pre-Aug uses SERVICE start date not payment date
+// ══════════════════════════════════════════════════
+console.log('[1] Fixing pre-Aug to use service start date...');
+
+// Rename param in calcSplit signature
+if (code.includes('paymentDate?: string,')) {
+  patch('calcSplit param rename',
+    'paymentDate?: string,',
+    'serviceStartDate?: string, // if SERVICE started pre-Aug, ALL payments use 10%'
+  );
+  patch('isPreAug logic',
+    'const isPreAug = paymentDate ? paymentDate < PRE_AUG_CUTOFF : false',
+    '// If the SERVICE started before Aug 1 2025, ALL payments use legacy 10%\n  const isPreAug = serviceStartDate ? serviceStartDate < PRE_AUG_CUTOFF : false'
+  );
+} else if (code.includes('serviceStartDate?: string,')) {
+  console.log('  ✓ Already renamed to serviceStartDate');
+}
+
+// Fix SplitPrev
+if (code.includes('serviceTotal,paymentDate}:any')) {
+  patch('SplitPrev param',
+    'serviceTotal,paymentDate}:any',
+    'serviceTotal,serviceStartDate}:any'
+  );
+  patch('SplitPrev calcSplit call',
+    'calcSplit(amt,svcType,locId,locs,clinics,cfg,serviceTotal,paymentDate)',
+    'calcSplit(amt,svcType,locId,locs,clinics,cfg,serviceTotal,serviceStartDate)'
+  );
+} else if (code.includes('serviceTotal,serviceStartDate}:any')) {
+  console.log('  ✓ SplitPrev already updated');
+}
+
+// Fix preview label
+if (code.includes("paymentDate&&paymentDate<'2025-08-01'")) {
+  patch('Preview label',
+    "paymentDate&&paymentDate<'2025-08-01'",
+    "serviceStartDate&&serviceStartDate<'2025-08-01'"
+  );
+}
+
+// ══════════════════════════════════════════════════
+// FIX 2: All call sites pass sv.service_date
+// ══════════════════════════════════════════════════
+console.log('\n[2] Updating call sites...');
+
+// Fix all pm.payment_date -> sv.service_date in calcSplit calls
+let pmDateCount = 0;
+while (code.includes('cfg,sv.amount,pm.payment_date)')) {
+  code = code.replace('cfg,sv.amount,pm.payment_date)', 'cfg,sv.amount,sv.service_date)');
+  pmDateCount++;
+}
+if (pmDateCount > 0) { patches += pmDateCount; console.log(`  ✓ pm.payment_date -> sv.service_date (${pmDateCount}x)`); }
+
+// Fix SplitPrev prop paymentDate -> serviceStartDate
+if (code.includes('paymentDate={pf.d}')) {
+  patch('Add payment SplitPrev', 'paymentDate={pf.d}', 'serviceStartDate={tSvc.service_date}');
+}
+if (code.includes('paymentDate={ef.d}')) {
+  patch('Edit payment SplitPrev', 'paymentDate={ef.d}', 'serviceStartDate={editSvc.service_date}');
+}
+
+// Verify
+if (code.includes('sv.service_date)')) console.log('  ✓ Call sites using sv.service_date');
+
+// ══════════════════════════════════════════════════
+// FIX 3: Add icon imports
+// ══════════════════════════════════════════════════
+console.log('\n[3] Adding imports...');
+
+if (!code.includes('Download')) {
+  patch('Icon imports',
+    'Trash2, Pencil',
+    'Trash2, Pencil, Download, FileText, Building2, Calendar as CalendarIcon'
+  );
+} else {
+  console.log('  ✓ Icons already imported');
+}
+
+// ══════════════════════════════════════════════════
+// ADD: ReportView component (before ReconView)
+// ══════════════════════════════════════════════════
+console.log('\n[4] Adding ReportView...');
+
+const RC = `
+
+/* ══ COMPREHENSIVE REPORTING SUITE ══════════════════════════════ */
+function generateCSV(headers: string[], rows: any[][]): string {
+  const esc = (v: any) => { const s = String(v ?? ''); return s.includes(',') || s.includes('"') || s.includes('\\n') ? '"' + s.replace(/"/g, '""') + '"' : s }
+  return [headers.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))].join('\\n')
+}
+function downloadCSV(fn: string, csv: string) {
+  const b = new Blob([csv], { type: 'text/csv;charset=utf-8;' }); const u = URL.createObjectURL(b)
+  const a = document.createElement('a'); a.href = u; a.download = fn; a.click(); URL.revokeObjectURL(u)
+}
+
+type RptType = 'summary' | 'by_center' | 'by_client' | 'by_month' | 'payments' | 'payout_ledger'
+
+function ReportView({ clients, locs, clinics, cfg }: { clients: AcctClient[]; locs: AcctLocation[]; clinics: AcctClinic[]; cfg: AcctConfig }) {
+  const [rpt, setRpt] = useState<RptType>('summary')
+  const [dFrom, setDFrom] = useState('')
+  const [dTo, setDTo] = useState('')
+  const [selCtr, setSelCtr] = useState<string>('all')
+
+  const allRows = useMemo(() => {
+    const rows: any[] = []
+    clients.forEach(cl => {
+      const loc = locs.find(l => l.id === cl.location_id)
+      const clinic = loc?.clinic_id ? clinics.find(c => c.id === loc.clinic_id) : null
+      cl.services.forEach(sv => { sv.payments.forEach(pm => {
+        if (pm.amount === 0) return
+        if (dFrom && pm.payment_date < dFrom) return
+        if (dTo && pm.payment_date > dTo) return
+        if (selCtr !== 'all' && cl.location_id !== selCtr) return
+        const sp = calcSplit(pm.amount, sv.service_type, cl.location_id, locs, clinics, cfg, sv.amount, sv.service_date)
+        const clAmt = Object.values(sp.clinicAmts).reduce((s, v) => s + v, 0)
+        rows.push({ client: cl.name, location: loc?.name || '', locationId: cl.location_id, clinic: clinic?.name || 'No clinic', clinicId: clinic?.id || '', serviceType: sv.service_type, serviceTotal: sv.amount, serviceDate: sv.service_date, paymentDate: pm.payment_date, paymentAmt: pm.amount, snw: sp.snw, cc: sp.cc, snwService: sp.snwService, clinicAmt: clAmt, dr: sp.dr, isLegacy: sv.service_date < PRE_AUG_CUTOFF, payoutDate: pm.payout_date || getPayoutDate(pm.payment_date), notes: pm.notes || '' })
+      })})
+    })
+    return rows.sort((a, b) => a.paymentDate.localeCompare(b.paymentDate))
+  }, [clients, locs, clinics, cfg, dFrom, dTo, selCtr])
+
+  const totals = useMemo(() => {
+    const t = { revenue: 0, snw: 0, cc: 0, snwService: 0, dr: 0, clinics: {} as Record<string, number> }
+    allRows.forEach(r => { t.revenue += r.paymentAmt; t.snw += r.snw; t.cc += r.cc; t.snwService += r.snwService; t.dr += r.dr; if (r.clinicId) t.clinics[r.clinicId] = (t.clinics[r.clinicId] || 0) + r.clinicAmt })
+    return t
+  }, [allRows])
+
+  const byCenterData = useMemo(() => {
+    const m: Record<string, { loc: string; rev: number; snw: number; cli: number; dr: number; cls: Set<string>; n: number }> = {}
+    allRows.forEach(r => { if (!m[r.locationId]) m[r.locationId] = { loc: r.location, rev: 0, snw: 0, cli: 0, dr: 0, cls: new Set(), n: 0 }; const x = m[r.locationId]; x.rev += r.paymentAmt; x.snw += r.snw; x.cli += r.clinicAmt; x.dr += r.dr; x.cls.add(r.client); x.n++ })
+    return Object.entries(m).map(([id, d]) => ({ id, ...d, cc: d.cls.size }))
+  }, [allRows])
+
+  const byClientData = useMemo(() => {
+    const m: Record<string, { name: string; loc: string; rev: number; snw: number; cli: number; dr: number; n: number; leg: boolean }> = {}
+    allRows.forEach(r => { if (!m[r.client]) m[r.client] = { name: r.client, loc: r.location, rev: 0, snw: 0, cli: 0, dr: 0, n: 0, leg: r.isLegacy }; const x = m[r.client]; x.rev += r.paymentAmt; x.snw += r.snw; x.cli += r.clinicAmt; x.dr += r.dr; x.n++ })
+    return Object.values(m).sort((a, b) => b.rev - a.rev)
+  }, [allRows])
+
+  const byMonthData = useMemo(() => {
+    const m: Record<string, { rev: number; snw: number; cli: number; dr: number; n: number; leg: number; cur: number }> = {}
+    allRows.forEach(r => { const mo = r.paymentDate.substring(0, 7); if (!m[mo]) m[mo] = { rev: 0, snw: 0, cli: 0, dr: 0, n: 0, leg: 0, cur: 0 }; const x = m[mo]; x.rev += r.paymentAmt; x.snw += r.snw; x.cli += r.clinicAmt; x.dr += r.dr; x.n++; if (r.isLegacy) x.leg += r.paymentAmt; else x.cur += r.paymentAmt })
+    return Object.entries(m).sort(([a], [b]) => a.localeCompare(b)).map(([mo, d]) => ({ mo, ...d }))
+  }, [allRows])
+
+  const doExport = () => {
+    if (rpt === 'summary') downloadCSV('accounting-summary.csv', generateCSV(['Metric','Amount'], [['Total Revenue',r2(totals.revenue)],['SNW Total',r2(totals.snw)],['CC Processing',r2(totals.cc)],['SNW Services',r2(totals.snwService)],['Dr. Yonce',r2(totals.dr)],...clinics.map(c=>['Clinic: '+c.name,r2(totals.clinics[c.id]||0)])]))
+    else if (rpt === 'by_center') downloadCSV('accounting-by-center.csv', generateCSV(['Center','Revenue','SNW','Clinic','Dr.Y','Clients','Payments'], byCenterData.map(d => [d.loc, r2(d.rev), r2(d.snw), r2(d.cli), r2(d.dr), d.cc, d.n])))
+    else if (rpt === 'by_client') downloadCSV('accounting-by-client.csv', generateCSV(['Client','Center','Revenue','SNW','Clinic','Dr.Y','Payments','Era'], byClientData.map(d => [d.name, d.loc, r2(d.rev), r2(d.snw), r2(d.cli), r2(d.dr), d.n, d.leg?'Pre-Aug 10%':'Current 26%'])))
+    else if (rpt === 'by_month') downloadCSV('accounting-by-month.csv', generateCSV(['Month','Revenue','SNW','Clinic','Dr.Y','Payments','Legacy $','Current $'], byMonthData.map(d => [fMoL(d.mo), r2(d.rev), r2(d.snw), r2(d.cli), r2(d.dr), d.n, r2(d.leg), r2(d.cur)])))
+    else if (rpt === 'payments') downloadCSV('accounting-all-payments.csv', generateCSV(['Date','Client','Center','Clinic','Service','Svc Total','Payment','SNW','CC','SNW Svc','Clinic Split','Dr.Y','Era','Payout Date','Notes'], allRows.map(r => [r.paymentDate, r.client, r.location, r.clinic, r.serviceType, r2(r.serviceTotal), r2(r.paymentAmt), r2(r.snw), r2(r.cc), r2(r.snwService), r2(r.clinicAmt), r2(r.dr), r.isLegacy?'Pre-Aug 10%':'Current 26%', r.payoutDate, r.notes])))
+    else if (rpt === 'payout_ledger') {
+      const ledger: any[] = []; const bp: Record<string, any[]> = {}
+      allRows.forEach(r => { const p = r.payoutDate.substring(0, 7); if (!bp[p]) bp[p] = []; bp[p].push(r) })
+      Object.entries(bp).sort(([a],[b])=>a.localeCompare(b)).forEach(([period, rows]) => {
+        ledger.push([fMoL(period), 'Sensorium', r2(rows.reduce((s:number,r:any)=>s+r.snw,0)), rows.length+' pmts'])
+        ledger.push([fMoL(period), 'Dr. Yonce', r2(rows.reduce((s:number,r:any)=>s+r.dr,0)), ''])
+        const cT: Record<string,number> = {}; rows.forEach((r:any)=>{if(r.clinicId)cT[r.clinicId]=(cT[r.clinicId]||0)+r.clinicAmt})
+        clinics.forEach(c=>{if(cT[c.id])ledger.push([fMoL(period), c.name, r2(cT[c.id]), ''])})
+      })
+      downloadCSV('payout-ledger.csv', generateCSV(['Period','Payee','Amount','Notes'], ledger))
+    }
+  }
+
+  const tabs: {k:RptType;l:string;i:any}[] = [{k:'summary',l:'Summary',i:BarChart3},{k:'by_center',l:'By Center',i:Building2},{k:'by_client',l:'By Client',i:Users},{k:'by_month',l:'By Month',i:CalendarIcon},{k:'payments',l:'All Payments',i:DollarSign},{k:'payout_ledger',l:'Payout Ledger',i:FileText}]
+  const RTH = ({children,className}:any) => <th className={'py-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-gray-400 whitespace-nowrap '+(className||'')}>{children}</th>
+
+  return <div className="space-y-5">
+    <div><h2 className="text-base font-bold text-np-dark">Reports</h2><p className="text-xs text-gray-400 mt-0.5">Comprehensive accounting reports with CSV export</p></div>
+    <div className="flex gap-1.5 flex-wrap">{tabs.map(t=>{const I=t.i;return<button key={t.k} onClick={()=>setRpt(t.k)} className={'flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold rounded-lg border transition-colors '+(rpt===t.k?'bg-np-blue/10 border-np-blue/30 text-np-blue':'bg-white border-gray-200 text-gray-500 hover:bg-gray-50')}><I className="w-3.5 h-3.5"/>{t.l}</button>})}</div>
+    <div className="flex gap-3 items-end flex-wrap">
+      <div><label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">From</label><input type="date" value={dFrom} onChange={e=>setDFrom(e.target.value)} className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30"/></div>
+      <div><label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">To</label><input type="date" value={dTo} onChange={e=>setDTo(e.target.value)} className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30"/></div>
+      <div><label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Center</label><select value={selCtr} onChange={e=>setSelCtr(e.target.value)} className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30"><option value="all">All Centers</option>{locs.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select></div>
+      {(dFrom||dTo||selCtr!=='all')&&<button onClick={()=>{setDFrom('');setDTo('');setSelCtr('all')}} className="px-2.5 py-1.5 text-[10px] font-semibold text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200">Clear</button>}
+      <div className="flex-1"/>
+      <button onClick={doExport} className="flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold bg-green-600 text-white rounded-lg hover:bg-green-700"><Download className="w-3.5 h-3.5"/>Export CSV</button>
+    </div>
+    <p className="text-[10px] text-gray-400">{allRows.length} payments {dFrom||dTo?'in range':'total'} {selCtr!=='all'?'(filtered)':''}</p>
+
+    {rpt==='summary'&&<div className="space-y-4">
+      <div className="flex gap-3 flex-wrap">
+        <Stat label="Total Revenue" value={$$(r2(totals.revenue))} icon={DollarSign}/>
+        <Stat label="SNW Retained" value={$$(r2(totals.snw))} color="#386797" sub={'CC: '+$$(r2(totals.cc))+' | Svc: '+$$(r2(totals.snwService))}/>
+        {clinics.map(c=><Stat key={c.id} label={c.name.split('(')[0].trim()} value={$$(r2(totals.clinics[c.id]||0))} color="#d97706"/>)}
+        <Stat label="Dr. Yonce" value={$$(r2(totals.dr))} color="#9333ea"/>
+      </div>
+      <div className="rounded-xl border border-gray-100 bg-white p-4"><h3 className="text-sm font-semibold text-np-dark mb-3">Split Percentages</h3>
+        <div className="flex gap-4 text-xs">
+          <span>SNW: <span className="font-bold text-np-blue">{totals.revenue>0?r2(totals.snw/totals.revenue*100):0}%</span></span>
+          {clinics.map(c=><span key={c.id}>Clinic: <span className="font-bold text-amber-600">{totals.revenue>0?r2((totals.clinics[c.id]||0)/totals.revenue*100):0}%</span></span>)}
+          <span>Dr.Y: <span className="font-bold text-purple-600">{totals.revenue>0?r2(totals.dr/totals.revenue*100):0}%</span></span>
+        </div></div>
+    </div>}
+
+    {rpt==='by_center'&&<div className="rounded-xl border border-gray-100 bg-white overflow-hidden"><div className="overflow-auto"><table className="w-full text-left"><thead><tr className="border-b border-gray-100 bg-gray-50/30"><RTH>Center</RTH><RTH className="text-right">Revenue</RTH><RTH className="text-right text-np-blue">SNW</RTH><RTH className="text-right text-amber-600">Clinic</RTH><RTH className="text-right text-purple-600">Dr.Y</RTH><RTH className="text-right">Clients</RTH><RTH className="text-right">Pmts</RTH></tr></thead><tbody>
+      {byCenterData.map(d=><tr key={d.id} className="border-b border-gray-50 hover:bg-gray-50/50"><td className="py-2.5 px-3 text-xs font-semibold text-np-dark"><LocTag loc={d.id} locs={locs}/></td><td className="py-2.5 px-3 text-xs font-semibold text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(d.rev))}</td><td className="py-2.5 px-3 text-xs text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(d.snw))}</td><td className="py-2.5 px-3 text-xs text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{d.cli>0?$$(r2(d.cli)):'\\u2014'}</td><td className="py-2.5 px-3 text-xs text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(d.dr))}</td><td className="py-2.5 px-3 text-xs text-gray-500 text-right">{d.cc}</td><td className="py-2.5 px-3 text-xs text-gray-400 text-right">{d.n}</td></tr>)}
+      <tr className="bg-gray-50/50 border-t border-gray-200"><td className="py-2.5 px-3 text-xs font-bold">TOTAL</td><td className="py-2.5 px-3 text-xs font-bold text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(totals.revenue))}</td><td className="py-2.5 px-3 text-xs font-bold text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(totals.snw))}</td><td className="py-2.5 px-3 text-xs font-bold text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(Object.values(totals.clinics).reduce((s,v)=>s+v,0)))}</td><td className="py-2.5 px-3 text-xs font-bold text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(totals.dr))}</td><td className="py-2.5 px-3 text-xs font-bold text-right">{new Set(allRows.map(r=>r.client)).size}</td><td className="py-2.5 px-3 text-xs font-bold text-right">{allRows.length}</td></tr>
+    </tbody></table></div></div>}
+
+    {rpt==='by_client'&&<div className="rounded-xl border border-gray-100 bg-white overflow-hidden"><div className="overflow-auto"><table className="w-full text-left"><thead><tr className="border-b border-gray-100 bg-gray-50/30"><RTH>Client</RTH><RTH>Center</RTH><RTH>Era</RTH><RTH className="text-right">Revenue</RTH><RTH className="text-right text-np-blue">SNW</RTH><RTH className="text-right text-amber-600">Clinic</RTH><RTH className="text-right text-purple-600">Dr.Y</RTH><RTH className="text-right">Pmts</RTH></tr></thead><tbody>
+      {byClientData.map((d,i)=><tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50"><td className="py-2 px-3 text-xs font-semibold text-np-dark">{d.name}</td><td className="py-2 px-3 text-xs text-gray-500">{d.loc}</td><td className="py-2 px-3"><span className={'text-[9px] font-bold px-1.5 py-0.5 rounded '+(d.leg?'bg-amber-50 text-amber-600':'bg-blue-50 text-blue-600')}>{d.leg?'10% Legacy':'26% Current'}</span></td><td className="py-2 px-3 text-xs font-semibold text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(d.rev))}</td><td className="py-2 px-3 text-xs text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(d.snw))}</td><td className="py-2 px-3 text-xs text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{d.cli>0?$$(r2(d.cli)):'\\u2014'}</td><td className="py-2 px-3 text-xs text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(d.dr))}</td><td className="py-2 px-3 text-xs text-gray-400 text-right">{d.n}</td></tr>)}
+    </tbody></table></div></div>}
+
+    {rpt==='by_month'&&<div className="rounded-xl border border-gray-100 bg-white overflow-hidden"><div className="overflow-auto"><table className="w-full text-left"><thead><tr className="border-b border-gray-100 bg-gray-50/30"><RTH>Month</RTH><RTH className="text-right">Revenue</RTH><RTH className="text-right text-np-blue">SNW</RTH><RTH className="text-right text-amber-600">Clinic</RTH><RTH className="text-right text-purple-600">Dr.Y</RTH><RTH className="text-right">Pmts</RTH><RTH className="text-right">Legacy $</RTH><RTH className="text-right">Current $</RTH></tr></thead><tbody>
+      {byMonthData.map(d=><tr key={d.mo} className="border-b border-gray-50 hover:bg-gray-50/50"><td className="py-2.5 px-3 text-xs font-bold text-np-dark whitespace-nowrap">{fMoL(d.mo)}</td><td className="py-2.5 px-3 text-xs font-semibold text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(d.rev))}</td><td className="py-2.5 px-3 text-xs text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(d.snw))}</td><td className="py-2.5 px-3 text-xs text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{d.cli>0?$$(r2(d.cli)):'\\u2014'}</td><td className="py-2.5 px-3 text-xs text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(d.dr))}</td><td className="py-2.5 px-3 text-xs text-gray-400 text-right">{d.n}</td><td className="py-2.5 px-3 text-xs text-amber-500 text-right" style={{fontFeatureSettings:'"tnum"'}}>{d.leg>0?$$(r2(d.leg)):'\\u2014'}</td><td className="py-2.5 px-3 text-xs text-blue-500 text-right" style={{fontFeatureSettings:'"tnum"'}}>{d.cur>0?$$(r2(d.cur)):'\\u2014'}</td></tr>)}
+      <tr className="bg-gray-50/50 border-t border-gray-200"><td className="py-2.5 px-3 text-xs font-bold">TOTAL</td><td className="py-2.5 px-3 text-xs font-bold text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(totals.revenue))}</td><td className="py-2.5 px-3 text-xs font-bold text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(totals.snw))}</td><td className="py-2.5 px-3 text-xs font-bold text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(Object.values(totals.clinics).reduce((s,v)=>s+v,0)))}</td><td className="py-2.5 px-3 text-xs font-bold text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(totals.dr))}</td><td className="py-2.5 px-3 text-xs font-bold text-right">{allRows.length}</td><td className="py-2.5 px-3 text-xs font-bold text-amber-500 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(byMonthData.reduce((s,d)=>s+d.leg,0)))}</td><td className="py-2.5 px-3 text-xs font-bold text-blue-500 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(byMonthData.reduce((s,d)=>s+d.cur,0)))}</td></tr>
+    </tbody></table></div></div>}
+
+    {rpt==='payments'&&<div className="rounded-xl border border-gray-100 bg-white overflow-hidden"><div className="overflow-auto max-h-[600px]"><table className="w-full text-left"><thead className="sticky top-0 bg-white"><tr className="border-b border-gray-100 bg-gray-50/30"><RTH>Date</RTH><RTH>Client</RTH><RTH>Center</RTH><RTH>Svc</RTH><RTH>Era</RTH><RTH className="text-right">Amount</RTH><RTH className="text-right text-np-blue">SNW</RTH><RTH className="text-right text-amber-600">Clinic</RTH><RTH className="text-right text-purple-600">Dr.Y</RTH></tr></thead><tbody>
+      {allRows.map((r,i)=><tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50"><td className="py-1.5 px-3 text-xs text-gray-600 whitespace-nowrap">{fD(r.paymentDate)}</td><td className="py-1.5 px-3 text-xs font-semibold text-np-dark">{r.client}</td><td className="py-1.5 px-3"><LocTag loc={r.locationId} locs={locs}/></td><td className="py-1.5 px-3 text-[11px] text-gray-400">{r.serviceType}</td><td className="py-1.5 px-3"><span className={'text-[8px] font-bold px-1 py-0.5 rounded '+(r.isLegacy?'bg-amber-50 text-amber-600':'bg-blue-50 text-blue-600')}>{r.isLegacy?'10%':'26%'}</span></td><td className="py-1.5 px-3 text-xs font-semibold text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(r.paymentAmt))}</td><td className="py-1.5 px-3 text-xs text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(r.snw))}</td><td className="py-1.5 px-3 text-xs text-right" style={{color:r.clinicAmt>0?'#d97706':'#d1d5db',fontFeatureSettings:'"tnum"'}}>{r.clinicAmt>0?$$(r2(r.clinicAmt)):'\\u2014'}</td><td className="py-1.5 px-3 text-xs text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(r.dr))}</td></tr>)}
+    </tbody></table></div></div>}
+
+    {rpt==='payout_ledger'&&<div className="space-y-4">
+      {(()=>{
+        const bp: Record<string,any[]>={}; allRows.forEach(r=>{const p=r.payoutDate.substring(0,7);if(!bp[p])bp[p]=[];bp[p].push(r)})
+        return Object.entries(bp).sort(([a],[b])=>a.localeCompare(b)).map(([period,rows])=>{
+          const snw=rows.reduce((s:number,r:any)=>s+r.snw,0); const dr=rows.reduce((s:number,r:any)=>s+r.dr,0)
+          const cT:Record<string,number>={}; rows.forEach((r:any)=>{if(r.clinicId)cT[r.clinicId]=(cT[r.clinicId]||0)+r.clinicAmt})
+          return <div key={period} className="rounded-xl border border-gray-100 bg-white overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between"><h3 className="text-sm font-semibold text-np-dark">{fMoL(period)}</h3><span className="text-xs text-gray-400">{rows.length} payments</span></div>
+            <div className="p-4 flex gap-3 flex-wrap">
+              <div className="flex-1 text-center p-3 bg-blue-50 rounded-lg min-w-[120px]"><p className="text-[10px] font-semibold text-np-blue">Sensorium</p><p className="text-base font-bold text-np-blue" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(snw))}</p></div>
+              {clinics.map(c=>cT[c.id]?<div key={c.id} className="flex-1 text-center p-3 bg-amber-50 rounded-lg min-w-[120px]"><p className="text-[10px] font-semibold text-amber-600">{c.name.split('(')[0].trim()}</p><p className="text-base font-bold text-amber-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(cT[c.id]))}</p></div>:null)}
+              <div className="flex-1 text-center p-3 bg-purple-50 rounded-lg min-w-[120px]"><p className="text-[10px] font-semibold text-purple-600">Dr. Yonce</p><p className="text-base font-bold text-purple-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(dr))}</p></div>
+            </div></div>
+        })
+      })()}
+    </div>}
+  </div>
+}
+`;
+
+patch('Insert ReportView',
+  '/* ── Reconciliation ──',
+  RC + '\n/* ── Reconciliation ──'
+);
+
+// ══════════════════════════════════════════════════
+// ADD: Reports tab + render
+// ══════════════════════════════════════════════════
+console.log('\n[5] Adding Reports tab...');
+
+patch('Nav item',
+  "{k:'recon',l:'Reconciliation',i:BarChart3}",
+  "{k:'recon',l:'Reconciliation',i:BarChart3},{k:'reports',l:'Reports',i:FileText}"
+);
+
+patch('Render',
+  ":vw==='recon'?<ReconView clients={clients} locs={locs} clinics={clinics} cfg={config}/>",
+  ":vw==='recon'?<ReconView clients={clients} locs={locs} clinics={clinics} cfg={config}/>\n          :vw==='reports'?<ReportView clients={clients} locs={locs} clinics={clinics} cfg={config}/>"
+);
+
+writeFileSync(FILE, code, 'utf-8');
+
+console.log(`\n=== Done: ${patches} patches ===`);
+console.log('Verifications:');
+['serviceStartDate','sv.service_date','function ReportView','generateCSV',"k:'reports'","vw==='reports'"].forEach(k => console.log(`  ${k}: ${code.includes(k)?'✓':'✗'}`));
