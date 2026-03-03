@@ -5,11 +5,9 @@ import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
 import {
   HeartPulse, Activity, Brain, Users, ExternalLink, Search,
-  ChevronDown, ChevronRight, ChevronLeft, Eye, Clock, X,
-  CheckCircle2, AlertCircle, BarChart3, Zap, Shield, Send,
-  Mail, Phone, FileText, ClipboardList, Plus, Mic, Pencil,
-  Link2, MessageSquare, RefreshCw, Trash2, Star, Sparkles,
-  User, Calendar, Tag, ArrowRight, Filter, MoreHorizontal
+  ChevronRight, Eye, X,
+  Send, Mail, Phone, FileText, ClipboardList, Plus, Mic,
+  MessageSquare, RefreshCw, Sparkles,
 } from 'lucide-react'
 
 /* ═══════════════════════════════════════════════════════════════
@@ -30,8 +28,8 @@ import {
 const NEUROREPORT_URL = 'https://reports.neuroprogeny.com'
 
 // ─── NP Pipeline Definitions ────────────────────────────────
-const NP_PIPELINES = [
-  { id: 'enrolled', label: 'Enrolled', stage: 'Enrolled', color: '#34D399' },
+const NP_PIPELINES: { id: string; label: string; stages: string[]; color: string }[] = [
+  { id: 'enrolled', label: 'Enrolled', stages: ['Enrolled'], color: '#34D399' },
   { id: 'mastermind', label: 'Mastermind', stages: ['Applied','Discovery Call','Accepted','Deposit Paid','Equipment Shipped','Active (in cohort)','Completed','Alumni'], color: '#0D9488' },
   { id: 'subscribed', label: 'Subscribed', stages: ['Trial','Active Monthly','Active Annual','Past Due','Paused','Churned','Reactivated'], color: '#8B5CF6' },
 ]
@@ -126,9 +124,9 @@ export default function EcrPage() {
 
     try {
       // Determine which pipeline stages to query
-      let stageFilter: string[] = []
+      let pipelineStages: string[] = []
       if (isNP) {
-        stageFilter = [
+        pipelineStages = [
           'Enrolled',
           'Applied', 'Discovery Call', 'Accepted', 'Deposit Paid',
           'Equipment Shipped', 'Active (in cohort)', 'Completed', 'Alumni',
@@ -145,8 +143,8 @@ export default function EcrPage() {
         .order('created_at', { ascending: false })
         .limit(500)
 
-      if (isNP && stageFilter.length > 0) {
-        clientQuery = clientQuery.in('pipeline_stage', stageFilter)
+      if (isNP && pipelineStages.length > 0) {
+        clientQuery = clientQuery.in('pipeline_stage', pipelineStages)
       }
 
       const [cR, sR, nR, aR] = await Promise.all([
@@ -192,8 +190,8 @@ export default function EcrPage() {
     if (isNP && activePipeline !== 'all') {
       const pl = NP_PIPELINES.find(p => p.id === activePipeline)
       if (pl) {
-        const stages = 'stages' in pl ? pl.stages : [pl.stage]
-        list = list.filter(c => stages?.includes(c.pipeline_stage))
+        const stages = pl.stages
+        list = list.filter(c => stages.includes(c.pipeline_stage))
       }
     }
     if (stageFilter !== 'all') {
@@ -212,8 +210,8 @@ export default function EcrPage() {
     if (!isNP) return {}
     const stats: Record<string, number> = { all: clients.length }
     NP_PIPELINES.forEach(pl => {
-      const stages = 'stages' in pl ? pl.stages : [pl.stage]
-      stats[pl.id] = clients.filter(c => stages?.includes(c.pipeline_stage)).length
+      const stages = pl.stages
+      stats[pl.id] = clients.filter(c => stages.includes(c.pipeline_stage)).length
     })
     return stats
   }, [clients, isNP])
@@ -223,7 +221,7 @@ export default function EcrPage() {
     const counts: Record<string, number> = {}
     const pl = NP_PIPELINES.find(p => p.id === activePipeline)
     if (!pl) return counts
-    const stages = 'stages' in pl ? pl.stages : [pl.stage]
+    const stages = pl.stages
     stages.forEach(s => { counts[s] = clients.filter(c => c.pipeline_stage === s).length })
     return counts
   }, [clients, activePipeline])
@@ -351,7 +349,7 @@ export default function EcrPage() {
     if (settingsData?.setting_value?.pipelines) {
       for (const pl of settingsData.setting_value.pipelines) {
         const stages = (pl.stages || []).map((s: any) => s.name)
-        if (stages?.includes(clientForm.pipeline_stage)) {
+        if (stages.includes(clientForm.pipeline_stage)) {
           pipelineId = pl.id
           break
         }
@@ -432,7 +430,7 @@ export default function EcrPage() {
       {isNP && activePipeline !== 'all' && (() => {
         const pl = NP_PIPELINES.find(p => p.id === activePipeline)
         if (!pl) return null
-        const stages = 'stages' in pl ? pl.stages : [pl.stage]
+        const stages = pl.stages
         return (
           <div className="flex gap-1.5 mb-4 flex-wrap">
             <button onClick={() => setStageFilter('all')}
@@ -995,5 +993,3 @@ export default function EcrPage() {
     </div>
   )
 }
-
-
