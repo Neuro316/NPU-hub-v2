@@ -432,6 +432,8 @@ function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onAddPmt,onEditPmt,onDelet
 
 
 
+
+
 /* == COMPREHENSIVE REPORTING SUITE ============================== */
 function generateCSV(headers: string[], rows: any[][]): string {
   const esc = (v: any) => { const s = String(v ?? ''); return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s }
