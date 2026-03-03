@@ -721,10 +721,11 @@ function ReportView({ clients, locs, clinics, cfg, checks, mktg }: { clients: Ac
         const net = r2(owed.dr - (paid.dr||0) - (mktgTotals.dr||0))
         entities.push({ name: 'Dr. Yonce', key: 'dr', color: 'text-purple-600', splitOwed: r2(owed.dr), checksPaid: r2(paid.dr||0), mktgDed: r2(mktgTotals.dr||0), net })
       }
-      const grandOwed = r2(entities.reduce((s,e)=>s+e.splitOwed,0))
-      const grandPaid = r2(entities.reduce((s,e)=>s+e.checksPaid,0))
-      const grandMktg = r2(entities.reduce((s,e)=>s+e.mktgDed,0))
-      const grandNet = r2(entities.reduce((s,e)=>s+e.net,0))
+      const activeEntities = entities.filter(e => e.splitOwed > 0 || e.checksPaid > 0 || e.mktgDed > 0)
+      const grandOwed = r2(activeEntities.reduce((s,e)=>s+e.splitOwed,0))
+      const grandPaid = r2(activeEntities.reduce((s,e)=>s+e.checksPaid,0))
+      const grandMktg = r2(activeEntities.reduce((s,e)=>s+e.mktgDed,0))
+      const grandNet = r2(activeEntities.reduce((s,e)=>s+e.net,0))
 
       return <div className="space-y-5">
 
@@ -777,18 +778,18 @@ function ReportView({ clients, locs, clinics, cfg, checks, mktg }: { clients: Ac
           <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50"><h3 className="text-sm font-bold text-np-dark">Reconciliation Summary</h3></div>
           <div className="overflow-auto"><table className="w-full text-left"><thead><tr className="border-b border-gray-100 bg-gray-50/30">
             <RTH>Entity</RTH><RTH className="text-right">Split Owed</RTH><RTH className="text-right text-green-600">Paid Out</RTH><RTH className="text-right text-red-500">Mktg Ded.</RTH><RTH className="text-right">Net Owed</RTH></tr></thead><tbody>
-            {entities.map(e => <tr key={e.key} className="border-b border-gray-50 hover:bg-gray-50/50">
+            {activeEntities.map(e => <tr key={e.key} className="border-b border-gray-50 hover:bg-gray-50/50">
               <td className={'py-2.5 px-3 text-xs font-semibold '+e.color}>{e.name}</td>
               <td className="py-2.5 px-3 text-xs font-semibold text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(e.splitOwed)}</td>
               <td className="py-2.5 px-3 text-xs text-green-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{e.checksPaid>0?F(e.checksPaid):'\u2014'}</td>
               <td className="py-2.5 px-3 text-xs text-red-500 text-right" style={{fontFeatureSettings:'"tnum"'}}>{e.mktgDed>0?'-'+F(e.mktgDed):'\u2014'}</td>
-              <td className="py-2.5 px-3 text-xs font-bold text-right" style={{fontFeatureSettings:'"tnum"',color:e.net>0.01?'#d97706':'#16a34a'}}>{e.net>0.01?F(e.net):'Settled'}</td></tr>)}
+              <td className="py-2.5 px-3 text-xs font-bold text-right" style={{fontFeatureSettings:'"tnum"',color:Math.abs(e.net)<0.01?'#16a34a':e.net>0?'#d97706':'#dc2626'}}>{Math.abs(e.net)<0.01?'Settled':F(e.net)}</td></tr>)}
             <tr className="bg-gray-50/50 border-t-2 border-gray-200">
               <td className="py-2.5 px-3 text-xs font-bold">TOTAL</td>
               <td className="py-2.5 px-3 text-xs font-bold text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(grandOwed)}</td>
               <td className="py-2.5 px-3 text-xs font-bold text-green-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(grandPaid)}</td>
               <td className="py-2.5 px-3 text-xs font-bold text-red-500 text-right" style={{fontFeatureSettings:'"tnum"'}}>{grandMktg>0.01?'-'+F(grandMktg):'\u2014'}</td>
-              <td className="py-2.5 px-3 text-xs font-bold text-right" style={{fontFeatureSettings:'"tnum"',color:grandNet>0.01?'#d97706':'#16a34a'}}>{grandNet>0.01?F(grandNet):'Settled'}</td></tr>
+              <td className="py-2.5 px-3 text-xs font-bold text-right" style={{fontFeatureSettings:'"tnum"',color:Math.abs(grandNet)<0.01?'#16a34a':grandNet>0?'#d97706':'#dc2626'}}>{Math.abs(grandNet)<0.01?'Settled':F(grandNet)}</td></tr>
           </tbody></table></div></div>
 
       </div>
