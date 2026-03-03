@@ -213,7 +213,7 @@ export default function EcrPage() {
     const stats: Record<string, number> = { all: clients.length }
     NP_PIPELINES.forEach(pl => {
       const stages = 'stages' in pl ? pl.stages : [pl.stage]
-      stats[pl.id] = clients.filter(c => stages.includes(c.pipeline_stage)).length
+      stats[pl.id] = clients.filter(c => stages?.includes(c.pipeline_stage)).length
     })
     return stats
   }, [clients, isNP])
@@ -351,7 +351,7 @@ export default function EcrPage() {
     if (settingsData?.setting_value?.pipelines) {
       for (const pl of settingsData.setting_value.pipelines) {
         const stages = (pl.stages || []).map((s: any) => s.name)
-        if (stages.includes(clientForm.pipeline_stage)) {
+        if (stages?.includes(clientForm.pipeline_stage)) {
           pipelineId = pl.id
           break
         }
@@ -995,4 +995,5 @@ export default function EcrPage() {
     </div>
   )
 }
+
 
