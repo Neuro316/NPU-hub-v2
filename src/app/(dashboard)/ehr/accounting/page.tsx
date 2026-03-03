@@ -440,13 +440,15 @@ function downloadCSV(fn: string, csv: string) {
   const a = document.createElement('a'); a.href = u; a.download = fn; a.click(); URL.revokeObjectURL(u)
 }
 
-type RptType = 'summary' | 'by_center' | 'by_client' | 'by_month' | 'payments' | 'payout_ledger'
+type RptType = 'summary' | 'by_center' | 'by_client' | 'by_month' | 'payments' | 'payout_ledger' | 'collections' | 'monthly_collections'
 
 function ReportView({ clients, locs, clinics, cfg }: { clients: AcctClient[]; locs: AcctLocation[]; clinics: AcctClinic[]; cfg: AcctConfig }) {
   const [rpt, setRpt] = useState<RptType>('summary')
   const [dFrom, setDFrom] = useState('')
   const [dTo, setDTo] = useState('')
   const [selCtr, setSelCtr] = useState<string>('all')
+  const [selSvc, setSelSvc] = useState<string>('all')
+  const [showEnt, setShowEnt] = useState({snw:true,cli:true,dr:true})
 
   const allRows = useMemo(() => {
     const rows: any[] = []
@@ -458,13 +460,14 @@ function ReportView({ clients, locs, clinics, cfg }: { clients: AcctClient[]; lo
         if (dFrom && pm.payment_date < dFrom) return
         if (dTo && pm.payment_date > dTo) return
         if (selCtr !== 'all' && cl.location_id !== selCtr) return
+        if (selSvc !== 'all' && sv.service_type !== selSvc) return
         const sp = calcSplit(pm.amount, sv.service_type, cl.location_id, locs, clinics, cfg, sv.amount, sv.service_date)
         const clAmt = Object.values(sp.clinicAmts).reduce((s, v) => s + v, 0)
         rows.push({ client: cl.name, location: loc?.name || '', locationId: cl.location_id, clinic: clinic?.name || 'No clinic', clinicId: clinic?.id || '', serviceType: sv.service_type, serviceTotal: sv.amount, serviceDate: sv.service_date, paymentDate: pm.payment_date, paymentAmt: pm.amount, snw: sp.snw, cc: sp.cc, snwService: sp.snwService, clinicAmt: clAmt, dr: sp.dr, isLegacy: sv.service_date < PRE_AUG_CUTOFF, payoutDate: pm.payout_date || getPayoutDate(pm.payment_date), notes: pm.notes || '' })
       })})
     })
     return rows.sort((a, b) => a.paymentDate.localeCompare(b.paymentDate))
-  }, [clients, locs, clinics, cfg, dFrom, dTo, selCtr])
+  }, [clients, locs, clinics, cfg, dFrom, dTo, selCtr, selSvc])
 
   const totals = useMemo(() => {
     const t = { revenue: 0, snw: 0, cc: 0, snwService: 0, dr: 0, clinics: {} as Record<string, number> }
@@ -509,7 +512,7 @@ function ReportView({ clients, locs, clinics, cfg }: { clients: AcctClient[]; lo
     }
   }
 
-  const tabs: {k:RptType;l:string;i:any}[] = [{k:'summary',l:'Summary',i:BarChart3},{k:'by_center',l:'By Center',i:Building2},{k:'by_client',l:'By Client',i:Users},{k:'by_month',l:'By Month',i:CalendarIcon},{k:'payments',l:'All Payments',i:DollarSign},{k:'payout_ledger',l:'Payout Ledger',i:FileText}]
+  const tabs: {k:RptType;l:string;i:any}[] = [{k:'summary',l:'Summary',i:BarChart3},{k:'by_center',l:'By Center',i:Building2},{k:'by_client',l:'By Client',i:Users},{k:'by_month',l:'By Month',i:CalendarIcon},{k:'payments',l:'All Payments',i:DollarSign},{k:'payout_ledger',l:'Payout Ledger',i:FileText},{k:'collections',l:'Collections',i:TrendingUp},{k:'monthly_collections',l:'Monthly Collected',i:CalendarIcon}]
   const RTH = ({children,className}:any) => <th className={'py-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-gray-400 whitespace-nowrap '+(className||'')}>{children}</th>
 
   return <div className="space-y-5">
@@ -519,7 +522,9 @@ function ReportView({ clients, locs, clinics, cfg }: { clients: AcctClient[]; lo
       <div><label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">From</label><input type="date" value={dFrom} onChange={e=>setDFrom(e.target.value)} className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30"/></div>
       <div><label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">To</label><input type="date" value={dTo} onChange={e=>setDTo(e.target.value)} className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30"/></div>
       <div><label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Center</label><select value={selCtr} onChange={e=>setSelCtr(e.target.value)} className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30"><option value="all">All Centers</option>{locs.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select></div>
-      {(dFrom||dTo||selCtr!=='all')&&<button onClick={()=>{setDFrom('');setDTo('');setSelCtr('all')}} className="px-2.5 py-1.5 text-[10px] font-semibold text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200">Clear</button>}
+      <div><label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Service</label><select value={selSvc} onChange={e=>setSelSvc(e.target.value)} className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30"><option value="all">All Services</option><option value="Map">Map Only</option><option value="Program">Program Only</option></select></div>
+      <div><label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Entities</label><div className="flex gap-2 items-center py-1.5">{[{k:'snw' as const,l:'SNW',c:'text-np-blue'},{k:'cli' as const,l:'Clinic',c:'text-amber-600'},{k:'dr' as const,l:'Dr.Y',c:'text-purple-600'}].map(e=><label key={e.k} className={'flex items-center gap-1 text-[11px] font-semibold cursor-pointer '+e.c}><input type="checkbox" checked={showEnt[e.k]} onChange={()=>setShowEnt(p=>({...p,[e.k]:!p[e.k]}))} className="w-3 h-3 rounded"/>{e.l}</label>)}</div></div>
+      {(dFrom||dTo||selCtr!=='all'||selSvc!=='all')&&<button onClick={()=>{setDFrom('');setDTo('');setSelCtr('all');setSelSvc('all');setShowEnt({snw:true,cli:true,dr:true})}} className="px-2.5 py-1.5 text-[10px] font-semibold text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200">Clear</button>}
       <div className="flex-1"/>
       <button onClick={doExport} className="flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold bg-green-600 text-white rounded-lg hover:bg-green-700"><Download className="w-3.5 h-3.5"/>Export CSV</button>
     </div>
@@ -557,6 +562,86 @@ function ReportView({ clients, locs, clinics, cfg }: { clients: AcctClient[]; lo
     {rpt==='payments'&&<div className="rounded-xl border border-gray-100 bg-white overflow-hidden"><div className="overflow-auto max-h-[600px]"><table className="w-full text-left"><thead className="sticky top-0 bg-white"><tr className="border-b border-gray-100 bg-gray-50/30"><RTH>Date</RTH><RTH>Client</RTH><RTH>Center</RTH><RTH>Svc</RTH><RTH>Era</RTH><RTH className="text-right">Amount</RTH><RTH className="text-right text-np-blue">SNW</RTH><RTH className="text-right text-amber-600">Clinic</RTH><RTH className="text-right text-purple-600">Dr.Y</RTH></tr></thead><tbody>
       {allRows.map((r,i)=><tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50"><td className="py-1.5 px-3 text-xs text-gray-600 whitespace-nowrap">{fD(r.paymentDate)}</td><td className="py-1.5 px-3 text-xs font-semibold text-np-dark">{r.client}</td><td className="py-1.5 px-3"><LocTag loc={r.locationId} locs={locs}/></td><td className="py-1.5 px-3 text-[11px] text-gray-400">{r.serviceType}</td><td className="py-1.5 px-3"><span className={'text-[8px] font-bold px-1 py-0.5 rounded '+(r.isLegacy?'bg-amber-50 text-amber-600':'bg-blue-50 text-blue-600')}>{r.isLegacy?'10%':'26%'}</span></td><td className="py-1.5 px-3 text-xs font-semibold text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(r.paymentAmt))}</td><td className="py-1.5 px-3 text-xs text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(r.snw))}</td><td className="py-1.5 px-3 text-xs text-right" style={{color:r.clinicAmt>0?'#d97706':'#d1d5db',fontFeatureSettings:'"tnum"'}}>{r.clinicAmt>0?$$(r2(r.clinicAmt)):'\u2014'}</td><td className="py-1.5 px-3 text-xs text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(r.dr))}</td></tr>)}
     </tbody></table></div></div>}
+
+
+    {rpt==='collections'&&(()=>{
+      const svcTypes = Array.from(new Set(allRows.map(r=>r.serviceType)))
+      const collData = (() => {
+        const m: Record<string, {name:string;loc:string;locId:string;svcType:string;progTotal:number;collected:number;snw:number;cli:number;dr:number;n:number}> = {}
+        allRows.forEach(r => {
+          const k = r.client+'|'+r.serviceType
+          if (!m[k]) m[k] = {name:r.client,loc:r.location,locId:r.locationId,svcType:r.serviceType,progTotal:0,collected:0,snw:0,cli:0,dr:0,n:0}
+          const x = m[k]; x.collected += r.paymentAmt; x.snw += r.snw; x.cli += r.clinicAmt; x.dr += r.dr; x.n++
+          if (r.serviceTotal > x.progTotal) x.progTotal = r.serviceTotal
+        })
+        return Object.values(m).sort((a,b) => a.name.localeCompare(b.name))
+      })()
+      const cTot = collData.reduce((t,d) => ({prog:t.prog+d.progTotal,coll:t.coll+d.collected,snw:t.snw+d.snw,cli:t.cli+d.cli,dr:t.dr+d.dr}),{prog:0,coll:0,snw:0,cli:0,dr:0})
+      return <div className="rounded-xl border border-gray-100 bg-white overflow-hidden"><div className="overflow-auto"><table className="w-full text-left"><thead><tr className="border-b border-gray-100 bg-gray-50/30">
+        <RTH>Client</RTH><RTH>Center</RTH><RTH>Service</RTH><RTH className="text-right">Program</RTH><RTH className="text-right text-green-600">Collected</RTH><RTH className="text-right text-red-500">Balance</RTH>
+        {showEnt.snw&&<RTH className="text-right text-np-blue">SNW</RTH>}
+        {showEnt.cli&&<RTH className="text-right text-amber-600">Clinic</RTH>}
+        {showEnt.dr&&<RTH className="text-right text-purple-600">Dr.Y</RTH>}
+        <RTH className="text-right">Pmts</RTH></tr></thead><tbody>
+        {collData.map((d,i) => {const bal=r2(d.progTotal-d.collected); return <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50">
+          <td className="py-2 px-3 text-xs font-semibold text-np-dark">{d.name}</td>
+          <td className="py-2 px-3"><LocTag loc={d.locId} locs={locs}/></td>
+          <td className="py-2 px-3"><span className={'text-[9px] font-bold px-1.5 py-0.5 rounded '+(d.svcType==='Program'?'bg-blue-50 text-blue-600':'bg-gray-100 text-gray-500')}>{d.svcType}</span></td>
+          <td className="py-2 px-3 text-xs font-semibold text-right" style={{fontFeatureSettings:'"tnum"'}}>{$(r2(d.progTotal))}</td>
+          <td className="py-2 px-3 text-xs font-semibold text-green-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$(r2(d.collected))}</td>
+          <td className="py-2 px-3 text-xs font-semibold text-right" style={{fontFeatureSettings:'"tnum"',color:bal>0?'#ef4444':'#22c55e'}}>{bal>0?$(bal):'Paid'}</td>
+          {showEnt.snw&&<td className="py-2 px-3 text-xs text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{$(r2(d.snw))}</td>}
+          {showEnt.cli&&<td className="py-2 px-3 text-xs text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{d.cli>0?$(r2(d.cli)):'\u2014'}</td>}
+          {showEnt.dr&&<td className="py-2 px-3 text-xs text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$(r2(d.dr))}</td>}
+          <td className="py-2 px-3 text-xs text-gray-400 text-right">{d.n}</td></tr>})}
+        <tr className="bg-gray-50/50 border-t border-gray-200">
+          <td className="py-2.5 px-3 text-xs font-bold" colSpan={3}>TOTAL ({collData.length} clients)</td>
+          <td className="py-2.5 px-3 text-xs font-bold text-right" style={{fontFeatureSettings:'"tnum"'}}>{$(r2(cTot.prog))}</td>
+          <td className="py-2.5 px-3 text-xs font-bold text-green-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$(r2(cTot.coll))}</td>
+          <td className="py-2.5 px-3 text-xs font-bold text-red-500 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$(r2(cTot.prog-cTot.coll))}</td>
+          {showEnt.snw&&<td className="py-2.5 px-3 text-xs font-bold text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{$(r2(cTot.snw))}</td>}
+          {showEnt.cli&&<td className="py-2.5 px-3 text-xs font-bold text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$(r2(cTot.cli))}</td>}
+          {showEnt.dr&&<td className="py-2.5 px-3 text-xs font-bold text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$(r2(cTot.dr))}</td>}
+          <td className="py-2.5 px-3 text-xs font-bold text-right">{allRows.length}</td></tr>
+      </tbody></table></div></div>
+    })()}
+
+    {rpt==='monthly_collections'&&(()=>{
+      const moData = (() => {
+        const m: Record<string, {collected:number;snw:number;cli:number;dr:number;n:number;clients:Set<string>}> = {}
+        allRows.forEach(r => {
+          const mo = r.paymentDate.substring(0,7)
+          if (!m[mo]) m[mo] = {collected:0,snw:0,cli:0,dr:0,n:0,clients:new Set()}
+          const x = m[mo]; x.collected += r.paymentAmt; x.snw += r.snw; x.cli += r.clinicAmt; x.dr += r.dr; x.n++; x.clients.add(r.client)
+        })
+        return Object.entries(m).sort(([a],[b])=>a.localeCompare(b)).map(([mo,d])=>({mo,...d,cc:d.clients.size}))
+      })()
+      const mTot = moData.reduce((t,d)=>({coll:t.coll+d.collected,snw:t.snw+d.snw,cli:t.cli+d.cli,dr:t.dr+d.dr,n:t.n+d.n}),{coll:0,snw:0,cli:0,dr:0,n:0})
+      return <div className="rounded-xl border border-gray-100 bg-white overflow-hidden"><div className="overflow-auto"><table className="w-full text-left"><thead><tr className="border-b border-gray-100 bg-gray-50/30">
+        <RTH>Month</RTH><RTH className="text-right text-green-600">Collected</RTH>
+        {showEnt.snw&&<RTH className="text-right text-np-blue">SNW</RTH>}
+        {showEnt.cli&&<RTH className="text-right text-amber-600">Clinic</RTH>}
+        {showEnt.dr&&<RTH className="text-right text-purple-600">Dr.Y</RTH>}
+        <RTH className="text-right">Clients</RTH><RTH className="text-right">Pmts</RTH></tr></thead><tbody>
+        {moData.map(d => <tr key={d.mo} className="border-b border-gray-50 hover:bg-gray-50/50">
+          <td className="py-2.5 px-3 text-xs font-bold text-np-dark whitespace-nowrap">{fMoL(d.mo)}</td>
+          <td className="py-2.5 px-3 text-xs font-semibold text-green-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$(r2(d.collected))}</td>
+          {showEnt.snw&&<td className="py-2.5 px-3 text-xs text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{$(r2(d.snw))}</td>}
+          {showEnt.cli&&<td className="py-2.5 px-3 text-xs text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{d.cli>0?$(r2(d.cli)):'\u2014'}</td>}
+          {showEnt.dr&&<td className="py-2.5 px-3 text-xs text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$(r2(d.dr))}</td>}
+          <td className="py-2.5 px-3 text-xs text-gray-500 text-right">{d.cc}</td>
+          <td className="py-2.5 px-3 text-xs text-gray-400 text-right">{d.n}</td></tr>)}
+        <tr className="bg-gray-50/50 border-t border-gray-200">
+          <td className="py-2.5 px-3 text-xs font-bold">TOTAL</td>
+          <td className="py-2.5 px-3 text-xs font-bold text-green-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$(r2(mTot.coll))}</td>
+          {showEnt.snw&&<td className="py-2.5 px-3 text-xs font-bold text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{$(r2(mTot.snw))}</td>}
+          {showEnt.cli&&<td className="py-2.5 px-3 text-xs font-bold text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$(r2(mTot.cli))}</td>}
+          {showEnt.dr&&<td className="py-2.5 px-3 text-xs font-bold text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$(r2(mTot.dr))}</td>}
+          <td className="py-2.5 px-3 text-xs font-bold text-right">{new Set(allRows.map(r=>r.client)).size}</td>
+          <td className="py-2.5 px-3 text-xs font-bold text-right">{mTot.n}</td></tr>
+      </tbody></table></div></div>
+    })()}
+
 
     {rpt==='payout_ledger'&&<div className="space-y-4">
       {(()=>{

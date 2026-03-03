@@ -1,0 +1,78 @@
+
+    {rpt==='collections'&&(()=>{
+      const svcTypes = Array.from(new Set(allRows.map(r=>r.serviceType)))
+      const collData = (() => {
+        const m: Record<string, {name:string;loc:string;locId:string;svcType:string;progTotal:number;collected:number;snw:number;cli:number;dr:number;n:number}> = {}
+        allRows.forEach(r => {
+          const k = r.client+'|'+r.serviceType
+          if (!m[k]) m[k] = {name:r.client,loc:r.location,locId:r.locationId,svcType:r.serviceType,progTotal:0,collected:0,snw:0,cli:0,dr:0,n:0}
+          const x = m[k]; x.collected += r.paymentAmt; x.snw += r.snw; x.cli += r.clinicAmt; x.dr += r.dr; x.n++
+          if (r.serviceTotal > x.progTotal) x.progTotal = r.serviceTotal
+        })
+        return Object.values(m).sort((a,b) => a.name.localeCompare(b.name))
+      })()
+      const cTot = collData.reduce((t,d) => ({prog:t.prog+d.progTotal,coll:t.coll+d.collected,snw:t.snw+d.snw,cli:t.cli+d.cli,dr:t.dr+d.dr}),{prog:0,coll:0,snw:0,cli:0,dr:0})
+      return <div className="rounded-xl border border-gray-100 bg-white overflow-hidden"><div className="overflow-auto"><table className="w-full text-left"><thead><tr className="border-b border-gray-100 bg-gray-50/30">
+        <RTH>Client</RTH><RTH>Center</RTH><RTH>Service</RTH><RTH className="text-right">Program</RTH><RTH className="text-right text-green-600">Collected</RTH><RTH className="text-right text-red-500">Balance</RTH>
+        {showEnt.snw&&<RTH className="text-right text-np-blue">SNW</RTH>}
+        {showEnt.cli&&<RTH className="text-right text-amber-600">Clinic</RTH>}
+        {showEnt.dr&&<RTH className="text-right text-purple-600">Dr.Y</RTH>}
+        <RTH className="text-right">Pmts</RTH></tr></thead><tbody>
+        {collData.map((d,i) => {const bal=r2(d.progTotal-d.collected); return <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50">
+          <td className="py-2 px-3 text-xs font-semibold text-np-dark">{d.name}</td>
+          <td className="py-2 px-3"><LocTag loc={d.locId} locs={locs}/></td>
+          <td className="py-2 px-3"><span className={'text-[9px] font-bold px-1.5 py-0.5 rounded '+(d.svcType==='Program'?'bg-blue-50 text-blue-600':'bg-gray-100 text-gray-500')}>{d.svcType}</span></td>
+          <td className="py-2 px-3 text-xs font-semibold text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(d.progTotal))}</td>
+          <td className="py-2 px-3 text-xs font-semibold text-green-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(d.collected))}</td>
+          <td className="py-2 px-3 text-xs font-semibold text-right" style={{fontFeatureSettings:'"tnum"',color:bal>0?'#ef4444':'#22c55e'}}>{bal>0?$$(bal):'Paid'}</td>
+          {showEnt.snw&&<td className="py-2 px-3 text-xs text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(d.snw))}</td>}
+          {showEnt.cli&&<td className="py-2 px-3 text-xs text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{d.cli>0?$$(r2(d.cli)):'\u2014'}</td>}
+          {showEnt.dr&&<td className="py-2 px-3 text-xs text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(d.dr))}</td>}
+          <td className="py-2 px-3 text-xs text-gray-400 text-right">{d.n}</td></tr>})}
+        <tr className="bg-gray-50/50 border-t border-gray-200">
+          <td className="py-2.5 px-3 text-xs font-bold" colSpan={3}>TOTAL ({collData.length} clients)</td>
+          <td className="py-2.5 px-3 text-xs font-bold text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(cTot.prog))}</td>
+          <td className="py-2.5 px-3 text-xs font-bold text-green-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(cTot.coll))}</td>
+          <td className="py-2.5 px-3 text-xs font-bold text-red-500 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(cTot.prog-cTot.coll))}</td>
+          {showEnt.snw&&<td className="py-2.5 px-3 text-xs font-bold text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(cTot.snw))}</td>}
+          {showEnt.cli&&<td className="py-2.5 px-3 text-xs font-bold text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(cTot.cli))}</td>}
+          {showEnt.dr&&<td className="py-2.5 px-3 text-xs font-bold text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(cTot.dr))}</td>}
+          <td className="py-2.5 px-3 text-xs font-bold text-right">{allRows.length}</td></tr>
+      </tbody></table></div></div>
+    })()}
+
+    {rpt==='monthly_collections'&&(()=>{
+      const moData = (() => {
+        const m: Record<string, {collected:number;snw:number;cli:number;dr:number;n:number;clients:Set<string>}> = {}
+        allRows.forEach(r => {
+          const mo = r.paymentDate.substring(0,7)
+          if (!m[mo]) m[mo] = {collected:0,snw:0,cli:0,dr:0,n:0,clients:new Set()}
+          const x = m[mo]; x.collected += r.paymentAmt; x.snw += r.snw; x.cli += r.clinicAmt; x.dr += r.dr; x.n++; x.clients.add(r.client)
+        })
+        return Object.entries(m).sort(([a],[b])=>a.localeCompare(b)).map(([mo,d])=>({mo,...d,cc:d.clients.size}))
+      })()
+      const mTot = moData.reduce((t,d)=>({coll:t.coll+d.collected,snw:t.snw+d.snw,cli:t.cli+d.cli,dr:t.dr+d.dr,n:t.n+d.n}),{coll:0,snw:0,cli:0,dr:0,n:0})
+      return <div className="rounded-xl border border-gray-100 bg-white overflow-hidden"><div className="overflow-auto"><table className="w-full text-left"><thead><tr className="border-b border-gray-100 bg-gray-50/30">
+        <RTH>Month</RTH><RTH className="text-right text-green-600">Collected</RTH>
+        {showEnt.snw&&<RTH className="text-right text-np-blue">SNW</RTH>}
+        {showEnt.cli&&<RTH className="text-right text-amber-600">Clinic</RTH>}
+        {showEnt.dr&&<RTH className="text-right text-purple-600">Dr.Y</RTH>}
+        <RTH className="text-right">Clients</RTH><RTH className="text-right">Pmts</RTH></tr></thead><tbody>
+        {moData.map(d => <tr key={d.mo} className="border-b border-gray-50 hover:bg-gray-50/50">
+          <td className="py-2.5 px-3 text-xs font-bold text-np-dark whitespace-nowrap">{fMoL(d.mo)}</td>
+          <td className="py-2.5 px-3 text-xs font-semibold text-green-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(d.collected))}</td>
+          {showEnt.snw&&<td className="py-2.5 px-3 text-xs text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(d.snw))}</td>}
+          {showEnt.cli&&<td className="py-2.5 px-3 text-xs text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{d.cli>0?$$(r2(d.cli)):'\u2014'}</td>}
+          {showEnt.dr&&<td className="py-2.5 px-3 text-xs text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(d.dr))}</td>}
+          <td className="py-2.5 px-3 text-xs text-gray-500 text-right">{d.cc}</td>
+          <td className="py-2.5 px-3 text-xs text-gray-400 text-right">{d.n}</td></tr>)}
+        <tr className="bg-gray-50/50 border-t border-gray-200">
+          <td className="py-2.5 px-3 text-xs font-bold">TOTAL</td>
+          <td className="py-2.5 px-3 text-xs font-bold text-green-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(mTot.coll))}</td>
+          {showEnt.snw&&<td className="py-2.5 px-3 text-xs font-bold text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(mTot.snw))}</td>}
+          {showEnt.cli&&<td className="py-2.5 px-3 text-xs font-bold text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(mTot.cli))}</td>}
+          {showEnt.dr&&<td className="py-2.5 px-3 text-xs font-bold text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(mTot.dr))}</td>}
+          <td className="py-2.5 px-3 text-xs font-bold text-right">{new Set(allRows.map(r=>r.client)).size}</td>
+          <td className="py-2.5 px-3 text-xs font-bold text-right">{mTot.n}</td></tr>
+      </tbody></table></div></div>
+    })()}
