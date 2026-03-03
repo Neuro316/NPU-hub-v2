@@ -430,7 +430,9 @@ function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onAddPmt,onEditPmt,onDelet
 
 
 
-/* ══ COMPREHENSIVE REPORTING SUITE ══════════════════════════════ */
+
+
+/* == COMPREHENSIVE REPORTING SUITE ============================== */
 function generateCSV(headers: string[], rows: any[][]): string {
   const esc = (v: any) => { const s = String(v ?? ''); return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s }
   return [headers.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))].join('\n')
@@ -440,10 +442,10 @@ function downloadCSV(fn: string, csv: string) {
   const a = document.createElement('a'); a.href = u; a.download = fn; a.click(); URL.revokeObjectURL(u)
 }
 
-type RptType = 'summary' | 'by_center' | 'by_client' | 'by_month' | 'payments' | 'payout_ledger' | 'collections' | 'monthly_collections'
+type RptType = 'collections' | 'monthly_collections' | 'recon_detail' | 'by_center' | 'by_client' | 'summary' | 'payments' | 'payout_ledger'
 
 function ReportView({ clients, locs, clinics, cfg }: { clients: AcctClient[]; locs: AcctLocation[]; clinics: AcctClinic[]; cfg: AcctConfig }) {
-  const [rpt, setRpt] = useState<RptType>('summary')
+  const [rpt, setRpt] = useState<RptType>('collections')
   const [dFrom, setDFrom] = useState('')
   const [dTo, setDTo] = useState('')
   const [selCtr, setSelCtr] = useState<string>('all')
@@ -475,193 +477,364 @@ function ReportView({ clients, locs, clinics, cfg }: { clients: AcctClient[]; lo
     return t
   }, [allRows])
 
+  const totalClinic = Object.values(totals.clinics).reduce((s,v) => s+v, 0)
+
+  // Currency helper
+  const F = (n: number) => { const s = Math.abs(n).toLocaleString('en-US',{style:'currency',currency:'USD'}); return n < 0 ? '-'+s : s }
+
+  // Entity column helpers
+  const entCols = () => {
+    const cols: {key:string;label:string;color:string}[] = []
+    if (showEnt.snw) cols.push({key:'snw',label:'SNW',color:'text-np-blue'})
+    if (showEnt.cli) cols.push({key:'cli',label:'Clinic',color:'text-amber-600'})
+    if (showEnt.dr) cols.push({key:'dr',label:'Dr. Yonce',color:'text-purple-600'})
+    return cols
+  }
+
+  const entVal = (row: any) => {
+    const vals: number[] = []
+    if (showEnt.snw) vals.push(row.snw || 0)
+    if (showEnt.cli) vals.push(row.cli || row.clinicAmt || 0)
+    if (showEnt.dr) vals.push(row.dr || 0)
+    return vals
+  }
+
+  const entTotals = () => {
+    const vals: number[] = []
+    if (showEnt.snw) vals.push(totals.snw)
+    if (showEnt.cli) vals.push(totalClinic)
+    if (showEnt.dr) vals.push(totals.dr)
+    return vals
+  }
+
+  // ── Collections by Client ──
+  const collData = useMemo(() => {
+    const m: Record<string, {name:string;loc:string;locId:string;svc:string;prog:number;coll:number;snw:number;cli:number;dr:number;n:number}> = {}
+    allRows.forEach(r => {
+      const k = r.client+'|'+r.serviceType
+      if (!m[k]) m[k] = {name:r.client,loc:r.location,locId:r.locationId,svc:r.serviceType,prog:0,coll:0,snw:0,cli:0,dr:0,n:0}
+      const x = m[k]; x.coll += r.paymentAmt; x.snw += r.snw; x.cli += r.clinicAmt; x.dr += r.dr; x.n++
+      if (r.serviceTotal > x.prog) x.prog = r.serviceTotal
+    })
+    return Object.values(m).sort((a,b) => a.name.localeCompare(b.name))
+  }, [allRows])
+
+  // ── Monthly Collections ──
+  const moCollData = useMemo(() => {
+    const m: Record<string, {coll:number;snw:number;cli:number;dr:number;n:number;cls:Set<string>}> = {}
+    allRows.forEach(r => {
+      const mo = r.paymentDate.substring(0,7)
+      if (!m[mo]) m[mo] = {coll:0,snw:0,cli:0,dr:0,n:0,cls:new Set()}
+      const x = m[mo]; x.coll += r.paymentAmt; x.snw += r.snw; x.cli += r.clinicAmt; x.dr += r.dr; x.n++; x.cls.add(r.client)
+    })
+    return Object.entries(m).sort(([a],[b])=>a.localeCompare(b)).map(([mo,d])=>({mo,...d,cc:d.cls.size}))
+  }, [allRows])
+
+  // ── By Center ──
   const byCenterData = useMemo(() => {
-    const m: Record<string, { loc: string; rev: number; snw: number; cli: number; dr: number; cls: Set<string>; n: number }> = {}
-    allRows.forEach(r => { if (!m[r.locationId]) m[r.locationId] = { loc: r.location, rev: 0, snw: 0, cli: 0, dr: 0, cls: new Set(), n: 0 }; const x = m[r.locationId]; x.rev += r.paymentAmt; x.snw += r.snw; x.cli += r.clinicAmt; x.dr += r.dr; x.cls.add(r.client); x.n++ })
-    return Object.entries(m).map(([id, d]) => ({ id, ...d, cc: d.cls.size }))
+    const m: Record<string, {loc:string;rev:number;snw:number;cli:number;dr:number;cls:Set<string>;n:number}> = {}
+    allRows.forEach(r => { if(!m[r.locationId]) m[r.locationId]={loc:r.location,rev:0,snw:0,cli:0,dr:0,cls:new Set(),n:0}; const x=m[r.locationId]; x.rev+=r.paymentAmt;x.snw+=r.snw;x.cli+=r.clinicAmt;x.dr+=r.dr;x.cls.add(r.client);x.n++ })
+    return Object.entries(m).map(([id,d])=>({id,...d,cc:d.cls.size}))
   }, [allRows])
 
+  // ── By Client ──
   const byClientData = useMemo(() => {
-    const m: Record<string, { name: string; loc: string; rev: number; snw: number; cli: number; dr: number; n: number; leg: boolean }> = {}
-    allRows.forEach(r => { if (!m[r.client]) m[r.client] = { name: r.client, loc: r.location, rev: 0, snw: 0, cli: 0, dr: 0, n: 0, leg: r.isLegacy }; const x = m[r.client]; x.rev += r.paymentAmt; x.snw += r.snw; x.cli += r.clinicAmt; x.dr += r.dr; x.n++ })
-    return Object.values(m).sort((a, b) => b.rev - a.rev)
+    const m: Record<string, {name:string;loc:string;rev:number;snw:number;cli:number;dr:number;n:number;leg:boolean}> = {}
+    allRows.forEach(r => { if(!m[r.client]) m[r.client]={name:r.client,loc:r.location,rev:0,snw:0,cli:0,dr:0,n:0,leg:r.isLegacy}; const x=m[r.client]; x.rev+=r.paymentAmt;x.snw+=r.snw;x.cli+=r.clinicAmt;x.dr+=r.dr;x.n++ })
+    return Object.values(m).sort((a,b)=>b.rev-a.rev)
   }, [allRows])
 
-  const byMonthData = useMemo(() => {
-    const m: Record<string, { rev: number; snw: number; cli: number; dr: number; n: number; leg: number; cur: number }> = {}
-    allRows.forEach(r => { const mo = r.paymentDate.substring(0, 7); if (!m[mo]) m[mo] = { rev: 0, snw: 0, cli: 0, dr: 0, n: 0, leg: 0, cur: 0 }; const x = m[mo]; x.rev += r.paymentAmt; x.snw += r.snw; x.cli += r.clinicAmt; x.dr += r.dr; x.n++; if (r.isLegacy) x.leg += r.paymentAmt; else x.cur += r.paymentAmt })
-    return Object.entries(m).sort(([a], [b]) => a.localeCompare(b)).map(([mo, d]) => ({ mo, ...d }))
-  }, [allRows])
-
+  // ── CSV Export ──
   const doExport = () => {
-    if (rpt === 'summary') downloadCSV('accounting-summary.csv', generateCSV(['Metric','Amount'], [['Total Revenue',r2(totals.revenue)],['SNW Total',r2(totals.snw)],['CC Processing',r2(totals.cc)],['SNW Services',r2(totals.snwService)],['Dr. Yonce',r2(totals.dr)],...clinics.map(c=>['Clinic: '+c.name,r2(totals.clinics[c.id]||0)])]))
-    else if (rpt === 'by_center') downloadCSV('accounting-by-center.csv', generateCSV(['Center','Revenue','SNW','Clinic','Dr.Y','Clients','Payments'], byCenterData.map(d => [d.loc, r2(d.rev), r2(d.snw), r2(d.cli), r2(d.dr), d.cc, d.n])))
-    else if (rpt === 'by_client') downloadCSV('accounting-by-client.csv', generateCSV(['Client','Center','Revenue','SNW','Clinic','Dr.Y','Payments','Era'], byClientData.map(d => [d.name, d.loc, r2(d.rev), r2(d.snw), r2(d.cli), r2(d.dr), d.n, d.leg?'Pre-Aug 10pct':'Current 26pct'])))
-    else if (rpt === 'by_month') downloadCSV('accounting-by-month.csv', generateCSV(['Month','Revenue','SNW','Clinic','Dr.Y','Payments','Legacy Rev','Current Rev'], byMonthData.map(d => [fMoL(d.mo), r2(d.rev), r2(d.snw), r2(d.cli), r2(d.dr), d.n, r2(d.leg), r2(d.cur)])))
-    else if (rpt === 'payments') downloadCSV('accounting-all-payments.csv', generateCSV(['Date','Client','Center','Clinic','Service','Svc Total','Payment','SNW','CC','SNW Svc','Clinic Split','Dr.Y','Era','Payout Date','Notes'], allRows.map(r => [r.paymentDate, r.client, r.location, r.clinic, r.serviceType, r2(r.serviceTotal), r2(r.paymentAmt), r2(r.snw), r2(r.cc), r2(r.snwService), r2(r.clinicAmt), r2(r.dr), r.isLegacy?'Pre-Aug 10pct':'Current 26pct', r.payoutDate, r.notes])))
+    const ec = entCols()
+    const eH = ec.map(c => c.label)
+
+    if (rpt === 'collections') {
+      const hdr = ['Client','Center','Service','Program','Collected','Balance',...eH,'Payments']
+      const rws = collData.map(d => { const row = [d.name,d.loc,d.svc,r2(d.prog),r2(d.coll),r2(d.prog-d.coll)]; if(showEnt.snw)row.push(r2(d.snw)); if(showEnt.cli)row.push(r2(d.cli)); if(showEnt.dr)row.push(r2(d.dr)); row.push(d.n); return row })
+      downloadCSV('collections-by-client.csv', generateCSV(hdr, rws))
+    }
+    else if (rpt === 'monthly_collections') {
+      const hdr = ['Month','Collected',...eH,'Clients','Payments']
+      const rws = moCollData.map(d => { const row: any[] = [fMoL(d.mo),r2(d.coll)]; if(showEnt.snw)row.push(r2(d.snw)); if(showEnt.cli)row.push(r2(d.cli)); if(showEnt.dr)row.push(r2(d.dr)); row.push(d.cc,d.n); return row })
+      downloadCSV('monthly-collections.csv', generateCSV(hdr, rws))
+    }
+    else if (rpt === 'recon_detail') {
+      const hdr = ['Date','Client','Center','Service','Payment',...eH,'Era']
+      const rws = allRows.map(r => { const row: any[] = [r.paymentDate,r.client,r.location,r.serviceType,r2(r.paymentAmt)]; if(showEnt.snw)row.push(r2(r.snw)); if(showEnt.cli)row.push(r2(r.clinicAmt)); if(showEnt.dr)row.push(r2(r.dr)); row.push(r.isLegacy?'Pre-Aug 10pct':'Current 26pct'); return row })
+      downloadCSV('reconciliation-detail.csv', generateCSV(hdr, rws))
+    }
+    else if (rpt === 'by_center') {
+      const hdr = ['Center','Revenue',...eH,'Clients','Payments']
+      const rws = byCenterData.map(d => { const row: any[] = [d.loc,r2(d.rev)]; if(showEnt.snw)row.push(r2(d.snw)); if(showEnt.cli)row.push(r2(d.cli)); if(showEnt.dr)row.push(r2(d.dr)); row.push(d.cc,d.n); return row })
+      downloadCSV('by-center.csv', generateCSV(hdr, rws))
+    }
+    else if (rpt === 'by_client') {
+      const hdr = ['Client','Center','Revenue',...eH,'Payments','Era']
+      const rws = byClientData.map(d => { const row: any[] = [d.name,d.loc,r2(d.rev)]; if(showEnt.snw)row.push(r2(d.snw)); if(showEnt.cli)row.push(r2(d.cli)); if(showEnt.dr)row.push(r2(d.dr)); row.push(d.n,d.leg?'Pre-Aug 10pct':'Current 26pct'); return row })
+      downloadCSV('by-client.csv', generateCSV(hdr, rws))
+    }
+    else if (rpt === 'summary') {
+      const rows: any[][] = [['Total Revenue',r2(totals.revenue)]]
+      if (showEnt.snw) rows.push(['SNW Total',r2(totals.snw)],['CC Processing',r2(totals.cc)],['SNW Services',r2(totals.snwService)])
+      if (showEnt.cli) clinics.forEach(c => rows.push(['Clinic: '+c.name,r2(totals.clinics[c.id]||0)]))
+      if (showEnt.dr) rows.push(['Dr. Yonce',r2(totals.dr)])
+      downloadCSV('accounting-summary.csv', generateCSV(['Metric','Amount'], rows))
+    }
+    else if (rpt === 'payments') {
+      const hdr = ['Date','Client','Center','Service','Payment',...eH,'Era','Notes']
+      const rws = allRows.map(r => { const row: any[] = [r.paymentDate,r.client,r.location,r.serviceType,r2(r.paymentAmt)]; if(showEnt.snw)row.push(r2(r.snw)); if(showEnt.cli)row.push(r2(r.clinicAmt)); if(showEnt.dr)row.push(r2(r.dr)); row.push(r.isLegacy?'Pre-Aug 10pct':'Current 26pct',r.notes); return row })
+      downloadCSV('all-payments.csv', generateCSV(hdr, rws))
+    }
     else if (rpt === 'payout_ledger') {
-      const ledger: any[] = []; const bp: Record<string, any[]> = {}
-      allRows.forEach(r => { const p = r.payoutDate.substring(0, 7); if (!bp[p]) bp[p] = []; bp[p].push(r) })
-      Object.entries(bp).sort(([a],[b])=>a.localeCompare(b)).forEach(([period, rows]) => {
-        ledger.push([fMoL(period), 'Sensorium', r2(rows.reduce((s:number,r:any)=>s+r.snw,0)), rows.length+' pmts'])
-        ledger.push([fMoL(period), 'Dr. Yonce', r2(rows.reduce((s:number,r:any)=>s+r.dr,0)), ''])
-        const cT: Record<string,number> = {}; rows.forEach((r:any)=>{if(r.clinicId)cT[r.clinicId]=(cT[r.clinicId]||0)+r.clinicAmt})
-        clinics.forEach(c=>{if(cT[c.id])ledger.push([fMoL(period), c.name, r2(cT[c.id]), ''])})
+      const ledger: any[] = []; const bp: Record<string,any[]> = {}
+      allRows.forEach(r => { const p = r.payoutDate.substring(0,7); if(!bp[p])bp[p]=[]; bp[p].push(r) })
+      Object.entries(bp).sort(([a],[b])=>a.localeCompare(b)).forEach(([period,rows]) => {
+        if (showEnt.snw) ledger.push([fMoL(period),'Sensorium',r2(rows.reduce((s:number,r:any)=>s+r.snw,0)),rows.length+' pmts'])
+        if (showEnt.dr) ledger.push([fMoL(period),'Dr. Yonce',r2(rows.reduce((s:number,r:any)=>s+r.dr,0)),''])
+        if (showEnt.cli) { const cT:Record<string,number>={}; rows.forEach((r:any)=>{if(r.clinicId)cT[r.clinicId]=(cT[r.clinicId]||0)+r.clinicAmt}); clinics.forEach(c=>{if(cT[c.id])ledger.push([fMoL(period),c.name,r2(cT[c.id]),''])}) }
       })
       downloadCSV('payout-ledger.csv', generateCSV(['Period','Payee','Amount','Notes'], ledger))
     }
   }
 
-  const tabs: {k:RptType;l:string;i:any}[] = [{k:'summary',l:'Summary',i:BarChart3},{k:'by_center',l:'By Center',i:Building2},{k:'by_client',l:'By Client',i:Users},{k:'by_month',l:'By Month',i:CalendarIcon},{k:'payments',l:'All Payments',i:DollarSign},{k:'payout_ledger',l:'Payout Ledger',i:FileText},{k:'collections',l:'Collections',i:TrendingUp},{k:'monthly_collections',l:'Monthly Collected',i:CalendarIcon}]
+  const tabs: {k:RptType;l:string;i:any}[] = [
+    {k:'collections',l:'Collections',i:TrendingUp},
+    {k:'monthly_collections',l:'Monthly Collected',i:CalendarIcon},
+    {k:'recon_detail',l:'Reconciliation',i:BarChart3},
+    {k:'by_center',l:'By Center',i:Building2},
+    {k:'by_client',l:'By Client',i:Users},
+    {k:'summary',l:'Summary',i:DollarSign},
+    {k:'payments',l:'All Payments',i:FileText},
+    {k:'payout_ledger',l:'Payout Ledger',i:Wallet},
+  ]
+
   const RTH = ({children,className}:any) => <th className={'py-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-gray-400 whitespace-nowrap '+(className||'')}>{children}</th>
+  const ec = entCols()
 
   return <div className="space-y-5">
-    <div><h2 className="text-base font-bold text-np-dark">Reports</h2><p className="text-xs text-gray-400 mt-0.5">Comprehensive accounting reports with CSV export</p></div>
+    <div><h2 className="text-base font-bold text-np-dark">Reports</h2><p className="text-xs text-gray-400 mt-0.5">Filter by entity, service, date range, and center. Export any view to CSV.</p></div>
+
+    {/* Report tabs */}
     <div className="flex gap-1.5 flex-wrap">{tabs.map(t=>{const I=t.i;return<button key={t.k} onClick={()=>setRpt(t.k)} className={'flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold rounded-lg border transition-colors '+(rpt===t.k?'bg-np-blue/10 border-np-blue/30 text-np-blue':'bg-white border-gray-200 text-gray-500 hover:bg-gray-50')}><I className="w-3.5 h-3.5"/>{t.l}</button>})}</div>
+
+    {/* Filters */}
     <div className="flex gap-3 items-end flex-wrap">
       <div><label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">From</label><input type="date" value={dFrom} onChange={e=>setDFrom(e.target.value)} className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30"/></div>
       <div><label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">To</label><input type="date" value={dTo} onChange={e=>setDTo(e.target.value)} className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30"/></div>
       <div><label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Center</label><select value={selCtr} onChange={e=>setSelCtr(e.target.value)} className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30"><option value="all">All Centers</option>{locs.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select></div>
       <div><label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Service</label><select value={selSvc} onChange={e=>setSelSvc(e.target.value)} className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30"><option value="all">All Services</option><option value="Map">Map Only</option><option value="Program">Program Only</option></select></div>
-      <div><label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Entities</label><div className="flex gap-2 items-center py-1.5">{[{k:'snw' as const,l:'SNW',c:'text-np-blue'},{k:'cli' as const,l:'Clinic',c:'text-amber-600'},{k:'dr' as const,l:'Dr.Y',c:'text-purple-600'}].map(e=><label key={e.k} className={'flex items-center gap-1 text-[11px] font-semibold cursor-pointer '+e.c}><input type="checkbox" checked={showEnt[e.k]} onChange={()=>setShowEnt(p=>({...p,[e.k]:!p[e.k]}))} className="w-3 h-3 rounded"/>{e.l}</label>)}</div></div>
-      {(dFrom||dTo||selCtr!=='all'||selSvc!=='all')&&<button onClick={()=>{setDFrom('');setDTo('');setSelCtr('all');setSelSvc('all');setShowEnt({snw:true,cli:true,dr:true})}} className="px-2.5 py-1.5 text-[10px] font-semibold text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200">Clear</button>}
+      <div><label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Show Entities</label><div className="flex gap-3 items-center py-1.5">{[{k:'snw' as const,l:'SNW',c:'text-np-blue'},{k:'cli' as const,l:'Clinic',c:'text-amber-600'},{k:'dr' as const,l:'Dr.Y',c:'text-purple-600'}].map(e=><label key={e.k} className={'flex items-center gap-1 text-[11px] font-semibold cursor-pointer '+e.c}><input type="checkbox" checked={showEnt[e.k]} onChange={()=>setShowEnt(p=>({...p,[e.k]:!p[e.k]}))} className="w-3 h-3 rounded"/>{e.l}</label>)}</div></div>
+      {(dFrom||dTo||selCtr!=='all'||selSvc!=='all')&&<button onClick={()=>{setDFrom('');setDTo('');setSelCtr('all');setSelSvc('all')}} className="px-2.5 py-1.5 text-[10px] font-semibold text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200">Clear</button>}
       <div className="flex-1"/>
       <button onClick={doExport} className="flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold bg-green-600 text-white rounded-lg hover:bg-green-700"><Download className="w-3.5 h-3.5"/>Export CSV</button>
     </div>
-    <p className="text-[10px] text-gray-400">{allRows.length} payments {dFrom||dTo?'in range':'total'} {selCtr!=='all'?'(filtered)':''}</p>
+    <p className="text-[10px] text-gray-400">{allRows.length} payments {dFrom||dTo?'in range':'total'} {selCtr!=='all'||selSvc!=='all'?'(filtered)':''}</p>
 
-    {rpt==='summary'&&<div className="space-y-4">
-      <div className="flex gap-3 flex-wrap">
-        <Stat label="Total Revenue" value={$$(r2(totals.revenue))} icon={DollarSign}/>
-        <Stat label="SNW Retained" value={$$(r2(totals.snw))} color="#386797" sub={'CC: '+$$(r2(totals.cc))+' | Svc: '+$$(r2(totals.snwService))}/>
-        {clinics.map(c=><Stat key={c.id} label={c.name.split('(')[0].trim()} value={$$(r2(totals.clinics[c.id]||0))} color="#d97706"/>)}
-        <Stat label="Dr. Yonce" value={$$(r2(totals.dr))} color="#9333ea"/>
-      </div>
-      <div className="rounded-xl border border-gray-100 bg-white p-4"><h3 className="text-sm font-semibold text-np-dark mb-3">Split Percentages</h3>
-        <div className="flex gap-4 text-xs">
-          <span>SNW: <span className="font-bold text-np-blue">{totals.revenue>0?r2(totals.snw/totals.revenue*100):0}%</span></span>
-          {clinics.map(c=><span key={c.id}>Clinic: <span className="font-bold text-amber-600">{totals.revenue>0?r2((totals.clinics[c.id]||0)/totals.revenue*100):0}%</span></span>)}
-          <span>Dr.Y: <span className="font-bold text-purple-600">{totals.revenue>0?r2(totals.dr/totals.revenue*100):0}%</span></span>
-        </div></div>
-    </div>}
-
-    {rpt==='by_center'&&<div className="rounded-xl border border-gray-100 bg-white overflow-hidden"><div className="overflow-auto"><table className="w-full text-left"><thead><tr className="border-b border-gray-100 bg-gray-50/30"><RTH>Center</RTH><RTH className="text-right">Revenue</RTH><RTH className="text-right text-np-blue">SNW</RTH><RTH className="text-right text-amber-600">Clinic</RTH><RTH className="text-right text-purple-600">Dr.Y</RTH><RTH className="text-right">Clients</RTH><RTH className="text-right">Pmts</RTH></tr></thead><tbody>
-      {byCenterData.map(d=><tr key={d.id} className="border-b border-gray-50 hover:bg-gray-50/50"><td className="py-2.5 px-3 text-xs font-semibold text-np-dark"><LocTag loc={d.id} locs={locs}/></td><td className="py-2.5 px-3 text-xs font-semibold text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(d.rev))}</td><td className="py-2.5 px-3 text-xs text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(d.snw))}</td><td className="py-2.5 px-3 text-xs text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{d.cli>0?$$(r2(d.cli)):'\u2014'}</td><td className="py-2.5 px-3 text-xs text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(d.dr))}</td><td className="py-2.5 px-3 text-xs text-gray-500 text-right">{d.cc}</td><td className="py-2.5 px-3 text-xs text-gray-400 text-right">{d.n}</td></tr>)}
-      <tr className="bg-gray-50/50 border-t border-gray-200"><td className="py-2.5 px-3 text-xs font-bold">TOTAL</td><td className="py-2.5 px-3 text-xs font-bold text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(totals.revenue))}</td><td className="py-2.5 px-3 text-xs font-bold text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(totals.snw))}</td><td className="py-2.5 px-3 text-xs font-bold text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(Object.values(totals.clinics).reduce((s,v)=>s+v,0)))}</td><td className="py-2.5 px-3 text-xs font-bold text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(totals.dr))}</td><td className="py-2.5 px-3 text-xs font-bold text-right">{new Set(allRows.map(r=>r.client)).size}</td><td className="py-2.5 px-3 text-xs font-bold text-right">{allRows.length}</td></tr>
-    </tbody></table></div></div>}
-
-    {rpt==='by_client'&&<div className="rounded-xl border border-gray-100 bg-white overflow-hidden"><div className="overflow-auto"><table className="w-full text-left"><thead><tr className="border-b border-gray-100 bg-gray-50/30"><RTH>Client</RTH><RTH>Center</RTH><RTH>Era</RTH><RTH className="text-right">Revenue</RTH><RTH className="text-right text-np-blue">SNW</RTH><RTH className="text-right text-amber-600">Clinic</RTH><RTH className="text-right text-purple-600">Dr.Y</RTH><RTH className="text-right">Pmts</RTH></tr></thead><tbody>
-      {byClientData.map((d,i)=><tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50"><td className="py-2 px-3 text-xs font-semibold text-np-dark">{d.name}</td><td className="py-2 px-3 text-xs text-gray-500">{d.loc}</td><td className="py-2 px-3"><span className={'text-[9px] font-bold px-1.5 py-0.5 rounded '+(d.leg?'bg-amber-50 text-amber-600':'bg-blue-50 text-blue-600')}>{d.leg?'10% Legacy':'26% Current'}</span></td><td className="py-2 px-3 text-xs font-semibold text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(d.rev))}</td><td className="py-2 px-3 text-xs text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(d.snw))}</td><td className="py-2 px-3 text-xs text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{d.cli>0?$$(r2(d.cli)):'\u2014'}</td><td className="py-2 px-3 text-xs text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(d.dr))}</td><td className="py-2 px-3 text-xs text-gray-400 text-right">{d.n}</td></tr>)}
-    </tbody></table></div></div>}
-
-    {rpt==='by_month'&&<div className="rounded-xl border border-gray-100 bg-white overflow-hidden"><div className="overflow-auto"><table className="w-full text-left"><thead><tr className="border-b border-gray-100 bg-gray-50/30"><RTH>Month</RTH><RTH className="text-right">Revenue</RTH><RTH className="text-right text-np-blue">SNW</RTH><RTH className="text-right text-amber-600">Clinic</RTH><RTH className="text-right text-purple-600">Dr.Y</RTH><RTH className="text-right">Pmts</RTH><RTH className="text-right">Legacy</RTH><RTH className="text-right">Current</RTH></tr></thead><tbody>
-      {byMonthData.map(d=><tr key={d.mo} className="border-b border-gray-50 hover:bg-gray-50/50"><td className="py-2.5 px-3 text-xs font-bold text-np-dark whitespace-nowrap">{fMoL(d.mo)}</td><td className="py-2.5 px-3 text-xs font-semibold text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(d.rev))}</td><td className="py-2.5 px-3 text-xs text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(d.snw))}</td><td className="py-2.5 px-3 text-xs text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{d.cli>0?$$(r2(d.cli)):'\u2014'}</td><td className="py-2.5 px-3 text-xs text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(d.dr))}</td><td className="py-2.5 px-3 text-xs text-gray-400 text-right">{d.n}</td><td className="py-2.5 px-3 text-xs text-amber-500 text-right" style={{fontFeatureSettings:'"tnum"'}}>{d.leg>0?$$(r2(d.leg)):'\u2014'}</td><td className="py-2.5 px-3 text-xs text-blue-500 text-right" style={{fontFeatureSettings:'"tnum"'}}>{d.cur>0?$$(r2(d.cur)):'\u2014'}</td></tr>)}
-      <tr className="bg-gray-50/50 border-t border-gray-200"><td className="py-2.5 px-3 text-xs font-bold">TOTAL</td><td className="py-2.5 px-3 text-xs font-bold text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(totals.revenue))}</td><td className="py-2.5 px-3 text-xs font-bold text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(totals.snw))}</td><td className="py-2.5 px-3 text-xs font-bold text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(Object.values(totals.clinics).reduce((s,v)=>s+v,0)))}</td><td className="py-2.5 px-3 text-xs font-bold text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(totals.dr))}</td><td className="py-2.5 px-3 text-xs font-bold text-right">{allRows.length}</td><td className="py-2.5 px-3 text-xs font-bold text-amber-500 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(byMonthData.reduce((s,d)=>s+d.leg,0)))}</td><td className="py-2.5 px-3 text-xs font-bold text-blue-500 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(byMonthData.reduce((s,d)=>s+d.cur,0)))}</td></tr>
-    </tbody></table></div></div>}
-
-    {rpt==='payments'&&<div className="rounded-xl border border-gray-100 bg-white overflow-hidden"><div className="overflow-auto max-h-[600px]"><table className="w-full text-left"><thead className="sticky top-0 bg-white"><tr className="border-b border-gray-100 bg-gray-50/30"><RTH>Date</RTH><RTH>Client</RTH><RTH>Center</RTH><RTH>Svc</RTH><RTH>Era</RTH><RTH className="text-right">Amount</RTH><RTH className="text-right text-np-blue">SNW</RTH><RTH className="text-right text-amber-600">Clinic</RTH><RTH className="text-right text-purple-600">Dr.Y</RTH></tr></thead><tbody>
-      {allRows.map((r,i)=><tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50"><td className="py-1.5 px-3 text-xs text-gray-600 whitespace-nowrap">{fD(r.paymentDate)}</td><td className="py-1.5 px-3 text-xs font-semibold text-np-dark">{r.client}</td><td className="py-1.5 px-3"><LocTag loc={r.locationId} locs={locs}/></td><td className="py-1.5 px-3 text-[11px] text-gray-400">{r.serviceType}</td><td className="py-1.5 px-3"><span className={'text-[8px] font-bold px-1 py-0.5 rounded '+(r.isLegacy?'bg-amber-50 text-amber-600':'bg-blue-50 text-blue-600')}>{r.isLegacy?'10%':'26%'}</span></td><td className="py-1.5 px-3 text-xs font-semibold text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(r.paymentAmt))}</td><td className="py-1.5 px-3 text-xs text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(r.snw))}</td><td className="py-1.5 px-3 text-xs text-right" style={{color:r.clinicAmt>0?'#d97706':'#d1d5db',fontFeatureSettings:'"tnum"'}}>{r.clinicAmt>0?$$(r2(r.clinicAmt)):'\u2014'}</td><td className="py-1.5 px-3 text-xs text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(r.dr))}</td></tr>)}
-    </tbody></table></div></div>}
-
-
+    {/* ══ COLLECTIONS BY CLIENT ══ */}
     {rpt==='collections'&&(()=>{
-      const svcTypes = Array.from(new Set(allRows.map(r=>r.serviceType)))
-      const collData = (() => {
-        const m: Record<string, {name:string;loc:string;locId:string;svcType:string;progTotal:number;collected:number;snw:number;cli:number;dr:number;n:number}> = {}
-        allRows.forEach(r => {
-          const k = r.client+'|'+r.serviceType
-          if (!m[k]) m[k] = {name:r.client,loc:r.location,locId:r.locationId,svcType:r.serviceType,progTotal:0,collected:0,snw:0,cli:0,dr:0,n:0}
-          const x = m[k]; x.collected += r.paymentAmt; x.snw += r.snw; x.cli += r.clinicAmt; x.dr += r.dr; x.n++
-          if (r.serviceTotal > x.progTotal) x.progTotal = r.serviceTotal
-        })
-        return Object.values(m).sort((a,b) => a.name.localeCompare(b.name))
-      })()
-      const cTot = collData.reduce((t,d) => ({prog:t.prog+d.progTotal,coll:t.coll+d.collected,snw:t.snw+d.snw,cli:t.cli+d.cli,dr:t.dr+d.dr}),{prog:0,coll:0,snw:0,cli:0,dr:0})
+      const cTot = collData.reduce((t,d) => ({prog:t.prog+d.prog,coll:t.coll+d.coll,snw:t.snw+d.snw,cli:t.cli+d.cli,dr:t.dr+d.dr,n:t.n+d.n}),{prog:0,coll:0,snw:0,cli:0,dr:0,n:0})
       return <div className="rounded-xl border border-gray-100 bg-white overflow-hidden"><div className="overflow-auto"><table className="w-full text-left"><thead><tr className="border-b border-gray-100 bg-gray-50/30">
         <RTH>Client</RTH><RTH>Center</RTH><RTH>Service</RTH><RTH className="text-right">Program</RTH><RTH className="text-right text-green-600">Collected</RTH><RTH className="text-right text-red-500">Balance</RTH>
-        {showEnt.snw&&<RTH className="text-right text-np-blue">SNW</RTH>}
-        {showEnt.cli&&<RTH className="text-right text-amber-600">Clinic</RTH>}
-        {showEnt.dr&&<RTH className="text-right text-purple-600">Dr.Y</RTH>}
+        {ec.map(c=><RTH key={c.key} className={'text-right '+c.color}>{c.label}</RTH>)}
         <RTH className="text-right">Pmts</RTH></tr></thead><tbody>
-        {collData.map((d,i) => {const bal=r2(d.progTotal-d.collected); return <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50">
+        {collData.map((d,i) => {const bal=r2(d.prog-d.coll); return <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50">
           <td className="py-2 px-3 text-xs font-semibold text-np-dark">{d.name}</td>
           <td className="py-2 px-3"><LocTag loc={d.locId} locs={locs}/></td>
-          <td className="py-2 px-3"><span className={'text-[9px] font-bold px-1.5 py-0.5 rounded '+(d.svcType==='Program'?'bg-blue-50 text-blue-600':'bg-gray-100 text-gray-500')}>{d.svcType}</span></td>
-          <td className="py-2 px-3 text-xs font-semibold text-right" style={{fontFeatureSettings:'"tnum"'}}>{ $$(r2(d.progTotal))}</td>
-          <td className="py-2 px-3 text-xs font-semibold text-green-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{ $$(r2(d.collected))}</td>
-          <td className="py-2 px-3 text-xs font-semibold text-right" style={{fontFeatureSettings:'"tnum"',color:bal>0?'#ef4444':'#22c55e'}}>{bal>0?$$(bal):'Paid'}</td>
-          {showEnt.snw&&<td className="py-2 px-3 text-xs text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{ $$(r2(d.snw))}</td>}
-          {showEnt.cli&&<td className="py-2 px-3 text-xs text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{d.cli>0?$$(r2(d.cli)):'\u2014'}</td>}
-          {showEnt.dr&&<td className="py-2 px-3 text-xs text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{ $$(r2(d.dr))}</td>}
+          <td className="py-2 px-3"><span className={'text-[9px] font-bold px-1.5 py-0.5 rounded '+(d.svc==='Program'?'bg-blue-50 text-blue-600':'bg-gray-100 text-gray-500')}>{d.svc}</span></td>
+          <td className="py-2 px-3 text-xs font-semibold text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(d.prog)}</td>
+          <td className="py-2 px-3 text-xs font-semibold text-green-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(d.coll)}</td>
+          <td className="py-2 px-3 text-xs font-semibold text-right" style={{fontFeatureSettings:'"tnum"',color:bal>0?'#ef4444':'#22c55e'}}>{bal>0?F(bal):'Paid'}</td>
+          {showEnt.snw&&<td className="py-2 px-3 text-xs text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(d.snw)}</td>}
+          {showEnt.cli&&<td className="py-2 px-3 text-xs text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{d.cli>0?F(d.cli):'\u2014'}</td>}
+          {showEnt.dr&&<td className="py-2 px-3 text-xs text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(d.dr)}</td>}
           <td className="py-2 px-3 text-xs text-gray-400 text-right">{d.n}</td></tr>})}
         <tr className="bg-gray-50/50 border-t border-gray-200">
-          <td className="py-2.5 px-3 text-xs font-bold" colSpan={3}>TOTAL ({collData.length} clients)</td>
-          <td className="py-2.5 px-3 text-xs font-bold text-right" style={{fontFeatureSettings:'"tnum"'}}>{ $$(r2(cTot.prog))}</td>
-          <td className="py-2.5 px-3 text-xs font-bold text-green-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{ $$(r2(cTot.coll))}</td>
-          <td className="py-2.5 px-3 text-xs font-bold text-red-500 text-right" style={{fontFeatureSettings:'"tnum"'}}>{ $$(r2(cTot.prog-cTot.coll))}</td>
-          {showEnt.snw&&<td className="py-2.5 px-3 text-xs font-bold text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{ $$(r2(cTot.snw))}</td>}
-          {showEnt.cli&&<td className="py-2.5 px-3 text-xs font-bold text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{ $$(r2(cTot.cli))}</td>}
-          {showEnt.dr&&<td className="py-2.5 px-3 text-xs font-bold text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{ $$(r2(cTot.dr))}</td>}
-          <td className="py-2.5 px-3 text-xs font-bold text-right">{allRows.length}</td></tr>
+          <td className="py-2.5 px-3 text-xs font-bold" colSpan={3}>TOTAL ({collData.length})</td>
+          <td className="py-2.5 px-3 text-xs font-bold text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(cTot.prog)}</td>
+          <td className="py-2.5 px-3 text-xs font-bold text-green-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(cTot.coll)}</td>
+          <td className="py-2.5 px-3 text-xs font-bold text-red-500 text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(r2(cTot.prog-cTot.coll))}</td>
+          {showEnt.snw&&<td className="py-2.5 px-3 text-xs font-bold text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(cTot.snw)}</td>}
+          {showEnt.cli&&<td className="py-2.5 px-3 text-xs font-bold text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(cTot.cli)}</td>}
+          {showEnt.dr&&<td className="py-2.5 px-3 text-xs font-bold text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(cTot.dr)}</td>}
+          <td className="py-2.5 px-3 text-xs font-bold text-right">{cTot.n}</td></tr>
       </tbody></table></div></div>
     })()}
 
+    {/* ══ MONTHLY COLLECTIONS ══ */}
     {rpt==='monthly_collections'&&(()=>{
-      const moData = (() => {
-        const m: Record<string, {collected:number;snw:number;cli:number;dr:number;n:number;clients:Set<string>}> = {}
-        allRows.forEach(r => {
-          const mo = r.paymentDate.substring(0,7)
-          if (!m[mo]) m[mo] = {collected:0,snw:0,cli:0,dr:0,n:0,clients:new Set()}
-          const x = m[mo]; x.collected += r.paymentAmt; x.snw += r.snw; x.cli += r.clinicAmt; x.dr += r.dr; x.n++; x.clients.add(r.client)
-        })
-        return Object.entries(m).sort(([a],[b])=>a.localeCompare(b)).map(([mo,d])=>({mo,...d,cc:d.clients.size}))
-      })()
-      const mTot = moData.reduce((t,d)=>({coll:t.coll+d.collected,snw:t.snw+d.snw,cli:t.cli+d.cli,dr:t.dr+d.dr,n:t.n+d.n}),{coll:0,snw:0,cli:0,dr:0,n:0})
+      const mTot = moCollData.reduce((t,d)=>({coll:t.coll+d.coll,snw:t.snw+d.snw,cli:t.cli+d.cli,dr:t.dr+d.dr,n:t.n+d.n}),{coll:0,snw:0,cli:0,dr:0,n:0})
       return <div className="rounded-xl border border-gray-100 bg-white overflow-hidden"><div className="overflow-auto"><table className="w-full text-left"><thead><tr className="border-b border-gray-100 bg-gray-50/30">
         <RTH>Month</RTH><RTH className="text-right text-green-600">Collected</RTH>
-        {showEnt.snw&&<RTH className="text-right text-np-blue">SNW</RTH>}
-        {showEnt.cli&&<RTH className="text-right text-amber-600">Clinic</RTH>}
-        {showEnt.dr&&<RTH className="text-right text-purple-600">Dr.Y</RTH>}
+        {ec.map(c=><RTH key={c.key} className={'text-right '+c.color}>{c.label}</RTH>)}
         <RTH className="text-right">Clients</RTH><RTH className="text-right">Pmts</RTH></tr></thead><tbody>
-        {moData.map(d => <tr key={d.mo} className="border-b border-gray-50 hover:bg-gray-50/50">
+        {moCollData.map(d => <tr key={d.mo} className="border-b border-gray-50 hover:bg-gray-50/50">
           <td className="py-2.5 px-3 text-xs font-bold text-np-dark whitespace-nowrap">{fMoL(d.mo)}</td>
-          <td className="py-2.5 px-3 text-xs font-semibold text-green-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{ $$(r2(d.collected))}</td>
-          {showEnt.snw&&<td className="py-2.5 px-3 text-xs text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{ $$(r2(d.snw))}</td>}
-          {showEnt.cli&&<td className="py-2.5 px-3 text-xs text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{d.cli>0?$$(r2(d.cli)):'\u2014'}</td>}
-          {showEnt.dr&&<td className="py-2.5 px-3 text-xs text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{ $$(r2(d.dr))}</td>}
+          <td className="py-2.5 px-3 text-xs font-semibold text-green-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(d.coll)}</td>
+          {showEnt.snw&&<td className="py-2.5 px-3 text-xs text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(d.snw)}</td>}
+          {showEnt.cli&&<td className="py-2.5 px-3 text-xs text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{d.cli>0?F(d.cli):'\u2014'}</td>}
+          {showEnt.dr&&<td className="py-2.5 px-3 text-xs text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(d.dr)}</td>}
           <td className="py-2.5 px-3 text-xs text-gray-500 text-right">{d.cc}</td>
           <td className="py-2.5 px-3 text-xs text-gray-400 text-right">{d.n}</td></tr>)}
         <tr className="bg-gray-50/50 border-t border-gray-200">
           <td className="py-2.5 px-3 text-xs font-bold">TOTAL</td>
-          <td className="py-2.5 px-3 text-xs font-bold text-green-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{ $$(r2(mTot.coll))}</td>
-          {showEnt.snw&&<td className="py-2.5 px-3 text-xs font-bold text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{ $$(r2(mTot.snw))}</td>}
-          {showEnt.cli&&<td className="py-2.5 px-3 text-xs font-bold text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{ $$(r2(mTot.cli))}</td>}
-          {showEnt.dr&&<td className="py-2.5 px-3 text-xs font-bold text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{ $$(r2(mTot.dr))}</td>}
+          <td className="py-2.5 px-3 text-xs font-bold text-green-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(mTot.coll)}</td>
+          {showEnt.snw&&<td className="py-2.5 px-3 text-xs font-bold text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(mTot.snw)}</td>}
+          {showEnt.cli&&<td className="py-2.5 px-3 text-xs font-bold text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(mTot.cli)}</td>}
+          {showEnt.dr&&<td className="py-2.5 px-3 text-xs font-bold text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(mTot.dr)}</td>}
           <td className="py-2.5 px-3 text-xs font-bold text-right">{new Set(allRows.map(r=>r.client)).size}</td>
           <td className="py-2.5 px-3 text-xs font-bold text-right">{mTot.n}</td></tr>
       </tbody></table></div></div>
     })()}
 
+    {/* ══ RECONCILIATION DETAIL ══ */}
+    {rpt==='recon_detail'&&<div className="rounded-xl border border-gray-100 bg-white overflow-hidden"><div className="overflow-auto max-h-[600px]"><table className="w-full text-left"><thead className="sticky top-0 bg-white"><tr className="border-b border-gray-100 bg-gray-50/30">
+      <RTH>Date</RTH><RTH>Client</RTH><RTH>Center</RTH><RTH>Svc</RTH><RTH className="text-right">Payment</RTH>
+      {ec.map(c=><RTH key={c.key} className={'text-right '+c.color}>{c.label}</RTH>)}
+      <RTH>Era</RTH></tr></thead><tbody>
+      {allRows.map((r,i)=><tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50">
+        <td className="py-1.5 px-3 text-xs text-gray-600 whitespace-nowrap">{fD(r.paymentDate)}</td>
+        <td className="py-1.5 px-3 text-xs font-semibold text-np-dark">{r.client}</td>
+        <td className="py-1.5 px-3"><LocTag loc={r.locationId} locs={locs}/></td>
+        <td className="py-1.5 px-3 text-[11px] text-gray-400">{r.serviceType}</td>
+        <td className="py-1.5 px-3 text-xs font-semibold text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(r.paymentAmt)}</td>
+        {showEnt.snw&&<td className="py-1.5 px-3 text-xs text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(r.snw)}</td>}
+        {showEnt.cli&&<td className="py-1.5 px-3 text-xs text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{r.clinicAmt>0?F(r.clinicAmt):'\u2014'}</td>}
+        {showEnt.dr&&<td className="py-1.5 px-3 text-xs text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(r.dr)}</td>}
+        <td className="py-1.5 px-3"><span className={'text-[8px] font-bold px-1 py-0.5 rounded '+(r.isLegacy?'bg-amber-50 text-amber-600':'bg-blue-50 text-blue-600')}>{r.isLegacy?'10%':'26%'}</span></td></tr>)}
+      <tr className="bg-gray-50/50 border-t border-gray-200 sticky bottom-0">
+        <td className="py-2.5 px-3 text-xs font-bold" colSpan={4}>TOTAL ({allRows.length} payments)</td>
+        <td className="py-2.5 px-3 text-xs font-bold text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(totals.revenue)}</td>
+        {showEnt.snw&&<td className="py-2.5 px-3 text-xs font-bold text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(totals.snw)}</td>}
+        {showEnt.cli&&<td className="py-2.5 px-3 text-xs font-bold text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(totalClinic)}</td>}
+        {showEnt.dr&&<td className="py-2.5 px-3 text-xs font-bold text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(totals.dr)}</td>}
+        <td></td></tr>
+    </tbody></table></div></div>}
 
+    {/* ══ BY CENTER ══ */}
+    {rpt==='by_center'&&<div className="rounded-xl border border-gray-100 bg-white overflow-hidden"><div className="overflow-auto"><table className="w-full text-left"><thead><tr className="border-b border-gray-100 bg-gray-50/30">
+      <RTH>Center</RTH><RTH className="text-right">Revenue</RTH>
+      {ec.map(c=><RTH key={c.key} className={'text-right '+c.color}>{c.label}</RTH>)}
+      <RTH className="text-right">Clients</RTH><RTH className="text-right">Pmts</RTH></tr></thead><tbody>
+      {byCenterData.map(d=><tr key={d.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+        <td className="py-2.5 px-3 text-xs font-semibold text-np-dark"><LocTag loc={d.id} locs={locs}/></td>
+        <td className="py-2.5 px-3 text-xs font-semibold text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(d.rev)}</td>
+        {showEnt.snw&&<td className="py-2.5 px-3 text-xs text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(d.snw)}</td>}
+        {showEnt.cli&&<td className="py-2.5 px-3 text-xs text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{d.cli>0?F(d.cli):'\u2014'}</td>}
+        {showEnt.dr&&<td className="py-2.5 px-3 text-xs text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(d.dr)}</td>}
+        <td className="py-2.5 px-3 text-xs text-gray-500 text-right">{d.cc}</td>
+        <td className="py-2.5 px-3 text-xs text-gray-400 text-right">{d.n}</td></tr>)}
+      <tr className="bg-gray-50/50 border-t border-gray-200">
+        <td className="py-2.5 px-3 text-xs font-bold">TOTAL</td>
+        <td className="py-2.5 px-3 text-xs font-bold text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(totals.revenue)}</td>
+        {showEnt.snw&&<td className="py-2.5 px-3 text-xs font-bold text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(totals.snw)}</td>}
+        {showEnt.cli&&<td className="py-2.5 px-3 text-xs font-bold text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(totalClinic)}</td>}
+        {showEnt.dr&&<td className="py-2.5 px-3 text-xs font-bold text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(totals.dr)}</td>}
+        <td className="py-2.5 px-3 text-xs font-bold text-right">{new Set(allRows.map(r=>r.client)).size}</td>
+        <td className="py-2.5 px-3 text-xs font-bold text-right">{allRows.length}</td></tr>
+    </tbody></table></div></div>}
+
+    {/* ══ BY CLIENT ══ */}
+    {rpt==='by_client'&&<div className="rounded-xl border border-gray-100 bg-white overflow-hidden"><div className="overflow-auto"><table className="w-full text-left"><thead><tr className="border-b border-gray-100 bg-gray-50/30">
+      <RTH>Client</RTH><RTH>Center</RTH><RTH>Era</RTH><RTH className="text-right">Revenue</RTH>
+      {ec.map(c=><RTH key={c.key} className={'text-right '+c.color}>{c.label}</RTH>)}
+      <RTH className="text-right">Pmts</RTH></tr></thead><tbody>
+      {byClientData.map((d,i)=><tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50">
+        <td className="py-2 px-3 text-xs font-semibold text-np-dark">{d.name}</td>
+        <td className="py-2 px-3 text-xs text-gray-500">{d.loc}</td>
+        <td className="py-2 px-3"><span className={'text-[9px] font-bold px-1.5 py-0.5 rounded '+(d.leg?'bg-amber-50 text-amber-600':'bg-blue-50 text-blue-600')}>{d.leg?'10% Legacy':'26% Current'}</span></td>
+        <td className="py-2 px-3 text-xs font-semibold text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(d.rev)}</td>
+        {showEnt.snw&&<td className="py-2 px-3 text-xs text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(d.snw)}</td>}
+        {showEnt.cli&&<td className="py-2 px-3 text-xs text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{d.cli>0?F(d.cli):'\u2014'}</td>}
+        {showEnt.dr&&<td className="py-2 px-3 text-xs text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(d.dr)}</td>}
+        <td className="py-2 px-3 text-xs text-gray-400 text-right">{d.n}</td></tr>)}
+      <tr className="bg-gray-50/50 border-t border-gray-200">
+        <td className="py-2.5 px-3 text-xs font-bold" colSpan={3}>TOTAL ({byClientData.length})</td>
+        <td className="py-2.5 px-3 text-xs font-bold text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(totals.revenue)}</td>
+        {showEnt.snw&&<td className="py-2.5 px-3 text-xs font-bold text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(totals.snw)}</td>}
+        {showEnt.cli&&<td className="py-2.5 px-3 text-xs font-bold text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(totalClinic)}</td>}
+        {showEnt.dr&&<td className="py-2.5 px-3 text-xs font-bold text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(totals.dr)}</td>}
+        <td className="py-2.5 px-3 text-xs font-bold text-right">{allRows.length}</td></tr>
+    </tbody></table></div></div>}
+
+    {/* ══ SUMMARY ══ */}
+    {rpt==='summary'&&<div className="space-y-4">
+      <div className="flex gap-3 flex-wrap">
+        <Stat label="Total Revenue" value={F(totals.revenue)} icon={DollarSign}/>
+        {showEnt.snw&&<Stat label="SNW Retained" value={F(totals.snw)} color="#386797" sub={'CC: '+F(totals.cc)+' | Svc: '+F(totals.snwService)}/>}
+        {showEnt.cli&&clinics.map(c=><Stat key={c.id} label={c.name.split('(')[0].trim()} value={F(totals.clinics[c.id]||0)} color="#d97706"/>)}
+        {showEnt.dr&&<Stat label="Dr. Yonce" value={F(totals.dr)} color="#9333ea"/>}
+      </div>
+      <div className="rounded-xl border border-gray-100 bg-white p-4"><h3 className="text-sm font-semibold text-np-dark mb-3">Split Percentages</h3>
+        <div className="flex gap-4 text-xs">
+          {showEnt.snw&&<span>SNW: <span className="font-bold text-np-blue">{totals.revenue>0?r2(totals.snw/totals.revenue*100):0}%</span></span>}
+          {showEnt.cli&&clinics.map(c=><span key={c.id}>Clinic: <span className="font-bold text-amber-600">{totals.revenue>0?r2((totals.clinics[c.id]||0)/totals.revenue*100):0}%</span></span>)}
+          {showEnt.dr&&<span>Dr.Y: <span className="font-bold text-purple-600">{totals.revenue>0?r2(totals.dr/totals.revenue*100):0}%</span></span>}
+        </div></div>
+      <div className="rounded-xl border border-gray-100 bg-white p-4"><h3 className="text-sm font-semibold text-np-dark mb-3">Totals</h3>
+        <div className="flex gap-6 text-xs">
+          <span>Revenue: <span className="font-bold">{F(totals.revenue)}</span></span>
+          {showEnt.snw&&<span>SNW: <span className="font-bold text-np-blue">{F(totals.snw)}</span></span>}
+          {showEnt.cli&&<span>Clinic: <span className="font-bold text-amber-600">{F(totalClinic)}</span></span>}
+          {showEnt.dr&&<span>Dr.Y: <span className="font-bold text-purple-600">{F(totals.dr)}</span></span>}
+        </div></div>
+    </div>}
+
+    {/* ══ ALL PAYMENTS ══ */}
+    {rpt==='payments'&&<div className="rounded-xl border border-gray-100 bg-white overflow-hidden"><div className="overflow-auto max-h-[600px]"><table className="w-full text-left"><thead className="sticky top-0 bg-white"><tr className="border-b border-gray-100 bg-gray-50/30">
+      <RTH>Date</RTH><RTH>Client</RTH><RTH>Center</RTH><RTH>Svc</RTH><RTH className="text-right">Amount</RTH>
+      {ec.map(c=><RTH key={c.key} className={'text-right '+c.color}>{c.label}</RTH>)}
+      <RTH>Era</RTH></tr></thead><tbody>
+      {allRows.map((r,i)=><tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50">
+        <td className="py-1.5 px-3 text-xs text-gray-600 whitespace-nowrap">{fD(r.paymentDate)}</td>
+        <td className="py-1.5 px-3 text-xs font-semibold text-np-dark">{r.client}</td>
+        <td className="py-1.5 px-3"><LocTag loc={r.locationId} locs={locs}/></td>
+        <td className="py-1.5 px-3 text-[11px] text-gray-400">{r.serviceType}</td>
+        <td className="py-1.5 px-3 text-xs font-semibold text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(r.paymentAmt)}</td>
+        {showEnt.snw&&<td className="py-1.5 px-3 text-xs text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(r.snw)}</td>}
+        {showEnt.cli&&<td className="py-1.5 px-3 text-xs text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{r.clinicAmt>0?F(r.clinicAmt):'\u2014'}</td>}
+        {showEnt.dr&&<td className="py-1.5 px-3 text-xs text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(r.dr)}</td>}
+        <td className="py-1.5 px-3"><span className={'text-[8px] font-bold px-1 py-0.5 rounded '+(r.isLegacy?'bg-amber-50 text-amber-600':'bg-blue-50 text-blue-600')}>{r.isLegacy?'10%':'26%'}</span></td></tr>)}
+      <tr className="bg-gray-50/50 border-t border-gray-200 sticky bottom-0">
+        <td className="py-2.5 px-3 text-xs font-bold" colSpan={4}>TOTAL ({allRows.length})</td>
+        <td className="py-2.5 px-3 text-xs font-bold text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(totals.revenue)}</td>
+        {showEnt.snw&&<td className="py-2.5 px-3 text-xs font-bold text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(totals.snw)}</td>}
+        {showEnt.cli&&<td className="py-2.5 px-3 text-xs font-bold text-amber-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(totalClinic)}</td>}
+        {showEnt.dr&&<td className="py-2.5 px-3 text-xs font-bold text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(totals.dr)}</td>}
+        <td></td></tr>
+    </tbody></table></div></div>}
+
+    {/* ══ PAYOUT LEDGER ══ */}
     {rpt==='payout_ledger'&&<div className="space-y-4">
       {(()=>{
         const bp: Record<string,any[]>={}; allRows.forEach(r=>{const p=r.payoutDate.substring(0,7);if(!bp[p])bp[p]=[];bp[p].push(r)})
-        return Object.entries(bp).sort(([a],[b])=>a.localeCompare(b)).map(([period,rows])=>{
+        let grandSnw=0,grandDr=0,grandCli=0
+        const cards = Object.entries(bp).sort(([a],[b])=>a.localeCompare(b)).map(([period,rows])=>{
           const snw=rows.reduce((s:number,r:any)=>s+r.snw,0); const dr=rows.reduce((s:number,r:any)=>s+r.dr,0)
           const cT:Record<string,number>={}; rows.forEach((r:any)=>{if(r.clinicId)cT[r.clinicId]=(cT[r.clinicId]||0)+r.clinicAmt})
+          const cliTotal = Object.values(cT).reduce((s,v)=>s+v,0)
+          grandSnw+=snw; grandDr+=dr; grandCli+=cliTotal
           return <div key={period} className="rounded-xl border border-gray-100 bg-white overflow-hidden">
             <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between"><h3 className="text-sm font-semibold text-np-dark">{fMoL(period)}</h3><span className="text-xs text-gray-400">{rows.length} payments</span></div>
             <div className="p-4 flex gap-3 flex-wrap">
-              <div className="flex-1 text-center p-3 bg-blue-50 rounded-lg min-w-[120px]"><p className="text-[10px] font-semibold text-np-blue">Sensorium</p><p className="text-base font-bold text-np-blue" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(snw))}</p></div>
-              {clinics.map(c=>cT[c.id]?<div key={c.id} className="flex-1 text-center p-3 bg-amber-50 rounded-lg min-w-[120px]"><p className="text-[10px] font-semibold text-amber-600">{c.name.split('(')[0].trim()}</p><p className="text-base font-bold text-amber-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(cT[c.id]))}</p></div>:null)}
-              <div className="flex-1 text-center p-3 bg-purple-50 rounded-lg min-w-[120px]"><p className="text-[10px] font-semibold text-purple-600">Dr. Yonce</p><p className="text-base font-bold text-purple-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(r2(dr))}</p></div>
+              {showEnt.snw&&<div className="flex-1 text-center p-3 bg-blue-50 rounded-lg min-w-[120px]"><p className="text-[10px] font-semibold text-np-blue">Sensorium</p><p className="text-base font-bold text-np-blue" style={{fontFeatureSettings:'"tnum"'}}>{F(snw)}</p></div>}
+              {showEnt.cli&&clinics.map(c=>cT[c.id]?<div key={c.id} className="flex-1 text-center p-3 bg-amber-50 rounded-lg min-w-[120px]"><p className="text-[10px] font-semibold text-amber-600">{c.name.split('(')[0].trim()}</p><p className="text-base font-bold text-amber-600" style={{fontFeatureSettings:'"tnum"'}}>{F(cT[c.id])}</p></div>:null)}
+              {showEnt.dr&&<div className="flex-1 text-center p-3 bg-purple-50 rounded-lg min-w-[120px]"><p className="text-[10px] font-semibold text-purple-600">Dr. Yonce</p><p className="text-base font-bold text-purple-600" style={{fontFeatureSettings:'"tnum"'}}>{F(dr)}</p></div>}
             </div></div>
         })
+        return <>{cards}
+          <div className="rounded-xl border-2 border-gray-200 bg-white p-4"><div className="flex items-center justify-between mb-2"><h3 className="text-sm font-bold text-np-dark">Grand Total</h3><span className="text-xs text-gray-400">{allRows.length} payments</span></div>
+            <div className="flex gap-4 text-xs">
+              <span>Revenue: <span className="font-bold">{F(totals.revenue)}</span></span>
+              {showEnt.snw&&<span>SNW: <span className="font-bold text-np-blue">{F(grandSnw)}</span></span>}
+              {showEnt.cli&&<span>Clinic: <span className="font-bold text-amber-600">{F(grandCli)}</span></span>}
+              {showEnt.dr&&<span>Dr.Y: <span className="font-bold text-purple-600">{F(grandDr)}</span></span>}
+            </div></div>
+        </>
       })()}
     </div>}
   </div>
 }
-
 
 
 /* ── Reconciliation ────────────────────────────────── */
