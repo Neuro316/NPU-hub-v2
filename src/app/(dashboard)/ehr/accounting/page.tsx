@@ -738,12 +738,12 @@ function ReportView({ clients, locs, clinics, cfg, checks, mktg }: { clients: Ac
           <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50"><h3 className="text-sm font-semibold text-np-dark">Checks Written ({checks.length})</h3></div>
           <div className="overflow-auto"><table className="w-full text-left"><thead><tr className="border-b border-gray-100 bg-gray-50/30">
             <RTH>Date</RTH><RTH>Check #</RTH><RTH>Payee</RTH><RTH className="text-right">Amount</RTH><RTH>Memo</RTH></tr></thead><tbody>
-            {[...checks].sort((a,b)=>a.date.localeCompare(b.date)).map((ch,i)=>{
+            {[...checks].sort((a,b)=>a.check_date.localeCompare(b.check_date)).map((ch,i)=>{
               const payee = ch.payee_type==='dr'?'Dr. Yonce':clinics.find(c=>c.id===ch.payee_clinic_id)?.name?.split('(')[0]?.trim()||'Clinic'
               const show = (ch.payee_type==='dr'&&showEnt.dr) || (ch.payee_type!=='dr'&&showEnt.cli)
               if (!show) return null
               return <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50">
-                <td className="py-1.5 px-3 text-xs text-gray-600 whitespace-nowrap">{fD(ch.date)}</td>
+                <td className="py-1.5 px-3 text-xs text-gray-600 whitespace-nowrap">{fD(ch.check_date)}</td>
                 <td className="py-1.5 px-3 text-xs font-semibold text-np-dark">{ch.check_number}</td>
                 <td className="py-1.5 px-3 text-xs text-gray-600">{payee}</td>
                 <td className="py-1.5 px-3 text-xs font-semibold text-green-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{F(ch.amount)}</td>
@@ -1343,5 +1343,6 @@ export default function AccountingPage() {
       <div className="flex gap-2 mt-4 justify-end"><Btn outline onClick={()=>setSAC(false)}>Cancel</Btn><Btn onClick={addClient}>Add Client</Btn></div></Mdl>}
   </div>
 }
+
 
 
