@@ -193,7 +193,7 @@ export default function EcrPage() {
       const pl = NP_PIPELINES.find(p => p.id === activePipeline)
       if (pl) {
         const stages = 'stages' in pl ? pl.stages : [pl.stage]
-        list = list.filter(c => stages.includes(c.pipeline_stage))
+        list = list.filter(c => stages?.includes(c.pipeline_stage))
       }
     }
     if (stageFilter !== 'all') {
@@ -995,3 +995,4 @@ export default function EcrPage() {
     </div>
   )
 }
+
