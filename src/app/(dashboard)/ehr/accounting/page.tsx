@@ -84,9 +84,33 @@ function calcSplit(
     if (hasFlat) {
       if (isPreAug) {
         // ══════ PRE-AUGUST 2025: LEGACY 10% ERA ══════
-        // SNW only received 10% of gross. Clinic = flat waterfall.
-        // Dr. Yonce (JoJo) received everything else.
+        // SNW received only 10% of gross (not 26%).
+        // Clinic flat target ($3995) distributed PROPORTIONALLY
+        // across payments based on program total, NOT per-payment waterfall.
+        // This ensures clinic is capped at flat_clinic total across all payments
+        // and Dr. Yonce receives remainder on every payment.
         const snwTotal = r2(amt * PRE_AUG_SNW_PCT / 100)
+        const svcPortion = r2(Math.max(snwTotal - ccAmt, 0))
+
+        if ((serviceTotal || 0) > 0) {
+          const clinicGrossPct = (cl.flat_clinic || 0) / (serviceTotal || 1)
+          let clinicAmt = r2(amt * clinicGrossPct)
+          // Safety: clinic cannot exceed post-SNW pool
+          clinicAmt = r2(Math.min(clinicAmt, Math.max(amt - snwTotal, 0)))
+          let drAmt = r2(amt - snwTotal - clinicAmt)
+          const drift = r2(amt - snwTotal - clinicAmt - drAmt)
+          if (Math.abs(drift) >= 0.01) drAmt = r2(drAmt + drift)
+          drAmt = Math.max(drAmt, 0)
+          return {
+            snw: Math.max(snwTotal, 0),
+            dr: drAmt,
+            cc: ccAmt,
+            snwService: Math.max(svcPortion, 0),
+            clinicAmts: { [cl.id]: Math.max(clinicAmt, 0) } as Record<string, number>,
+          }
+        }
+
+        // Fallback if no serviceTotal
         const poolAfterSNW = r2(amt - snwTotal)
         const clinicFee = r2(Math.min(cl.flat_clinic, Math.max(poolAfterSNW, 0)))
         let drFee = r2(poolAfterSNW - clinicFee)
@@ -96,7 +120,7 @@ function calcSplit(
           snw: Math.max(snwTotal, 0),
           dr: Math.max(drFee, 0),
           cc: ccAmt,
-          snwService: r2(Math.max(snwTotal - ccAmt, 0)),
+          snwService: Math.max(svcPortion, 0),
           clinicAmts: { [cl.id]: Math.max(clinicFee, 0) } as Record<string, number>,
         }
       }
