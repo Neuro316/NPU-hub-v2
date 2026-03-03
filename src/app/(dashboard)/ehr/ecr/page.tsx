@@ -79,7 +79,7 @@ interface SessionNote {
 interface AssessmentLink {
   id: string; contact_id: string; assessment_type: string; assessment_name: string
   status: string; send_url: string; report_url: string; sent_at: string
-  completed_at: string; sent_via: string; score: any
+  completed_at: string; sent_via: string; score: any; created_at: string
 }
 
 export default function EcrPage() {
@@ -993,3 +993,4 @@ export default function EcrPage() {
     </div>
   )
 }
+
