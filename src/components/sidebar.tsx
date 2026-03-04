@@ -82,6 +82,7 @@ const navCategories: NavCategory[] = [
       { label: 'Campaigns', href: '/campaigns', icon: Megaphone, moduleKey: 'campaigns' },
       { label: 'ICP Profiles', href: '/icps', icon: Users, moduleKey: 'icps' },
       { label: 'Analytics', href: '/analytics', icon: BarChart3, moduleKey: 'analytics' },
+      { label: 'Media Appearances', href: '/media-appearances', icon: Mic, moduleKey: 'media_appearances' },
     ],
   },
   {
@@ -110,7 +111,6 @@ const navCategories: NavCategory[] = [
       { label: 'Journey Builder', href: '/journeys', icon: Route, moduleKey: 'journeys' },
       { label: 'SOPs', href: '/sops', icon: FileText, moduleKey: 'sops' },
       { label: 'Support Tickets', href: '/tickets', icon: TicketCheck, moduleKey: 'tickets' },
-      { label: 'Media Appearances', href: '/media-appearances', icon: Mic, moduleKey: 'media_appearances' },
     ],
   },
   {
