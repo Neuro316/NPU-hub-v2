@@ -8,13 +8,15 @@ import { useWorkspace } from '@/lib/workspace-context'
 import { useTeamData } from '@/lib/hooks/use-team-data'
 import { KanbanColumnView } from '@/components/tasks/kanban-column'
 import { TaskDetail } from '@/components/tasks/task-detail'
+import { AvatarColorPicker } from '@/components/tasks/avatar-color-picker'
 import type { KanbanTask } from '@/lib/types/tasks'
+import type { ColorOverrides } from '@/lib/user-colors'
 import { Plus, Filter, Bot, CheckSquare, Inbox } from 'lucide-react'
 import { notifyTaskMoved } from '@/lib/slack-notifications'
 
 function TasksPageInner() {
   const { currentOrg, user, loading: orgLoading } = useWorkspace()
-  const { members } = useTeamData()
+  const { members, getSetting, saveSetting } = useTeamData()
   const searchParams = useSearchParams()
   const {
     columns, tasks, loading,
@@ -30,6 +32,19 @@ function TasksPageInner() {
   const [addingColumn, setAddingColumn] = useState(false)
   const [newColTitle, setNewColTitle] = useState('')
   const [filterMember, setFilterMember] = useState<string | null>(null)
+
+  // Color overrides from org_settings
+  const [colorOverrides, setColorOverrides] = useState<ColorOverrides>({})
+
+  useEffect(() => {
+    const saved = getSetting('avatar_colors')
+    if (saved) setColorOverrides(saved as ColorOverrides)
+  }, [getSetting])
+
+  const handleSaveColors = async (overrides: ColorOverrides) => {
+    setColorOverrides(overrides)
+    await saveSetting('avatar_colors', overrides)
+  }
 
   // Deep link: auto-open task from ?task=<id> (from Rock detail)
   useEffect(() => {
@@ -101,10 +116,14 @@ function TasksPageInner() {
           <h1 className="text-xl font-semibold text-np-dark">Task Manager</h1>
           <p className="text-xs text-gray-400 mt-0.5">
             Internal team projects &amp; operations &middot; {columns.length} columns &middot; {tasks.length} tasks
-            <Link href="/crm/tasks" className="ml-2 text-np-blue hover:underline">Client Tasks &rarr;</Link>
           </p>
         </div>
         <div className="flex gap-2">
+          <AvatarColorPicker
+            teamMembers={teamMemberNames}
+            colorOverrides={colorOverrides}
+            onSave={handleSaveColors}
+          />
           <Link href="/tasks/my-tasks"
             className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium text-np-dark hover:bg-gray-50 transition-colors">
             <Inbox className="w-3.5 h-3.5" /> My Tasks
@@ -172,6 +191,7 @@ function TasksPageInner() {
             column={col}
             tasks={filteredTasks.filter(t => t.column_id === col.id)}
             teamMembers={teamMemberNames}
+            colorOverrides={colorOverrides}
             onTaskClick={setSelectedTask}
             onAddTask={addTask}
             onDragStart={setDraggedTaskId}

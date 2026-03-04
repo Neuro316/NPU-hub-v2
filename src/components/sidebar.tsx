@@ -102,6 +102,7 @@ const navCategories: NavCategory[] = [
       { label: 'Rocks', href: '/rocks', icon: Target, moduleKey: 'rocks' },
       { label: 'My Tasks', href: '/tasks/my-tasks', icon: CheckSquare, moduleKey: 'tasks' },
       { label: 'Task Manager', href: '/tasks', icon: CheckSquare, moduleKey: 'tasks' },
+      { label: 'Client Tasks', href: '/crm/tasks', icon: ClipboardList, moduleKey: 'tasks' },
       { label: 'Journey Builder', href: '/journeys', icon: Route, moduleKey: 'journeys' },
       { label: 'SOPs', href: '/sops', icon: FileText, moduleKey: 'sops' },
       { label: 'Support Tickets', href: '/tickets', icon: TicketCheck, moduleKey: 'tickets' },

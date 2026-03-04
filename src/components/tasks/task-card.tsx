@@ -2,11 +2,12 @@
 
 import type { KanbanTask } from '@/lib/types/tasks'
 import { PRIORITY_CONFIG } from '@/lib/types/tasks'
-import { getUserColor, getUserInitials } from '@/lib/user-colors'
+import { getUserColor, getUserInitials, type ColorOverrides } from '@/lib/user-colors'
 import { Clock, MessageSquare, Link2, Zap, AlertTriangle, ListChecks, Lock } from 'lucide-react'
 
 interface TaskCardProps {
   task: KanbanTask
+  colorOverrides?: ColorOverrides
   onClick: () => void
   onDragStart: (e: React.DragEvent) => void
 }
@@ -18,7 +19,7 @@ const RACI_COLORS: Record<string, string> = {
   I: '#6B7280',
 }
 
-export function TaskCard({ task, onClick, onDragStart }: TaskCardProps) {
+export function TaskCard({ task, colorOverrides, onClick, onDragStart }: TaskCardProps) {
   const priority = PRIORITY_CONFIG[task.priority]
   const commentCount = task.custom_fields?.comment_count || 0
   const linkCount = task.custom_fields?.link_count || 0
@@ -41,8 +42,8 @@ export function TaskCard({ task, onClick, onDragStart }: TaskCardProps) {
   // Rock tags
   const rockTags = task.rock_tags?.length ? task.rock_tags : []
 
-  // Assignee color
-  const assigneeColor = getUserColor(task.assignee || '')
+  // Assignee color with overrides
+  const assigneeColor = getUserColor(task.assignee || '', colorOverrides)
 
   return (
     <div

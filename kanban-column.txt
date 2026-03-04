@@ -4,6 +4,7 @@ import { useState } from 'react'
 import type { KanbanColumn, KanbanTask } from '@/lib/types/tasks'
 import { PRIORITY_CONFIG } from '@/lib/types/tasks'
 import { TaskCard } from './task-card'
+import type { ColorOverrides } from '@/lib/user-colors'
 import { Plus, MoreHorizontal, Pencil, Trash2, Check, User, Calendar, Lock, Unlock } from 'lucide-react'
 
 interface KanbanColumnProps {
@@ -14,13 +15,14 @@ interface KanbanColumnProps {
   onAddTask: (columnId: string, title: string, extraFields?: Partial<KanbanTask>) => Promise<any>
   onDragStart: (taskId: string) => void
   onDrop: (columnId: string) => void
+  colorOverrides?: ColorOverrides
   onUpdateColumn: (id: string, updates: Partial<KanbanColumn>) => Promise<any>
   onDeleteColumn: (id: string) => Promise<any>
 }
 
 export function KanbanColumnView({
   column, tasks, teamMembers, onTaskClick, onAddTask,
-  onDragStart, onDrop, onUpdateColumn, onDeleteColumn,
+  onDragStart, onDrop, onUpdateColumn, onDeleteColumn, colorOverrides,
 }: KanbanColumnProps) {
   const [addingTask, setAddingTask] = useState(false)
   const [newTitle, setNewTitle] = useState('')
@@ -116,6 +118,7 @@ export function KanbanColumnView({
           <TaskCard
             key={task.id}
             task={task}
+            colorOverrides={colorOverrides}
             onClick={() => onTaskClick(task)}
             onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; onDragStart(task.id) }}
           />

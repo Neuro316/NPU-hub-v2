@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, Suspense } from 'react'
+import { useState, useMemo, useEffect, Suspense } from 'react'
 import Link from 'next/link'
 import { useTaskData } from '@/lib/hooks/use-task-data'
 import { useWorkspace } from '@/lib/workspace-context'
@@ -8,6 +8,7 @@ import { useTeamData } from '@/lib/hooks/use-team-data'
 import { TaskDetail } from '@/components/tasks/task-detail'
 import { PRIORITY_CONFIG } from '@/lib/types/tasks'
 import type { KanbanTask } from '@/lib/types/tasks'
+import { getUserColor, getUserInitials, type ColorOverrides } from '@/lib/user-colors'
 import { Inbox, ArrowLeft, Clock, AlertTriangle, Calendar, CheckCircle2, ListChecks, Lock, Plus } from 'lucide-react'
 
 function groupByDueDate(tasks: KanbanTask[]) {
@@ -65,7 +66,7 @@ type TabKey = 'all' | 'personal'
 
 function MyTasksInner() {
   const { currentOrg, user, loading: orgLoading } = useWorkspace()
-  const { members } = useTeamData()
+  const { members, getSetting } = useTeamData()
   const {
     columns, tasks, loading, userId,
     addTask, updateTask, deleteTask,
@@ -80,6 +81,13 @@ function MyTasksInner() {
   // Quick-add personal task
   const [addingPersonal, setAddingPersonal] = useState(false)
   const [personalTitle, setPersonalTitle] = useState('')
+
+  // Color overrides
+  const [colorOverrides, setColorOverrides] = useState<ColorOverrides>({})
+  useEffect(() => {
+    const saved = getSetting('avatar_colors')
+    if (saved) setColorOverrides(saved as ColorOverrides)
+  }, [getSetting])
 
   const teamMemberNames = members.map(m => m.display_name)
   const currentUser = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Unknown'
@@ -261,6 +269,7 @@ function MyTasksInner() {
                   const subtaskTotal = task.custom_fields?.subtask_count || 0
                   const subtaskDone = task.custom_fields?.subtask_completed || 0
                   const isPrivate = task.visibility === 'private'
+                  const assigneeColor = task.assignee ? getUserColor(task.assignee, colorOverrides) : null
 
                   return (
                     <button
@@ -292,6 +301,19 @@ function MyTasksInner() {
                           )}
                         </div>
                       </div>
+
+                      {/* Assignee avatar */}
+                      {assigneeColor && task.assignee && (
+                        <div
+                          className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
+                          style={{ backgroundColor: assigneeColor.bg }}
+                          title={task.assignee}
+                        >
+                          <span className="text-[8px] font-bold" style={{ color: assigneeColor.text }}>
+                            {getUserInitials(task.assignee)}
+                          </span>
+                        </div>
+                      )}
 
                       {/* Due date */}
                       {task.due_date && (
