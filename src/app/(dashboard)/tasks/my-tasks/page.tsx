@@ -92,7 +92,7 @@ function MyTasksInner() {
 
   const myTasks = useMemo(
     () => tasks.filter(t =>
-      (t.assignee === currentUser || t.owner_id === userId) &&
+      (t.assignee === currentUser || (t.owner_id === userId && t.visibility === 'private')) &&
       !doneColumnIds.includes(t.column_id)
     ),
     [tasks, currentUser, userId, doneColumnIds]

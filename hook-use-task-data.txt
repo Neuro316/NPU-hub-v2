@@ -129,10 +129,10 @@ export function useTaskData() {
       setTasks(prev => [...prev, data])
       logActivity(data.id, 'created')
       if (extraFields?.assignee) {
-        logActivity(data.id, 'field_change', 'assignee', null, extraFields.assignee)
+        logActivity(data.id, 'field_change', 'assignee', undefined, extraFields.assignee)
       }
       if (extraFields?.visibility === 'private') {
-        logActivity(data.id, 'field_change', 'Visibility', null, 'private')
+        logActivity(data.id, 'field_change', 'Visibility', undefined, 'private')
       }
     }
     return { data, error }
@@ -206,7 +206,7 @@ export function useTaskData() {
       })
       .select().single()
     if (data && !error) {
-      logActivity(taskId, 'subtask_added', null, null, title)
+      logActivity(taskId, 'subtask_added', undefined, undefined, title)
     }
     return { data, error }
   }
@@ -218,7 +218,7 @@ export function useTaskData() {
       .eq('id', id)
       .select().single()
     if (data && !error && taskId && 'completed' in updates) {
-      logActivity(taskId, updates.completed ? 'subtask_completed' : 'subtask_uncompleted', null, null, data.title)
+      logActivity(taskId, updates.completed ? 'subtask_completed' : 'subtask_uncompleted', undefined, undefined, data.title)
     }
     return { data, error }
   }
@@ -226,7 +226,7 @@ export function useTaskData() {
   const deleteSubtask = async (id: string, taskId?: string, title?: string) => {
     const { error } = await supabase.from('subtasks').delete().eq('id', id)
     if (!error && taskId) {
-      logActivity(taskId, 'subtask_removed', null, title || null, null)
+      logActivity(taskId, 'subtask_removed', undefined, title || undefined, undefined)
     }
     return { error }
   }
@@ -245,7 +245,7 @@ export function useTaskData() {
       .insert({ task_id: taskId, org_id: currentOrg.id, author, content })
       .select().single()
     if (data && !error) {
-      logActivity(taskId, 'comment_added', null, null, author)
+      logActivity(taskId, 'comment_added', undefined, undefined, author)
     }
     return { data, error }
   }
