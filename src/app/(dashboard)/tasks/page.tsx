@@ -119,7 +119,7 @@ function TasksPageInner() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [{ role: 'user', content: `Search through these tasks and return ONLY a JSON object with type "search_results" and an array "task_ids" containing the IDs of tasks that match this query: "${aiSearchQuery}"\n\nTasks:\n${JSON.stringify(taskSummaries)}\n\nRespond with ONLY: {"type":"search_results","task_ids":["id1","id2"]}` }],
-          teamMembers,
+          teamMembers: teamMemberNames,
           columns: columns.map(c => c.title),
         }),
       })
