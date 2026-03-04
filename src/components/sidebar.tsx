@@ -100,6 +100,7 @@ const navCategories: NavCategory[] = [
     items: [
       { label: 'Meetings', href: '/meetings', icon: Calendar, moduleKey: 'meetings' },
       { label: 'Rocks', href: '/rocks', icon: Target, moduleKey: 'rocks' },
+      { label: 'My Tasks', href: '/tasks/my-tasks', icon: CheckSquare, moduleKey: 'tasks' },
       { label: 'Task Manager', href: '/tasks', icon: CheckSquare, moduleKey: 'tasks' },
       { label: 'Journey Builder', href: '/journeys', icon: Route, moduleKey: 'journeys' },
       { label: 'SOPs', href: '/sops', icon: FileText, moduleKey: 'sops' },
