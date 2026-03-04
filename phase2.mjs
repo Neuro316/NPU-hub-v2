@@ -32,10 +32,13 @@ apply('src/lib/hooks/use-task-data.ts', 'hook-use-task-data.txt')
 console.log('[3/5] Creating project manager modal...')
 apply('src/components/tasks/project-manager.tsx', 'project-manager.txt')
 
-console.log('[4/5] Updating tasks page (project nav, saved views, filters)...')
+console.log('[4/6] Updating tasks page (project nav, saved views, filters)...')
 apply('src/app/(dashboard)/tasks/page.tsx', 'tasks-page-v5.txt')
 
-console.log('[5/5] AI task modal (latest v3)...')
+console.log('[5/6] Updating task detail (project dropdown)...')
+apply('src/components/tasks/task-detail.tsx', 'task-detail.txt')
+
+console.log('[6/6] AI task modal (latest v3)...')
 apply('src/components/tasks/ai-task-modal.tsx', 'ai-task-modal-v3.txt')
 
 console.log('')

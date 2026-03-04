@@ -627,6 +627,7 @@ function TasksPageInner() {
         currentUser={currentUser}
         teamMembers={teamMemberNames}
         orgId={currentOrg?.id || ''}
+        projects={projects}
       />
 
       {/* AI Task Creator Modal */}

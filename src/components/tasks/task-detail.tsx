@@ -1,9 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import type { KanbanTask, KanbanColumn, TaskComment, Subtask, TaskActivity } from '@/lib/types/tasks'
+import type { KanbanTask, KanbanColumn, TaskComment, Subtask, TaskActivity, Project } from '@/lib/types/tasks'
 import { PRIORITY_CONFIG } from '@/lib/types/tasks'
-import { X, Trash2, MessageSquare, Plus, Link2, Calendar, User, Flag, Eye, FileText, ExternalLink, Clock, Zap, AlertTriangle, ListChecks, CheckSquare, Square, Activity, ChevronDown, ChevronUp, Lock } from 'lucide-react'
+import { X, Trash2, MessageSquare, Plus, Link2, Calendar, User, Flag, Eye, FileText, ExternalLink, Clock, Zap, AlertTriangle, ListChecks, CheckSquare, Square, Activity, ChevronDown, ChevronUp, Lock, FolderOpen } from 'lucide-react'
 import { notifyTaskAssigned, notifyTaskMoved, notifyRACIAssigned } from '@/lib/slack-notifications'
 
 interface TaskDetailProps {
@@ -24,7 +24,7 @@ interface TaskDetailProps {
   currentUser: string
   teamMembers: string[]
   orgId: string
-}
+  projects?: Project[]
 
 const RACI_ROLES = [
   { key: 'raci_responsible', label: 'Responsible', short: 'R', color: '#2563EB', desc: 'Does the work' },
@@ -48,7 +48,7 @@ export function TaskDetail({
   fetchComments, addComment,
   fetchSubtasks, addSubtask, updateSubtask, deleteSubtask,
   fetchActivity,
-  currentUser, teamMembers, orgId,
+  currentUser, teamMembers, orgId, projects,
 }: TaskDetailProps) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -57,6 +57,7 @@ export function TaskDetail({
   const [columnId, setColumnId] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [visibility, setVisibility] = useState<KanbanTask['visibility']>('everyone')
+  const [projectId, setProjectId] = useState<string>('')
   const [fields, setFields] = useState<Record<string, any>>({})
   const [comments, setComments] = useState<TaskComment[]>([])
   const [newComment, setNewComment] = useState('')
@@ -91,6 +92,7 @@ export function TaskDetail({
       setColumnId(task.column_id)
       setDueDate(task.due_date || '')
       setVisibility(task.visibility)
+      setProjectId(task.project_id || '')
       setFields(task.custom_fields || {})
       // RACI
       setRaciResponsible(task.raci_responsible || task.custom_fields?.raci_responsible || '')
@@ -268,6 +270,27 @@ export function TaskDetail({
               onBlur={() => title !== task.title && save('title', title)}
               className="text-xl font-bold text-np-dark w-full bg-transparent focus:outline-none border-b-2 border-transparent focus:border-np-blue pb-1"
             />
+
+            {/* Project */}
+            {projects && projects.length > 0 && (
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">
+                  <FolderOpen className="w-3 h-3 inline mr-0.5" /> Project
+                </label>
+                <select value={projectId}
+                  onChange={e => {
+                    const newProjId = e.target.value || null
+                    setProjectId(e.target.value)
+                    save('project_id', newProjId)
+                  }}
+                  className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30">
+                  <option value="">No Project</option>
+                  {projects.filter(p => p.status === 'active').map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* Column + Priority + Assignee row */}
             <div className="grid grid-cols-3 gap-3">
