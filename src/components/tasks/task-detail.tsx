@@ -25,6 +25,7 @@ interface TaskDetailProps {
   teamMembers: string[]
   orgId: string
   projects?: Project[]
+}
 
 const RACI_ROLES = [
   { key: 'raci_responsible', label: 'Responsible', short: 'R', color: '#2563EB', desc: 'Does the work' },
