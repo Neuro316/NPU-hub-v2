@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
   // Validate: get the user's org_id to ensure they own these contacts
   const { data: membership } = await supabase
     .from('org_members')
-    .select('org_id')
+    .select('organization_id')
     .eq('user_id', user.id)
     .limit(1)
     .single();
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'No organization found' }, { status: 403 });
   }
 
-  const orgId = membership.org_id;
+  const orgId = membership.organization_id;
 
   // Only operate on contacts belonging to this org
   const { data: validContacts } = await supabase
