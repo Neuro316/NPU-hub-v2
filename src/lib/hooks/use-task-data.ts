@@ -206,7 +206,7 @@ export function useTaskData() {
       })
       .select().single()
     if (data && !error) {
-      logActivity(taskId, 'subtask_added', null, null, title)
+      logActivity(taskId, 'subtask_added', undefined, undefined, title)
     }
     return { data, error }
   }
@@ -226,7 +226,7 @@ export function useTaskData() {
   const deleteSubtask = async (id: string, taskId?: string, title?: string) => {
     const { error } = await supabase.from('subtasks').delete().eq('id', id)
     if (!error && taskId) {
-      logActivity(taskId, 'subtask_removed', null, title || null, null)
+      logActivity(taskId, 'subtask_removed', undefined, title || null, null)
     }
     return { error }
   }
