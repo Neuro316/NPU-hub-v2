@@ -29,7 +29,7 @@ export function AvatarColorPicker({ teamMembers, colorOverrides, onSave }: Avata
     return (
       <button
         onClick={() => { setOpen(true); setLocalOverrides(colorOverrides) }}
-        className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium text-np-dark hover:bg-gray-50 transition-colors"
+        className="flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-50 transition-all"
         title="Avatar colors"
       >
         <Palette className="w-3.5 h-3.5" /> Colors
@@ -93,7 +93,7 @@ export function AvatarColorPicker({ teamMembers, colorOverrides, onSave }: Avata
                           }`}
                           style={{
                             backgroundColor: c.bg,
-                            outlineColor: isSelected ? c.text : undefined,
+                            ringColor: isSelected ? c.text : undefined,
                           }}
                         >
                           {isSelected && <Check className="w-3 h-3" style={{ color: c.text }} />}

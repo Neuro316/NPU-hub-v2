@@ -470,12 +470,12 @@ function TasksPageInner() {
         <AvatarColorPicker teamMembers={teamMemberNames} colorOverrides={colorOverrides} onSave={handleSaveColors} />
 
         <Link href="/tasks/my-tasks"
-          className="flex items-center gap-1.5 h-9 px-3 rounded-lg border border-gray-200 bg-white text-xs font-medium text-np-dark hover:border-gray-300 transition-all">
+          className="flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-50 transition-all">
           <Inbox className="w-3.5 h-3.5" /> <span className="hidden sm:inline">My Tasks</span>
         </Link>
 
         <button onClick={() => setAddingTask(true)}
-          className="flex items-center gap-1.5 h-9 px-3 rounded-lg border border-gray-200 bg-white text-xs font-medium text-np-dark hover:border-gray-300 transition-all">
+          className="flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-50 transition-all">
           <Plus className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Task</span>
         </button>
 

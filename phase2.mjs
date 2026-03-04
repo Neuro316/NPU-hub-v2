@@ -23,34 +23,29 @@ console.log(' Phase 2: Project Architecture')
 console.log('═══════════════════════════════════════════')
 console.log('')
 
-console.log('[1/5] Updating task types (Project, SavedView)...')
+console.log('[1/7] Updating task types...')
 apply('src/lib/types/tasks.ts', 'types-tasks.txt')
 
-console.log('[2/5] Updating task data hook (project + views CRUD)...')
+console.log('[2/7] Updating task data hook...')
 apply('src/lib/hooks/use-task-data.ts', 'hook-use-task-data.txt')
 
-console.log('[3/5] Creating project manager modal...')
+console.log('[3/7] Creating project manager modal...')
 apply('src/components/tasks/project-manager.tsx', 'project-manager.txt')
 
-console.log('[4/6] Updating tasks page (project nav, saved views, filters)...')
+console.log('[4/7] Updating tasks page (command bar UI)...')
 apply('src/app/(dashboard)/tasks/page.tsx', 'tasks-page-v5.txt')
 
-console.log('[5/6] Updating task detail (project dropdown)...')
+console.log('[5/7] Updating task detail (project dropdown + brace fix)...')
 apply('src/components/tasks/task-detail.tsx', 'task-detail.txt')
 
-console.log('[6/6] AI task modal (latest v3)...')
+console.log('[6/7] Updating avatar color picker (ghost style)...')
+apply('src/components/tasks/avatar-color-picker.tsx', 'avatar-color-picker.txt')
+
+console.log('[7/7] AI task modal (latest v3)...')
 apply('src/components/tasks/ai-task-modal.tsx', 'ai-task-modal-v3.txt')
 
 console.log('')
 console.log('═══════════════════════════════════════════')
 console.log(' All patches applied (0 errors)')
 console.log('═══════════════════════════════════════════')
-console.log('')
-console.log('IMPORTANT: Run the SQL migration in Supabase SQL Editor FIRST:')
-console.log('  File: migration.sql')
-console.log('')
-console.log('Then deploy:')
-console.log('  git add -A')
-console.log('  git commit -m "feat: Phase 2 - project architecture, saved views, priority filters"')
-console.log('  git push')
 console.log('')
