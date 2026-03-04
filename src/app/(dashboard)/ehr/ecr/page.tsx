@@ -150,7 +150,7 @@ export default function EcrPage() {
 
         if (plConfig?.setting_value?.pipelines?.length > 0) {
           // Use stages from all configured pipelines
-          pipelineStages = plConfig.setting_value.pipelines
+          pipelineStages = plConfig!.setting_value.pipelines
             .flatMap((p: any) => (p.stages || []).map((s: any) => typeof s === 'string' ? s : s.name))
             .filter(Boolean)
         }
