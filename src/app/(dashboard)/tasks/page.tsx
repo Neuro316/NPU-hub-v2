@@ -38,6 +38,7 @@ function TasksPageInner() {
   const [addingTask, setAddingTask] = useState(false)
   const [newTaskTitle, setNewTaskTitle] = useState('')
   const [newTaskColumn, setNewTaskColumn] = useState('')
+  const [newTaskAssignee, setNewTaskAssignee] = useState('')
 
   // AI modal
   const [aiModalOpen, setAiModalOpen] = useState(false)
@@ -110,10 +111,10 @@ function TasksPageInner() {
       ? columns.find(c => c.id === newTaskColumn) || sortedCols[0]
       : sortedCols[0]
     if (!targetCol) return
-    await addTask(targetCol.id, newTaskTitle.trim(), { assignee: currentUser })
+    await addTask(targetCol.id, newTaskTitle.trim(), { assignee: newTaskAssignee || currentUser })
     setNewTaskTitle('')
     setAddingTask(false)
-    setNewTaskColumn('')
+    setNewTaskColumn(''); setNewTaskAssignee('')
   }
 
   // RLS already filters out other users' private tasks at the DB level.
@@ -178,9 +179,14 @@ function TasksPageInner() {
             <option value="">First column ({sortedCols[0]?.title || ''})</option>
             {sortedCols.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
           </select>
+          <select value={newTaskAssignee} onChange={e => setNewTaskAssignee(e.target.value)}
+            className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 mb-2 focus:outline-none">
+            <option value="">Assign to me ({currentUser})</option>
+            {teamMemberNames.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
           <div className="flex gap-2">
             <button onClick={handleQuickAddTask} className="btn-primary text-xs py-1.5 px-4">Add</button>
-            <button onClick={() => { setAddingTask(false); setNewTaskTitle(''); setNewTaskColumn('') }} className="btn-secondary text-xs py-1.5 px-4">Cancel</button>
+            <button onClick={() => { setAddingTask(false); setNewTaskTitle(''); setNewTaskColumn(''); setNewTaskAssignee('') }} className="btn-secondary text-xs py-1.5 px-4">Cancel</button>
           </div>
         </div>
       )}
