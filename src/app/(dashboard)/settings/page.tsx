@@ -7,6 +7,7 @@ import {
   Settings, Palette, MessageSquare, Target, Megaphone, Brain, Shield,
   Save, ChevronDown, ChevronRight, Plus, X, Trash2, Loader2, Check, Sparkles, Mail, Wand2, Send
 } from 'lucide-react'
+import { SlackConfig } from '@/components/settings/slack-config'
 
 interface EmailTemplate { id: string; name: string; subject: string; body: string; cardType: string; description: string; trigger: 'manual' | 'team_join' | 'module_access' | 'journey_complete'; enabled: boolean }
 
@@ -225,7 +226,7 @@ const DEFAULT_SETTINGS: BrandSettings = {
       max_length: 5000,
       hashtag_count: 3,
       emoji_usage: 'Moderate. Match community tone.',
-      cta_style: 'Community: "Drop a ðŸ§  if this resonates" / "Share your experience"',
+      cta_style: 'Community: "Drop a √∞≈∏¬ß¬† if this resonates" / "Share your experience"',
       post_frequency: '3x per week',
       best_times: '9am, 1pm, 7pm EST',
       content_mix: '35% educational, 30% community, 20% testimonial, 15% CTA',
@@ -245,7 +246,7 @@ const DEFAULT_SETTINGS: BrandSettings = {
       max_length: 280,
       hashtag_count: 2,
       emoji_usage: 'Minimal. Strategic only.',
-      cta_style: 'Thread: "Thread ðŸ§µ" / DM-based',
+      cta_style: 'Thread: "Thread √∞≈∏¬ß¬µ" / DM-based',
       post_frequency: '5-7x per week',
       best_times: '8am, 12pm, 5pm EST',
       content_mix: '40% hot takes, 30% threads, 20% engagement, 10% CTA',
@@ -276,7 +277,7 @@ VOICE: Scientific authority + accessible language. Direct but compassionate. Lea
 
 Use Hormozi's value equation: maximize dream outcome and perceived likelihood, minimize time delay and effort.
 
-Structure the funnel: Awareness (educational) â†’ Engagement (interactive) â†’ Conversion (social proof + CTA) â†’ Enrollment (offer stack + guarantee).
+Structure the funnel: Awareness (educational) √¢‚Ä†‚Äô Engagement (interactive) √¢‚Ä†‚Äô Conversion (social proof + CTA) √¢‚Ä†‚Äô Enrollment (offer stack + guarantee).
 
 Use Voss-style emotional labeling in objection-handling content.`,
 
@@ -330,7 +331,7 @@ Use Voss-style emotional labeling in objection-handling content.`,
   ugc_guidelines: 'Encourage capacity-focused language. Provide templates. Always get permission before reposting.',
 }
 
-type SectionKey = 'identity' | 'voice' | 'vocabulary' | 'messaging' | 'value' | 'psychology' | 'visual' | 'platforms' | 'ai_prompts' | 'email_templates' | 'guardrails' | 'engagement'
+type SectionKey = 'identity' | 'voice' | 'vocabulary' | 'messaging' | 'value' | 'psychology' | 'visual' | 'platforms' | 'ai_prompts' | 'email_templates' | 'guardrails' | 'engagement' | 'slack'
 
 const TRIGGER_OPTIONS = [
   { value: 'manual', label: 'Manual', desc: 'Send from Journey Cards or integrations' },
@@ -717,7 +718,7 @@ export default function SettingsPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-semibold text-np-dark">AI & Brand Settings</h1>
-          <p className="text-xs text-gray-400 mt-0.5">{currentOrg?.name} Â· Configure AI voice, messaging, and brand rules</p>
+          <p className="text-xs text-gray-400 mt-0.5">{currentOrg?.name} √Ç¬∑ Configure AI voice, messaging, and brand rules</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex gap-1">
@@ -754,7 +755,7 @@ export default function SettingsPage() {
           <TextInput label="Sentence Structure" value={settings.sentence_structure} onChange={v => updateField('sentence_structure', v)} multiline />
           <div className="mt-4 mb-2">
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-3">Tone Spectrum</label>
-            <SliderInput label="Formal â†” Casual" value={settings.tone_spectrum.casual} onChange={v => updateField('tone_spectrum', { ...settings.tone_spectrum, casual: v, formal: 100 - v })} />
+            <SliderInput label="Formal √¢‚Ä†‚Äù Casual" value={settings.tone_spectrum.casual} onChange={v => updateField('tone_spectrum', { ...settings.tone_spectrum, casual: v, formal: 100 - v })} />
             <SliderInput label="Authoritative" value={settings.tone_spectrum.authoritative} onChange={v => updateField('tone_spectrum', { ...settings.tone_spectrum, authoritative: v })} />
             <SliderInput label="Warm" value={settings.tone_spectrum.warm} onChange={v => updateField('tone_spectrum', { ...settings.tone_spectrum, warm: v })} />
             <SliderInput label="Urgent" value={settings.tone_spectrum.urgent} onChange={v => updateField('tone_spectrum', { ...settings.tone_spectrum, urgent: v })} />
@@ -765,12 +766,12 @@ export default function SettingsPage() {
         {/* Vocabulary */}
         <Section id="vocabulary" icon={Shield} title="Vocabulary Rules" color="#EF4444">
           <div className="grid grid-cols-2 gap-4">
-            <ArrayEditor label="âœ… Always Use" field="vocabulary_use" placeholder="Add word or phrase" />
-            <ArrayEditor label="ðŸš« Never Use" field="vocabulary_avoid" placeholder="Add word or phrase" />
+            <ArrayEditor label="√¢≈ì‚Ä¶ Always Use" field="vocabulary_use" placeholder="Add word or phrase" />
+            <ArrayEditor label="√∞≈∏≈°¬´ Never Use" field="vocabulary_avoid" placeholder="Add word or phrase" />
           </div>
-          <ArrayEditor label="âš¡ Power Words" field="power_words" placeholder="Words that drive action" />
-          <ArrayEditor label="ðŸ”¥ Emotional Triggers" field="emotional_triggers" placeholder="Phrases that create resonance" />
-          <ArrayEditor label="ðŸ‘‰ CTA Phrases" field="cta_phrases" placeholder="Call-to-action phrases" />
+          <ArrayEditor label="√¢≈°¬° Power Words" field="power_words" placeholder="Words that drive action" />
+          <ArrayEditor label="√∞≈∏‚Äù¬• Emotional Triggers" field="emotional_triggers" placeholder="Phrases that create resonance" />
+          <ArrayEditor label="√∞≈∏‚Äò‚Ä∞ CTA Phrases" field="cta_phrases" placeholder="Call-to-action phrases" />
         </Section>
 
         {/* Messaging Framework */}
@@ -969,6 +970,11 @@ export default function SettingsPage() {
           <TextInput label="Collaboration Criteria" value={settings.collaboration_criteria} onChange={v => updateField('collaboration_criteria', v)} multiline />
           <TextInput label="UGC Guidelines" value={settings.ugc_guidelines} onChange={v => updateField('ugc_guidelines', v)} multiline />
         </Section>
+
+        {/* Slack Notifications */}
+        <Section id="slack" icon={MessageSquare} title="Slack Notifications" color="#4A154B">
+          <SlackConfig />
+        </Section>
       </div>
 
       {/* Sticky Save Bar */}
@@ -982,3 +988,4 @@ export default function SettingsPage() {
     </div>
   )
 }
+
