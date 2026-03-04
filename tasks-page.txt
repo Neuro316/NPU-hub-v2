@@ -9,9 +9,10 @@ import { useTeamData } from '@/lib/hooks/use-team-data'
 import { KanbanColumnView } from '@/components/tasks/kanban-column'
 import { TaskDetail } from '@/components/tasks/task-detail'
 import { AvatarColorPicker } from '@/components/tasks/avatar-color-picker'
+import { AITaskModal } from '@/components/tasks/ai-task-modal'
 import type { KanbanTask } from '@/lib/types/tasks'
 import type { ColorOverrides } from '@/lib/user-colors'
-import { Plus, Filter, Bot, CheckSquare, Inbox } from 'lucide-react'
+import { Plus, Filter, Bot, CheckSquare, Inbox, Sparkles } from 'lucide-react'
 import { notifyTaskMoved } from '@/lib/slack-notifications'
 
 function TasksPageInner() {
@@ -32,6 +33,14 @@ function TasksPageInner() {
   const [addingColumn, setAddingColumn] = useState(false)
   const [newColTitle, setNewColTitle] = useState('')
   const [filterMember, setFilterMember] = useState<string | null>(null)
+
+  // Quick-add task
+  const [addingTask, setAddingTask] = useState(false)
+  const [newTaskTitle, setNewTaskTitle] = useState('')
+  const [newTaskColumn, setNewTaskColumn] = useState('')
+
+  // AI modal
+  const [aiModalOpen, setAiModalOpen] = useState(false)
 
   // Color overrides from org_settings
   const [colorOverrides, setColorOverrides] = useState<ColorOverrides>({})
@@ -94,8 +103,20 @@ function TasksPageInner() {
     setAddingColumn(false)
   }
 
+  const handleQuickAddTask = async () => {
+    if (!newTaskTitle.trim()) return
+    const sortedCols = [...columns].sort((a, b) => a.sort_order - b.sort_order)
+    const targetCol = newTaskColumn
+      ? columns.find(c => c.id === newTaskColumn) || sortedCols[0]
+      : sortedCols[0]
+    if (!targetCol) return
+    await addTask(targetCol.id, newTaskTitle.trim(), { assignee: currentUser })
+    setNewTaskTitle('')
+    setAddingTask(false)
+    setNewTaskColumn('')
+  }
+
   // RLS already filters out other users' private tasks at the DB level.
-  // This client-side filter handles the member filter bar.
   const filteredTasks = filterMember
     ? tasks.filter(t => t.assignee === filterMember)
     : tasks
@@ -107,6 +128,8 @@ function TasksPageInner() {
       </div>
     )
   }
+
+  const sortedCols = [...columns].sort((a, b) => a.sort_order - b.sort_order)
 
   return (
     <div>
@@ -128,15 +151,39 @@ function TasksPageInner() {
             className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium text-np-dark hover:bg-gray-50 transition-colors">
             <Inbox className="w-3.5 h-3.5" /> My Tasks
           </Link>
+          <button onClick={() => setAddingTask(true)}
+            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium text-np-dark hover:bg-gray-50 transition-colors">
+            <Plus className="w-3.5 h-3.5" /> Add Task
+          </button>
           <button onClick={() => setAddingColumn(true)}
             className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium text-np-dark hover:bg-gray-50 transition-colors">
             <Plus className="w-3.5 h-3.5" /> Add Column
           </button>
-          <button className="flex items-center gap-1.5 px-3 py-2 bg-np-blue text-white rounded-lg text-xs font-medium hover:bg-np-blue/90 transition-colors">
-            <Bot className="w-3.5 h-3.5" /> AI Tasks
+          <button onClick={() => setAiModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 bg-np-blue text-white rounded-lg text-xs font-medium hover:bg-np-blue/90 transition-colors">
+            <Sparkles className="w-3.5 h-3.5" /> AI Tasks
           </button>
         </div>
       </div>
+
+      {/* Quick Add Task */}
+      {addingTask && (
+        <div className="mb-4 bg-white border border-gray-200 rounded-xl p-4 max-w-md">
+          <h3 className="text-xs font-semibold text-np-dark mb-2">Quick Add Task</h3>
+          <input value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleQuickAddTask(); if (e.key === 'Escape') { setAddingTask(false); setNewTaskTitle('') } }}
+            placeholder="Task title..." className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-np-blue/20 placeholder-gray-300 mb-2" autoFocus />
+          <select value={newTaskColumn} onChange={e => setNewTaskColumn(e.target.value)}
+            className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 mb-2 focus:outline-none">
+            <option value="">First column ({sortedCols[0]?.title || ''})</option>
+            {sortedCols.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
+          </select>
+          <div className="flex gap-2">
+            <button onClick={handleQuickAddTask} className="btn-primary text-xs py-1.5 px-4">Add</button>
+            <button onClick={() => { setAddingTask(false); setNewTaskTitle(''); setNewTaskColumn('') }} className="btn-secondary text-xs py-1.5 px-4">Cancel</button>
+          </div>
+        </div>
+      )}
 
       {/* Add Column */}
       {addingColumn && (
@@ -185,7 +232,7 @@ function TasksPageInner() {
 
       {/* Kanban Board */}
       <div className="flex gap-4 overflow-x-auto pb-4">
-        {[...columns].sort((a, b) => a.sort_order - b.sort_order).map(col => (
+        {sortedCols.map(col => (
           <KanbanColumnView
             key={col.id}
             column={col}
@@ -228,6 +275,17 @@ function TasksPageInner() {
         currentUser={currentUser}
         teamMembers={teamMemberNames}
         orgId={currentOrg?.id || ''}
+      />
+
+      {/* AI Task Creator Modal */}
+      <AITaskModal
+        open={aiModalOpen}
+        onClose={() => setAiModalOpen(false)}
+        columns={columns}
+        teamMembers={teamMemberNames}
+        colorOverrides={colorOverrides}
+        onCreateTask={addTask}
+        currentUser={currentUser}
       />
     </div>
   )
