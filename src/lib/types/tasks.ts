@@ -10,6 +10,7 @@ export interface KanbanTask {
   id: string
   org_id: string
   column_id: string
+  project_id: string | null       // Phase 2: project grouping
   title: string
   description: string | null
   assignee: string | null
@@ -19,7 +20,7 @@ export interface KanbanTask {
   sort_order: number
   custom_fields: Record<string, any>
   created_by: string | null
-  owner_id: string | null        // auth UUID — enforces private task visibility
+  owner_id: string | null
   rock_id: string | null
   source: string | null
   // RACI columns
@@ -87,9 +88,71 @@ export interface CardTaskLink {
   task_id: string
 }
 
+// Phase 2: Projects
+export interface Project {
+  id: string
+  org_id: string
+  name: string
+  description: string | null
+  color: string
+  icon: string
+  status: 'active' | 'on_hold' | 'completed' | 'archived'
+  owner_id: string | null
+  owner_name: string | null
+  created_at: string
+  updated_at: string
+}
+
+// Phase 2: Saved Views
+export interface SavedView {
+  id: string
+  org_id: string
+  user_id: string | null
+  name: string
+  filters_json: ViewFilters
+  view_type: 'kanban' | 'list' | 'timeline' | 'workload'
+  sort_json: Record<string, any>
+  shared: boolean
+  pinned: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ViewFilters {
+  project_id?: string | null
+  assignee?: string | null
+  priority?: string | null
+  status?: string | null        // column title
+  due_date_from?: string | null
+  due_date_to?: string | null
+  search?: string | null
+  tags?: string[]
+  show_completed?: boolean
+}
+
 export const PRIORITY_CONFIG = {
   low: { label: 'Low', color: '#9CA3AF', bg: '#F3F4F6' },
   medium: { label: 'Medium', color: '#3B82F6', bg: '#DBEAFE' },
   high: { label: 'High', color: '#F59E0B', bg: '#FEF3C7' },
   urgent: { label: 'Urgent', color: '#EF4444', bg: '#FEE2E2' },
+} as const
+
+export const PROJECT_COLORS = [
+  { name: 'Blue', value: '#3B82F6' },
+  { name: 'Green', value: '#10B981' },
+  { name: 'Purple', value: '#8B5CF6' },
+  { name: 'Orange', value: '#F59E0B' },
+  { name: 'Red', value: '#EF4444' },
+  { name: 'Pink', value: '#EC4899' },
+  { name: 'Teal', value: '#14B8A6' },
+  { name: 'Indigo', value: '#6366F1' },
+  { name: 'Slate', value: '#64748B' },
+  { name: 'Amber', value: '#D97706' },
+] as const
+
+export const PROJECT_STATUS_CONFIG = {
+  active: { label: 'Active', color: '#10B981', bg: '#D1FAE5' },
+  on_hold: { label: 'On Hold', color: '#F59E0B', bg: '#FEF3C7' },
+  completed: { label: 'Completed', color: '#3B82F6', bg: '#DBEAFE' },
+  archived: { label: 'Archived', color: '#9CA3AF', bg: '#F3F4F6' },
 } as const

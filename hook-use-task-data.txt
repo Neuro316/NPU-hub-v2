@@ -3,7 +3,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
-import type { KanbanColumn, KanbanTask, TaskComment, CardTaskLink, Subtask, TaskActivity } from '@/lib/types/tasks'
+import type {
+  KanbanColumn, KanbanTask, TaskComment, CardTaskLink,
+  Subtask, TaskActivity, Project, SavedView, ViewFilters
+} from '@/lib/types/tasks'
 
 // Fields worth logging in the activity feed
 const TRACKED_FIELDS: Record<string, string> = {
@@ -18,12 +21,15 @@ const TRACKED_FIELDS: Record<string, string> = {
   raci_responsible: 'Responsible',
   raci_accountable: 'Accountable',
   visibility: 'Visibility',
+  project_id: 'Project',
 }
 
 export function useTaskData() {
   const { currentOrg, user } = useWorkspace()
   const [columns, setColumns] = useState<KanbanColumn[]>([])
   const [tasks, setTasks] = useState<KanbanTask[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
+  const [savedViews, setSavedViews] = useState<SavedView[]>([])
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
 
@@ -34,16 +40,17 @@ export function useTaskData() {
     if (!currentOrg) return
     setLoading(true)
 
-    // RLS enforces privacy at the DB level — private tasks from other
-    // users will not be returned. This query fetches everything the
-    // current user is allowed to see.
-    const [colRes, taskRes] = await Promise.all([
+    const [colRes, taskRes, projRes, viewRes] = await Promise.all([
       supabase.from('kanban_columns').select('*').eq('org_id', currentOrg.id).order('sort_order'),
       supabase.from('kanban_tasks').select('*').eq('org_id', currentOrg.id).order('sort_order'),
+      supabase.from('projects').select('*').eq('org_id', currentOrg.id).order('name'),
+      supabase.from('saved_views').select('*').eq('org_id', currentOrg.id).order('name'),
     ])
 
     if (colRes.data) setColumns(colRes.data)
     if (taskRes.data) setTasks(taskRes.data)
+    if (projRes.data) setProjects(projRes.data)
+    if (viewRes.data) setSavedViews(viewRes.data)
     setLoading(false)
   }, [currentOrg?.id])
 
@@ -134,6 +141,10 @@ export function useTaskData() {
       if (extraFields?.visibility === 'private') {
         logActivity(data.id, 'field_change', 'Visibility', undefined, 'private')
       }
+      if (extraFields?.project_id) {
+        const proj = projects.find(p => p.id === extraFields.project_id)
+        logActivity(data.id, 'field_change', 'Project', undefined, proj?.name || 'Project')
+      }
     }
     return { data, error }
   }
@@ -162,6 +173,10 @@ export function useTaskData() {
               if (field === 'column_id') {
                 displayOld = columns.find(c => c.id === oldStr)?.title || oldStr
                 displayNew = columns.find(c => c.id === newStr)?.title || newStr
+              }
+              if (field === 'project_id') {
+                displayOld = oldStr ? (projects.find(p => p.id === oldStr)?.name || oldStr) : 'None'
+                displayNew = newStr ? (projects.find(p => p.id === newStr)?.name || newStr) : 'None'
               }
               logActivity(id, 'field_change', label, displayOld, displayNew)
             }
@@ -271,9 +286,102 @@ export function useTaskData() {
     return { error }
   }
 
+  // ─── Projects (Phase 2) ───────────────────────────────────
+  const addProject = async (name: string, extras?: Partial<Project>) => {
+    if (!currentOrg) return
+    const { data, error } = await supabase
+      .from('projects')
+      .insert({
+        org_id: currentOrg.id,
+        name,
+        owner_id: userId,
+        owner_name: currentUserName,
+        ...extras,
+      })
+      .select().single()
+    if (data && !error) setProjects(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)))
+    return { data, error }
+  }
+
+  const updateProject = async (id: string, updates: Partial<Project>) => {
+    const { data, error } = await supabase
+      .from('projects')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id).select().single()
+    if (data && !error) setProjects(prev => prev.map(p => p.id === id ? data : p))
+    return { data, error }
+  }
+
+  const deleteProject = async (id: string) => {
+    // Unlink tasks from this project first (set project_id to null)
+    await supabase.from('kanban_tasks').update({ project_id: null }).eq('project_id', id)
+    const { error } = await supabase.from('projects').delete().eq('id', id)
+    if (!error) {
+      setProjects(prev => prev.filter(p => p.id !== id))
+      setTasks(prev => prev.map(t => t.project_id === id ? { ...t, project_id: null } : t))
+    }
+    return { error }
+  }
+
+  // ─── Saved Views (Phase 2) ────────────────────────────────
+  const addSavedView = async (name: string, filters: ViewFilters, shared?: boolean) => {
+    if (!currentOrg) return
+    const { data, error } = await supabase
+      .from('saved_views')
+      .insert({
+        org_id: currentOrg.id,
+        user_id: userId,
+        name,
+        filters_json: filters,
+        shared: shared || false,
+      })
+      .select().single()
+    if (data && !error) setSavedViews(prev => [...prev, data])
+    return { data, error }
+  }
+
+  const updateSavedView = async (id: string, updates: Partial<SavedView>) => {
+    const { data, error } = await supabase
+      .from('saved_views')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id).select().single()
+    if (data && !error) setSavedViews(prev => prev.map(v => v.id === id ? data : v))
+    return { data, error }
+  }
+
+  const deleteSavedView = async (id: string) => {
+    const { error } = await supabase.from('saved_views').delete().eq('id', id)
+    if (!error) setSavedViews(prev => prev.filter(v => v.id !== id))
+    return { error }
+  }
+
+  // ─── Filter Helper ────────────────────────────────────────
+  const filterTasks = (allTasks: KanbanTask[], filters: ViewFilters): KanbanTask[] => {
+    return allTasks.filter(t => {
+      if (filters.project_id && t.project_id !== filters.project_id) return false
+      if (filters.project_id === null && t.project_id !== null) return false // "No Project" filter
+      if (filters.assignee && t.assignee !== filters.assignee) return false
+      if (filters.priority && t.priority !== filters.priority) return false
+      if (filters.search) {
+        const s = filters.search.toLowerCase()
+        const match = t.title.toLowerCase().includes(s)
+          || t.description?.toLowerCase().includes(s)
+          || t.assignee?.toLowerCase().includes(s)
+          || t.rock_tags?.some(tag => tag.toLowerCase().includes(s))
+        if (!match) return false
+      }
+      if (filters.due_date_from && t.due_date && t.due_date < filters.due_date_from) return false
+      if (filters.due_date_to && t.due_date && t.due_date > filters.due_date_to) return false
+      if (filters.tags && filters.tags.length > 0) {
+        if (!t.rock_tags?.some(tag => filters.tags!.includes(tag))) return false
+      }
+      return true
+    })
+  }
+
   return {
-    columns, tasks, loading,
-    userId,                    // auth UUID for client-side privacy checks
+    columns, tasks, projects, savedViews, loading,
+    userId,
     currentUserName,
     refresh: fetchData,
     addColumn, updateColumn, deleteColumn,
@@ -282,5 +390,9 @@ export function useTaskData() {
     fetchActivity, logActivity,
     fetchComments, addComment,
     fetchCardLinks, linkCardToTask, unlinkCardFromTask,
+    // Phase 2
+    addProject, updateProject, deleteProject,
+    addSavedView, updateSavedView, deleteSavedView,
+    filterTasks,
   }
 }
