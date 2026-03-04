@@ -1,3 +1,9 @@
+// src/lib/slack-notifications.ts
+// ============================================================
+// SLACK NOTIFICATIONS - UPDATED TO USE SERVER-SIDE API ROUTE
+// Fixes CORS issue by routing through /api/slack/send
+// ============================================================
+
 import { createClient } from '@/lib/supabase-browser'
 
 interface SlackConfig {
@@ -36,29 +42,36 @@ async function getSlackUserId(orgId: string, displayName: string): Promise<strin
   return data?.slack_user_id || null
 }
 
-// Send channel message via webhook
-async function sendChannelMessage(webhookUrl: string, text: string, blocks?: any[]) {
+// Send channel message via server-side API route (avoids CORS)
+async function sendChannelMessage(orgId: string, text: string, blocks?: any[]) {
   try {
-    await fetch(webhookUrl, {
+    await fetch('/api/slack/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(blocks ? { text, blocks } : { text }),
+      body: JSON.stringify({
+        action: 'channel',
+        org_id: orgId,
+        text,
+        blocks,
+      }),
     })
   } catch (e) {
     console.error('Slack channel message failed:', e)
   }
 }
 
-// Send DM via bot token
-async function sendDM(botToken: string, userId: string, text: string) {
+// Send DM via server-side API route (avoids CORS)
+async function sendDM(orgId: string, slackUserId: string, text: string) {
   try {
-    await fetch('https://slack.com/api/chat.postMessage', {
+    await fetch('/api/slack/send', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${botToken}`,
-      },
-      body: JSON.stringify({ channel: userId, text }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'dm',
+        org_id: orgId,
+        slack_user_id: slackUserId,
+        text,
+      }),
     })
   } catch (e) {
     console.error('Slack DM failed:', e)
@@ -67,6 +80,7 @@ async function sendDM(botToken: string, userId: string, text: string) {
 
 // ============================================================
 // PUBLIC NOTIFICATION FUNCTIONS
+// (Same signatures as before - no changes needed in calling code)
 // ============================================================
 
 export async function notifyTaskAssigned(
@@ -83,16 +97,16 @@ export async function notifyTaskAssigned(
 
   // Channel message
   await sendChannelMessage(
-    config.webhook_url,
+    orgId,
     `📋 *${actor}* assigned *${taskTitle}* to *${assignee}*\n→ <${taskUrl}|Open Task>`
   )
 
   // DM to assignee
   if (assignee !== actor) {
     const slackId = await getSlackUserId(orgId, assignee)
-    if (slackId && config.bot_token) {
+    if (slackId) {
       await sendDM(
-        config.bot_token,
+        orgId,
         slackId,
         `📋 *${actor}* assigned you to task *${taskTitle}*\n→ <${taskUrl}|Open Task>`
       )
@@ -117,7 +131,7 @@ export async function notifyTaskMoved(
 
   // Channel message
   await sendChannelMessage(
-    config.webhook_url,
+    orgId,
     `🔄 *${actor}* moved *${taskTitle}* from ${fromColumn} → *${toColumn}*\n→ <${taskUrl}|Open Task>`
   )
 
@@ -129,16 +143,14 @@ export async function notifyTaskMoved(
   })
 
   // Send DMs
-  if (config.bot_token) {
-    for (const person of Array.from(toNotify)) {
-      const slackId = await getSlackUserId(orgId, person)
-      if (slackId) {
-        await sendDM(
-          config.bot_token,
-          slackId,
-          `🔄 *${actor}* moved *${taskTitle}* from ${fromColumn} → *${toColumn}*\n→ <${taskUrl}|Open Task>`
-        )
-      }
+  for (const person of Array.from(toNotify)) {
+    const slackId = await getSlackUserId(orgId, person)
+    if (slackId) {
+      await sendDM(
+        orgId,
+        slackId,
+        `🔄 *${actor}* moved *${taskTitle}* from ${fromColumn} → *${toColumn}*\n→ <${taskUrl}|Open Task>`
+      )
     }
   }
 }
@@ -160,16 +172,16 @@ export async function notifyRACIAssigned(
 
   // Channel message
   await sendChannelMessage(
-    config.webhook_url,
+    orgId,
     `${roleEmoji} *${actor}* assigned *${assignedTo}* as *${roleLabel}* (RACI) on *${taskTitle}*\n→ <${taskUrl}|Open Task>`
   )
 
   // DM to the person assigned the RACI role
   if (assignedTo !== actor) {
     const slackId = await getSlackUserId(orgId, assignedTo)
-    if (slackId && config.bot_token) {
+    if (slackId) {
       await sendDM(
-        config.bot_token,
+        orgId,
         slackId,
         `${roleEmoji} *${actor}* assigned you as *${roleLabel}* (RACI) on task *${taskTitle}*\n→ <${taskUrl}|Open Task>`
       )
@@ -192,15 +204,15 @@ export async function notifyTaskCreated(
   const assignText = assignee ? ` → assigned to *${assignee}*` : ''
 
   await sendChannelMessage(
-    config.webhook_url,
+    orgId,
     `🆕 *${actor}* created task *${taskTitle}* in ${columnName}${assignText}\n→ <${taskUrl}|Open Task>`
   )
 
-  if (assignee && assignee !== actor && config.bot_token) {
+  if (assignee && assignee !== actor) {
     const slackId = await getSlackUserId(orgId, assignee)
     if (slackId) {
       await sendDM(
-        config.bot_token,
+        orgId,
         slackId,
         `🆕 *${actor}* created and assigned task *${taskTitle}* to you\n→ <${taskUrl}|Open Task>`
       )
@@ -217,14 +229,14 @@ export async function notifyCommentMention(
   commentPreview: string,
 ) {
   const config = await getSlackConfig(orgId)
-  if (!config || !config.bot_token) return
+  if (!config) return
 
   const taskUrl = `https://hub.neuroprogeny.com/tasks?task=${taskId}`
   const slackId = await getSlackUserId(orgId, mentionedName)
   if (!slackId) return
 
   await sendDM(
-    config.bot_token,
+    orgId,
     slackId,
     `💬 *${author}* mentioned you in task *${taskTitle}*:\n> ${commentPreview.slice(0, 200)}\n→ <${taskUrl}|Open Task>`
   )
