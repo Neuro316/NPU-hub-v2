@@ -93,7 +93,7 @@ export function AvatarColorPicker({ teamMembers, colorOverrides, onSave }: Avata
                           }`}
                           style={{
                             backgroundColor: c.bg,
-                            ringColor: isSelected ? c.text : undefined,
+                            outlineColor: isSelected ? c.text : undefined,
                           }}
                         >
                           {isSelected && <Check className="w-3 h-3" style={{ color: c.text }} />}
