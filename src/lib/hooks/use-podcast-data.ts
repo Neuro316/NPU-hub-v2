@@ -2,7 +2,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
 import type {
   Podcast, PodcastQuestion, PodcastFutureIdea, AdvisoryVoice, PodcastChecklist
@@ -10,7 +10,7 @@ import type {
 import { DEFAULT_ADVISORY_VOICES, DEFAULT_CHECKLIST } from '@/lib/types/podcast'
 
 export function usePodcastData() {
-  const supabase = createClientComponentClient()
+  const supabase = createClient()
   const { currentOrg } = useWorkspace()
   const orgId = currentOrg?.id
 
