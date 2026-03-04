@@ -2,6 +2,7 @@
 
 import type { KanbanTask } from '@/lib/types/tasks'
 import { PRIORITY_CONFIG } from '@/lib/types/tasks'
+import { getUserColor, getUserInitials } from '@/lib/user-colors'
 import { Clock, MessageSquare, Link2, Zap, AlertTriangle, ListChecks, Lock } from 'lucide-react'
 
 interface TaskCardProps {
@@ -39,6 +40,9 @@ export function TaskCard({ task, onClick, onDragStart }: TaskCardProps) {
 
   // Rock tags
   const rockTags = task.rock_tags?.length ? task.rock_tags : []
+
+  // Assignee color
+  const assigneeColor = getUserColor(task.assignee || '')
 
   return (
     <div
@@ -81,9 +85,13 @@ export function TaskCard({ task, onClick, onDragStart }: TaskCardProps) {
           )}
         </div>
         {task.assignee && (
-          <div className="w-6 h-6 rounded-full bg-np-blue/10 flex items-center justify-center" title={task.assignee}>
-            <span className="text-[9px] font-bold text-np-blue">
-              {task.assignee.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+          <div
+            className="w-6 h-6 rounded-full flex items-center justify-center"
+            style={{ backgroundColor: assigneeColor.bg }}
+            title={task.assignee}
+          >
+            <span className="text-[9px] font-bold" style={{ color: assigneeColor.text }}>
+              {getUserInitials(task.assignee)}
             </span>
           </div>
         )}
