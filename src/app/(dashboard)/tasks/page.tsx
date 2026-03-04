@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect, useMemo, Suspense } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useTaskData } from '@/lib/hooks/use-task-data'
@@ -14,8 +14,33 @@ import { ProjectManager } from '@/components/tasks/project-manager'
 import type { KanbanTask, ViewFilters } from '@/lib/types/tasks'
 import { PROJECT_STATUS_CONFIG } from '@/lib/types/tasks'
 import type { ColorOverrides } from '@/lib/user-colors'
-import { Plus, Filter, Search, CheckSquare, Inbox, Sparkles, X, Bot, Loader2, FolderOpen, Settings2, Bookmark, Save, ChevronDown } from 'lucide-react'
+import {
+  Plus, Search, CheckSquare, Inbox, Sparkles, X, Bot, Loader2,
+  FolderOpen, Bookmark, Save, ChevronDown, Settings2, SlidersHorizontal,
+  CircleDot, LayoutGrid, User, Flag
+} from 'lucide-react'
 import { notifyTaskMoved } from '@/lib/slack-notifications'
+
+/* ── Dropdown wrapper with click-outside ── */
+function Dropdown({ trigger, children, open, onClose }: {
+  trigger: React.ReactNode, children: React.ReactNode, open: boolean, onClose: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open, onClose])
+  return (
+    <div className="relative" ref={ref}>
+      {trigger}
+      {open && children}
+    </div>
+  )
+}
 
 function TasksPageInner() {
   const { currentOrg, user, loading: orgLoading } = useWorkspace()
@@ -37,7 +62,6 @@ function TasksPageInner() {
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null)
   const [addingColumn, setAddingColumn] = useState(false)
   const [newColTitle, setNewColTitle] = useState('')
-  const [filterMember, setFilterMember] = useState<string | null>(null)
 
   // Quick-add task
   const [addingTask, setAddingTask] = useState(false)
@@ -47,31 +71,33 @@ function TasksPageInner() {
   const [newTaskNotes, setNewTaskNotes] = useState('')
   const [newTaskProject, setNewTaskProject] = useState('')
 
-  // AI modal
+  // Modals
   const [aiModalOpen, setAiModalOpen] = useState(false)
-
-  // Project manager modal
   const [projectManagerOpen, setProjectManagerOpen] = useState(false)
 
   // Project filter: 'all' | 'none' | project_id
   const [activeProject, setActiveProject] = useState<string>('all')
+  const [projectDropdownOpen, setProjectDropdownOpen] = useState(false)
 
   // Saved views
-  const [savedViewDropdown, setSavedViewDropdown] = useState(false)
+  const [viewsDropdownOpen, setViewsDropdownOpen] = useState(false)
   const [savingView, setSavingView] = useState(false)
   const [newViewName, setNewViewName] = useState('')
 
+  // Filters
+  const [filterMember, setFilterMember] = useState<string | null>(null)
+  const [filterPriority, setFilterPriority] = useState<string | null>(null)
+  const [filtersExpanded, setFiltersExpanded] = useState(false)
+
   // Search
   const [searchQuery, setSearchQuery] = useState('')
+  const [searchOpen, setSearchOpen] = useState(false)
   const [aiSearchQuery, setAiSearchQuery] = useState('')
   const [aiSearchResults, setAiSearchResults] = useState<string[] | null>(null)
   const [aiSearching, setAiSearching] = useState(false)
   const [searchMode, setSearchMode] = useState<'text' | 'ai'>('text')
 
-  // Priority filter
-  const [filterPriority, setFilterPriority] = useState<string | null>(null)
-
-  // Color overrides from org_settings
+  // Color overrides
   const [colorOverrides, setColorOverrides] = useState<ColorOverrides>({})
 
   useEffect(() => {
@@ -84,24 +110,21 @@ function TasksPageInner() {
     await saveSetting('avatar_colors', overrides)
   }
 
-  // Deep link: auto-open task from ?task=<id>
+  // Deep link
   useEffect(() => {
     const taskId = searchParams.get('task')
     if (taskId && tasks.length > 0 && !selectedTask) {
       const found = tasks.find(t => t.id === taskId)
       if (found) setSelectedTask(found)
     }
-    // Deep link: ?project=<id>
     const projId = searchParams.get('project')
-    if (projId && projects.length > 0) {
-      setActiveProject(projId)
-    }
+    if (projId && projects.length > 0) setActiveProject(projId)
   }, [searchParams, tasks, projects, selectedTask])
 
   const teamMemberNames = members.map(m => m.display_name)
   const currentUser = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Unknown'
 
-  // ─── Task counts per project ───
+  // ─── Task counts ───
   const taskCounts = useMemo(() => {
     const counts: Record<string, number> = {}
     tasks.forEach(t => {
@@ -114,102 +137,63 @@ function TasksPageInner() {
   // ─── Filtered tasks ───
   const filteredTasks = useMemo(() => {
     let filtered = tasks
-
-    // Project filter
-    if (activeProject === 'none') {
-      filtered = filtered.filter(t => !t.project_id)
-    } else if (activeProject !== 'all') {
-      filtered = filtered.filter(t => t.project_id === activeProject)
-    }
-
-    // Member filter
+    if (activeProject === 'none') filtered = filtered.filter(t => !t.project_id)
+    else if (activeProject !== 'all') filtered = filtered.filter(t => t.project_id === activeProject)
     if (filterMember) filtered = filtered.filter(t => t.assignee === filterMember)
-
-    // Priority filter
     if (filterPriority) filtered = filtered.filter(t => t.priority === filterPriority)
-
-    // Text search
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
       filtered = filtered.filter(t =>
-        t.title.toLowerCase().includes(q) ||
-        t.description?.toLowerCase().includes(q) ||
-        t.assignee?.toLowerCase().includes(q) ||
-        t.priority?.toLowerCase().includes(q) ||
+        t.title.toLowerCase().includes(q) || t.description?.toLowerCase().includes(q) ||
+        t.assignee?.toLowerCase().includes(q) || t.priority?.toLowerCase().includes(q) ||
         t.rock_tags?.some(tag => tag.toLowerCase().includes(q))
       )
     }
-
-    // AI search results
-    if (aiSearchResults) {
-      filtered = filtered.filter(t => aiSearchResults.includes(t.id))
-    }
-
+    if (aiSearchResults) filtered = filtered.filter(t => aiSearchResults.includes(t.id))
     return filtered
   }, [tasks, activeProject, filterMember, filterPriority, searchQuery, aiSearchResults])
 
   // ─── AI search ───
   const handleAISearch = async () => {
     if (!aiSearchQuery.trim()) return
-    setAiSearching(true)
-    setAiSearchResults(null)
-
+    setAiSearching(true); setAiSearchResults(null)
     try {
       const taskSummaries = tasks.map(t => ({
-        id: t.id,
-        title: t.title,
-        description: t.description?.slice(0, 100),
-        assignee: t.assignee,
-        priority: t.priority,
+        id: t.id, title: t.title, description: t.description?.slice(0, 100),
+        assignee: t.assignee, priority: t.priority,
         column: columns.find(c => c.id === t.column_id)?.title,
-        due_date: t.due_date,
-        tags: t.rock_tags,
+        due_date: t.due_date, tags: t.rock_tags,
         project: t.project_id ? projects.find(p => p.id === t.project_id)?.name : null,
       }))
-
       const res = await fetch('/api/ai/task-creator', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [{ role: 'user', content: `Search through these tasks and return ONLY a JSON object with type "search_results" and an array "task_ids" containing the IDs of tasks that match this query: "${aiSearchQuery}"\n\nTasks:\n${JSON.stringify(taskSummaries)}\n\nRespond with ONLY: {"type":"search_results","task_ids":["id1","id2"]}` }],
-          teamMembers: teamMemberNames,
-          columns: columns.map(c => c.title),
+          teamMembers: teamMemberNames, columns: columns.map(c => c.title),
         }),
       })
-
       const data = await res.json()
-      if (data.task_ids) {
-        setAiSearchResults(data.task_ids)
-      } else {
-        setAiSearchResults([])
-      }
-    } catch {
-      setAiSearchResults([])
-    }
+      setAiSearchResults(data.task_ids || [])
+    } catch { setAiSearchResults([]) }
     setAiSearching(false)
   }
 
-  const clearSearch = () => {
-    setSearchQuery('')
-    setAiSearchQuery('')
-    setAiSearchResults(null)
-    setSearchMode('text')
+  const clearAllFilters = () => {
+    setSearchQuery(''); setAiSearchQuery(''); setAiSearchResults(null)
+    setSearchMode('text'); setFilterMember(null); setFilterPriority(null)
+    setActiveProject('all'); setSearchOpen(false)
   }
 
-  // ─── Current filters as ViewFilters ───
+  // ─── Saved views ───
   const currentFilters: ViewFilters = {
     project_id: activeProject === 'all' ? undefined : (activeProject === 'none' ? null : activeProject),
-    assignee: filterMember,
-    priority: filterPriority,
-    search: searchQuery || undefined,
+    assignee: filterMember, priority: filterPriority, search: searchQuery || undefined,
   }
 
   const handleSaveView = async () => {
     if (!newViewName.trim()) return
     await addSavedView(newViewName.trim(), currentFilters)
-    setNewViewName('')
-    setSavingView(false)
-    setSavedViewDropdown(false)
+    setNewViewName(''); setSavingView(false); setViewsDropdownOpen(false)
   }
 
   const handleLoadView = (view: typeof savedViews[0]) => {
@@ -217,289 +201,355 @@ function TasksPageInner() {
     if (f.project_id !== undefined) setActiveProject(f.project_id === null ? 'none' : (f.project_id || 'all'))
     if (f.assignee !== undefined) setFilterMember(f.assignee)
     if (f.priority !== undefined) setFilterPriority(f.priority)
-    if (f.search) setSearchQuery(f.search)
-    setSavedViewDropdown(false)
+    if (f.search) { setSearchQuery(f.search); setSearchOpen(true) }
+    setViewsDropdownOpen(false)
   }
 
   const handleDrop = useCallback(async (targetColumnId: string) => {
     if (!draggedTaskId) return
     const task = tasks.find(t => t.id === draggedTaskId)
-    if (!task || task.column_id === targetColumnId) {
-      setDraggedTaskId(null)
-      return
-    }
-
+    if (!task || task.column_id === targetColumnId) { setDraggedTaskId(null); return }
     const fromCol = columns.find(c => c.id === task.column_id)?.title || ''
     const toCol = columns.find(c => c.id === targetColumnId)?.title || ''
     const colTasks = tasks.filter(t => t.column_id === targetColumnId)
     const maxOrder = colTasks.length > 0 ? Math.max(...colTasks.map(t => t.sort_order)) + 1 : 0
     await moveTask(draggedTaskId, targetColumnId, maxOrder)
     setDraggedTaskId(null)
-
     if (currentOrg?.id) {
-      const raciRoles = {
+      notifyTaskMoved(currentOrg.id, task.title, task.id, fromCol, toCol, currentUser, task.assignee, {
         responsible: task.custom_fields?.raci_responsible || '',
         accountable: task.custom_fields?.raci_accountable || '',
         consulted: task.custom_fields?.raci_consulted || '',
         informed: task.custom_fields?.raci_informed || '',
-      }
-      notifyTaskMoved(currentOrg.id, task.title, task.id, fromCol, toCol, currentUser, task.assignee, raciRoles)
+      })
     }
   }, [draggedTaskId, tasks, moveTask, columns, currentOrg, currentUser])
 
   const handleAddColumn = async () => {
     if (!newColTitle.trim()) return
     const colors = ['#6B7280', '#3B82F6', '#F59E0B', '#8B5CF6', '#10B981', '#EF4444', '#EC4899']
-    const color = colors[columns.length % colors.length]
-    await addColumn(newColTitle.trim(), color)
-    setNewColTitle('')
-    setAddingColumn(false)
+    await addColumn(newColTitle.trim(), colors[columns.length % colors.length])
+    setNewColTitle(''); setAddingColumn(false)
   }
 
   const handleQuickAddTask = async () => {
     if (!newTaskTitle.trim()) return
     const sortedCols = [...columns].sort((a, b) => a.sort_order - b.sort_order)
-    const targetCol = newTaskColumn
-      ? columns.find(c => c.id === newTaskColumn) || sortedCols[0]
-      : sortedCols[0]
+    const targetCol = newTaskColumn ? columns.find(c => c.id === newTaskColumn) || sortedCols[0] : sortedCols[0]
     if (!targetCol) return
-    const extras: Partial<KanbanTask> = {
-      assignee: newTaskAssignee || currentUser,
-      description: newTaskNotes.trim() || undefined,
-    }
-    // Set project from selector or from active project filter
-    const projId = newTaskProject || (activeProject !== 'all' && activeProject !== 'none' ? activeProject : undefined)
+    const extras: Partial<KanbanTask> = { assignee: newTaskAssignee || currentUser, description: newTaskNotes.trim() || undefined }
+    const projId = newTaskProject === '__none__' ? undefined : (newTaskProject || (activeProject !== 'all' && activeProject !== 'none' ? activeProject : undefined))
     if (projId) (extras as any).project_id = projId
     await addTask(targetCol.id, newTaskTitle.trim(), extras)
-    setNewTaskTitle('')
-    setAddingTask(false)
+    setNewTaskTitle(''); setAddingTask(false)
     setNewTaskColumn(''); setNewTaskAssignee(''); setNewTaskNotes(''); setNewTaskProject('')
   }
 
   if (orgLoading || loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-pulse text-gray-400">Loading tasks...</div>
-      </div>
-    )
+    return <div className="flex items-center justify-center h-64"><div className="animate-pulse text-gray-400">Loading tasks...</div></div>
   }
 
   const sortedCols = [...columns].sort((a, b) => a.sort_order - b.sort_order)
-  const isSearchActive = searchQuery.trim() || aiSearchResults !== null
   const activeProjects = projects.filter(p => p.status === 'active')
+  const activeProjectObj = projects.find(p => p.id === activeProject)
   const unassignedCount = taskCounts['__none__'] || 0
-  const hasFilters = filterMember || filterPriority || activeProject !== 'all'
+  const hasActiveFilters = filterMember || filterPriority || activeProject !== 'all' || searchQuery.trim() || aiSearchResults !== null
+  const activeFilterCount = [filterMember, filterPriority, activeProject !== 'all' ? activeProject : null, searchQuery.trim() || null].filter(Boolean).length
 
   return (
     <div>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-3">
-        <div>
-          <h1 className="text-xl font-semibold text-np-dark">Task Manager</h1>
-          <p className="text-xs text-gray-400 mt-0.5">
-            {columns.length} columns &middot; {tasks.length} tasks &middot; {activeProjects.length} projects
-          </p>
+      {/* ═══════════════════════════════════════════════════════
+          COMMAND BAR - single clean row
+          ═══════════════════════════════════════════════════════ */}
+      <div className="flex items-center gap-2 mb-4">
+        {/* Title cluster */}
+        <div className="mr-2">
+          <h1 className="text-lg font-bold text-np-dark leading-tight">Tasks</h1>
+          <p className="text-[10px] text-gray-400 tabular-nums">{filteredTasks.length}{hasActiveFilters ? ` of ${tasks.length}` : ''}</p>
         </div>
-        <div className="flex gap-2">
-          <AvatarColorPicker teamMembers={teamMemberNames} colorOverrides={colorOverrides} onSave={handleSaveColors} />
-          <Link href="/tasks/my-tasks"
-            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium text-np-dark hover:bg-gray-50 transition-colors">
-            <Inbox className="w-3.5 h-3.5" /> My Tasks
-          </Link>
-          <button onClick={() => setAddingTask(true)}
-            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium text-np-dark hover:bg-gray-50 transition-colors">
-            <Plus className="w-3.5 h-3.5" /> Add Task
-          </button>
-          <button onClick={() => setAiModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-2 bg-np-blue text-white rounded-lg text-xs font-medium hover:bg-np-blue/90 transition-colors">
-            <Sparkles className="w-3.5 h-3.5" /> AI Tasks
-          </button>
-        </div>
-      </div>
 
-      {/* ═══ Project Navigation Bar ═══ */}
-      <div className="mb-3 bg-white border border-gray-200 rounded-xl">
-        <div className="flex items-center gap-1 px-3 py-2 overflow-x-auto">
-          <FolderOpen className="w-3.5 h-3.5 text-gray-400 flex-shrink-0 mr-1" />
-
-          {/* All Tasks tab */}
-          <button
-            onClick={() => setActiveProject('all')}
-            className={`flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap ${
-              activeProject === 'all' ? 'bg-np-blue text-white' : 'text-gray-600 hover:bg-gray-100'
-            }`}
-          >
-            All Tasks
-            <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${activeProject === 'all' ? 'bg-white/20' : 'bg-gray-100'}`}>
-              {tasks.length}
-            </span>
-          </button>
-
-          {/* Project tabs */}
-          {activeProjects.map(p => (
-            <button
-              key={p.id}
-              onClick={() => setActiveProject(p.id)}
-              className={`flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap ${
-                activeProject === p.id ? 'text-white' : 'text-gray-600 hover:bg-gray-100'
-              }`}
-              style={activeProject === p.id ? { backgroundColor: p.color } : {}}
-            >
-              <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: activeProject === p.id ? 'white' : p.color, opacity: activeProject === p.id ? 0.7 : 1 }} />
-              {p.name}
-              <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${activeProject === p.id ? 'bg-white/20' : 'bg-gray-100'}`}>
-                {taskCounts[p.id] || 0}
-              </span>
+        {/* ── Project selector ── */}
+        <Dropdown
+          open={projectDropdownOpen}
+          onClose={() => setProjectDropdownOpen(false)}
+          trigger={
+            <button onClick={() => setProjectDropdownOpen(!projectDropdownOpen)}
+              className="flex items-center gap-2 h-9 px-3 rounded-lg border border-gray-200 bg-white hover:border-gray-300 transition-all text-xs font-medium text-np-dark group">
+              {activeProjectObj ? (
+                <>
+                  <span className="w-2.5 h-2.5 rounded-full ring-2 ring-white" style={{ backgroundColor: activeProjectObj.color }} />
+                  <span className="max-w-[140px] truncate">{activeProjectObj.name}</span>
+                </>
+              ) : activeProject === 'none' ? (
+                <>
+                  <span className="w-2.5 h-2.5 rounded-full bg-gray-300 ring-2 ring-white" />
+                  <span>Unassigned</span>
+                </>
+              ) : (
+                <>
+                  <LayoutGrid className="w-3.5 h-3.5 text-gray-400" />
+                  <span>All Projects</span>
+                </>
+              )}
+              <ChevronDown className="w-3 h-3 text-gray-400 group-hover:text-gray-600 transition-colors" />
             </button>
-          ))}
-
-          {/* No Project tab */}
-          {unassignedCount > 0 && (
-            <button
-              onClick={() => setActiveProject('none')}
-              className={`flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap ${
-                activeProject === 'none' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:bg-gray-100'
-              }`}
-            >
-              No Project
-              <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${activeProject === 'none' ? 'bg-white/20' : 'bg-gray-100'}`}>
-                {unassignedCount}
-              </span>
-            </button>
-          )}
-
-          {/* Spacer */}
-          <div className="flex-1" />
-
-          {/* Saved Views dropdown */}
-          <div className="relative flex-shrink-0">
-            <button onClick={() => setSavedViewDropdown(!savedViewDropdown)}
-              className="flex items-center gap-1 text-[10px] font-medium text-gray-400 hover:text-np-dark px-2 py-1 rounded-lg hover:bg-gray-50 transition-colors">
-              <Bookmark className="w-3 h-3" /> Views <ChevronDown className="w-2.5 h-2.5" />
-            </button>
-            {savedViewDropdown && (
-              <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-xl shadow-lg z-30 py-1">
-                {savedViews.map(v => (
-                  <div key={v.id} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50">
-                    <button onClick={() => handleLoadView(v)} className="flex-1 text-left text-xs text-np-dark truncate">
-                      {v.name}
-                    </button>
-                    <button onClick={async () => { await deleteSavedView(v.id) }}
-                      className="text-gray-300 hover:text-red-500"><X className="w-3 h-3" /></button>
-                  </div>
-                ))}
-                {savedViews.length === 0 && !savingView && (
-                  <p className="px-3 py-2 text-[10px] text-gray-400">No saved views yet</p>
-                )}
-                <div className="border-t border-gray-100 mt-1 pt-1">
-                  {savingView ? (
-                    <div className="px-3 py-2 flex gap-1.5">
-                      <input value={newViewName} onChange={e => setNewViewName(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') handleSaveView() }}
-                        placeholder="View name..." autoFocus
-                        className="flex-1 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
-                      <button onClick={handleSaveView} className="text-np-blue"><Save className="w-3.5 h-3.5" /></button>
-                    </div>
-                  ) : (
-                    <button onClick={() => setSavingView(true)}
-                      className="w-full text-left px-3 py-2 text-xs text-np-blue hover:bg-np-blue/5 flex items-center gap-1.5">
-                      <Plus className="w-3 h-3" /> Save current filters
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Manage Projects */}
-          <button onClick={() => setProjectManagerOpen(true)}
-            className="flex items-center gap-1 text-[10px] font-medium text-gray-400 hover:text-np-dark px-2 py-1 rounded-lg hover:bg-gray-50 transition-colors flex-shrink-0">
-            <Settings2 className="w-3 h-3" /> Projects
-          </button>
-
-          {/* Add Column (moved here) */}
-          <button onClick={() => setAddingColumn(true)}
-            className="flex items-center gap-1 text-[10px] font-medium text-gray-400 hover:text-np-dark px-2 py-1 rounded-lg hover:bg-gray-50 transition-colors flex-shrink-0">
-            <Plus className="w-3 h-3" /> Column
-          </button>
-        </div>
-      </div>
-
-      {/* Search Bar */}
-      <div className="mb-3 bg-white border border-gray-200 rounded-xl p-3">
-        <div className="flex items-center gap-2">
-          <div className="flex bg-gray-100 rounded-lg p-0.5">
-            <button
-              onClick={() => { setSearchMode('text'); setAiSearchResults(null); setAiSearchQuery('') }}
-              className={`text-[10px] font-medium px-2.5 py-1 rounded-md transition-colors ${
-                searchMode === 'text' ? 'bg-white text-np-dark shadow-sm' : 'text-gray-500'
-              }`}
-            >
-              <Search className="w-3 h-3 inline mr-1" />Search
-            </button>
-            <button
-              onClick={() => { setSearchMode('ai'); setSearchQuery('') }}
-              className={`text-[10px] font-medium px-2.5 py-1 rounded-md transition-colors ${
-                searchMode === 'ai' ? 'bg-white text-np-blue shadow-sm' : 'text-gray-500'
-              }`}
-            >
-              <Bot className="w-3 h-3 inline mr-1" />AI Search
-            </button>
-          </div>
-
-          {searchMode === 'text' ? (
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-              <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Search tasks by title, assignee, priority, tag..."
-                className="w-full text-xs border border-gray-200 rounded-lg pl-8 pr-8 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300" />
-              {searchQuery && (
-                <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2">
-                  <X className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600" />
+          }
+        >
+          <div className="absolute left-0 top-full mt-1.5 w-64 bg-white rounded-xl border border-gray-200 shadow-xl shadow-gray-200/50 z-40 overflow-hidden">
+            <div className="px-3 pt-3 pb-2">
+              <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Projects</p>
+            </div>
+            <div className="max-h-[280px] overflow-y-auto">
+              {/* All Tasks */}
+              <button onClick={() => { setActiveProject('all'); setProjectDropdownOpen(false) }}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors ${
+                  activeProject === 'all' ? 'bg-np-blue/5 text-np-blue font-semibold' : 'text-gray-700 hover:bg-gray-50'
+                }`}>
+                <LayoutGrid className="w-3.5 h-3.5 flex-shrink-0" style={{ color: activeProject === 'all' ? '#2563EB' : '#9CA3AF' }} />
+                <span className="flex-1 text-left">All Tasks</span>
+                <span className="text-[10px] text-gray-400 tabular-nums">{tasks.length}</span>
+              </button>
+              {/* Each project */}
+              {activeProjects.map(p => (
+                <button key={p.id} onClick={() => { setActiveProject(p.id); setProjectDropdownOpen(false) }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors ${
+                    activeProject === p.id ? 'bg-np-blue/5 text-np-blue font-semibold' : 'text-gray-700 hover:bg-gray-50'
+                  }`}>
+                  <span className="w-3.5 h-3.5 rounded flex-shrink-0 flex items-center justify-center" style={{ backgroundColor: p.color + '18' }}>
+                    <span className="w-2 h-2 rounded-sm" style={{ backgroundColor: p.color }} />
+                  </span>
+                  <span className="flex-1 text-left truncate">{p.name}</span>
+                  <span className="text-[10px] text-gray-400 tabular-nums">{taskCounts[p.id] || 0}</span>
+                </button>
+              ))}
+              {/* No Project */}
+              {unassignedCount > 0 && (
+                <button onClick={() => { setActiveProject('none'); setProjectDropdownOpen(false) }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors ${
+                    activeProject === 'none' ? 'bg-np-blue/5 text-np-blue font-semibold' : 'text-gray-500 hover:bg-gray-50'
+                  }`}>
+                  <span className="w-3.5 h-3.5 rounded flex-shrink-0 flex items-center justify-center bg-gray-100">
+                    <span className="w-2 h-2 rounded-sm bg-gray-300" />
+                  </span>
+                  <span className="flex-1 text-left">No Project</span>
+                  <span className="text-[10px] text-gray-400 tabular-nums">{unassignedCount}</span>
                 </button>
               )}
             </div>
-          ) : (
-            <div className="flex-1 flex gap-2">
-              <div className="flex-1 relative">
-                <Bot className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-np-blue/40" />
-                <input value={aiSearchQuery} onChange={e => setAiSearchQuery(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') handleAISearch() }}
-                  placeholder="Ask AI: 'What tasks are overdue?', 'Show Shane's high priority items'..."
-                  className="w-full text-xs border border-gray-200 rounded-lg pl-8 pr-8 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300" />
-              </div>
-              <button onClick={handleAISearch} disabled={aiSearching || !aiSearchQuery.trim()}
-                className="px-3 py-2 bg-np-blue text-white rounded-lg text-xs font-medium hover:bg-np-blue/90 disabled:opacity-40 flex items-center gap-1.5">
-                {aiSearching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                Search
+            <div className="border-t border-gray-100 p-1.5">
+              <button onClick={() => { setProjectManagerOpen(true); setProjectDropdownOpen(false) }}
+                className="w-full flex items-center gap-2 px-2.5 py-2 text-[11px] text-gray-500 hover:text-np-dark hover:bg-gray-50 rounded-lg transition-colors">
+                <Settings2 className="w-3.5 h-3.5" /> Manage Projects
               </button>
             </div>
-          )}
-
-          {(isSearchActive || hasFilters) && (
-            <button onClick={() => { clearSearch(); setFilterMember(null); setFilterPriority(null); setActiveProject('all') }}
-              className="text-[10px] text-gray-400 hover:text-np-dark font-medium px-2">
-              Reset All
-            </button>
-          )}
-        </div>
-
-        {aiSearchResults !== null && (
-          <div className="mt-2 text-[10px] text-gray-500">
-            {aiSearchResults.length === 0
-              ? 'No matching tasks found. Try a different query.'
-              : `AI found ${aiSearchResults.length} matching task${aiSearchResults.length !== 1 ? 's' : ''}`
-            }
           </div>
+        </Dropdown>
+
+        {/* ── Divider ── */}
+        <div className="w-px h-5 bg-gray-200" />
+
+        {/* ── Saved Views ── */}
+        <Dropdown
+          open={viewsDropdownOpen}
+          onClose={() => { setViewsDropdownOpen(false); setSavingView(false) }}
+          trigger={
+            <button onClick={() => setViewsDropdownOpen(!viewsDropdownOpen)}
+              className={`flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-medium transition-all ${
+                viewsDropdownOpen ? 'bg-gray-100 text-np-dark' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+              }`}>
+              <Bookmark className="w-3.5 h-3.5" />
+              Views
+              {savedViews.length > 0 && (
+                <span className="w-4 h-4 flex items-center justify-center rounded-full bg-gray-200 text-[9px] font-bold text-gray-600">{savedViews.length}</span>
+              )}
+            </button>
+          }
+        >
+          <div className="absolute left-0 top-full mt-1.5 w-60 bg-white rounded-xl border border-gray-200 shadow-xl shadow-gray-200/50 z-40 overflow-hidden">
+            <div className="px-3 pt-3 pb-2">
+              <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Saved Views</p>
+            </div>
+            <div className="max-h-[200px] overflow-y-auto">
+              {savedViews.map(v => (
+                <div key={v.id} className="flex items-center group px-1.5">
+                  <button onClick={() => handleLoadView(v)}
+                    className="flex-1 flex items-center gap-2 px-2 py-2 text-xs text-gray-700 hover:bg-gray-50 rounded-lg text-left truncate transition-colors">
+                    <CircleDot className="w-3 h-3 text-gray-300 flex-shrink-0" />
+                    {v.name}
+                  </button>
+                  <button onClick={async () => { await deleteSavedView(v.id) }}
+                    className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-50 transition-all">
+                    <X className="w-3 h-3 text-gray-300 hover:text-red-500" />
+                  </button>
+                </div>
+              ))}
+              {savedViews.length === 0 && !savingView && (
+                <p className="px-3 py-4 text-[11px] text-gray-400 text-center">No saved views yet</p>
+              )}
+            </div>
+            <div className="border-t border-gray-100 p-1.5">
+              {savingView ? (
+                <div className="flex gap-1.5 px-1.5 py-1">
+                  <input value={newViewName} onChange={e => setNewViewName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleSaveView(); if (e.key === 'Escape') setSavingView(false) }}
+                    placeholder="View name..." autoFocus
+                    className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                  <button onClick={handleSaveView} className="px-2.5 py-1.5 bg-np-blue text-white rounded-lg text-[10px] font-medium hover:bg-np-blue/90">
+                    Save
+                  </button>
+                </div>
+              ) : (
+                <button onClick={() => setSavingView(true)}
+                  className="w-full flex items-center gap-2 px-2.5 py-2 text-[11px] text-np-blue hover:bg-np-blue/5 rounded-lg transition-colors">
+                  <Save className="w-3.5 h-3.5" /> Save current filters
+                </button>
+              )}
+            </div>
+          </div>
+        </Dropdown>
+
+        {/* ── Filters toggle ── */}
+        <button onClick={() => setFiltersExpanded(!filtersExpanded)}
+          className={`flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-medium transition-all ${
+            hasActiveFilters
+              ? 'bg-blue-50 text-np-blue border border-np-blue/20'
+              : filtersExpanded ? 'bg-gray-100 text-np-dark' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+          }`}>
+          <SlidersHorizontal className="w-3.5 h-3.5" />
+          Filter
+          {activeFilterCount > 0 && (
+            <span className="w-4 h-4 flex items-center justify-center rounded-full bg-np-blue text-[9px] font-bold text-white">{activeFilterCount}</span>
+          )}
+        </button>
+
+        {/* ── Search toggle ── */}
+        {searchOpen ? (
+          <div className="flex-1 flex items-center gap-1.5 h-9 bg-white border border-gray-200 rounded-lg px-3 max-w-sm">
+            {searchMode === 'ai' ? (
+              <Bot className="w-3.5 h-3.5 text-np-blue/50 flex-shrink-0" />
+            ) : (
+              <Search className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+            )}
+            <input
+              value={searchMode === 'ai' ? aiSearchQuery : searchQuery}
+              onChange={e => searchMode === 'ai' ? setAiSearchQuery(e.target.value) : setSearchQuery(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && searchMode === 'ai') handleAISearch(); if (e.key === 'Escape') { setSearchOpen(false); setSearchQuery(''); setAiSearchQuery(''); setAiSearchResults(null) } }}
+              placeholder={searchMode === 'ai' ? "Ask AI to find tasks..." : "Search tasks..."}
+              className="flex-1 text-xs bg-transparent focus:outline-none placeholder-gray-300"
+              autoFocus
+            />
+            <div className="flex items-center gap-0.5">
+              <button onClick={() => setSearchMode(searchMode === 'ai' ? 'text' : 'ai')}
+                className={`text-[9px] font-bold px-1.5 py-0.5 rounded transition-colors ${
+                  searchMode === 'ai' ? 'bg-np-blue/10 text-np-blue' : 'text-gray-400 hover:text-gray-600'
+                }`}>
+                {searchMode === 'ai' ? 'AI' : 'TXT'}
+              </button>
+              {searchMode === 'ai' && (
+                <button onClick={handleAISearch} disabled={aiSearching || !aiSearchQuery.trim()} className="p-0.5">
+                  {aiSearching ? <Loader2 className="w-3 h-3 animate-spin text-np-blue" /> : <Sparkles className="w-3 h-3 text-np-blue" />}
+                </button>
+              )}
+              <button onClick={() => { setSearchOpen(false); setSearchQuery(''); setAiSearchQuery(''); setAiSearchResults(null) }} className="p-0.5">
+                <X className="w-3 h-3 text-gray-400 hover:text-gray-600" />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button onClick={() => setSearchOpen(true)}
+            className="flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-50 transition-all">
+            <Search className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Search</span>
+          </button>
         )}
+
+        {/* ── Spacer ── */}
+        <div className="flex-1" />
+
+        {/* ── Right actions ── */}
+        <AvatarColorPicker teamMembers={teamMemberNames} colorOverrides={colorOverrides} onSave={handleSaveColors} />
+
+        <Link href="/tasks/my-tasks"
+          className="flex items-center gap-1.5 h-9 px-3 rounded-lg border border-gray-200 bg-white text-xs font-medium text-np-dark hover:border-gray-300 transition-all">
+          <Inbox className="w-3.5 h-3.5" /> <span className="hidden sm:inline">My Tasks</span>
+        </Link>
+
+        <button onClick={() => setAddingTask(true)}
+          className="flex items-center gap-1.5 h-9 px-3 rounded-lg border border-gray-200 bg-white text-xs font-medium text-np-dark hover:border-gray-300 transition-all">
+          <Plus className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Task</span>
+        </button>
+
+        <button onClick={() => setAiModalOpen(true)}
+          className="flex items-center gap-1.5 h-9 px-3.5 rounded-lg bg-np-blue text-white text-xs font-medium hover:bg-np-blue/90 transition-all shadow-sm shadow-np-blue/20">
+          <Sparkles className="w-3.5 h-3.5" /> <span className="hidden sm:inline">AI</span>
+        </button>
       </div>
 
-      {/* Quick Add Task */}
+      {/* ═══════════════════════════════════════════════════════
+          FILTER BAR - expandable
+          ═══════════════════════════════════════════════════════ */}
+      {(filtersExpanded || hasActiveFilters) && (
+        <div className="flex items-center gap-2 mb-3 flex-wrap">
+          {/* Member pills */}
+          <div className="flex items-center gap-1">
+            <User className="w-3 h-3 text-gray-300 mr-0.5" />
+            {teamMemberNames.map(m => (
+              <button key={m} onClick={() => setFilterMember(filterMember === m ? null : m)}
+                className={`text-[10px] px-2 py-1 rounded-md font-medium transition-all ${
+                  filterMember === m
+                    ? 'bg-np-blue text-white shadow-sm shadow-np-blue/20'
+                    : 'text-gray-500 hover:bg-gray-100'
+                }`}>
+                {m.split(' ')[0]}
+              </button>
+            ))}
+          </div>
+
+          <div className="w-px h-4 bg-gray-200" />
+
+          {/* Priority pills */}
+          <div className="flex items-center gap-1">
+            <Flag className="w-3 h-3 text-gray-300 mr-0.5" />
+            {(['urgent', 'high', 'medium', 'low'] as const).map(p => (
+              <button key={p} onClick={() => setFilterPriority(filterPriority === p ? null : p)}
+                className={`text-[10px] px-2 py-1 rounded-md font-medium capitalize transition-all ${
+                  filterPriority === p
+                    ? 'bg-np-blue text-white shadow-sm shadow-np-blue/20'
+                    : 'text-gray-500 hover:bg-gray-100'
+                }`}>
+                {p}
+              </button>
+            ))}
+          </div>
+
+          {/* Clear all */}
+          {hasActiveFilters && (
+            <>
+              <div className="w-px h-4 bg-gray-200" />
+              <button onClick={clearAllFilters}
+                className="text-[10px] text-gray-400 hover:text-red-500 font-medium flex items-center gap-1 transition-colors">
+                <X className="w-3 h-3" /> Clear all
+              </button>
+            </>
+          )}
+
+          {/* AI search feedback */}
+          {aiSearchResults !== null && (
+            <span className="text-[10px] text-gray-400 ml-2">
+              {aiSearchResults.length === 0 ? 'No AI matches' : `AI: ${aiSearchResults.length} match${aiSearchResults.length !== 1 ? 'es' : ''}`}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════
+          QUICK ADD / ADD COLUMN
+          ═══════════════════════════════════════════════════════ */}
       {addingTask && (
-        <div className="mb-3 bg-white border border-gray-200 rounded-xl p-4 max-w-md">
+        <div className="mb-3 bg-white border border-gray-200 rounded-xl p-4 max-w-md shadow-sm">
           <h3 className="text-xs font-semibold text-np-dark mb-2">Quick Add Task</h3>
           <input value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') handleQuickAddTask(); if (e.key === 'Escape') { setAddingTask(false); setNewTaskTitle('') } }}
+            onKeyDown={e => { if (e.key === 'Enter') handleQuickAddTask(); if (e.key === 'Escape') setAddingTask(false) }}
             placeholder="Task title..." className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-np-blue/20 placeholder-gray-300 mb-2" autoFocus />
           <textarea value={newTaskNotes} onChange={e => setNewTaskNotes(e.target.value)}
             placeholder="Notes (optional)..." rows={2}
@@ -507,18 +557,18 @@ function TasksPageInner() {
           <div className="grid grid-cols-2 gap-2 mb-2">
             <select value={newTaskColumn} onChange={e => setNewTaskColumn(e.target.value)}
               className="text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none">
-              <option value="">First column ({sortedCols[0]?.title || ''})</option>
+              <option value="">Column: {sortedCols[0]?.title || ''}</option>
               {sortedCols.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
             </select>
             <select value={newTaskAssignee} onChange={e => setNewTaskAssignee(e.target.value)}
               className="text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none">
-              <option value="">Assign to me ({currentUser})</option>
+              <option value="">Me ({currentUser.split(' ')[0]})</option>
               {teamMemberNames.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
           </div>
           <select value={newTaskProject} onChange={e => setNewTaskProject(e.target.value)}
             className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 mb-2 focus:outline-none">
-            <option value="">{activeProject !== 'all' && activeProject !== 'none' ? `Project: ${projects.find(p => p.id === activeProject)?.name || ''}` : 'No Project'}</option>
+            <option value="">{activeProjectObj ? `Project: ${activeProjectObj.name}` : 'No Project'}</option>
             <option value="__none__">No Project</option>
             {activeProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
@@ -529,9 +579,8 @@ function TasksPageInner() {
         </div>
       )}
 
-      {/* Add Column */}
       {addingColumn && (
-        <div className="mb-3 bg-white border border-gray-200 rounded-xl p-4 max-w-xs">
+        <div className="mb-3 bg-white border border-gray-200 rounded-xl p-4 max-w-xs shadow-sm">
           <h3 className="text-xs font-semibold text-np-dark mb-2">New Column</h3>
           <input value={newColTitle} onChange={e => setNewColTitle(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleAddColumn(); if (e.key === 'Escape') { setAddingColumn(false); setNewColTitle('') } }}
@@ -543,36 +592,10 @@ function TasksPageInner() {
         </div>
       )}
 
-      {/* Filter Bar */}
-      <div className="flex items-center gap-2 mb-3 flex-wrap">
-        <Filter className="w-3.5 h-3.5 text-gray-400" />
-        <span className="text-[10px] text-gray-500 font-medium uppercase tracking-wider">Filter:</span>
-
-        {/* Member filters */}
-        <button onClick={() => setFilterMember(null)}
-          className={`text-[10px] px-2.5 py-1 rounded-full font-medium transition-colors ${!filterMember ? 'bg-np-blue text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-          All Members
-        </button>
-        {teamMemberNames.map(m => (
-          <button key={m} onClick={() => setFilterMember(filterMember === m ? null : m)}
-            className={`text-[10px] px-2.5 py-1 rounded-full font-medium transition-colors ${filterMember === m ? 'bg-np-blue text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-            {m}
-          </button>
-        ))}
-
-        <span className="text-gray-200">|</span>
-
-        {/* Priority filters */}
-        {(['low', 'medium', 'high', 'urgent'] as const).map(p => (
-          <button key={p} onClick={() => setFilterPriority(filterPriority === p ? null : p)}
-            className={`text-[10px] px-2.5 py-1 rounded-full font-medium capitalize transition-colors ${filterPriority === p ? 'bg-np-blue text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-            {p}
-          </button>
-        ))}
-      </div>
-
-      {/* Empty State */}
-      {columns.length === 0 && (
+      {/* ═══════════════════════════════════════════════════════
+          KANBAN BOARD
+          ═══════════════════════════════════════════════════════ */}
+      {columns.length === 0 ? (
         <div className="bg-white border border-gray-100 rounded-2xl p-16 text-center">
           <CheckSquare className="w-14 h-14 text-gray-200 mx-auto mb-4" />
           <h2 className="text-lg font-semibold text-np-dark mb-2">Task Manager</h2>
@@ -581,81 +604,57 @@ function TasksPageInner() {
           </p>
           <button onClick={() => setAddingColumn(true)} className="btn-primary">Create First Column</button>
         </div>
+      ) : (
+        <div className="flex gap-4 overflow-x-auto pb-4">
+          {sortedCols.map(col => (
+            <KanbanColumnView
+              key={col.id}
+              column={col}
+              tasks={filteredTasks.filter(t => t.column_id === col.id)}
+              teamMembers={teamMemberNames}
+              colorOverrides={colorOverrides}
+              onTaskClick={setSelectedTask}
+              onAddTask={addTask}
+              onDragStart={setDraggedTaskId}
+              onDrop={handleDrop}
+              onUpdateColumn={updateColumn}
+              onDeleteColumn={deleteColumn}
+            />
+          ))}
+          {!addingColumn && (
+            <button onClick={() => setAddingColumn(true)}
+              className="flex-shrink-0 w-72 flex items-center justify-center gap-2 border-2 border-dashed border-gray-200 rounded-xl text-xs text-gray-400 hover:text-np-dark hover:border-gray-300 transition-colors min-h-[200px]">
+              <Plus className="w-4 h-4" /> Add Column
+            </button>
+          )}
+        </div>
       )}
 
-      {/* Kanban Board */}
-      <div className="flex gap-4 overflow-x-auto pb-4">
-        {sortedCols.map(col => (
-          <KanbanColumnView
-            key={col.id}
-            column={col}
-            tasks={filteredTasks.filter(t => t.column_id === col.id)}
-            teamMembers={teamMemberNames}
-            colorOverrides={colorOverrides}
-            onTaskClick={setSelectedTask}
-            onAddTask={addTask}
-            onDragStart={setDraggedTaskId}
-            onDrop={handleDrop}
-            onUpdateColumn={updateColumn}
-            onDeleteColumn={deleteColumn}
-          />
-        ))}
-
-        {columns.length > 0 && !addingColumn && (
-          <button
-            onClick={() => setAddingColumn(true)}
-            className="flex-shrink-0 w-72 flex items-center justify-center gap-2 border-2 border-dashed border-gray-200 rounded-xl text-xs text-gray-400 hover:text-np-dark hover:border-gray-300 transition-colors min-h-[200px]">
-            <Plus className="w-4 h-4" /> Add Column
-          </button>
-        )}
-      </div>
-
-      {/* Task Detail Modal */}
+      {/* ── Modals ── */}
       <TaskDetail
-        task={selectedTask}
-        columns={columns}
+        task={selectedTask} columns={columns}
         onClose={() => setSelectedTask(null)}
-        onUpdate={updateTask}
-        onDelete={deleteTask}
-        fetchComments={fetchComments}
-        addComment={addComment}
-        fetchSubtasks={fetchSubtasks}
-        addSubtask={addSubtask}
-        updateSubtask={updateSubtask}
-        deleteSubtask={deleteSubtask}
+        onUpdate={updateTask} onDelete={deleteTask}
+        fetchComments={fetchComments} addComment={addComment}
+        fetchSubtasks={fetchSubtasks} addSubtask={addSubtask}
+        updateSubtask={updateSubtask} deleteSubtask={deleteSubtask}
         fetchActivity={fetchActivity}
-        currentUser={currentUser}
-        teamMembers={teamMemberNames}
-        orgId={currentOrg?.id || ''}
-        projects={projects}
+        currentUser={currentUser} teamMembers={teamMemberNames}
+        orgId={currentOrg?.id || ''} projects={projects}
       />
 
-      {/* AI Task Creator Modal */}
       <AITaskModal
-        open={aiModalOpen}
-        onClose={() => setAiModalOpen(false)}
-        columns={columns}
-        teamMembers={teamMemberNames}
-        colorOverrides={colorOverrides}
-        onCreateTask={addTask}
+        open={aiModalOpen} onClose={() => setAiModalOpen(false)}
+        columns={columns} teamMembers={teamMemberNames}
+        colorOverrides={colorOverrides} onCreateTask={addTask}
         currentUser={currentUser}
       />
 
-      {/* Project Manager Modal */}
       <ProjectManager
-        open={projectManagerOpen}
-        onClose={() => setProjectManagerOpen(false)}
-        projects={projects}
-        onAdd={addProject}
-        onUpdate={updateProject}
-        onDelete={deleteProject}
-        taskCounts={taskCounts}
+        open={projectManagerOpen} onClose={() => setProjectManagerOpen(false)}
+        projects={projects} onAdd={addProject} onUpdate={updateProject}
+        onDelete={deleteProject} taskCounts={taskCounts}
       />
-
-      {/* Close dropdowns on outside click */}
-      {savedViewDropdown && (
-        <div className="fixed inset-0 z-20" onClick={() => { setSavedViewDropdown(false); setSavingView(false) }} />
-      )}
     </div>
   )
 }
