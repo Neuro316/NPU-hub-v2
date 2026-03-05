@@ -438,7 +438,7 @@ export default function JourneysPage() {
                                   {/* Card */}
                                   <div data-cardid={card.id} onMouseDown={e => handleMouseDown(e, card.id)}
                                     className="group relative bg-white rounded-xl shadow-sm hover:shadow-md transition-all cursor-grab active:cursor-grabbing select-none"
-                                    style={{ width: 210, border: `2px solid ${phase.color}25`, opacity: isBeingDragged ? 0.25 : 1 }}>
+                                    style={{ width: 170, border: `2px solid ${phase.color}25`, opacity: isBeingDragged ? 0.25 : 1 }}>
                                     <div className="h-1 rounded-t-[10px]" style={{ background: phase.color }} />
                                     <div className="p-2.5">
                                       <div className="flex items-start gap-1.5">
@@ -549,7 +549,7 @@ export default function JourneysPage() {
       {isDraggingActive && draggedCard && draggedPhase && (
         <div className="fixed pointer-events-none z-[9999]" style={{
           left: mousePos.x - (dragging?.offsetX || 0), top: mousePos.y - (dragging?.offsetY || 0),
-          width: dragging?.width || 210, opacity: 0.85, transform: 'rotate(2deg) scale(1.02)',
+          width: dragging?.width || 170, opacity: 0.85, transform: 'rotate(2deg) scale(1.02)',
         }}>
           <div className="bg-white rounded-xl shadow-2xl" style={{ border: `2px solid ${draggedPhase.color}50` }}>
             <div className="h-1 rounded-t-[10px]" style={{ background: draggedPhase.color }} />
