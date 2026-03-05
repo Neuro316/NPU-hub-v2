@@ -389,7 +389,7 @@ export default function JourneysPage() {
     cards.filter(c => c.phase_id === phaseId && c.row_index === row).sort((a, b) => a.sort_order - b.sort_order)
   const getRowNumbers = (phaseId: string) => {
     const phaseCards = getPhaseCards(phaseId)
-    const rows = [...new Set(phaseCards.map(c => c.row_index || 0))].sort((a, b) => a - b)
+    const rows = Array.from(new Set(phaseCards.map(c => c.row_index || 0))).sort((a, b) => a - b)
     return rows.length > 0 ? rows : [0]
   }
   const getNextRow = (phaseId: string) => {
