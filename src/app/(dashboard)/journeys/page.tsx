@@ -1,12 +1,11 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback, DragEvent } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
 import {
-  Plus, X, Trash2, Loader2, GripVertical, ChevronRight,
-  MoreHorizontal, Edit3, Wand2, ArrowRight,
-  CheckCircle2, Circle, Clock
+  Plus, X, Trash2, Loader2, ArrowRight,
+  CheckCircle2, Circle, Clock, MoreHorizontal, Edit3
 } from 'lucide-react'
 
 // ============================================================
@@ -81,30 +80,33 @@ export default function JourneysPage() {
   const [editingCard, setEditingCard] = useState<JourneyCard | null>(null)
   const [cardMenuOpen, setCardMenuOpen] = useState<string | null>(null)
 
-  // Drag state
-  const dragCardIdRef = useRef<string | null>(null)
-  const [dragCardId, setDragCardId] = useState<string | null>(null)
-  // dropIndicator: "cardId:left" or "cardId:right" or "phaseId:rowIdx:end" or "phaseId:newrow"
-  const [dropIndicator, setDropIndicator] = useState<string | null>(null)
+  // Mouse-based drag state
+  const [dragging, setDragging] = useState<{
+    cardId: string
+    startX: number
+    startY: number
+    offsetX: number
+    offsetY: number
+    width: number
+    active: boolean
+  } | null>(null)
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
+  const [dropTarget, setDropTarget] = useState<{
+    phaseId: string
+    rowIdx: number
+    insertIdx: number
+    newRow?: boolean
+  } | null>(null)
+  const rowRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   // ── Data Loading ──
   const loadData = useCallback(async () => {
     if (!currentOrg?.id) return
     setLoading(true)
-
     const [pRes, cRes] = await Promise.all([
-      supabase
-        .from('journey_phases')
-        .select('*')
-        .eq('org_id', currentOrg.id)
-        .order('sort_order'),
-      supabase
-        .from('journey_cards')
-        .select('*')
-        .eq('org_id', currentOrg.id)
-        .order('sort_order'),
+      supabase.from('journey_phases').select('*').eq('org_id', currentOrg.id).order('sort_order'),
+      supabase.from('journey_cards').select('*').eq('org_id', currentOrg.id).order('sort_order'),
     ])
-
     if (pRes.data) setPhases(pRes.data)
     if (cRes.data) setCards(cRes.data)
     setLoading(false)
@@ -118,20 +120,10 @@ export default function JourneysPage() {
     const phaseKey = newPhaseName.trim().toLowerCase().replace(/\s+/g, '_')
     const colors = ['#E91E8C', '#386797', '#10B981', '#F59E0B', '#7C3AED', '#DC2626', '#0891B2']
     const color = colors[phases.length % colors.length]
-
     const { data } = await supabase.from('journey_phases').insert({
-      org_id: currentOrg.id,
-      phase_key: phaseKey,
-      label: newPhaseName.trim(),
-      color,
-      sort_order: phases.length,
+      org_id: currentOrg.id, phase_key: phaseKey, label: newPhaseName.trim(), color, sort_order: phases.length,
     }).select().single()
-
-    if (data) {
-      setPhases(prev => [...prev, data])
-      setNewPhaseName('')
-      setAddingPhase(false)
-    }
+    if (data) { setPhases(prev => [...prev, data]); setNewPhaseName(''); setAddingPhase(false) }
   }
 
   const updatePhaseLabel = async (phaseId: string, label: string) => {
@@ -151,25 +143,13 @@ export default function JourneysPage() {
   // ── Card CRUD ──
   const addCard = async (phaseId: string, row: number) => {
     if (!newCardTitle.trim() || !currentOrg?.id) return
-    const phaseCards = cards.filter(c => c.phase_id === phaseId && c.row_index === row)
-    const maxSort = phaseCards.length > 0 ? Math.max(...phaseCards.map(c => c.sort_order)) + 1 : 0
-
+    const rowCards = cards.filter(c => c.phase_id === phaseId && c.row_index === row)
+    const maxSort = rowCards.length > 0 ? Math.max(...rowCards.map(c => c.sort_order)) + 1 : 0
     const { data } = await supabase.from('journey_cards').insert({
-      org_id: currentOrg.id,
-      phase_id: phaseId,
-      title: newCardTitle.trim(),
-      description: '',
-      status: 'not_started',
-      row_index: row,
-      sort_order: maxSort,
-      custom_fields: {},
+      org_id: currentOrg.id, phase_id: phaseId, title: newCardTitle.trim(),
+      description: '', status: 'not_started', row_index: row, sort_order: maxSort, custom_fields: {},
     }).select().single()
-
-    if (data) {
-      setCards(prev => [...prev, data])
-      setNewCardTitle('')
-      setAddingCardAt(null)
-    }
+    if (data) { setCards(prev => [...prev, data]); setNewCardTitle(''); setAddingCardAt(null) }
   }
 
   const updateCard = async (cardId: string, updates: Partial<JourneyCard>) => {
@@ -189,196 +169,6 @@ export default function JourneysPage() {
     updateCard(card.id, { status: next })
   }
 
-  // ── DRAG & DROP ──
-  const handleDragStart = (e: DragEvent<HTMLDivElement>, card: JourneyCard) => {
-    e.stopPropagation()
-    dragCardIdRef.current = card.id
-    setDragCardId(card.id)
-    e.dataTransfer.setData('text/plain', card.id)
-    e.dataTransfer.effectAllowed = 'move'
-    requestAnimationFrame(() => {
-      const el = e.currentTarget as HTMLElement
-      if (el) el.style.opacity = '0.4'
-    })
-  }
-
-  const handleDragEnd = (e: DragEvent<HTMLDivElement>) => {
-    const el = e.currentTarget as HTMLElement
-    if (el) el.style.opacity = '1'
-    dragCardIdRef.current = null
-    setDragCardId(null)
-    setDropIndicator(null)
-  }
-
-  // When dragging over a card, figure out left or right half
-  const handleCardDragOver = (e: DragEvent<HTMLDivElement>, targetCardId: string) => {
-    e.preventDefault()
-    e.stopPropagation()
-    e.dataTransfer.dropEffect = 'move'
-    if (targetCardId === dragCardIdRef.current) return
-
-    const rect = e.currentTarget.getBoundingClientRect()
-    const mouseX = e.clientX
-    const midpoint = rect.left + rect.width / 2
-    const side = mouseX < midpoint ? 'left' : 'right'
-    setDropIndicator(`${targetCardId}:${side}`)
-  }
-
-  const handleCardDragLeave = (e: DragEvent<HTMLDivElement>, targetCardId: string) => {
-    // Only clear if actually leaving this card (not entering a child)
-    const related = e.relatedTarget as HTMLElement | null
-    if (!related || !e.currentTarget.contains(related)) {
-      if (dropIndicator === `${targetCardId}:left` || dropIndicator === `${targetCardId}:right`) {
-        setDropIndicator(null)
-      }
-    }
-  }
-
-  // Drop on a specific card: insert before or after
-  const handleCardDrop = async (e: DragEvent<HTMLDivElement>, targetCard: JourneyCard) => {
-    e.preventDefault()
-    e.stopPropagation()
-
-    const theCardId = e.dataTransfer.getData('text/plain') || dragCardIdRef.current
-    if (!theCardId || theCardId === targetCard.id) {
-      cleanupDrag()
-      return
-    }
-
-    const draggedCard = cards.find(c => c.id === theCardId)
-    if (!draggedCard) { cleanupDrag(); return }
-
-    // Determine insert position
-    const rect = e.currentTarget.getBoundingClientRect()
-    const mouseX = e.clientX
-    const midpoint = rect.left + rect.width / 2
-    const insertBefore = mouseX < midpoint
-
-    await moveCard(theCardId, draggedCard, targetCard.phase_id, targetCard.row_index, targetCard.id, insertBefore)
-    cleanupDrag()
-  }
-
-  // Drop on the end-of-row zone
-  const handleEndDrop = async (e: DragEvent, targetPhaseId: string, targetRow: number) => {
-    e.preventDefault()
-    e.stopPropagation()
-
-    const theCardId = e.dataTransfer.getData('text/plain') || dragCardIdRef.current
-    if (!theCardId) { cleanupDrag(); return }
-
-    const draggedCard = cards.find(c => c.id === theCardId)
-    if (!draggedCard) { cleanupDrag(); return }
-
-    await moveCard(theCardId, draggedCard, targetPhaseId, targetRow, null, false)
-    cleanupDrag()
-  }
-
-  // Drop on new-row zone
-  const handleNewRowDrop = async (e: DragEvent, targetPhaseId: string, newRow: number) => {
-    e.preventDefault()
-    e.stopPropagation()
-
-    const theCardId = e.dataTransfer.getData('text/plain') || dragCardIdRef.current
-    if (!theCardId) { cleanupDrag(); return }
-
-    const draggedCard = cards.find(c => c.id === theCardId)
-    if (!draggedCard) { cleanupDrag(); return }
-
-    await moveCard(theCardId, draggedCard, targetPhaseId, newRow, null, false)
-    cleanupDrag()
-  }
-
-  const cleanupDrag = () => {
-    dragCardIdRef.current = null
-    setDragCardId(null)
-    setDropIndicator(null)
-  }
-
-  // Core move logic: move card to a target phase+row, optionally relative to another card
-  const moveCard = async (
-    cardId: string,
-    draggedCard: JourneyCard,
-    targetPhaseId: string,
-    targetRow: number,
-    relativeToCardId: string | null,
-    insertBefore: boolean
-  ) => {
-    // Get cards in target row excluding the dragged card
-    const targetRowCards = cards
-      .filter(c => c.phase_id === targetPhaseId && c.row_index === targetRow && c.id !== cardId)
-      .sort((a, b) => a.sort_order - b.sort_order)
-
-    let insertAt = targetRowCards.length // default: append
-
-    if (relativeToCardId) {
-      const relIdx = targetRowCards.findIndex(c => c.id === relativeToCardId)
-      if (relIdx >= 0) {
-        insertAt = insertBefore ? relIdx : relIdx + 1
-      }
-    }
-
-    // Build new order
-    const reordered: { id: string; sort_order: number; phase_id?: string; row_index?: number }[] = []
-    let idx = 0
-    let placed = false
-
-    for (let i = 0; i < targetRowCards.length; i++) {
-      if (idx === insertAt && !placed) {
-        reordered.push({ id: cardId, sort_order: idx, phase_id: targetPhaseId, row_index: targetRow })
-        idx++
-        placed = true
-      }
-      reordered.push({ id: targetRowCards[i].id, sort_order: idx })
-      idx++
-    }
-    if (!placed) {
-      reordered.push({ id: cardId, sort_order: idx, phase_id: targetPhaseId, row_index: targetRow })
-    }
-
-    // Reindex source row if moving across rows
-    const sourceReindex: { id: string; sort_order: number }[] = []
-    if (draggedCard.phase_id !== targetPhaseId || draggedCard.row_index !== targetRow) {
-      const sourceRowCards = cards
-        .filter(c => c.phase_id === draggedCard.phase_id && c.row_index === draggedCard.row_index && c.id !== cardId)
-        .sort((a, b) => a.sort_order - b.sort_order)
-      sourceRowCards.forEach((c, i) => {
-        sourceReindex.push({ id: c.id, sort_order: i })
-      })
-    }
-
-    // Optimistic update
-    setCards(prev => {
-      const next = [...prev]
-      for (const u of reordered) {
-        const i = next.findIndex(c => c.id === u.id)
-        if (i >= 0) {
-          next[i] = {
-            ...next[i],
-            sort_order: u.sort_order,
-            ...(u.phase_id ? { phase_id: u.phase_id } : {}),
-            ...(u.row_index !== undefined ? { row_index: u.row_index } : {}),
-          }
-        }
-      }
-      for (const u of sourceReindex) {
-        const i = next.findIndex(c => c.id === u.id)
-        if (i >= 0) {
-          next[i] = { ...next[i], sort_order: u.sort_order }
-        }
-      }
-      return next
-    })
-
-    // Persist
-    const allUpdates = [...reordered, ...sourceReindex]
-    for (const u of allUpdates) {
-      const payload: Record<string, unknown> = { sort_order: u.sort_order, updated_at: new Date().toISOString() }
-      if ('phase_id' in u && u.phase_id) payload.phase_id = u.phase_id
-      if ('row_index' in u && u.row_index !== undefined) payload.row_index = u.row_index
-      await supabase.from('journey_cards').update(payload).eq('id', u.id)
-    }
-  }
-
   // ── Helpers ──
   const getPhaseCards = (phaseId: string) => cards.filter(c => c.phase_id === phaseId)
   const getRowCards = (phaseId: string, row: number) =>
@@ -393,367 +183,405 @@ export default function JourneysPage() {
     return Math.max(...rows, -1) + 1
   }
 
+  // ── MOUSE DRAG ──
+  const handleMouseDown = useCallback((e: React.MouseEvent, cardId: string) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    const rect = e.currentTarget.getBoundingClientRect()
+    setDragging({
+      cardId,
+      startX: e.clientX, startY: e.clientY,
+      offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top,
+      width: rect.width, active: false,
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!dragging) return
+
+    const handleMouseMove = (e: MouseEvent) => {
+      setMousePos({ x: e.clientX, y: e.clientY })
+      setDragging(prev => {
+        if (!prev) return null
+        if (!prev.active) {
+          const dx = e.clientX - prev.startX
+          const dy = e.clientY - prev.startY
+          if (Math.sqrt(dx * dx + dy * dy) < 5) return prev
+          return { ...prev, active: true }
+        }
+        return prev
+      })
+
+      // Find drop target
+      let best: typeof dropTarget = null
+      for (const [key, el] of Object.entries(rowRefs.current)) {
+        if (!el) continue
+        const rect = el.getBoundingClientRect()
+        if (e.clientY >= rect.top - 10 && e.clientY <= rect.bottom + 10 &&
+            e.clientX >= rect.left - 20 && e.clientX <= rect.right + 20) {
+          const parts = key.split(':')
+          const phaseId = parts[0]
+          const rowIdx = parseInt(parts[1])
+          const cardEls = el.querySelectorAll('[data-cardid]')
+          let insertIdx = cardEls.length
+          for (let i = 0; i < cardEls.length; i++) {
+            const cr = cardEls[i].getBoundingClientRect()
+            if (e.clientX < cr.left + cr.width / 2) { insertIdx = i; break }
+          }
+          best = { phaseId, rowIdx, insertIdx }
+          break
+        }
+      }
+
+      // Check new-row zones
+      if (!best) {
+        const newRowEls = document.querySelectorAll('[data-newrow]')
+        newRowEls.forEach(el => {
+          const rect = el.getBoundingClientRect()
+          if (e.clientY >= rect.top && e.clientY <= rect.bottom &&
+              e.clientX >= rect.left && e.clientX <= rect.right) {
+            const phaseId = el.getAttribute('data-newrow')
+            if (phaseId) best = { phaseId, rowIdx: -1, insertIdx: 0, newRow: true }
+          }
+        })
+      }
+      setDropTarget(best)
+    }
+
+    const handleMouseUp = () => {
+      if (dragging && dragging.active && dropTarget) {
+        performDrop(dragging.cardId, dropTarget)
+      }
+      setDragging(null)
+      setDropTarget(null)
+    }
+
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [dragging, dropTarget, cards, phases])
+
+  const performDrop = async (cardId: string, target: NonNullable<typeof dropTarget>) => {
+    const card = cards.find(c => c.id === cardId)
+    if (!card) return
+
+    if (target.newRow) {
+      const newRow = getNextRow(target.phaseId)
+      // Optimistic
+      setCards(prev => prev.map(c => c.id === cardId ? { ...c, phase_id: target.phaseId, row_index: newRow, sort_order: 0 } : c))
+      // Reindex source row
+      const srcRow = cards.filter(c => c.phase_id === card.phase_id && c.row_index === card.row_index && c.id !== cardId).sort((a, b) => a.sort_order - b.sort_order)
+      for (let i = 0; i < srcRow.length; i++) {
+        await supabase.from('journey_cards').update({ sort_order: i }).eq('id', srcRow[i].id)
+      }
+      await supabase.from('journey_cards').update({ phase_id: target.phaseId, row_index: newRow, sort_order: 0, updated_at: new Date().toISOString() }).eq('id', cardId)
+      return
+    }
+
+    // Get target row cards excluding dragged
+    const targetRowCards = cards
+      .filter(c => c.phase_id === target.phaseId && c.row_index === target.rowIdx && c.id !== cardId)
+      .sort((a, b) => a.sort_order - b.sort_order)
+
+    // Build new order
+    const reordered: { id: string; sort_order: number; phase_id?: string; row_index?: number }[] = []
+    let idx = 0
+    let placed = false
+    for (let i = 0; i < targetRowCards.length; i++) {
+      if (idx === target.insertIdx && !placed) {
+        reordered.push({ id: cardId, sort_order: idx, phase_id: target.phaseId, row_index: target.rowIdx })
+        idx++; placed = true
+      }
+      reordered.push({ id: targetRowCards[i].id, sort_order: idx })
+      idx++
+    }
+    if (!placed) {
+      reordered.push({ id: cardId, sort_order: idx, phase_id: target.phaseId, row_index: target.rowIdx })
+    }
+
+    // Reindex source row if different
+    const sourceReindex: { id: string; sort_order: number }[] = []
+    if (card.phase_id !== target.phaseId || card.row_index !== target.rowIdx) {
+      const srcRow = cards.filter(c => c.phase_id === card.phase_id && c.row_index === card.row_index && c.id !== cardId).sort((a, b) => a.sort_order - b.sort_order)
+      srcRow.forEach((c, i) => sourceReindex.push({ id: c.id, sort_order: i }))
+    }
+
+    // Optimistic update
+    setCards(prev => {
+      const next = [...prev]
+      for (const u of reordered) {
+        const i = next.findIndex(c => c.id === u.id)
+        if (i >= 0) {
+          next[i] = { ...next[i], sort_order: u.sort_order, ...(u.phase_id ? { phase_id: u.phase_id } : {}), ...(u.row_index !== undefined ? { row_index: u.row_index } : {}) }
+        }
+      }
+      for (const u of sourceReindex) {
+        const i = next.findIndex(c => c.id === u.id)
+        if (i >= 0) next[i] = { ...next[i], sort_order: u.sort_order }
+      }
+      return next
+    })
+
+    // Persist
+    for (const u of [...reordered, ...sourceReindex]) {
+      const payload: Record<string, unknown> = { sort_order: u.sort_order, updated_at: new Date().toISOString() }
+      if ('phase_id' in u && u.phase_id) payload.phase_id = u.phase_id
+      if ('row_index' in u && u.row_index !== undefined) payload.row_index = u.row_index
+      await supabase.from('journey_cards').update(payload).eq('id', u.id)
+    }
+  }
+
+  const isDraggingActive = dragging?.active || false
+  const draggedCard = isDraggingActive ? cards.find(c => c.id === dragging?.cardId) : null
+  const draggedPhase = draggedCard ? phases.find(p => p.id === draggedCard.phase_id) : null
+  const totalCards = cards.length
+
   // ── Loading ──
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <Loader2 className="w-6 h-6 text-gray-400 animate-spin" />
-      </div>
-    )
+    return <div className="flex items-center justify-center h-full"><Loader2 className="w-6 h-6 text-gray-400 animate-spin" /></div>
   }
 
   return (
-    <div className="h-full flex flex-col overflow-hidden bg-gray-50/50">
-      {/* ── Header ── */}
-      <div className="flex-shrink-0 px-6 py-4 bg-white border-b border-gray-100">
-        <div className="flex items-center justify-between">
+    <div className="h-full flex flex-col overflow-hidden bg-[#F5F6FA]" style={{ userSelect: isDraggingActive ? 'none' : 'auto' }}>
+      {/* Header */}
+      <div className="flex-shrink-0 px-7 pt-5 pb-4">
+        <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-lg font-bold text-gray-900">Journey Builder</h1>
-            <p className="text-xs text-gray-500 mt-0.5">{currentOrg?.name} — drag cards between any row or position</p>
+            <h1 className="text-xl font-bold text-gray-900">Journey Builder</h1>
+            <p className="text-sm text-gray-500 mt-1">{currentOrg?.name} · {phases.length} paths · {totalCards} cards</p>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setAddingPhase(true)}
-              className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-1.5 transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" /> Add Path
-            </button>
-            <button className="px-3 py-1.5 rounded-lg bg-[#386797] text-white text-xs font-medium flex items-center gap-1.5 hover:bg-[#2d5578] transition-colors">
-              <Wand2 className="w-3.5 h-3.5" /> AI Journey Creator
+            <button onClick={() => setAddingPhase(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50">
+              <Plus className="w-4 h-4" /> Add Path
             </button>
           </div>
         </div>
-
         {addingPhase && (
           <div className="flex items-center gap-2 mt-3">
-            <input
-              value={newPhaseName}
-              onChange={e => setNewPhaseName(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && addPhase()}
-              placeholder="Path name (e.g. Acquisition, Onboarding)"
-              className="px-3 py-2 border border-gray-200 rounded-lg text-sm w-72 focus:ring-2 focus:ring-[#386797]/20 focus:border-[#386797] outline-none"
-              autoFocus
-            />
-            <button onClick={addPhase} className="px-3 py-2 bg-[#386797] text-white rounded-lg text-xs font-medium">Add</button>
-            <button onClick={() => { setAddingPhase(false); setNewPhaseName('') }} className="text-gray-400 hover:text-gray-600">
-              <X className="w-4 h-4" />
-            </button>
+            <input value={newPhaseName} onChange={e => setNewPhaseName(e.target.value)} onKeyDown={e => e.key === 'Enter' && addPhase()}
+              placeholder="Path name (e.g. Acquisition, Onboarding)" className="px-3 py-2 border border-gray-200 rounded-lg text-sm w-72 outline-none focus:ring-2 focus:ring-blue-100" autoFocus />
+            <button onClick={addPhase} className="px-3 py-2 bg-[#386797] text-white rounded-lg text-sm font-medium">Add</button>
+            <button onClick={() => { setAddingPhase(false); setNewPhaseName('') }}><X className="w-4 h-4 text-gray-400" /></button>
           </div>
         )}
       </div>
 
-      {/* ── Canvas ── */}
-      <div className="flex-1 overflow-auto p-6 space-y-4" onDragOver={e => e.preventDefault()}>
-        {phases.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-4">
-              <ArrowRight className="w-7 h-7 text-gray-400" />
+      {/* Scrollable Canvas */}
+      <div className="flex-1 overflow-auto px-7 pb-7">
+        <div className="flex flex-col gap-5" style={{ minWidth: 'fit-content' }}>
+          {phases.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <ArrowRight className="w-8 h-8 text-gray-300 mb-4" />
+              <h3 className="text-sm font-semibold text-gray-700 mb-1">No Paths Yet</h3>
+              <p className="text-xs text-gray-500 mb-4">Add your first path to start building the journey.</p>
+              <button onClick={() => setAddingPhase(true)} className="px-4 py-2 bg-[#386797] text-white rounded-lg text-xs font-medium">Add First Path</button>
             </div>
-            <h3 className="text-sm font-semibold text-gray-700 mb-1">No Paths Yet</h3>
-            <p className="text-xs text-gray-500 mb-4 max-w-sm">
-              Add your first path to start mapping the customer journey.
-            </p>
-            <button
-              onClick={() => setAddingPhase(true)}
-              className="px-4 py-2 bg-[#386797] text-white rounded-lg text-xs font-medium"
-            >
-              Add First Path
-            </button>
-          </div>
-        ) : (
-          [...phases].sort((a, b) => a.sort_order - b.sort_order).map(phase => {
-            const rowNumbers = getRowNumbers(phase.id)
-            const phaseCards = getPhaseCards(phase.id)
+          ) : (
+            [...phases].sort((a, b) => a.sort_order - b.sort_order).map(phase => {
+              const rowNumbers = getRowNumbers(phase.id)
+              const phaseCards = getPhaseCards(phase.id)
 
-            return (
-              <div key={phase.id} className="bg-white rounded-xl border border-gray-100" onDragOver={e => e.preventDefault()}>
-                {/* ── Phase Header ── */}
-                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
-                  <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: phase.color }} />
-                    {editingPhase === phase.id ? (
-                      <input
-                        value={editPhaseLabel}
-                        onChange={e => setEditPhaseLabel(e.target.value)}
-                        onBlur={() => updatePhaseLabel(phase.id, editPhaseLabel)}
-                        onKeyDown={e => e.key === 'Enter' && updatePhaseLabel(phase.id, editPhaseLabel)}
-                        className="text-sm font-semibold text-gray-900 border-b-2 border-[#386797] outline-none bg-transparent px-0"
-                        autoFocus
-                      />
-                    ) : (
-                      <h3
-                        className="text-sm font-semibold text-gray-900 cursor-pointer hover:text-[#386797]"
-                        onDoubleClick={() => { setEditingPhase(phase.id); setEditPhaseLabel(phase.label) }}
-                      >
-                        {phase.label}
-                      </h3>
-                    )}
-                    <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full">
-                      {phaseCards.length}
-                    </span>
+              return (
+                <div key={phase.id} className="flex bg-white rounded-2xl border border-gray-200/80">
+                  {/* Phase sidebar */}
+                  <div className="flex-shrink-0 w-44 flex flex-col justify-center px-5 py-6 rounded-l-2xl" style={{ borderRight: `4px solid ${phase.color}`, background: `${phase.color}08` }}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="w-2.5 h-2.5 rounded-full" style={{ background: phase.color }} />
+                      {editingPhase === phase.id ? (
+                        <input value={editPhaseLabel} onChange={e => setEditPhaseLabel(e.target.value)}
+                          onBlur={() => updatePhaseLabel(phase.id, editPhaseLabel)} onKeyDown={e => e.key === 'Enter' && updatePhaseLabel(phase.id, editPhaseLabel)}
+                          className="text-sm font-bold text-gray-900 border-b-2 border-blue-500 outline-none bg-transparent w-full" autoFocus />
+                      ) : (
+                        <h3 className="text-sm font-bold text-gray-900 cursor-pointer hover:text-blue-700"
+                          onDoubleClick={() => { setEditingPhase(phase.id); setEditPhaseLabel(phase.label) }}>{phase.label}</h3>
+                      )}
+                      <span className="text-xs text-gray-400">({phaseCards.length})</span>
+                    </div>
+                    <span className="text-[11px] text-gray-400 ml-[18px]">{rowNumbers.length} row{rowNumbers.length !== 1 ? 's' : ''}</span>
+                    <div className="flex gap-1 mt-3 ml-[18px]">
+                      <button onClick={() => { setAddingCardAt({ phaseId: phase.id, row: getNextRow(phase.id) }); setNewCardTitle('') }}
+                        className="p-1 text-gray-400 hover:text-blue-600 rounded"><Plus className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => deletePhase(phase.id)}
+                        className="p-1 text-gray-400 hover:text-red-500 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => { setAddingCardAt({ phaseId: phase.id, row: getNextRow(phase.id) }); setNewCardTitle('') }}
-                      className="p-1.5 text-gray-400 hover:text-[#386797] hover:bg-blue-50 rounded-lg transition-colors"
-                      title="Add new row"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => deletePhase(phase.id)}
-                      className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
 
-                {/* ── Rows ── */}
-                <div className="p-3 space-y-2" onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}>
-                  {rowNumbers.map(rowIdx => {
-                    const rowCards = getRowCards(phase.id, rowIdx)
-                    const endKey = `${phase.id}:${rowIdx}:end`
-                    const isEndHovered = dropIndicator === endKey
+                  {/* Rows area */}
+                  <div className="flex-1 p-4">
+                    {rowNumbers.map((rowIdx, ri) => {
+                      const rowCards = getRowCards(phase.id, rowIdx)
+                      const rowKey = `${phase.id}:${rowIdx}`
+                      const isDropRow = dropTarget && !dropTarget.newRow && dropTarget.phaseId === phase.id && dropTarget.rowIdx === rowIdx
 
-                    return (
-                      <div
-                        key={rowIdx}
-                        className="flex items-start gap-2 min-h-[70px]"
-                        onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
-                        onDrop={e => handleEndDrop(e, phase.id, rowIdx)}
-                      >
-                        {/* Row label */}
-                        <div className="flex-shrink-0 w-7 flex items-center justify-center pt-3">
-                          <span className="text-[9px] text-gray-400 font-medium">{rowIdx + 1}</span>
-                        </div>
+                      return (
+                        <div key={rowIdx}>
+                          <div ref={el => { rowRefs.current[rowKey] = el }}
+                            className="flex items-start gap-0 flex-nowrap rounded-xl transition-colors"
+                            style={{ minHeight: 80, padding: '8px 4px', paddingBottom: 12, background: isDropRow ? `${phase.color}08` : 'transparent' }}>
+                            {rowCards.map((card, cardIdx) => {
+                              const status = STATUS_CONFIG[card.status]
+                              const StatusIcon = status.icon
+                              const isBeingDragged = isDraggingActive && dragging?.cardId === card.id
+                              const showInsertBefore = isDropRow && dropTarget?.insertIdx === cardIdx && dragging?.cardId !== card.id
 
-                        {/* Cards */}
-                        <div
-                          className="flex-1 flex items-start gap-0 flex-nowrap overflow-x-auto pb-1"
-                          onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
-                        >
-                          {rowCards.map((card, cardIdx) => {
-                            const status = STATUS_CONFIG[card.status]
-                            const StatusIcon = status.icon
-                            const isBeingDragged = dragCardId === card.id
-                            const showLeftBar = dropIndicator === `${card.id}:left`
-                            const showRightBar = dropIndicator === `${card.id}:right`
+                              return (
+                                <div key={card.id} className="flex items-start flex-shrink-0">
+                                  {/* Insert indicator */}
+                                  <div className="flex-shrink-0 rounded transition-all" style={{
+                                    width: showInsertBefore ? 4 : 0, background: phase.color,
+                                    minHeight: 80, margin: showInsertBefore ? '0 6px' : 0,
+                                  }} />
 
-                            return (
-                              <div key={card.id} className="flex items-start flex-shrink-0">
-                                {/* Left drop indicator */}
-                                <div className={`flex-shrink-0 transition-all duration-150 rounded ${showLeftBar ? 'w-1.5 bg-[#386797] mx-1 min-h-[80px]' : 'w-0'}`} />
-
-                                {/* The Card — also a drop target */}
-                                <div
-                                  draggable
-                                  onDragStart={e => handleDragStart(e, card)}
-                                  onDragEnd={handleDragEnd}
-                                  onDragOver={e => handleCardDragOver(e, card.id)}
-                                  onDragLeave={e => handleCardDragLeave(e, card.id)}
-                                  onDrop={e => handleCardDrop(e, card)}
-                                  className={`group relative bg-white rounded-lg border-2 shadow-sm hover:shadow-md 
-                                    transition-all w-[200px] cursor-grab active:cursor-grabbing select-none
-                                    ${isBeingDragged ? 'opacity-30 scale-95' : 'opacity-100'}
-                                  `}
-                                  style={{ borderColor: `${phase.color}30` }}
-                                >
-                                  <div className="h-1 rounded-t-[5px]" style={{ backgroundColor: phase.color }} />
-
-                                  <div className="p-2.5">
-                                    <div className="flex items-start gap-1.5">
-                                      <button
-                                        onClick={e => { e.stopPropagation(); cycleStatus(card) }}
-                                        className="mt-0.5 flex-shrink-0 transition-colors"
-                                        title={status.label}
-                                      >
-                                        <StatusIcon
-                                          className="w-3.5 h-3.5"
-                                          style={{ color: status.color }}
-                                          fill={card.status === 'done' ? status.color : 'none'}
-                                        />
-                                      </button>
-                                      <span className="text-xs font-medium text-gray-900 leading-tight line-clamp-2">
-                                        {card.title}
-                                      </span>
-                                    </div>
-
-                                    {card.description && (
-                                      <p className="text-[10px] text-gray-500 mt-1 leading-relaxed line-clamp-2 ml-5">
-                                        {card.description}
-                                      </p>
-                                    )}
-
-                                    {card.tags && card.tags.length > 0 && (
-                                      <div className="flex flex-wrap gap-1 mt-1.5 ml-5">
-                                        {card.tags.map(tag => {
-                                          const style = getTagStyle(tag)
-                                          return (
-                                            <span
-                                              key={tag}
-                                              className="text-[8px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide"
-                                              style={{ backgroundColor: style.bg, color: style.text }}
-                                            >
-                                              {tag}
-                                            </span>
-                                          )
-                                        })}
-                                      </div>
-                                    )}
-
-                                    <div className="flex items-center justify-between mt-2 ml-5">
-                                      <span
-                                        className="text-[8px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wide"
-                                        style={{ backgroundColor: status.bg, color: status.color }}
-                                      >
-                                        {status.label}
-                                      </span>
-                                      <div className="relative">
-                                        <button
-                                          onClick={e => { e.stopPropagation(); setCardMenuOpen(cardMenuOpen === card.id ? null : card.id) }}
-                                          className="p-1 text-gray-300 hover:text-gray-600 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                                        >
-                                          <MoreHorizontal className="w-3.5 h-3.5" />
+                                  {/* Card */}
+                                  <div data-cardid={card.id} onMouseDown={e => handleMouseDown(e, card.id)}
+                                    className="group relative bg-white rounded-xl shadow-sm hover:shadow-md transition-all cursor-grab active:cursor-grabbing select-none"
+                                    style={{ width: 210, border: `2px solid ${phase.color}25`, opacity: isBeingDragged ? 0.25 : 1 }}>
+                                    <div className="h-1 rounded-t-[10px]" style={{ background: phase.color }} />
+                                    <div className="p-2.5">
+                                      <div className="flex items-start gap-1.5">
+                                        <button onClick={e => { e.stopPropagation(); cycleStatus(card) }} className="mt-0.5 flex-shrink-0" title={status.label}>
+                                          <StatusIcon className="w-4 h-4" style={{ color: status.color }} fill={card.status === 'done' ? status.color : 'none'} />
                                         </button>
-                                        {cardMenuOpen === card.id && (
-                                          <div className="absolute right-0 top-6 bg-white rounded-lg shadow-lg border border-gray-100 py-1 z-50 w-32">
-                                            <button
-                                              onClick={() => { setEditingCard(card); setCardMenuOpen(null) }}
-                                              className="w-full px-3 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                                            >
-                                              <Edit3 className="w-3 h-3" /> Edit
-                                            </button>
-                                            <button
-                                              onClick={() => deleteCard(card.id)}
-                                              className="w-full px-3 py-1.5 text-left text-xs text-red-600 hover:bg-red-50 flex items-center gap-2"
-                                            >
-                                              <Trash2 className="w-3 h-3" /> Delete
-                                            </button>
-                                          </div>
-                                        )}
+                                        <span className="text-[13px] font-semibold text-gray-900 leading-tight line-clamp-2">{card.title}</span>
+                                      </div>
+                                      {card.description && <p className="text-[11px] text-gray-500 mt-1 leading-relaxed line-clamp-2 ml-[22px]">{card.description}</p>}
+                                      {card.tags && card.tags.length > 0 && (
+                                        <div className="flex flex-wrap gap-1 mt-1.5 ml-[22px]">
+                                          {card.tags.map(tag => {
+                                            const s = getTagStyle(tag)
+                                            return <span key={tag} className="text-[8px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide" style={{ background: s.bg, color: s.text }}>{tag}</span>
+                                          })}
+                                        </div>
+                                      )}
+                                      <div className="flex items-center justify-between mt-2 ml-[22px]">
+                                        <span className="text-[9px] font-bold px-2 py-0.5 rounded uppercase tracking-wide" style={{ background: status.bg, color: status.color }}>{status.label}</span>
+                                        <div className="relative">
+                                          <button onClick={e => { e.stopPropagation(); setCardMenuOpen(cardMenuOpen === card.id ? null : card.id) }}
+                                            className="p-1 text-gray-300 hover:text-gray-600 rounded opacity-0 group-hover:opacity-100"><MoreHorizontal className="w-3.5 h-3.5" /></button>
+                                          {cardMenuOpen === card.id && (
+                                            <div className="absolute right-0 top-6 bg-white rounded-lg shadow-lg border py-1 z-50 w-28">
+                                              <button onClick={() => { setEditingCard(card); setCardMenuOpen(null) }} className="w-full px-3 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"><Edit3 className="w-3 h-3" /> Edit</button>
+                                              <button onClick={() => deleteCard(card.id)} className="w-full px-3 py-1.5 text-left text-xs text-red-600 hover:bg-red-50 flex items-center gap-2"><Trash2 className="w-3 h-3" /> Delete</button>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    {/* Grip dots */}
+                                    <div className="absolute top-2.5 right-2 opacity-30 group-hover:opacity-50">
+                                      <div className="flex flex-col gap-0.5">
+                                        {[0,1,2].map(r => <div key={r} className="flex gap-0.5">{[0,1].map(c => <div key={c} className="w-[3px] h-[3px] rounded-full bg-gray-400" />)}</div>)}
                                       </div>
                                     </div>
                                   </div>
 
-                                  <div className="absolute top-2 right-2 text-gray-200 group-hover:text-gray-400 transition-colors">
-                                    <GripVertical className="w-3 h-3" />
-                                  </div>
+                                  {/* Arrow */}
+                                  {cardIdx < rowCards.length - 1 && (
+                                    <div className="flex-shrink-0 flex items-center px-1 pt-5">
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D1D5DB" strokeWidth="2"><polyline points="9 18 15 12 9 6" /></svg>
+                                    </div>
+                                  )}
                                 </div>
+                              )
+                            })}
 
-                                {/* Right drop indicator */}
-                                <div className={`flex-shrink-0 transition-all duration-150 rounded ${showRightBar ? 'w-1.5 bg-[#386797] mx-1 min-h-[80px]' : 'w-0'}`} />
+                            {/* End-of-row insert indicator */}
+                            {isDropRow && dropTarget && dropTarget.insertIdx >= rowCards.length && dragging && (
+                              <div className="flex-shrink-0 rounded" style={{ width: 4, background: phase.color, minHeight: 80, margin: '0 6px' }} />
+                            )}
 
-                                {/* Arrow between cards (only when not showing indicators) */}
-                                {cardIdx < rowCards.length - 1 && !showRightBar && (
-                                  <div className="flex-shrink-0 flex items-center px-0.5 pt-4">
-                                    <ChevronRight className="w-3.5 h-3.5 text-gray-300" />
+                            {/* Add card */}
+                            {!isDraggingActive && (
+                              <>
+                                {rowCards.length > 0 && (
+                                  <div className="flex-shrink-0 flex items-center px-1 pt-5">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D1D5DB" strokeWidth="2"><polyline points="9 18 15 12 9 6" /></svg>
                                   </div>
                                 )}
-                              </div>
-                            )
-                          })}
-
-                          {/* End-of-row drop zone */}
-                          <div
-                            className={`flex-shrink-0 rounded-lg border-2 border-dashed transition-all min-h-[56px] flex items-center justify-center mx-1 ${
-                              isEndHovered
-                                ? 'border-[#386797] bg-blue-50/80 w-[100px]'
-                                : dragCardId
-                                  ? 'border-gray-200 bg-gray-50/30 w-[60px]'
-                                  : 'border-transparent w-[40px]'
-                            }`}
-                            onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDropIndicator(endKey) }}
-                            onDragLeave={() => { if (dropIndicator === endKey) setDropIndicator(null) }}
-                            onDrop={e => handleEndDrop(e, phase.id, rowIdx)}
-                          >
-                            {dragCardId ? (
-                              <Plus className="w-4 h-4 text-[#386797]" />
-                            ) : (
-                              <button
-                                onClick={() => { setAddingCardAt({ phaseId: phase.id, row: rowIdx }); setNewCardTitle('') }}
-                                className="w-full h-full flex items-center justify-center text-gray-400 hover:text-[#386797]"
-                              >
-                                <Plus className="w-3.5 h-3.5" />
-                              </button>
+                                <button onClick={() => { setAddingCardAt({ phaseId: phase.id, row: rowIdx }); setNewCardTitle('') }}
+                                  className="flex-shrink-0 flex items-center gap-1.5 px-4 py-3 rounded-xl border-2 border-dashed border-gray-200 text-gray-400 text-xs font-medium hover:border-blue-300 hover:text-blue-500 whitespace-nowrap"
+                                  style={{ minHeight: 60 }}>
+                                  <Plus className="w-3.5 h-3.5" /> Add Card
+                                </button>
+                              </>
                             )}
                           </div>
+
+                          {/* Row divider */}
+                          {ri < rowNumbers.length - 1 && <div className="border-b border-dashed border-gray-200 mx-1 my-1" />}
                         </div>
+                      )
+                    })}
+
+                    {/* Add row / new row drop zone */}
+                    <div data-newrow={phase.id}
+                      className="mt-2 px-4 py-2.5 rounded-lg flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer hover:text-gray-600 transition-colors"
+                      style={{
+                        border: isDraggingActive ? '2px dashed #D1D5DB' : 'none',
+                        background: dropTarget?.newRow && dropTarget?.phaseId === phase.id ? `${phase.color}10` : 'transparent',
+                      }}>
+                      <Plus className="w-3.5 h-3.5" />
+                      {isDraggingActive ? 'Drop to create new row' : `Add Row to ${phase.label}`}
+                    </div>
+
+                    {/* Inline add card form */}
+                    {addingCardAt?.phaseId === phase.id && (
+                      <div className="flex items-center gap-2 mt-2 ml-1">
+                        <input value={newCardTitle} onChange={e => setNewCardTitle(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && addCard(addingCardAt.phaseId, addingCardAt.row)}
+                          placeholder="Card title..." className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs w-56 outline-none focus:ring-2 focus:ring-blue-100" autoFocus />
+                        <button onClick={() => addCard(addingCardAt.phaseId, addingCardAt.row)} className="px-2.5 py-1.5 bg-[#386797] text-white rounded-lg text-[11px] font-medium">Add</button>
+                        <button onClick={() => setAddingCardAt(null)}><X className="w-3.5 h-3.5 text-gray-400" /></button>
                       </div>
-                    )
-                  })}
-
-                  {/* New row drop zone */}
-                  {dragCardId && (
-                    <div
-                      className={`mx-9 rounded-lg border-2 border-dashed transition-all min-h-[50px] flex items-center justify-center ${
-                        dropIndicator === `${phase.id}:newrow`
-                          ? 'border-[#386797] bg-blue-50/80'
-                          : 'border-gray-200 bg-gray-50/30'
-                      }`}
-                      onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDropIndicator(`${phase.id}:newrow`) }}
-                      onDragLeave={() => { if (dropIndicator === `${phase.id}:newrow`) setDropIndicator(null) }}
-                      onDrop={e => handleNewRowDrop(e, phase.id, getNextRow(phase.id))}
-                    >
-                      <span className="text-[10px] text-gray-400">Drop to create new row</span>
-                    </div>
-                  )}
-
-                  {addingCardAt?.phaseId === phase.id && (
-                    <div className="flex items-center gap-2 ml-9 mt-1">
-                      <input
-                        value={newCardTitle}
-                        onChange={e => setNewCardTitle(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && addCard(addingCardAt.phaseId, addingCardAt.row)}
-                        placeholder="Card title..."
-                        className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs w-56 focus:ring-2 focus:ring-[#386797]/20 focus:border-[#386797] outline-none"
-                        autoFocus
-                      />
-                      <button
-                        onClick={() => addCard(addingCardAt.phaseId, addingCardAt.row)}
-                        className="px-2.5 py-1.5 bg-[#386797] text-white rounded-lg text-[10px] font-medium"
-                      >
-                        Add
-                      </button>
-                      <button onClick={() => setAddingCardAt(null)} className="text-gray-400 hover:text-gray-600">
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
-              </div>
-            )
-          })
-        )}
+              )
+            })
+          )}
+        </div>
       </div>
 
-      {/* ── Card Edit Modal ── */}
+      {/* Floating drag ghost */}
+      {isDraggingActive && draggedCard && draggedPhase && (
+        <div className="fixed pointer-events-none z-[9999]" style={{
+          left: mousePos.x - (dragging?.offsetX || 0), top: mousePos.y - (dragging?.offsetY || 0),
+          width: dragging?.width || 210, opacity: 0.85, transform: 'rotate(2deg) scale(1.02)',
+        }}>
+          <div className="bg-white rounded-xl shadow-2xl" style={{ border: `2px solid ${draggedPhase.color}50` }}>
+            <div className="h-1 rounded-t-[10px]" style={{ background: draggedPhase.color }} />
+            <div className="p-2.5">
+              <div className="flex items-start gap-1.5">
+                <div className="w-4 h-4 rounded-full border-2 border-gray-300 flex-shrink-0 mt-0.5" />
+                <span className="text-[13px] font-semibold text-gray-900">{draggedCard.title}</span>
+              </div>
+              {draggedCard.description && <p className="text-[11px] text-gray-500 mt-1 ml-[22px]">{draggedCard.description}</p>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Card Edit Modal */}
       {editingCard && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setEditingCard(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-900">Edit Card</h3>
-              <button onClick={() => setEditingCard(null)} className="text-gray-400 hover:text-gray-600">
-                <X className="w-4 h-4" />
-              </button>
+              <button onClick={() => setEditingCard(null)}><X className="w-4 h-4 text-gray-400" /></button>
             </div>
             <div className="p-6 space-y-4">
               <div>
                 <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Title</label>
-                <input
-                  value={editingCard.title}
-                  onChange={e => setEditingCard({ ...editingCard, title: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#386797]/20 focus:border-[#386797] outline-none"
-                />
+                <input value={editingCard.title} onChange={e => setEditingCard({ ...editingCard, title: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100" />
               </div>
               <div>
                 <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Description</label>
-                <textarea
-                  value={editingCard.description}
-                  onChange={e => setEditingCard({ ...editingCard, description: e.target.value })}
-                  rows={3}
-                  className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm resize-none focus:ring-2 focus:ring-[#386797]/20 focus:border-[#386797] outline-none"
-                />
+                <textarea value={editingCard.description} onChange={e => setEditingCard({ ...editingCard, description: e.target.value })}
+                  rows={3} className="w-full mt-1 px-3 py-2 border rounded-lg text-sm resize-none outline-none focus:ring-2 focus:ring-blue-100" />
               </div>
               <div>
                 <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Status</label>
@@ -762,18 +590,10 @@ export default function JourneysPage() {
                     const cfg = STATUS_CONFIG[key]
                     const Icon = cfg.icon
                     return (
-                      <button
-                        key={key}
-                        onClick={() => setEditingCard({ ...editingCard, status: key })}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                          editingCard.status === key
-                            ? 'border-current'
-                            : 'border-gray-200 hover:border-gray-300'
-                        }`}
-                        style={{ color: cfg.color, backgroundColor: editingCard.status === key ? cfg.bg : 'transparent' }}
-                      >
-                        <Icon className="w-3 h-3" fill={key === 'done' ? cfg.color : 'none'} />
-                        {cfg.label}
+                      <button key={key} onClick={() => setEditingCard({ ...editingCard, status: key })}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border ${editingCard.status === key ? 'border-current' : 'border-gray-200'}`}
+                        style={{ color: cfg.color, background: editingCard.status === key ? cfg.bg : 'transparent' }}>
+                        <Icon className="w-3 h-3" fill={key === 'done' ? cfg.color : 'none'} />{cfg.label}
                       </button>
                     )
                   })}
@@ -781,33 +601,16 @@ export default function JourneysPage() {
               </div>
               <div>
                 <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Tags (comma separated)</label>
-                <input
-                  value={(editingCard.tags || []).join(', ')}
-                  onChange={e => setEditingCard({ ...editingCard, tags: e.target.value.split(',').map(t => t.trim()).filter(Boolean) })}
-                  placeholder="e.g. PAID TRAFFIC, LEAD MAGNET"
-                  className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#386797]/20 focus:border-[#386797] outline-none"
-                />
+                <input value={(editingCard.tags || []).join(', ')} onChange={e => setEditingCard({ ...editingCard, tags: e.target.value.split(',').map(t => t.trim()).filter(Boolean) })}
+                  placeholder="e.g. PAID TRAFFIC, LEAD MAGNET" className="w-full mt-1 px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100" />
               </div>
             </div>
-            <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-2">
-              <button onClick={() => setEditingCard(null)} className="px-4 py-2 text-xs text-gray-600 hover:bg-gray-50 rounded-lg">
-                Cancel
-              </button>
-              <button
-                onClick={async () => {
-                  await updateCard(editingCard.id, {
-                    title: editingCard.title,
-                    description: editingCard.description,
-                    status: editingCard.status,
-                    tags: editingCard.tags,
-                    custom_fields: editingCard.custom_fields,
-                  })
-                  setEditingCard(null)
-                }}
-                className="px-4 py-2 bg-[#386797] text-white text-xs font-medium rounded-lg hover:bg-[#2d5578]"
-              >
-                Save Changes
-              </button>
+            <div className="px-6 py-4 border-t flex justify-end gap-2">
+              <button onClick={() => setEditingCard(null)} className="px-4 py-2 text-xs text-gray-600 hover:bg-gray-50 rounded-lg">Cancel</button>
+              <button onClick={async () => {
+                await updateCard(editingCard.id, { title: editingCard.title, description: editingCard.description, status: editingCard.status, tags: editingCard.tags, custom_fields: editingCard.custom_fields })
+                setEditingCard(null)
+              }} className="px-4 py-2 bg-[#386797] text-white text-xs font-medium rounded-lg">Save Changes</button>
             </div>
           </div>
         </div>
