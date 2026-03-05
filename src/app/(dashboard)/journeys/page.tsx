@@ -510,7 +510,7 @@ export default function JourneysPage() {
                 </div>
 
                 {/* ── Rows ── */}
-                <div className="p-3 space-y-2 overflow-x-auto">
+                <div className="p-3 space-y-2">
                   {rowNumbers.map(rowIdx => {
                     const rowCards = getRowCards(phase.id, rowIdx)
                     const endKey = `${phase.id}:${rowIdx}:end`
