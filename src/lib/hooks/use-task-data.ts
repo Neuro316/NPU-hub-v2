@@ -128,7 +128,7 @@ export function useTaskData() {
         title,
         sort_order: maxOrder,
         owner_id: userId,
-        created_by: currentUserName,
+        created_by: userId,
         ...extraFields,
       })
       .select().single()
