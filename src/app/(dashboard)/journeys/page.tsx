@@ -492,17 +492,17 @@ export default function JourneysPage() {
                             const isBeingDragged = dragCardId === card.id
 
                             return (
-                              <div key={card.id} className="flex items-start" data-card-id={card.id}>
+                              <div key={card.id} className={`flex items-start ${dragCardId && !isBeingDragged ? 'pointer-events-none' : ''}`} data-card-id={card.id}>
                                 {/* The Card */}
                                 <div
-                                  draggable
+                                  draggable={!dragCardId}
                                   onDragStart={e => handleDragStart(e, card)}
                                   onDragEnd={handleDragEnd}
                                   className={`group relative bg-white rounded-lg border-2 shadow-sm hover:shadow-md 
                                     transition-all w-[200px] cursor-grab active:cursor-grabbing select-none
                                     ${isBeingDragged ? 'opacity-30 scale-95' : 'opacity-100'}
                                   `}
-                                  style={{ borderColor: `${phase.color}30` }}
+                                  style={{ borderColor: `${phase.color}30`, pointerEvents: dragCardId && !isBeingDragged ? 'none' : 'auto' }}
                                 >
                                   <div className="h-1 rounded-t-[5px]" style={{ backgroundColor: phase.color }} />
 
