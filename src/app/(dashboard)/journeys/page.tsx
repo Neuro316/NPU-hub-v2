@@ -371,7 +371,7 @@ export default function JourneysPage() {
 
       {/* Scrollable Canvas */}
       <div className="flex-1 overflow-auto px-7 pb-7">
-        <div className="flex flex-col gap-5" style={{ minWidth: 'fit-content' }}>
+        <div className="flex flex-col gap-5">
           {phases.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <ArrowRight className="w-8 h-8 text-gray-300 mb-4" />
