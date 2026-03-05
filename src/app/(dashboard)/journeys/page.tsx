@@ -410,7 +410,7 @@ export default function JourneysPage() {
                   </div>
 
                   {/* Rows area */}
-                  <div className="flex-1 p-4 min-w-0 overflow-hidden">
+                  <div className="flex-1 p-4 min-w-0">
                     {rowNumbers.map((rowIdx, ri) => {
                       const rowCards = getRowCards(phase.id, rowIdx)
                       const rowKey = `${phase.id}:${rowIdx}`
