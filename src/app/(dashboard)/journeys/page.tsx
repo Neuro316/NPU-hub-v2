@@ -81,9 +81,9 @@ export default function JourneysPage() {
   const [editingCard, setEditingCard] = useState<JourneyCard | null>(null)
   const [cardMenuOpen, setCardMenuOpen] = useState<string | null>(null)
 
-  // Drag state — simplified: just track what's dragged and which row is hovered
+  // Drag state
   const [dragCardId, setDragCardId] = useState<string | null>(null)
-  const [hoverRow, setHoverRow] = useState<string | null>(null) // "phaseId:rowIdx"
+  const [hoverRow, setHoverRow] = useState<string | null>(null)
   const rowEnterCount = useRef<Record<string, number>>({})
 
   // ── Data Loading ──
@@ -188,14 +188,14 @@ export default function JourneysPage() {
     updateCard(card.id, { status: next })
   }
 
-  // ── DRAG & DROP (simplified: whole row is drop target) ──
+  // ── DRAG & DROP ──
   const handleDragStart = (e: DragEvent<HTMLDivElement>, card: JourneyCard) => {
     e.stopPropagation()
     setDragCardId(card.id)
     e.dataTransfer.setData('text/plain', card.id)
     e.dataTransfer.effectAllowed = 'move'
     const el = e.currentTarget as HTMLElement
-    el.style.opacity = '0.4'
+    requestAnimationFrame(() => { el.style.opacity = '0.4' })
   }
 
   const handleDragEnd = (e: DragEvent<HTMLDivElement>) => {
@@ -225,63 +225,101 @@ export default function JourneysPage() {
     }
   }
 
+  // Calculate insertion index from mouse X position
+  const getInsertIndex = (e: DragEvent): number => {
+    const mouseX = e.clientX
+    const rowEl = (e.currentTarget as HTMLElement)
+    // Find all card elements in this row using data attributes
+    const cardEls = rowEl.querySelectorAll('[data-card-id]')
+    
+    for (let i = 0; i < cardEls.length; i++) {
+      const rect = cardEls[i].getBoundingClientRect()
+      const cardCenter = rect.left + rect.width / 2
+      if (mouseX < cardCenter) {
+        return i
+      }
+    }
+    // Mouse is past all cards — append to end
+    return cardEls.length
+  }
+
   const handleRowDrop = async (e: DragEvent, targetPhaseId: string, targetRow: number) => {
     e.preventDefault()
     e.stopPropagation()
 
-    const cardId = e.dataTransfer.getData('text/plain')
-    if (!cardId || cardId === dragCardId) {
-      // use dragCardId as fallback
-    }
-    const theCardId = cardId || dragCardId
+    const theCardId = e.dataTransfer.getData('text/plain') || dragCardId
     if (!theCardId) return
 
     const card = cards.find(c => c.id === theCardId)
     if (!card) return
 
-    // If dropping on same phase+row, just append to end
-    // Otherwise, move card to new phase+row at end
+    // Figure out where in the row the user dropped
+    const insertAt = getInsertIndex(e)
+
+    // Get existing cards in this row (excluding the dragged one)
     const targetRowCards = cards
       .filter(c => c.phase_id === targetPhaseId && c.row_index === targetRow && c.id !== theCardId)
       .sort((a, b) => a.sort_order - b.sort_order)
 
-    const newSort = targetRowCards.length
+    // Build new order: insert the dragged card at insertAt
+    const reordered: { id: string; sort_order: number; phase_id?: string; row_index?: number }[] = []
+    let idx = 0
+    let inserted = false
+
+    for (let i = 0; i < targetRowCards.length; i++) {
+      if (idx === insertAt && !inserted) {
+        reordered.push({ id: theCardId, sort_order: idx, phase_id: targetPhaseId, row_index: targetRow })
+        idx++
+        inserted = true
+      }
+      reordered.push({ id: targetRowCards[i].id, sort_order: idx })
+      idx++
+    }
+    if (!inserted) {
+      reordered.push({ id: theCardId, sort_order: idx, phase_id: targetPhaseId, row_index: targetRow })
+    }
+
+    // Also reindex the source row if card moved to a different row
+    const sourceReindex: { id: string; sort_order: number }[] = []
+    if (card.phase_id !== targetPhaseId || card.row_index !== targetRow) {
+      const sourceRowCards = cards
+        .filter(c => c.phase_id === card.phase_id && c.row_index === card.row_index && c.id !== theCardId)
+        .sort((a, b) => a.sort_order - b.sort_order)
+      sourceRowCards.forEach((c, i) => {
+        sourceReindex.push({ id: c.id, sort_order: i })
+      })
+    }
 
     // Optimistic update
     setCards(prev => {
-      const next = prev.map(c => {
-        if (c.id === theCardId) {
-          return { ...c, phase_id: targetPhaseId, row_index: targetRow, sort_order: newSort }
+      const next = [...prev]
+      for (const u of reordered) {
+        const i = next.findIndex(c => c.id === u.id)
+        if (i >= 0) {
+          next[i] = {
+            ...next[i],
+            sort_order: u.sort_order,
+            ...(u.phase_id ? { phase_id: u.phase_id } : {}),
+            ...(u.row_index !== undefined ? { row_index: u.row_index } : {}),
+          }
         }
-        return c
-      })
-      // Reindex source row
-      const sourceCards = next
-        .filter(c => c.phase_id === card.phase_id && c.row_index === card.row_index && c.id !== theCardId)
-        .sort((a, b) => a.sort_order - b.sort_order)
-      sourceCards.forEach((c, i) => {
-        const idx = next.findIndex(n => n.id === c.id)
-        if (idx >= 0) next[idx] = { ...next[idx], sort_order: i }
-      })
+      }
+      for (const u of sourceReindex) {
+        const i = next.findIndex(c => c.id === u.id)
+        if (i >= 0) {
+          next[i] = { ...next[i], sort_order: u.sort_order }
+        }
+      }
       return next
     })
 
-    // Persist
-    await supabase.from('journey_cards').update({
-      phase_id: targetPhaseId,
-      row_index: targetRow,
-      sort_order: newSort,
-      updated_at: new Date().toISOString(),
-    }).eq('id', theCardId)
-
-    // Reindex source row in DB
-    if (card.phase_id !== targetPhaseId || card.row_index !== targetRow) {
-      const sourceCards = cards
-        .filter(c => c.phase_id === card.phase_id && c.row_index === card.row_index && c.id !== theCardId)
-        .sort((a, b) => a.sort_order - b.sort_order)
-      for (let i = 0; i < sourceCards.length; i++) {
-        await supabase.from('journey_cards').update({ sort_order: i }).eq('id', sourceCards[i].id)
-      }
+    // Persist all updates
+    const allUpdates = [...reordered, ...sourceReindex]
+    for (const u of allUpdates) {
+      const payload: Record<string, unknown> = { sort_order: u.sort_order, updated_at: new Date().toISOString() }
+      if ('phase_id' in u && u.phase_id) payload.phase_id = u.phase_id
+      if ('row_index' in u && u.row_index !== undefined) payload.row_index = u.row_index
+      await supabase.from('journey_cards').update(payload).eq('id', u.id)
     }
 
     setDragCardId(null)
@@ -319,7 +357,7 @@ export default function JourneysPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-lg font-bold text-gray-900">Journey Builder</h1>
-            <p className="text-xs text-gray-500 mt-0.5">{currentOrg?.name} — drag cards to any row</p>
+            <p className="text-xs text-gray-500 mt-0.5">{currentOrg?.name} — drag cards to any row or between cards</p>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -334,7 +372,6 @@ export default function JourneysPage() {
           </div>
         </div>
 
-        {/* Add Phase Inline */}
         {addingPhase && (
           <div className="flex items-center gap-2 mt-3">
             <input
@@ -420,7 +457,7 @@ export default function JourneysPage() {
                   </div>
                 </div>
 
-                {/* ── Rows of Cards ── */}
+                {/* ── Rows ── */}
                 <div className="p-3 space-y-2">
                   {rowNumbers.map(rowIdx => {
                     const rowCards = getRowCards(phase.id, rowIdx)
@@ -434,7 +471,7 @@ export default function JourneysPage() {
                           isRowHovered
                             ? 'bg-blue-50 ring-2 ring-[#386797]/30'
                             : dragCardId
-                              ? 'bg-gray-50/50 ring-1 ring-gray-200/50'
+                              ? 'bg-gray-50/30'
                               : ''
                         }`}
                         onDragEnter={e => handleRowDragEnter(e, rowKey)}
@@ -455,7 +492,7 @@ export default function JourneysPage() {
                             const isBeingDragged = dragCardId === card.id
 
                             return (
-                              <div key={card.id} className="flex items-start">
+                              <div key={card.id} className="flex items-start" data-card-id={card.id}>
                                 {/* The Card */}
                                 <div
                                   draggable
@@ -467,11 +504,9 @@ export default function JourneysPage() {
                                   `}
                                   style={{ borderColor: `${phase.color}30` }}
                                 >
-                                  {/* Color bar */}
                                   <div className="h-1 rounded-t-[5px]" style={{ backgroundColor: phase.color }} />
 
                                   <div className="p-2.5">
-                                    {/* Status + Title */}
                                     <div className="flex items-start gap-1.5">
                                       <button
                                         onClick={e => { e.stopPropagation(); cycleStatus(card) }}
@@ -489,14 +524,12 @@ export default function JourneysPage() {
                                       </span>
                                     </div>
 
-                                    {/* Description preview */}
                                     {card.description && (
                                       <p className="text-[10px] text-gray-500 mt-1 leading-relaxed line-clamp-2 ml-5">
                                         {card.description}
                                       </p>
                                     )}
 
-                                    {/* Tags */}
                                     {card.tags && card.tags.length > 0 && (
                                       <div className="flex flex-wrap gap-1 mt-1.5 ml-5">
                                         {card.tags.map(tag => {
@@ -514,7 +547,6 @@ export default function JourneysPage() {
                                       </div>
                                     )}
 
-                                    {/* Status badge + menu */}
                                     <div className="flex items-center justify-between mt-2 ml-5">
                                       <span
                                         className="text-[8px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wide"
@@ -549,13 +581,11 @@ export default function JourneysPage() {
                                     </div>
                                   </div>
 
-                                  {/* Grip handle */}
                                   <div className="absolute top-2 right-2 text-gray-200 group-hover:text-gray-400 transition-colors">
                                     <GripVertical className="w-3 h-3" />
                                   </div>
                                 </div>
 
-                                {/* Arrow between cards */}
                                 {cardIdx < rowCards.length - 1 && (
                                   <div className="flex-shrink-0 flex items-center px-0.5 pt-4">
                                     <ChevronRight className="w-3.5 h-3.5 text-gray-300" />
@@ -565,7 +595,6 @@ export default function JourneysPage() {
                             )
                           })}
 
-                          {/* Add card button (end of row) */}
                           {!dragCardId && (
                             <button
                               onClick={() => { setAddingCardAt({ phaseId: phase.id, row: rowIdx }); setNewCardTitle('') }}
@@ -577,7 +606,6 @@ export default function JourneysPage() {
                             </button>
                           )}
 
-                          {/* Drop here indicator */}
                           {isRowHovered && (
                             <div className="flex-shrink-0 w-[120px] min-h-[56px] rounded-lg border-2 border-dashed border-[#386797] bg-blue-50/80 flex items-center justify-center">
                               <span className="text-[10px] font-medium text-[#386797]">Drop here</span>
@@ -588,7 +616,7 @@ export default function JourneysPage() {
                     )
                   })}
 
-                  {/* New row drop zone (only visible while dragging) */}
+                  {/* New row drop zone */}
                   {dragCardId && (
                     <div
                       className={`mx-9 rounded-lg border-2 border-dashed transition-all min-h-[50px] flex items-center justify-center ${
@@ -605,7 +633,6 @@ export default function JourneysPage() {
                     </div>
                   )}
 
-                  {/* Add card inline form */}
                   {addingCardAt?.phaseId === phase.id && (
                     <div className="flex items-center gap-2 ml-9 mt-1">
                       <input
