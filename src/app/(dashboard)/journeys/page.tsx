@@ -36,13 +36,6 @@ interface JourneyCard {
   updated_at: string
 }
 
-interface DragData {
-  cardId: string
-  fromPhaseId: string
-  fromRow: number
-  fromSort: number
-}
-
 const STATUS_CONFIG = {
   not_started: { label: 'Not Started', color: '#9CA3AF', icon: Circle, bg: '#F3F4F6' },
   in_progress: { label: 'In Progress', color: '#F59E0B', icon: Clock, bg: '#FFFBEB' },
@@ -88,11 +81,10 @@ export default function JourneysPage() {
   const [editingCard, setEditingCard] = useState<JourneyCard | null>(null)
   const [cardMenuOpen, setCardMenuOpen] = useState<string | null>(null)
 
-  // Drag state
-  const [dragData, setDragData] = useState<DragData | null>(null)
-  const [dropTarget, setDropTarget] = useState<string | null>(null) // "phaseId:row:sortIndex"
-  const [dragOverPhase, setDragOverPhase] = useState<string | null>(null)
-  const dragCounter = useRef<Record<string, number>>({})
+  // Drag state — simplified: just track what's dragged and which row is hovered
+  const [dragCardId, setDragCardId] = useState<string | null>(null)
+  const [hoverRow, setHoverRow] = useState<string | null>(null) // "phaseId:rowIdx"
+  const rowEnterCount = useRef<Record<string, number>>({})
 
   // ── Data Loading ──
   const loadData = useCallback(async () => {
@@ -196,191 +188,105 @@ export default function JourneysPage() {
     updateCard(card.id, { status: next })
   }
 
-  // ── DRAG & DROP ──
+  // ── DRAG & DROP (simplified: whole row is drop target) ──
   const handleDragStart = (e: DragEvent<HTMLDivElement>, card: JourneyCard) => {
-    const data: DragData = {
-      cardId: card.id,
-      fromPhaseId: card.phase_id,
-      fromRow: card.row_index,
-      fromSort: card.sort_order,
-    }
-    setDragData(data)
-    e.dataTransfer.setData('text/plain', JSON.stringify(data))
+    e.stopPropagation()
+    setDragCardId(card.id)
+    e.dataTransfer.setData('text/plain', card.id)
     e.dataTransfer.effectAllowed = 'move'
-
-    // Ghost image
-    const el = e.currentTarget
+    const el = e.currentTarget as HTMLElement
     el.style.opacity = '0.4'
-    requestAnimationFrame(() => { el.style.opacity = '0.4' })
   }
 
   const handleDragEnd = (e: DragEvent<HTMLDivElement>) => {
-    e.currentTarget.style.opacity = '1'
-    setDragData(null)
-    setDropTarget(null)
-    setDragOverPhase(null)
-    dragCounter.current = {}
+    const el = e.currentTarget as HTMLElement
+    el.style.opacity = '1'
+    setDragCardId(null)
+    setHoverRow(null)
+    rowEnterCount.current = {}
   }
 
-  const handleSlotDragEnter = (e: DragEvent, slotKey: string) => {
+  const handleRowDragEnter = (e: DragEvent, rowKey: string) => {
     e.preventDefault()
-    e.stopPropagation()
-    dragCounter.current[slotKey] = (dragCounter.current[slotKey] || 0) + 1
-    setDropTarget(slotKey)
+    rowEnterCount.current[rowKey] = (rowEnterCount.current[rowKey] || 0) + 1
+    setHoverRow(rowKey)
   }
 
-  const handleSlotDragOver = (e: DragEvent) => {
+  const handleRowDragOver = (e: DragEvent) => {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
   }
 
-  const handleSlotDragLeave = (e: DragEvent, slotKey: string) => {
-    e.stopPropagation()
-    dragCounter.current[slotKey] = (dragCounter.current[slotKey] || 0) - 1
-    if (dragCounter.current[slotKey] <= 0) {
-      dragCounter.current[slotKey] = 0
-      if (dropTarget === slotKey) setDropTarget(null)
+  const handleRowDragLeave = (e: DragEvent, rowKey: string) => {
+    rowEnterCount.current[rowKey] = (rowEnterCount.current[rowKey] || 0) - 1
+    if (rowEnterCount.current[rowKey] <= 0) {
+      rowEnterCount.current[rowKey] = 0
+      if (hoverRow === rowKey) setHoverRow(null)
     }
   }
 
-  const handleDrop = async (e: DragEvent, targetPhaseId: string, targetRow: number, targetSort: number) => {
+  const handleRowDrop = async (e: DragEvent, targetPhaseId: string, targetRow: number) => {
     e.preventDefault()
     e.stopPropagation()
 
-    const raw = e.dataTransfer.getData('text/plain')
-    if (!raw) return
+    const cardId = e.dataTransfer.getData('text/plain')
+    if (!cardId || cardId === dragCardId) {
+      // use dragCardId as fallback
+    }
+    const theCardId = cardId || dragCardId
+    if (!theCardId) return
 
-    try {
-      const data: DragData = JSON.parse(raw)
-      const { cardId, fromPhaseId, fromRow, fromSort } = data
+    const card = cards.find(c => c.id === theCardId)
+    if (!card) return
 
-      // Same position — do nothing
-      if (fromPhaseId === targetPhaseId && fromRow === targetRow && fromSort === targetSort) {
-        handleDragEnd(e as any)
-        return
-      }
+    // If dropping on same phase+row, just append to end
+    // Otherwise, move card to new phase+row at end
+    const targetRowCards = cards
+      .filter(c => c.phase_id === targetPhaseId && c.row_index === targetRow && c.id !== theCardId)
+      .sort((a, b) => a.sort_order - b.sort_order)
 
-      // Get all cards in the target row (exclude the dragged card)
-      const targetRowCards = cards
-        .filter(c => c.phase_id === targetPhaseId && c.row_index === targetRow && c.id !== cardId)
-        .sort((a, b) => a.sort_order - b.sort_order)
+    const newSort = targetRowCards.length
 
-      // Reindex: insert the dragged card at targetSort position
-      const updates: { id: string; phase_id?: string; row_index?: number; sort_order: number }[] = []
-
-      let newIndex = 0
-      let inserted = false
-
-      for (const c of targetRowCards) {
-        if (newIndex === targetSort && !inserted) {
-          // This is where the dragged card goes
-          updates.push({ id: cardId, phase_id: targetPhaseId, row_index: targetRow, sort_order: newIndex })
-          inserted = true
-          newIndex++
+    // Optimistic update
+    setCards(prev => {
+      const next = prev.map(c => {
+        if (c.id === theCardId) {
+          return { ...c, phase_id: targetPhaseId, row_index: targetRow, sort_order: newSort }
         }
-        updates.push({ id: c.id, sort_order: newIndex })
-        newIndex++
-      }
-
-      if (!inserted) {
-        // Append at the end
-        updates.push({ id: cardId, phase_id: targetPhaseId, row_index: targetRow, sort_order: newIndex })
-      }
-
-      // Also reindex the source row if it's different
-      if (fromPhaseId !== targetPhaseId || fromRow !== targetRow) {
-        const sourceRowCards = cards
-          .filter(c => c.phase_id === fromPhaseId && c.row_index === fromRow && c.id !== cardId)
-          .sort((a, b) => a.sort_order - b.sort_order)
-
-        sourceRowCards.forEach((c, i) => {
-          if (!updates.find(u => u.id === c.id)) {
-            updates.push({ id: c.id, sort_order: i })
-          }
-        })
-      }
-
-      // Apply all updates optimistically
-      setCards(prev => {
-        const next = [...prev]
-        for (const u of updates) {
-          const idx = next.findIndex(c => c.id === u.id)
-          if (idx >= 0) {
-            next[idx] = {
-              ...next[idx],
-              ...(u.phase_id ? { phase_id: u.phase_id } : {}),
-              ...(u.row_index !== undefined ? { row_index: u.row_index } : {}),
-              sort_order: u.sort_order,
-            }
-          }
-        }
-        return next
+        return c
       })
+      // Reindex source row
+      const sourceCards = next
+        .filter(c => c.phase_id === card.phase_id && c.row_index === card.row_index && c.id !== theCardId)
+        .sort((a, b) => a.sort_order - b.sort_order)
+      sourceCards.forEach((c, i) => {
+        const idx = next.findIndex(n => n.id === c.id)
+        if (idx >= 0) next[idx] = { ...next[idx], sort_order: i }
+      })
+      return next
+    })
 
-      // Persist to Supabase
-      for (const u of updates) {
-        const payload: Record<string, any> = { sort_order: u.sort_order, updated_at: new Date().toISOString() }
-        if (u.phase_id) payload.phase_id = u.phase_id
-        if (u.row_index !== undefined) payload.row_index = u.row_index
-        await supabase.from('journey_cards').update(payload).eq('id', u.id)
+    // Persist
+    await supabase.from('journey_cards').update({
+      phase_id: targetPhaseId,
+      row_index: targetRow,
+      sort_order: newSort,
+      updated_at: new Date().toISOString(),
+    }).eq('id', theCardId)
+
+    // Reindex source row in DB
+    if (card.phase_id !== targetPhaseId || card.row_index !== targetRow) {
+      const sourceCards = cards
+        .filter(c => c.phase_id === card.phase_id && c.row_index === card.row_index && c.id !== theCardId)
+        .sort((a, b) => a.sort_order - b.sort_order)
+      for (let i = 0; i < sourceCards.length; i++) {
+        await supabase.from('journey_cards').update({ sort_order: i }).eq('id', sourceCards[i].id)
       }
-
-    } catch (err) {
-      console.error('Drop failed:', err)
     }
 
-    setDragData(null)
-    setDropTarget(null)
-    setDragOverPhase(null)
-    dragCounter.current = {}
-  }
-
-  // ── Phase Drag & Drop (reorder whole phases) ──
-  const [dragPhaseId, setDragPhaseId] = useState<string | null>(null)
-  const [dropPhaseTarget, setDropPhaseTarget] = useState<string | null>(null)
-
-  const handlePhaseDragStart = (e: DragEvent<HTMLDivElement>, phaseId: string) => {
-    setDragPhaseId(phaseId)
-    e.dataTransfer.setData('application/x-phase', phaseId)
-    e.dataTransfer.effectAllowed = 'move'
-    ;(e.currentTarget as HTMLElement).style.opacity = '0.4'
-  }
-
-  const handlePhaseDragEnd = (e: DragEvent<HTMLDivElement>) => {
-    ;(e.currentTarget as HTMLElement).style.opacity = '1'
-    setDragPhaseId(null)
-    setDropPhaseTarget(null)
-  }
-
-  const handlePhaseDrop = async (e: DragEvent, targetPhaseId: string) => {
-    e.preventDefault()
-    const sourcePhaseId = e.dataTransfer.getData('application/x-phase')
-    if (!sourcePhaseId || sourcePhaseId === targetPhaseId) {
-      setDragPhaseId(null)
-      setDropPhaseTarget(null)
-      return
-    }
-
-    const sorted = [...phases].sort((a, b) => a.sort_order - b.sort_order)
-    const sourceIdx = sorted.findIndex(p => p.id === sourcePhaseId)
-    const targetIdx = sorted.findIndex(p => p.id === targetPhaseId)
-
-    if (sourceIdx < 0 || targetIdx < 0) return
-
-    // Move source to target position
-    const [moved] = sorted.splice(sourceIdx, 1)
-    sorted.splice(targetIdx, 0, moved)
-
-    // Reindex
-    const updated = sorted.map((p, i) => ({ ...p, sort_order: i }))
-    setPhases(updated)
-
-    for (const p of updated) {
-      await supabase.from('journey_phases').update({ sort_order: p.sort_order }).eq('id', p.id)
-    }
-
-    setDragPhaseId(null)
-    setDropPhaseTarget(null)
+    setDragCardId(null)
+    setHoverRow(null)
+    rowEnterCount.current = {}
   }
 
   // ── Helpers ──
@@ -413,7 +319,7 @@ export default function JourneysPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-lg font-bold text-gray-900">Journey Builder</h1>
-            <p className="text-xs text-gray-500 mt-0.5">{currentOrg?.name} — drag cards to reorder</p>
+            <p className="text-xs text-gray-500 mt-0.5">{currentOrg?.name} — drag cards to any row</p>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -456,7 +362,7 @@ export default function JourneysPage() {
             </div>
             <h3 className="text-sm font-semibold text-gray-700 mb-1">No Paths Yet</h3>
             <p className="text-xs text-gray-500 mb-4 max-w-sm">
-              Add your first path to start mapping the customer journey. Each path represents a phase like Acquisition, Onboarding, or Program Delivery.
+              Add your first path to start mapping the customer journey.
             </p>
             <button
               onClick={() => setAddingPhase(true)}
@@ -469,40 +375,18 @@ export default function JourneysPage() {
           [...phases].sort((a, b) => a.sort_order - b.sort_order).map(phase => {
             const rowNumbers = getRowNumbers(phase.id)
             const phaseCards = getPhaseCards(phase.id)
-            const isBeingDragged = dragPhaseId === phase.id
-            const isDropPhaseTarget = dropPhaseTarget === phase.id
 
             return (
-              <div
-                key={phase.id}
-                draggable
-                onDragStart={e => handlePhaseDragStart(e, phase.id)}
-                onDragEnd={handlePhaseDragEnd}
-                onDragOver={e => {
-                  if (dragPhaseId && dragPhaseId !== phase.id) {
-                    e.preventDefault()
-                    e.dataTransfer.dropEffect = 'move'
-                    setDropPhaseTarget(phase.id)
-                  }
-                }}
-                onDragLeave={() => { if (dropPhaseTarget === phase.id) setDropPhaseTarget(null) }}
-                onDrop={e => { if (dragPhaseId) handlePhaseDrop(e, phase.id) }}
-                className={`bg-white rounded-xl border transition-all ${
-                  isBeingDragged ? 'opacity-40 scale-[0.98]' : ''
-                } ${isDropPhaseTarget && dragPhaseId ? 'border-[#386797] ring-2 ring-[#386797]/20' : 'border-gray-100'}`}
-              >
+              <div key={phase.id} className="bg-white rounded-xl border border-gray-100">
                 {/* ── Phase Header ── */}
                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
                   <div className="flex items-center gap-3">
-                    <div className="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500">
-                      <GripVertical className="w-4 h-4" />
-                    </div>
                     <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: phase.color }} />
                     {editingPhase === phase.id ? (
                       <input
                         value={editPhaseLabel}
                         onChange={e => setEditPhaseLabel(e.target.value)}
-                        onBlur={() => { updatePhaseLabel(phase.id, editPhaseLabel); }}
+                        onBlur={() => updatePhaseLabel(phase.id, editPhaseLabel)}
                         onKeyDown={e => e.key === 'Enter' && updatePhaseLabel(phase.id, editPhaseLabel)}
                         className="text-sm font-semibold text-gray-900 border-b-2 border-[#386797] outline-none bg-transparent px-0"
                         autoFocus
@@ -523,7 +407,7 @@ export default function JourneysPage() {
                     <button
                       onClick={() => { setAddingCardAt({ phaseId: phase.id, row: getNextRow(phase.id) }); setNewCardTitle('') }}
                       className="p-1.5 text-gray-400 hover:text-[#386797] hover:bg-blue-50 rounded-lg transition-colors"
-                      title="Add row"
+                      title="Add new row"
                     >
                       <Plus className="w-3.5 h-3.5" />
                     </button>
@@ -540,57 +424,46 @@ export default function JourneysPage() {
                 <div className="p-3 space-y-2">
                   {rowNumbers.map(rowIdx => {
                     const rowCards = getRowCards(phase.id, rowIdx)
+                    const rowKey = `${phase.id}:${rowIdx}`
+                    const isRowHovered = hoverRow === rowKey && dragCardId !== null
+
                     return (
-                      <div key={rowIdx} className="flex items-start gap-2">
+                      <div
+                        key={rowIdx}
+                        className={`flex items-start gap-2 rounded-lg p-2 transition-all min-h-[70px] ${
+                          isRowHovered
+                            ? 'bg-blue-50 ring-2 ring-[#386797]/30'
+                            : dragCardId
+                              ? 'bg-gray-50/50 ring-1 ring-gray-200/50'
+                              : ''
+                        }`}
+                        onDragEnter={e => handleRowDragEnter(e, rowKey)}
+                        onDragOver={handleRowDragOver}
+                        onDragLeave={e => handleRowDragLeave(e, rowKey)}
+                        onDrop={e => handleRowDrop(e, phase.id, rowIdx)}
+                      >
                         {/* Row label */}
                         <div className="flex-shrink-0 w-7 flex items-center justify-center pt-3">
                           <span className="text-[9px] text-gray-400 font-medium">{rowIdx + 1}</span>
                         </div>
 
-                        {/* Cards in this row */}
-                        <div className="flex-1 flex items-start gap-2 flex-wrap min-h-[56px]">
+                        {/* Cards */}
+                        <div className="flex-1 flex items-start gap-2 flex-wrap">
                           {rowCards.map((card, cardIdx) => {
                             const status = STATUS_CONFIG[card.status]
                             const StatusIcon = status.icon
-                            const isBeingCardDragged = dragData?.cardId === card.id
-                            const slotBeforeKey = `${phase.id}:${rowIdx}:${cardIdx}`
-                            const isDropBefore = dropTarget === slotBeforeKey
+                            const isBeingDragged = dragCardId === card.id
 
                             return (
                               <div key={card.id} className="flex items-start">
-                                {/* Drop indicator BEFORE this card */}
-                                <div
-                                  className={`flex-shrink-0 transition-all rounded-lg ${
-                                    isDropBefore
-                                      ? 'w-1.5 bg-[#386797] mx-0.5 min-h-[56px] opacity-100'
-                                      : 'w-0 opacity-0'
-                                  }`}
-                                  onDragEnter={e => handleSlotDragEnter(e, slotBeforeKey)}
-                                  onDragOver={handleSlotDragOver}
-                                  onDragLeave={e => handleSlotDragLeave(e, slotBeforeKey)}
-                                  onDrop={e => handleDrop(e, phase.id, rowIdx, cardIdx)}
-                                />
-
-                                {/* Invisible hit area before card */}
-                                <div
-                                  className="w-2 flex-shrink-0 min-h-[56px]"
-                                  onDragEnter={e => handleSlotDragEnter(e, slotBeforeKey)}
-                                  onDragOver={handleSlotDragOver}
-                                  onDragLeave={e => handleSlotDragLeave(e, slotBeforeKey)}
-                                  onDrop={e => handleDrop(e, phase.id, rowIdx, cardIdx)}
-                                />
-
                                 {/* The Card */}
                                 <div
                                   draggable
-                                  onDragStart={e => {
-                                    e.stopPropagation() // Don't trigger phase drag
-                                    handleDragStart(e, card)
-                                  }}
+                                  onDragStart={e => handleDragStart(e, card)}
                                   onDragEnd={handleDragEnd}
                                   className={`group relative bg-white rounded-lg border-2 shadow-sm hover:shadow-md 
                                     transition-all w-[200px] cursor-grab active:cursor-grabbing select-none
-                                    ${isBeingCardDragged ? 'opacity-30 scale-95' : 'opacity-100'}
+                                    ${isBeingDragged ? 'opacity-30 scale-95' : 'opacity-100'}
                                   `}
                                   style={{ borderColor: `${phase.color}30` }}
                                 >
@@ -692,32 +565,8 @@ export default function JourneysPage() {
                             )
                           })}
 
-                          {/* Drop zone at end of row */}
-                          {(() => {
-                            const endKey = `${phase.id}:${rowIdx}:${rowCards.length}`
-                            const isDropEnd = dropTarget === endKey
-                            return (
-                              <div
-                                className={`flex-shrink-0 rounded-lg border-2 border-dashed transition-all min-h-[56px] flex items-center justify-center
-                                  ${isDropEnd
-                                    ? 'border-[#386797] bg-blue-50/50 w-[100px]'
-                                    : dragData
-                                      ? 'border-gray-200 bg-gray-50/30 w-[60px] hover:border-gray-300'
-                                      : 'border-transparent w-[40px]'
-                                  }`
-                                }
-                                onDragEnter={e => handleSlotDragEnter(e, endKey)}
-                                onDragOver={handleSlotDragOver}
-                                onDragLeave={e => handleSlotDragLeave(e, endKey)}
-                                onDrop={e => handleDrop(e, phase.id, rowIdx, rowCards.length)}
-                              >
-                                {isDropEnd && <Plus className="w-4 h-4 text-[#386797]" />}
-                              </div>
-                            )
-                          })()}
-
                           {/* Add card button (end of row) */}
-                          {!dragData && (
+                          {!dragCardId && (
                             <button
                               onClick={() => { setAddingCardAt({ phaseId: phase.id, row: rowIdx }); setNewCardTitle('') }}
                               className="flex-shrink-0 w-[40px] min-h-[56px] rounded-lg border-2 border-dashed border-gray-200 
@@ -727,25 +576,32 @@ export default function JourneysPage() {
                               <Plus className="w-3.5 h-3.5" />
                             </button>
                           )}
+
+                          {/* Drop here indicator */}
+                          {isRowHovered && (
+                            <div className="flex-shrink-0 w-[120px] min-h-[56px] rounded-lg border-2 border-dashed border-[#386797] bg-blue-50/80 flex items-center justify-center">
+                              <span className="text-[10px] font-medium text-[#386797]">Drop here</span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     )
                   })}
 
-                  {/* Drop zone for new row */}
-                  {dragData && (
+                  {/* New row drop zone (only visible while dragging) */}
+                  {dragCardId && (
                     <div
-                      className={`mx-9 rounded-lg border-2 border-dashed transition-all min-h-[40px] flex items-center justify-center
-                        ${dropTarget === `${phase.id}:${getNextRow(phase.id)}:0`
-                          ? 'border-[#386797] bg-blue-50/50'
+                      className={`mx-9 rounded-lg border-2 border-dashed transition-all min-h-[50px] flex items-center justify-center ${
+                        hoverRow === `${phase.id}:${getNextRow(phase.id)}`
+                          ? 'border-[#386797] bg-blue-50/80'
                           : 'border-gray-200 bg-gray-50/30'
-                        }`}
-                      onDragEnter={e => handleSlotDragEnter(e, `${phase.id}:${getNextRow(phase.id)}:0`)}
-                      onDragOver={handleSlotDragOver}
-                      onDragLeave={e => handleSlotDragLeave(e, `${phase.id}:${getNextRow(phase.id)}:0`)}
-                      onDrop={e => handleDrop(e, phase.id, getNextRow(phase.id), 0)}
+                      }`}
+                      onDragEnter={e => handleRowDragEnter(e, `${phase.id}:${getNextRow(phase.id)}`)}
+                      onDragOver={handleRowDragOver}
+                      onDragLeave={e => handleRowDragLeave(e, `${phase.id}:${getNextRow(phase.id)}`)}
+                      onDrop={e => handleRowDrop(e, phase.id, getNextRow(phase.id))}
                     >
-                      <span className="text-[10px] text-gray-400">Drop here to create new row</span>
+                      <span className="text-[10px] text-gray-400">Drop to create new row</span>
                     </div>
                   )}
 
