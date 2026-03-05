@@ -485,14 +485,14 @@ export default function JourneysPage() {
                         </div>
 
                         {/* Cards */}
-                        <div className="flex-1 flex items-start gap-2 flex-wrap">
+                        <div className="flex-1 flex items-start gap-2 flex-nowrap overflow-x-auto pb-1">
                           {rowCards.map((card, cardIdx) => {
                             const status = STATUS_CONFIG[card.status]
                             const StatusIcon = status.icon
                             const isBeingDragged = dragCardId === card.id
 
                             return (
-                              <div key={card.id} className={`flex items-start ${dragCardId && !isBeingDragged ? 'pointer-events-none' : ''}`} data-card-id={card.id}>
+                              <div key={card.id} className={`flex items-start flex-shrink-0 ${dragCardId && !isBeingDragged ? 'pointer-events-none' : ''}`} data-card-id={card.id}>
                                 {/* The Card */}
                                 <div
                                   draggable={!dragCardId}
