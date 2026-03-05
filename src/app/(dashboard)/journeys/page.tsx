@@ -410,7 +410,7 @@ export default function JourneysPage() {
                   </div>
 
                   {/* Rows area */}
-                  <div className="flex-1 p-4">
+                  <div className="flex-1 p-4 min-w-0 overflow-hidden">
                     {rowNumbers.map((rowIdx, ri) => {
                       const rowCards = getRowCards(phase.id, rowIdx)
                       const rowKey = `${phase.id}:${rowIdx}`
@@ -420,7 +420,7 @@ export default function JourneysPage() {
                         <div key={rowIdx}>
                           <div ref={el => { rowRefs.current[rowKey] = el }}
                             className="flex items-start gap-0 flex-nowrap rounded-xl transition-colors"
-                            style={{ minHeight: 80, padding: '8px 4px', paddingBottom: 12, background: isDropRow ? `${phase.color}08` : 'transparent' }}>
+                            style={{ minHeight: 80, padding: '8px 4px', paddingBottom: 12, overflowX: 'auto', background: isDropRow ? `${phase.color}08` : 'transparent' }}>
                             {rowCards.map((card, cardIdx) => {
                               const status = STATUS_CONFIG[card.status]
                               const StatusIcon = status.icon
