@@ -443,7 +443,7 @@ export default function JourneysPage() {
       </div>
 
       {/* ── Canvas ── */}
-      <div className="flex-1 overflow-auto p-6 space-y-4">
+      <div className="flex-1 overflow-auto p-6 space-y-4" onDragOver={e => e.preventDefault()}>
         {phases.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-4">
@@ -466,7 +466,7 @@ export default function JourneysPage() {
             const phaseCards = getPhaseCards(phase.id)
 
             return (
-              <div key={phase.id} className="bg-white rounded-xl border border-gray-100">
+              <div key={phase.id} className="bg-white rounded-xl border border-gray-100" onDragOver={e => e.preventDefault()}>
                 {/* ── Phase Header ── */}
                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
                   <div className="flex items-center gap-3">
@@ -510,21 +510,29 @@ export default function JourneysPage() {
                 </div>
 
                 {/* ── Rows ── */}
-                <div className="p-3 space-y-2">
+                <div className="p-3 space-y-2" onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}>
                   {rowNumbers.map(rowIdx => {
                     const rowCards = getRowCards(phase.id, rowIdx)
                     const endKey = `${phase.id}:${rowIdx}:end`
                     const isEndHovered = dropIndicator === endKey
 
                     return (
-                      <div key={rowIdx} className="flex items-start gap-2 min-h-[70px]">
+                      <div
+                        key={rowIdx}
+                        className="flex items-start gap-2 min-h-[70px]"
+                        onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
+                        onDrop={e => handleEndDrop(e, phase.id, rowIdx)}
+                      >
                         {/* Row label */}
                         <div className="flex-shrink-0 w-7 flex items-center justify-center pt-3">
                           <span className="text-[9px] text-gray-400 font-medium">{rowIdx + 1}</span>
                         </div>
 
-                        {/* Cards - horizontal scroll, no wrap */}
-                        <div className="flex-1 flex items-start gap-0 flex-nowrap pb-1">
+                        {/* Cards - no wrap */}
+                        <div
+                          className="flex-1 flex items-start gap-0 flex-nowrap pb-1"
+                          onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
+                        >
                           {rowCards.map((card, cardIdx) => {
                             const status = STATUS_CONFIG[card.status]
                             const StatusIcon = status.icon
