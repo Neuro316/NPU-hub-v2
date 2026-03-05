@@ -85,7 +85,7 @@ function calcSplit(
       if (isPreAug) {
         // ══════ PRE-AUGUST 2025: LEGACY 10% ERA ══════
         // SNW received only 10% of gross (not 26%).
-        // Clinic flat target ($3995) distributed PROPORTIONALLY
+        // Clinic flat target ($3395) distributed PROPORTIONALLY
         // across payments based on program total, NOT per-payment waterfall.
         // This ensures clinic is capped at flat_clinic total across all payments
         // and Dr. Yonce receives remainder on every payment.
@@ -325,9 +325,11 @@ function DashView({clients,locs,onSel,onAdd}:{clients:AcctClient[];locs:AcctLoca
 }
 
 /* ── Detail ────────────────────────────────────────── */
-function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onAddPmt,onEditPmt,onDeletePmt}:any) {
+function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onEditSvc,onAddPmt,onEditPmt,onDeletePmt}:any) {
   const [tab,setTab]=useState('svc');const [showAS,setSAS]=useState(false);const [showAP,setSAP]=useState<string|null>(null)
   const [sf,setSF]=useState({t:'Map',a:'600',d:td(),n:''})
+  const [editingSvc,setEditingSvc]=useState<string|null>(null)
+  const [esSF,setEsSF]=useState({a:'',d:'',n:''})
   const [pf,setPF]=useState({a:'',d:td(),n:''})
   const [editPm,setEditPm]=useState<AcctPayment|null>(null)
   const [ef,setEF]=useState({a:'',d:'',n:''})
@@ -361,7 +363,17 @@ function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onAddPmt,onEditPmt,onDelet
     {tab==='svc'&&cl.services.map((sv:AcctService)=>{
       const svP=sv.payments.reduce((s:number,p:AcctPayment)=>s+p.amount,0);const sp=sv.payments.reduce((acc,pm)=>{const s=calcSplit(pm.amount,sv.service_type,cl.location_id,locs,clinics,cfg,sv.amount,sv.service_date);return{snw:r2(acc.snw+s.snw),dr:r2(acc.dr+s.dr),cc:r2(acc.cc+s.cc),snwService:r2(acc.snwService+s.snwService),clinicAmts:Object.fromEntries(Object.entries(s.clinicAmts).map(([k,v])=>[k,r2((acc.clinicAmts[k]||0)+v)]))}},{snw:0,dr:0,cc:0,snwService:0,clinicAmts:{}} as ReturnType<typeof calcSplit>);const rem=sv.amount-svP;const clAmt=Object.values(sp.clinicAmts).reduce((s,v)=>s+v,0)
       return <div key={sv.id} className="rounded-xl border border-gray-100 bg-white overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50/50"><h4 className="text-xs font-bold text-np-dark">{sv.service_type==='Map'?'Initial Map':'Neuro Program'}</h4><span className="text-xs font-bold text-np-dark" style={{fontFeatureSettings:'"tnum"'}}>{$$(sv.amount)}</span></div>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50/50"><div className="flex items-center gap-2"><h4 className="text-xs font-bold text-np-dark">{sv.service_type==='Map'?'Initial Map':'Neuro Program'}</h4><button onClick={()=>{setEditingSvc(editingSvc===sv.id?null:sv.id);setEsSF({a:String(sv.amount),d:sv.service_date,n:sv.notes||''})}} className="p-0.5 rounded hover:bg-np-blue/10" title="Edit service"><Pencil className="w-3 h-3 text-gray-300 hover:text-np-blue"/></button></div><span className="text-xs font-bold text-np-dark" style={{fontFeatureSettings:'"tnum"'}}>{$(sv.amount)}</span></div>
+        {editingSvc===sv.id&&<div className="px-4 py-3 bg-blue-50/50 border-b border-blue-100 space-y-2">
+          <div className="flex gap-2 items-end flex-wrap">
+            <div><label className="block text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-0.5">Total Price</label><input type="number" step="0.01" value={esSF.a} onChange={e=>setEsSF(p=>({...p,a:e.target.value}))} className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg w-28 focus:outline-none focus:ring-1 focus:ring-np-blue/30" placeholder="e.g. 5400"/></div>
+            <div><label className="block text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-0.5">Service Date</label><input type="date" value={esSF.d} onChange={e=>setEsSF(p=>({...p,d:e.target.value}))} className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30"/></div>
+            <div className="flex-1"><label className="block text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-0.5">Notes</label><input value={esSF.n} onChange={e=>setEsSF(p=>({...p,n:e.target.value}))} className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg w-full focus:outline-none focus:ring-1 focus:ring-np-blue/30" placeholder="Optional notes"/></div>
+            <button onClick={async()=>{const a=parseFloat(esSF.a)||0;if(a<=0)return;await onEditSvc(sv.id,{amount:a,service_date:esSF.d,notes:esSF.n});setEditingSvc(null)}} className="px-3 py-1.5 text-[10px] font-semibold bg-np-blue text-white rounded-lg hover:bg-np-blue/90">Save</button>
+            <button onClick={()=>setEditingSvc(null)} className="px-3 py-1.5 text-[10px] font-semibold text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200">Cancel</button>
+          </div>
+          <SplitPrev amt={parseFloat(esSF.a)||0} svcType={sv.service_type} locId={cl.location_id} locs={locs} clinics={clinics} cfg={cfg} serviceTotal={parseFloat(esSF.a)||0} serviceStartDate={esSF.d}/>
+        </div>}
         <div className="p-4 space-y-3">
           <div className="flex gap-4 text-xs flex-wrap"><span><span className="text-gray-400">Date: </span>{fD(sv.service_date)}</span><span><span className="text-gray-400">Paid: </span><span className="text-green-600 font-semibold" style={{fontFeatureSettings:'"tnum"'}}>{$$(svP)}</span></span>{rem>0&&<span><span className="text-gray-400">Rem: </span><span className="text-amber-600 font-semibold" style={{fontFeatureSettings:'"tnum"'}}>{$$(rem)}</span></span>}</div>
           {sv.notes&&<p className="text-[11px] text-gray-400 italic">{sv.notes}</p>}
@@ -1340,6 +1352,7 @@ export default function AccountingPage() {
 
   const addClient=async()=>{if(!nc.nm.trim()||!nc.loc||!orgId)return;await supabase.from('acct_clients').insert({org_id:orgId,name:nc.nm.trim(),location_id:nc.loc});setSAC(false);setNC({nm:'',loc:''});loadData()}
   const addService=async(cid:string,svc:any)=>{if(!orgId)return;await supabase.from('acct_services').insert({org_id:orgId,client_id:cid,...svc});loadData()}
+  const editService=async(svcId:string,data:any)=>{if(!orgId)return;await supabase.from('acct_services').update(data).eq('id',svcId);loadData()}
   const addPayment=async(cid:string,sid:string,pmt:any)=>{if(!orgId)return;await supabase.from('acct_payments').insert({org_id:orgId,service_id:sid,client_id:cid,...pmt});loadData()}
   const editPayment=async(pmtId:string,data:any)=>{if(!orgId)return;await supabase.from('acct_payments').update(data).eq('id',pmtId);loadData()}
   const deletePayment=async(pmtId:string)=>{if(!orgId)return;await supabase.from('acct_payments').delete().eq('id',pmtId);loadData()}
@@ -1386,7 +1399,7 @@ export default function AccountingPage() {
               <div className="flex items-center justify-between"><span className="text-[10px] text-gray-400" style={{fontFeatureSettings:'"tnum"'}}>{$$(t)}</span>
                 <div className="flex gap-1"><div className="w-1.5 h-1.5 rounded-full" style={{background:lo?.color||'#999'}}/><div className="w-1.5 h-1.5 rounded-full" style={{background:sc?.tx==='text-green-700'?'#34A853':sc?.tx==='text-amber-700'?'#FBBC04':sc?.tx==='text-red-600'?'#EA4335':'#999'}}/></div></div></div></button>})}</div></div>
       <div className="flex-1 overflow-y-auto p-5">
-        {ac?<DetView cl={ac} locs={locs} clinics={clinics} cfg={config} onBack={()=>sS(null)} onAddSvc={addService} onAddPmt={addPayment} onEditPmt={editPayment} onDeletePmt={deletePayment}/>
+        {ac?<DetView cl={ac} locs={locs} clinics={clinics} cfg={config} onBack={()=>sS(null)} onAddSvc={addService} onEditSvc={editService} onAddPmt={addPayment} onEditPmt={editPayment} onDeletePmt={deletePayment}/>
           :vw==='payouts'?<PayView clients={clients} locs={locs} clinics={clinics} cfg={config} checks={checks} mktg={mktg} onAddCheck={addCheck} onDeleteCheck={deleteCheck}/>
           :vw==='recon'?<ReconView clients={clients} locs={locs} clinics={clinics} cfg={config}/>
           :vw==='reports'?<ReportView clients={clients} locs={locs} clinics={clinics} cfg={config} checks={checks} mktg={mktg}/>
