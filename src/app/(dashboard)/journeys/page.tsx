@@ -440,14 +440,14 @@ export default function JourneysPage() {
                                     className="group relative bg-white rounded-xl shadow-sm hover:shadow-md transition-all cursor-grab active:cursor-grabbing select-none"
                                     style={{ width: 170, border: `2px solid ${phase.color}25`, opacity: isBeingDragged ? 0.25 : 1 }}>
                                     <div className="h-1 rounded-t-[10px]" style={{ background: phase.color }} />
-                                    <div className="p-2.5">
+                                    <div className="p-2">
                                       <div className="flex items-start gap-1.5">
                                         <button onClick={e => { e.stopPropagation(); cycleStatus(card) }} className="mt-0.5 flex-shrink-0" title={status.label}>
                                           <StatusIcon className="w-4 h-4" style={{ color: status.color }} fill={card.status === 'done' ? status.color : 'none'} />
                                         </button>
-                                        <span className="text-[13px] font-semibold text-gray-900 leading-tight line-clamp-2">{card.title}</span>
+                                        <span className="text-xs font-medium text-gray-900 leading-tight line-clamp-2">{card.title}</span>
                                       </div>
-                                      {card.description && <p className="text-[11px] text-gray-500 mt-1 leading-relaxed line-clamp-2 ml-[22px]">{card.description}</p>}
+                                      {card.description && <p className="text-[10px] text-gray-500 mt-1 leading-relaxed line-clamp-2 ml-[22px]">{card.description}</p>}
                                       {card.tags && card.tags.length > 0 && (
                                         <div className="flex flex-wrap gap-1 mt-1.5 ml-[22px]">
                                           {card.tags.map(tag => {
@@ -457,7 +457,7 @@ export default function JourneysPage() {
                                         </div>
                                       )}
                                       <div className="flex items-center justify-between mt-2 ml-[22px]">
-                                        <span className="text-[9px] font-bold px-2 py-0.5 rounded uppercase tracking-wide" style={{ background: status.bg, color: status.color }}>{status.label}</span>
+                                        <span className="text-[8px] font-semibold px-2 py-0.5 rounded uppercase tracking-wide" style={{ background: status.bg, color: status.color }}>{status.label}</span>
                                         <div className="relative">
                                           <button onClick={e => { e.stopPropagation(); setCardMenuOpen(cardMenuOpen === card.id ? null : card.id) }}
                                             className="p-1 text-gray-300 hover:text-gray-600 rounded opacity-0 group-hover:opacity-100"><MoreHorizontal className="w-3.5 h-3.5" /></button>
@@ -553,12 +553,12 @@ export default function JourneysPage() {
         }}>
           <div className="bg-white rounded-xl shadow-2xl" style={{ border: `2px solid ${draggedPhase.color}50` }}>
             <div className="h-1 rounded-t-[10px]" style={{ background: draggedPhase.color }} />
-            <div className="p-2.5">
+            <div className="p-2">
               <div className="flex items-start gap-1.5">
                 <div className="w-4 h-4 rounded-full border-2 border-gray-300 flex-shrink-0 mt-0.5" />
-                <span className="text-[13px] font-semibold text-gray-900">{draggedCard.title}</span>
+                <span className="text-xs font-medium text-gray-900">{draggedCard.title}</span>
               </div>
-              {draggedCard.description && <p className="text-[11px] text-gray-500 mt-1 ml-[22px]">{draggedCard.description}</p>}
+              {draggedCard.description && <p className="text-[10px] text-gray-500 mt-1 ml-[22px]">{draggedCard.description}</p>}
             </div>
           </div>
         </div>
