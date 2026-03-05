@@ -440,7 +440,7 @@ export default function JourneysPage() {
                                     className="group relative bg-white rounded-xl shadow-sm hover:shadow-md transition-all cursor-grab active:cursor-grabbing select-none"
                                     style={{ width: 170, border: `2px solid ${phase.color}25`, opacity: isBeingDragged ? 0.25 : 1 }}>
                                     <div className="h-1 rounded-t-[10px]" style={{ background: phase.color }} />
-                                    <div className="p-2">
+                                    <div className="p-1.5">
                                       <div className="flex items-start gap-1.5">
                                         <button onClick={e => { e.stopPropagation(); cycleStatus(card) }} className="mt-0.5 flex-shrink-0" title={status.label}>
                                           <StatusIcon className="w-4 h-4" style={{ color: status.color }} fill={card.status === 'done' ? status.color : 'none'} />
@@ -553,7 +553,7 @@ export default function JourneysPage() {
         }}>
           <div className="bg-white rounded-xl shadow-2xl" style={{ border: `2px solid ${draggedPhase.color}50` }}>
             <div className="h-1 rounded-t-[10px]" style={{ background: draggedPhase.color }} />
-            <div className="p-2">
+            <div className="p-1.5">
               <div className="flex items-start gap-1.5">
                 <div className="w-4 h-4 rounded-full border-2 border-gray-300 flex-shrink-0 mt-0.5" />
                 <span className="text-xs font-medium text-gray-900">{draggedCard.title}</span>
