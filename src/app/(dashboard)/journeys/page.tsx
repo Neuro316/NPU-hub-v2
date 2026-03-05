@@ -510,7 +510,7 @@ export default function JourneysPage() {
                 </div>
 
                 {/* ── Rows ── */}
-                <div className="p-3 space-y-2">
+                <div className="p-3 space-y-2 overflow-x-auto">
                   {rowNumbers.map(rowIdx => {
                     const rowCards = getRowCards(phase.id, rowIdx)
                     const endKey = `${phase.id}:${rowIdx}:end`
@@ -524,7 +524,7 @@ export default function JourneysPage() {
                         </div>
 
                         {/* Cards - horizontal scroll, no wrap */}
-                        <div className="flex-1 flex items-start gap-0 flex-nowrap overflow-x-auto pb-1">
+                        <div className="flex-1 flex items-start gap-0 flex-nowrap pb-1">
                           {rowCards.map((card, cardIdx) => {
                             const status = STATUS_CONFIG[card.status]
                             const StatusIcon = status.icon
