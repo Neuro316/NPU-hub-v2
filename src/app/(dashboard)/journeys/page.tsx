@@ -528,9 +528,9 @@ export default function JourneysPage() {
                           <span className="text-[9px] text-gray-400 font-medium">{rowIdx + 1}</span>
                         </div>
 
-                        {/* Cards - no wrap */}
+                        {/* Cards */}
                         <div
-                          className="flex-1 flex items-start gap-0 flex-nowrap pb-1"
+                          className="flex-1 flex items-start gap-0 flex-nowrap overflow-x-auto pb-1"
                           onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
                         >
                           {rowCards.map((card, cardIdx) => {
