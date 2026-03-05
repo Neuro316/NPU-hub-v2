@@ -82,9 +82,10 @@ export default function JourneysPage() {
   const [cardMenuOpen, setCardMenuOpen] = useState<string | null>(null)
 
   // Drag state
+  const dragCardIdRef = useRef<string | null>(null)
   const [dragCardId, setDragCardId] = useState<string | null>(null)
-  const [hoverRow, setHoverRow] = useState<string | null>(null)
-  const rowEnterCount = useRef<Record<string, number>>({})
+  // dropIndicator: "cardId:left" or "cardId:right" or "phaseId:rowIdx:end" or "phaseId:newrow"
+  const [dropIndicator, setDropIndicator] = useState<string | null>(null)
 
   // ── Data Loading ──
   const loadData = useCallback(async () => {
@@ -191,99 +192,154 @@ export default function JourneysPage() {
   // ── DRAG & DROP ──
   const handleDragStart = (e: DragEvent<HTMLDivElement>, card: JourneyCard) => {
     e.stopPropagation()
+    dragCardIdRef.current = card.id
     setDragCardId(card.id)
     e.dataTransfer.setData('text/plain', card.id)
     e.dataTransfer.effectAllowed = 'move'
-    const el = e.currentTarget as HTMLElement
-    requestAnimationFrame(() => { el.style.opacity = '0.4' })
+    requestAnimationFrame(() => {
+      const el = e.currentTarget as HTMLElement
+      if (el) el.style.opacity = '0.4'
+    })
   }
 
   const handleDragEnd = (e: DragEvent<HTMLDivElement>) => {
     const el = e.currentTarget as HTMLElement
-    el.style.opacity = '1'
+    if (el) el.style.opacity = '1'
+    dragCardIdRef.current = null
     setDragCardId(null)
-    setHoverRow(null)
-    rowEnterCount.current = {}
+    setDropIndicator(null)
   }
 
-  const handleRowDragEnter = (e: DragEvent, rowKey: string) => {
+  // When dragging over a card, figure out left or right half
+  const handleCardDragOver = (e: DragEvent<HTMLDivElement>, targetCardId: string) => {
     e.preventDefault()
-    rowEnterCount.current[rowKey] = (rowEnterCount.current[rowKey] || 0) + 1
-    setHoverRow(rowKey)
-  }
-
-  const handleRowDragOver = (e: DragEvent) => {
-    e.preventDefault()
+    e.stopPropagation()
     e.dataTransfer.dropEffect = 'move'
-  }
+    if (targetCardId === dragCardIdRef.current) return
 
-  const handleRowDragLeave = (e: DragEvent, rowKey: string) => {
-    rowEnterCount.current[rowKey] = (rowEnterCount.current[rowKey] || 0) - 1
-    if (rowEnterCount.current[rowKey] <= 0) {
-      rowEnterCount.current[rowKey] = 0
-      if (hoverRow === rowKey) setHoverRow(null)
-    }
-  }
-
-  // Calculate insertion index from mouse X position
-  const getInsertIndex = (e: DragEvent): number => {
+    const rect = e.currentTarget.getBoundingClientRect()
     const mouseX = e.clientX
-    const rowEl = (e.currentTarget as HTMLElement)
-    // Find all card elements in this row using data attributes
-    const cardEls = rowEl.querySelectorAll('[data-card-id]')
-    
-    for (let i = 0; i < cardEls.length; i++) {
-      const rect = cardEls[i].getBoundingClientRect()
-      const cardCenter = rect.left + rect.width / 2
-      if (mouseX < cardCenter) {
-        return i
+    const midpoint = rect.left + rect.width / 2
+    const side = mouseX < midpoint ? 'left' : 'right'
+    setDropIndicator(`${targetCardId}:${side}`)
+  }
+
+  const handleCardDragLeave = (e: DragEvent<HTMLDivElement>, targetCardId: string) => {
+    // Only clear if actually leaving this card (not entering a child)
+    const related = e.relatedTarget as HTMLElement | null
+    if (!related || !e.currentTarget.contains(related)) {
+      if (dropIndicator === `${targetCardId}:left` || dropIndicator === `${targetCardId}:right`) {
+        setDropIndicator(null)
       }
     }
-    // Mouse is past all cards — append to end
-    return cardEls.length
   }
 
-  const handleRowDrop = async (e: DragEvent, targetPhaseId: string, targetRow: number) => {
+  // Drop on a specific card: insert before or after
+  const handleCardDrop = async (e: DragEvent<HTMLDivElement>, targetCard: JourneyCard) => {
     e.preventDefault()
     e.stopPropagation()
 
-    const theCardId = e.dataTransfer.getData('text/plain') || dragCardId
-    if (!theCardId) return
+    const theCardId = e.dataTransfer.getData('text/plain') || dragCardIdRef.current
+    if (!theCardId || theCardId === targetCard.id) {
+      cleanupDrag()
+      return
+    }
 
-    const card = cards.find(c => c.id === theCardId)
-    if (!card) return
+    const draggedCard = cards.find(c => c.id === theCardId)
+    if (!draggedCard) { cleanupDrag(); return }
 
-    // Figure out where in the row the user dropped
-    const insertAt = getInsertIndex(e)
+    // Determine insert position
+    const rect = e.currentTarget.getBoundingClientRect()
+    const mouseX = e.clientX
+    const midpoint = rect.left + rect.width / 2
+    const insertBefore = mouseX < midpoint
 
-    // Get existing cards in this row (excluding the dragged one)
+    await moveCard(theCardId, draggedCard, targetCard.phase_id, targetCard.row_index, targetCard.id, insertBefore)
+    cleanupDrag()
+  }
+
+  // Drop on the end-of-row zone
+  const handleEndDrop = async (e: DragEvent, targetPhaseId: string, targetRow: number) => {
+    e.preventDefault()
+    e.stopPropagation()
+
+    const theCardId = e.dataTransfer.getData('text/plain') || dragCardIdRef.current
+    if (!theCardId) { cleanupDrag(); return }
+
+    const draggedCard = cards.find(c => c.id === theCardId)
+    if (!draggedCard) { cleanupDrag(); return }
+
+    await moveCard(theCardId, draggedCard, targetPhaseId, targetRow, null, false)
+    cleanupDrag()
+  }
+
+  // Drop on new-row zone
+  const handleNewRowDrop = async (e: DragEvent, targetPhaseId: string, newRow: number) => {
+    e.preventDefault()
+    e.stopPropagation()
+
+    const theCardId = e.dataTransfer.getData('text/plain') || dragCardIdRef.current
+    if (!theCardId) { cleanupDrag(); return }
+
+    const draggedCard = cards.find(c => c.id === theCardId)
+    if (!draggedCard) { cleanupDrag(); return }
+
+    await moveCard(theCardId, draggedCard, targetPhaseId, newRow, null, false)
+    cleanupDrag()
+  }
+
+  const cleanupDrag = () => {
+    dragCardIdRef.current = null
+    setDragCardId(null)
+    setDropIndicator(null)
+  }
+
+  // Core move logic: move card to a target phase+row, optionally relative to another card
+  const moveCard = async (
+    cardId: string,
+    draggedCard: JourneyCard,
+    targetPhaseId: string,
+    targetRow: number,
+    relativeToCardId: string | null,
+    insertBefore: boolean
+  ) => {
+    // Get cards in target row excluding the dragged card
     const targetRowCards = cards
-      .filter(c => c.phase_id === targetPhaseId && c.row_index === targetRow && c.id !== theCardId)
+      .filter(c => c.phase_id === targetPhaseId && c.row_index === targetRow && c.id !== cardId)
       .sort((a, b) => a.sort_order - b.sort_order)
 
-    // Build new order: insert the dragged card at insertAt
+    let insertAt = targetRowCards.length // default: append
+
+    if (relativeToCardId) {
+      const relIdx = targetRowCards.findIndex(c => c.id === relativeToCardId)
+      if (relIdx >= 0) {
+        insertAt = insertBefore ? relIdx : relIdx + 1
+      }
+    }
+
+    // Build new order
     const reordered: { id: string; sort_order: number; phase_id?: string; row_index?: number }[] = []
     let idx = 0
-    let inserted = false
+    let placed = false
 
     for (let i = 0; i < targetRowCards.length; i++) {
-      if (idx === insertAt && !inserted) {
-        reordered.push({ id: theCardId, sort_order: idx, phase_id: targetPhaseId, row_index: targetRow })
+      if (idx === insertAt && !placed) {
+        reordered.push({ id: cardId, sort_order: idx, phase_id: targetPhaseId, row_index: targetRow })
         idx++
-        inserted = true
+        placed = true
       }
       reordered.push({ id: targetRowCards[i].id, sort_order: idx })
       idx++
     }
-    if (!inserted) {
-      reordered.push({ id: theCardId, sort_order: idx, phase_id: targetPhaseId, row_index: targetRow })
+    if (!placed) {
+      reordered.push({ id: cardId, sort_order: idx, phase_id: targetPhaseId, row_index: targetRow })
     }
 
-    // Also reindex the source row if card moved to a different row
+    // Reindex source row if moving across rows
     const sourceReindex: { id: string; sort_order: number }[] = []
-    if (card.phase_id !== targetPhaseId || card.row_index !== targetRow) {
+    if (draggedCard.phase_id !== targetPhaseId || draggedCard.row_index !== targetRow) {
       const sourceRowCards = cards
-        .filter(c => c.phase_id === card.phase_id && c.row_index === card.row_index && c.id !== theCardId)
+        .filter(c => c.phase_id === draggedCard.phase_id && c.row_index === draggedCard.row_index && c.id !== cardId)
         .sort((a, b) => a.sort_order - b.sort_order)
       sourceRowCards.forEach((c, i) => {
         sourceReindex.push({ id: c.id, sort_order: i })
@@ -313,7 +369,7 @@ export default function JourneysPage() {
       return next
     })
 
-    // Persist all updates
+    // Persist
     const allUpdates = [...reordered, ...sourceReindex]
     for (const u of allUpdates) {
       const payload: Record<string, unknown> = { sort_order: u.sort_order, updated_at: new Date().toISOString() }
@@ -321,10 +377,6 @@ export default function JourneysPage() {
       if ('row_index' in u && u.row_index !== undefined) payload.row_index = u.row_index
       await supabase.from('journey_cards').update(payload).eq('id', u.id)
     }
-
-    setDragCardId(null)
-    setHoverRow(null)
-    rowEnterCount.current = {}
   }
 
   // ── Helpers ──
@@ -357,7 +409,7 @@ export default function JourneysPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-lg font-bold text-gray-900">Journey Builder</h1>
-            <p className="text-xs text-gray-500 mt-0.5">{currentOrg?.name} — drag cards to any row or between cards</p>
+            <p className="text-xs text-gray-500 mt-0.5">{currentOrg?.name} — drag cards between any row or position</p>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -461,48 +513,43 @@ export default function JourneysPage() {
                 <div className="p-3 space-y-2">
                   {rowNumbers.map(rowIdx => {
                     const rowCards = getRowCards(phase.id, rowIdx)
-                    const rowKey = `${phase.id}:${rowIdx}`
-                    const isRowHovered = hoverRow === rowKey && dragCardId !== null
+                    const endKey = `${phase.id}:${rowIdx}:end`
+                    const isEndHovered = dropIndicator === endKey
 
                     return (
-                      <div
-                        key={rowIdx}
-                        className={`flex items-start gap-2 rounded-lg p-2 transition-all min-h-[70px] ${
-                          isRowHovered
-                            ? 'bg-blue-50 ring-2 ring-[#386797]/30'
-                            : dragCardId
-                              ? 'bg-gray-50/30'
-                              : ''
-                        }`}
-                        onDragEnter={e => handleRowDragEnter(e, rowKey)}
-                        onDragOver={handleRowDragOver}
-                        onDragLeave={e => handleRowDragLeave(e, rowKey)}
-                        onDrop={e => handleRowDrop(e, phase.id, rowIdx)}
-                      >
+                      <div key={rowIdx} className="flex items-start gap-2 min-h-[70px]">
                         {/* Row label */}
                         <div className="flex-shrink-0 w-7 flex items-center justify-center pt-3">
                           <span className="text-[9px] text-gray-400 font-medium">{rowIdx + 1}</span>
                         </div>
 
-                        {/* Cards */}
-                        <div className="flex-1 flex items-start gap-2 flex-nowrap overflow-x-auto pb-1">
+                        {/* Cards - horizontal scroll, no wrap */}
+                        <div className="flex-1 flex items-start gap-0 flex-nowrap overflow-x-auto pb-1">
                           {rowCards.map((card, cardIdx) => {
                             const status = STATUS_CONFIG[card.status]
                             const StatusIcon = status.icon
                             const isBeingDragged = dragCardId === card.id
+                            const showLeftBar = dropIndicator === `${card.id}:left`
+                            const showRightBar = dropIndicator === `${card.id}:right`
 
                             return (
-                              <div key={card.id} className={`flex items-start flex-shrink-0 ${dragCardId && !isBeingDragged ? 'pointer-events-none' : ''}`} data-card-id={card.id}>
-                                {/* The Card */}
+                              <div key={card.id} className="flex items-start flex-shrink-0">
+                                {/* Left drop indicator */}
+                                <div className={`flex-shrink-0 transition-all duration-150 rounded ${showLeftBar ? 'w-1.5 bg-[#386797] mx-1 min-h-[80px]' : 'w-0'}`} />
+
+                                {/* The Card — also a drop target */}
                                 <div
-                                  draggable={!dragCardId}
+                                  draggable
                                   onDragStart={e => handleDragStart(e, card)}
                                   onDragEnd={handleDragEnd}
+                                  onDragOver={e => handleCardDragOver(e, card.id)}
+                                  onDragLeave={e => handleCardDragLeave(e, card.id)}
+                                  onDrop={e => handleCardDrop(e, card)}
                                   className={`group relative bg-white rounded-lg border-2 shadow-sm hover:shadow-md 
                                     transition-all w-[200px] cursor-grab active:cursor-grabbing select-none
                                     ${isBeingDragged ? 'opacity-30 scale-95' : 'opacity-100'}
                                   `}
-                                  style={{ borderColor: `${phase.color}30`, pointerEvents: dragCardId && !isBeingDragged ? 'none' : 'auto' }}
+                                  style={{ borderColor: `${phase.color}30` }}
                                 >
                                   <div className="h-1 rounded-t-[5px]" style={{ backgroundColor: phase.color }} />
 
@@ -586,7 +633,11 @@ export default function JourneysPage() {
                                   </div>
                                 </div>
 
-                                {cardIdx < rowCards.length - 1 && (
+                                {/* Right drop indicator */}
+                                <div className={`flex-shrink-0 transition-all duration-150 rounded ${showRightBar ? 'w-1.5 bg-[#386797] mx-1 min-h-[80px]' : 'w-0'}`} />
+
+                                {/* Arrow between cards (only when not showing indicators) */}
+                                {cardIdx < rowCards.length - 1 && !showRightBar && (
                                   <div className="flex-shrink-0 flex items-center px-0.5 pt-4">
                                     <ChevronRight className="w-3.5 h-3.5 text-gray-300" />
                                   </div>
@@ -595,22 +646,30 @@ export default function JourneysPage() {
                             )
                           })}
 
-                          {!dragCardId && (
-                            <button
-                              onClick={() => { setAddingCardAt({ phaseId: phase.id, row: rowIdx }); setNewCardTitle('') }}
-                              className="flex-shrink-0 w-[40px] min-h-[56px] rounded-lg border-2 border-dashed border-gray-200 
-                                flex items-center justify-center text-gray-400 hover:text-[#386797] hover:border-[#386797] 
-                                hover:bg-blue-50/30 transition-all"
-                            >
-                              <Plus className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-
-                          {isRowHovered && (
-                            <div className="flex-shrink-0 w-[120px] min-h-[56px] rounded-lg border-2 border-dashed border-[#386797] bg-blue-50/80 flex items-center justify-center">
-                              <span className="text-[10px] font-medium text-[#386797]">Drop here</span>
-                            </div>
-                          )}
+                          {/* End-of-row drop zone */}
+                          <div
+                            className={`flex-shrink-0 rounded-lg border-2 border-dashed transition-all min-h-[56px] flex items-center justify-center mx-1 ${
+                              isEndHovered
+                                ? 'border-[#386797] bg-blue-50/80 w-[100px]'
+                                : dragCardId
+                                  ? 'border-gray-200 bg-gray-50/30 w-[60px]'
+                                  : 'border-transparent w-[40px]'
+                            }`}
+                            onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDropIndicator(endKey) }}
+                            onDragLeave={() => { if (dropIndicator === endKey) setDropIndicator(null) }}
+                            onDrop={e => handleEndDrop(e, phase.id, rowIdx)}
+                          >
+                            {dragCardId ? (
+                              <Plus className="w-4 h-4 text-[#386797]" />
+                            ) : (
+                              <button
+                                onClick={() => { setAddingCardAt({ phaseId: phase.id, row: rowIdx }); setNewCardTitle('') }}
+                                className="w-full h-full flex items-center justify-center text-gray-400 hover:text-[#386797]"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     )
@@ -620,14 +679,13 @@ export default function JourneysPage() {
                   {dragCardId && (
                     <div
                       className={`mx-9 rounded-lg border-2 border-dashed transition-all min-h-[50px] flex items-center justify-center ${
-                        hoverRow === `${phase.id}:${getNextRow(phase.id)}`
+                        dropIndicator === `${phase.id}:newrow`
                           ? 'border-[#386797] bg-blue-50/80'
                           : 'border-gray-200 bg-gray-50/30'
                       }`}
-                      onDragEnter={e => handleRowDragEnter(e, `${phase.id}:${getNextRow(phase.id)}`)}
-                      onDragOver={handleRowDragOver}
-                      onDragLeave={e => handleRowDragLeave(e, `${phase.id}:${getNextRow(phase.id)}`)}
-                      onDrop={e => handleRowDrop(e, phase.id, getNextRow(phase.id))}
+                      onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDropIndicator(`${phase.id}:newrow`) }}
+                      onDragLeave={() => { if (dropIndicator === `${phase.id}:newrow`) setDropIndicator(null) }}
+                      onDrop={e => handleNewRowDrop(e, phase.id, getNextRow(phase.id))}
                     >
                       <span className="text-[10px] text-gray-400">Drop to create new row</span>
                     </div>
