@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
 import {
@@ -79,6 +80,9 @@ export default function JourneysPage() {
   const [newCardTitle, setNewCardTitle] = useState('')
   const [editingCard, setEditingCard] = useState<JourneyCard | null>(null)
   const [cardMenuOpen, setCardMenuOpen] = useState<string | null>(null)
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null)
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
 
   // Mouse-based drag state
   const [dragging, setDragging] = useState<{
@@ -420,7 +424,7 @@ export default function JourneysPage() {
                         <div key={rowIdx}>
                           <div ref={el => { rowRefs.current[rowKey] = el }}
                             className="flex items-start gap-0 flex-nowrap rounded-xl transition-colors"
-                            style={{ minHeight: 80, padding: '8px 4px', paddingBottom: 12, overflowX: 'auto', background: isDropRow ? `${phase.color}08` : 'transparent' }}>
+                            style={{ minHeight: 80, padding: '8px 4px', paddingBottom: 12, background: isDropRow ? `${phase.color}08` : 'transparent' }}>
                             {rowCards.map((card, cardIdx) => {
                               const status = STATUS_CONFIG[card.status]
                               const StatusIcon = status.icon
@@ -458,15 +462,21 @@ export default function JourneysPage() {
                                       )}
                                       <div className="flex items-center justify-between mt-2 ml-[22px]">
                                         <span className="text-[8px] font-semibold px-2 py-0.5 rounded uppercase tracking-wide" style={{ background: status.bg, color: status.color }}>{status.label}</span>
-                                        <div className="relative">
-                                          <button onClick={e => { e.stopPropagation(); setCardMenuOpen(cardMenuOpen === card.id ? null : card.id) }}
+                                        <div>
+                                          <button
+                                            onMouseDown={e => e.stopPropagation()}
+                                            onClick={e => {
+                                              e.stopPropagation()
+                                              if (cardMenuOpen === card.id) {
+                                                setCardMenuOpen(null)
+                                                setMenuPos(null)
+                                              } else {
+                                                const rect = e.currentTarget.getBoundingClientRect()
+                                                setMenuPos({ top: rect.top - 72, left: rect.left - 100 })
+                                                setCardMenuOpen(card.id)
+                                              }
+                                            }}
                                             className="p-1 text-gray-300 hover:text-gray-600 rounded opacity-0 group-hover:opacity-100"><MoreHorizontal className="w-3.5 h-3.5" /></button>
-                                          {cardMenuOpen === card.id && (
-                                            <div className="absolute right-0 top-6 bg-white rounded-lg shadow-lg border py-1 z-50 w-28">
-                                              <button onClick={() => { setEditingCard(card); setCardMenuOpen(null) }} className="w-full px-3 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"><Edit3 className="w-3 h-3" /> Edit</button>
-                                              <button onClick={() => deleteCard(card.id)} className="w-full px-3 py-1.5 text-left text-xs text-red-600 hover:bg-red-50 flex items-center gap-2"><Trash2 className="w-3 h-3" /> Delete</button>
-                                            </div>
-                                          )}
                                         </div>
                                       </div>
                                     </div>
@@ -614,6 +624,30 @@ export default function JourneysPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Card context menu - portaled to body to escape overflow clipping */}
+      {mounted && cardMenuOpen && menuPos && createPortal(
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 9998 }} onClick={() => { setCardMenuOpen(null); setMenuPos(null) }} />
+          <div style={{ position: 'fixed', top: menuPos.top, left: menuPos.left, zIndex: 9999, width: 112 }}
+            className="bg-white rounded-lg shadow-xl border py-1">
+            <button onClick={() => {
+              const c = cards.find(x => x.id === cardMenuOpen)
+              if (c) setEditingCard(c)
+              setCardMenuOpen(null); setMenuPos(null)
+            }} className="w-full px-3 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2">
+              <Edit3 className="w-3 h-3" /> Edit
+            </button>
+            <button onClick={() => {
+              if (cardMenuOpen) deleteCard(cardMenuOpen)
+              setMenuPos(null)
+            }} className="w-full px-3 py-1.5 text-left text-xs text-red-600 hover:bg-red-50 flex items-center gap-2">
+              <Trash2 className="w-3 h-3" /> Delete
+            </button>
+          </div>
+        </>,
+        document.body
       )}
     </div>
   )
