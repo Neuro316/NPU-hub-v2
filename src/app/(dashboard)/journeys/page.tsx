@@ -389,7 +389,7 @@ export default function JourneysPage() {
               const phaseCards = getPhaseCards(phase.id)
 
               return (
-                <div key={phase.id} className="flex bg-white rounded-2xl border border-gray-200/80">
+                <div key={phase.id} className="inline-flex bg-white rounded-2xl border border-gray-200/80 min-w-full">
                   {/* Phase sidebar */}
                   <div className="flex-shrink-0 w-44 flex flex-col justify-center px-5 py-6 rounded-l-2xl" style={{ borderRight: `4px solid ${phase.color}`, background: `${phase.color}08` }}>
                     <div className="flex items-center gap-2 mb-1">
@@ -414,7 +414,7 @@ export default function JourneysPage() {
                   </div>
 
                   {/* Rows area */}
-                  <div className="flex-1 p-4 min-w-0">
+                  <div className="flex-1 p-4">
                     {rowNumbers.map((rowIdx, ri) => {
                       const rowCards = getRowCards(phase.id, rowIdx)
                       const rowKey = `${phase.id}:${rowIdx}`
