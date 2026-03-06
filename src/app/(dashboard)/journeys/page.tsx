@@ -6,7 +6,7 @@ import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
 import {
   Plus, X, Trash2, Loader2, ArrowRight,
-  CheckCircle2, Circle, Clock, MoreHorizontal, Edit3
+  CheckCircle2, Circle, Clock, MoreHorizontal, Edit3, ChevronDown, ChevronRight
 } from 'lucide-react'
 import { CardDetailPanel } from '@/components/journey/card-detail-panel'
 
@@ -81,6 +81,7 @@ export default function JourneysPage() {
   const [newCardTitle, setNewCardTitle] = useState('')
   const [editingCard, setEditingCard] = useState<JourneyCard | null>(null)
   const [cardMenuOpen, setCardMenuOpen] = useState<string | null>(null)
+  const [collapsedRows, setCollapsedRows] = useState<Set<string>>(new Set())
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null)
   const [mounted, setMounted] = useState(false)
   useEffect(() => { setMounted(true) }, [])
@@ -420,9 +421,25 @@ export default function JourneysPage() {
                       const rowCards = getRowCards(phase.id, rowIdx)
                       const rowKey = `${phase.id}:${rowIdx}`
                       const isDropRow = dropTarget && !dropTarget.newRow && dropTarget.phaseId === phase.id && dropTarget.rowIdx === rowIdx
+                      const isCollapsed = collapsedRows.has(rowKey)
+                      const toggleRow = () => setCollapsedRows(prev => {
+                        const next = new Set(prev)
+                        next.has(rowKey) ? next.delete(rowKey) : next.add(rowKey)
+                        return next
+                      })
 
                       return (
                         <div key={rowIdx}>
+                          {/* Row toggle header */}
+                          <div className="flex items-center gap-1.5 px-1 py-1">
+                            <button onClick={toggleRow} className="flex items-center gap-1 text-gray-400 hover:text-gray-600 transition-colors">
+                              {isCollapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                              <span className="text-[10px] font-medium">Row {ri + 1}</span>
+                            </button>
+                            <span className="text-[9px] text-gray-300">{rowCards.length} card{rowCards.length !== 1 ? 's' : ''}</span>
+                          </div>
+
+                          {!isCollapsed && (
                           <div ref={el => { rowRefs.current[rowKey] = el }}
                             className="flex items-start gap-0 flex-nowrap rounded-xl transition-colors"
                             style={{ minHeight: 80, padding: '8px 4px', paddingBottom: 12, background: isDropRow ? `${phase.color}08` : 'transparent' }}>
@@ -520,6 +537,7 @@ export default function JourneysPage() {
                               </>
                             )}
                           </div>
+                          )}
 
                           {/* Row divider */}
                           {ri < rowNumbers.length - 1 && <div className="border-b border-dashed border-gray-200 mx-1 my-1" />}
