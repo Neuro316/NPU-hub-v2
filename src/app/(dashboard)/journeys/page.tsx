@@ -82,6 +82,7 @@ export default function JourneysPage() {
   const [editingCard, setEditingCard] = useState<JourneyCard | null>(null)
   const [cardMenuOpen, setCardMenuOpen] = useState<string | null>(null)
   const [collapsedRows, setCollapsedRows] = useState<Set<string>>(new Set())
+  const [collapsedPhases, setCollapsedPhases] = useState<Set<string>>(new Set())
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null)
   const [mounted, setMounted] = useState(false)
   useEffect(() => { setMounted(true) }, [])
@@ -390,12 +391,21 @@ export default function JourneysPage() {
               const rowNumbers = getRowNumbers(phase.id)
               const phaseCards = getPhaseCards(phase.id)
 
+              const isPhaseCollapsed = collapsedPhases.has(phase.id)
+              const togglePhase = () => setCollapsedPhases(prev => {
+                const next = new Set(prev)
+                next.has(phase.id) ? next.delete(phase.id) : next.add(phase.id)
+                return next
+              })
+
               return (
                 <div key={phase.id} className="inline-flex bg-white rounded-2xl border border-gray-200/80 min-w-full">
                   {/* Phase sidebar */}
                   <div className="flex-shrink-0 w-44 flex flex-col justify-center px-5 py-6 rounded-l-2xl" style={{ borderRight: `4px solid ${phase.color}`, background: `${phase.color}08` }}>
                     <div className="flex items-center gap-2 mb-1">
-                      <div className="w-2.5 h-2.5 rounded-full" style={{ background: phase.color }} />
+                      <button onClick={togglePhase} className="text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0">
+                        {isPhaseCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                      </button>
                       {editingPhase === phase.id ? (
                         <input value={editPhaseLabel} onChange={e => setEditPhaseLabel(e.target.value)}
                           onBlur={() => updatePhaseLabel(phase.id, editPhaseLabel)} onKeyDown={e => e.key === 'Enter' && updatePhaseLabel(phase.id, editPhaseLabel)}
@@ -406,8 +416,8 @@ export default function JourneysPage() {
                       )}
                       <span className="text-xs text-gray-400">({phaseCards.length})</span>
                     </div>
-                    <span className="text-[11px] text-gray-400 ml-[18px]">{rowNumbers.length} row{rowNumbers.length !== 1 ? 's' : ''}</span>
-                    <div className="flex gap-1 mt-3 ml-[18px]">
+                    <span className="text-[11px] text-gray-400 ml-[22px]">{rowNumbers.length} row{rowNumbers.length !== 1 ? 's' : ''}</span>
+                    <div className="flex gap-1 mt-3 ml-[22px]">
                       <button onClick={() => { setAddingCardAt({ phaseId: phase.id, row: getNextRow(phase.id) }); setNewCardTitle('') }}
                         className="p-1 text-gray-400 hover:text-blue-600 rounded"><Plus className="w-3.5 h-3.5" /></button>
                       <button onClick={() => deletePhase(phase.id)}
@@ -416,7 +426,7 @@ export default function JourneysPage() {
                   </div>
 
                   {/* Rows area */}
-                  <div className="p-4 w-max">
+                  {!isPhaseCollapsed && <div className="p-4 w-max">
                     {rowNumbers.map((rowIdx, ri) => {
                       const rowCards = getRowCards(phase.id, rowIdx)
                       const rowKey = `${phase.id}:${rowIdx}`
@@ -566,7 +576,7 @@ export default function JourneysPage() {
                         <button onClick={() => setAddingCardAt(null)}><X className="w-3.5 h-3.5 text-gray-400" /></button>
                       </div>
                     )}
-                  </div>
+                  </div>}
                 </div>
               )
             })
