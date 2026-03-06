@@ -1056,7 +1056,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
                         className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300"
                       />
                       {(contact.custom_fields?.drive_folder as string) && (
-                        <a href={contact.custom_fields.drive_folder as string} target="_blank" rel="noopener"
+                        <a href={contact.custom_fields?.drive_folder as string} target="_blank" rel="noopener"
                           className="flex items-center gap-1 text-[10px] bg-np-blue text-white px-2.5 py-1.5 rounded-lg font-medium hover:bg-np-blue/90 whitespace-nowrap">
                           Open <ExternalLink className="w-3 h-3" />
                         </a>
