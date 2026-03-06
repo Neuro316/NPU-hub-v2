@@ -65,6 +65,214 @@ const MASTERMIND_STATUS: Record<string, { color: string; label: string }> = {
   alumni: { color: '#64748b', label: 'Alumni' },
 }
 
+// Default Drive folder for Podcast pipeline contacts
+const PODCAST_DRIVE_FOLDER = 'https://drive.google.com/drive/u/0/folders/13a4Pn8vLyaWwtfJEU935Z_Q40jxsM4_p'
+
+function ContactDriveSection({ contact, updateContact, load }: {
+  contact: CrmContact
+  updateContact: (id: string, updates: Partial<CrmContact>) => Promise<any>
+  load: () => void
+}) {
+  const [driveFiles, setDriveFiles] = useState<any[]>([])
+  const [loadingFiles, setLoadingFiles] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [driveFolder, setDriveFolder] = useState('')
+  const [driveError, setDriveError] = useState('')
+
+  // Auto-set drive folder for Podcast pipeline contacts
+  const effectiveDriveFolder = (contact.custom_fields?.drive_folder as string) ||
+    (contact.pipeline_stage && ['Podcasts', 'Podcast'].some(p =>
+      (contact as any).pipeline_name?.toLowerCase().includes(p.toLowerCase())
+    ) ? PODCAST_DRIVE_FOLDER : '')
+
+  useEffect(() => {
+    setDriveFolder((contact.custom_fields?.drive_folder as string) || '')
+  }, [contact.id, contact.custom_fields?.drive_folder])
+
+  // Load files from Drive folder
+  const loadDriveFiles = async (folderUrl?: string) => {
+    const url = folderUrl || effectiveDriveFolder
+    if (!url) return
+    setLoadingFiles(true)
+    setDriveError('')
+    try {
+      const res = await fetch('/api/drive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'list', folderUrl: url }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setDriveFiles(data.files || [])
+      } else {
+        setDriveError(data.error || 'Failed to load files')
+      }
+    } catch {
+      setDriveError('Connection error')
+    }
+    setLoadingFiles(false)
+  }
+
+  useEffect(() => {
+    if (effectiveDriveFolder) loadDriveFiles(effectiveDriveFolder)
+  }, [contact.id, effectiveDriveFolder])
+
+  // Upload file to Drive
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !effectiveDriveFolder) return
+    setUploading(true)
+    setDriveError('')
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('folderUrl', effectiveDriveFolder)
+      const res = await fetch('/api/drive', { method: 'POST', body: formData })
+      const data = await res.json()
+      if (data.success) {
+        loadDriveFiles()
+      } else {
+        setDriveError(data.error || 'Upload failed')
+      }
+    } catch {
+      setDriveError('Upload error')
+    }
+    setUploading(false)
+    e.target.value = ''
+  }
+
+  // Delete file from Drive
+  const handleDelete = async (fileId: string) => {
+    if (!confirm('Delete this file from Google Drive?')) return
+    try {
+      const res = await fetch('/api/drive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', fileId }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setDriveFiles(prev => prev.filter(f => f.id !== fileId))
+      }
+    } catch {}
+  }
+
+  // Save drive folder URL
+  const saveDriveFolder = async () => {
+    await updateContact(contact.id, { custom_fields: { ...contact.custom_fields, drive_folder: driveFolder } } as any)
+    load()
+    if (driveFolder) loadDriveFiles(driveFolder)
+  }
+
+  // Create contact subfolder in the podcast Drive
+  const createContactFolder = async () => {
+    const parentUrl = PODCAST_DRIVE_FOLDER
+    const contactName = [contact.first_name, contact.last_name].filter(Boolean).join(' ') || 'Unknown'
+    setDriveError('')
+    try {
+      const res = await fetch('/api/drive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'createFolder', folderUrl: parentUrl, folderName: contactName }),
+      })
+      const data = await res.json()
+      if (data.success && data.folder?.webViewLink) {
+        const folderUrl = data.folder.webViewLink
+        setDriveFolder(folderUrl)
+        await updateContact(contact.id, { custom_fields: { ...contact.custom_fields, drive_folder: folderUrl } } as any)
+        load()
+        loadDriveFiles(folderUrl)
+      } else {
+        setDriveError(data.error || 'Failed to create folder')
+      }
+    } catch {
+      setDriveError('Connection error')
+    }
+  }
+
+  const formatSize = (bytes: string) => {
+    const b = parseInt(bytes)
+    if (!b || isNaN(b)) return ''
+    if (b < 1024) return `${b} B`
+    if (b < 1048576) return `${(b / 1024).toFixed(0)} KB`
+    return `${(b / 1048576).toFixed(1)} MB`
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+          <FolderOpen className="w-3 h-3" /> Files & Drive
+        </h4>
+        <div className="flex items-center gap-2">
+          {effectiveDriveFolder && (
+            <label className={`flex items-center gap-1 text-[10px] font-medium cursor-pointer ${uploading ? 'text-gray-300' : 'text-np-blue hover:underline'}`}>
+              <Upload className="w-3 h-3" /> {uploading ? 'Uploading...' : 'Upload'}
+              <input type="file" className="hidden" onChange={handleUpload} disabled={uploading} />
+            </label>
+          )}
+          {effectiveDriveFolder && (
+            <a href={effectiveDriveFolder} target="_blank" rel="noopener"
+              className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-np-blue font-medium">
+              <ExternalLink className="w-3 h-3" /> Open
+            </a>
+          )}
+        </div>
+      </div>
+
+      {/* Drive folder URL */}
+      <div className="flex gap-1.5">
+        <input
+          value={driveFolder}
+          onChange={e => setDriveFolder(e.target.value)}
+          onBlur={saveDriveFolder}
+          onKeyDown={e => e.key === 'Enter' && saveDriveFolder()}
+          placeholder="https://drive.google.com/drive/folders/..."
+          className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300"
+        />
+        {!driveFolder && !effectiveDriveFolder && (
+          <button onClick={createContactFolder}
+            className="flex items-center gap-1 text-[10px] bg-green-500 text-white px-2.5 py-1.5 rounded-lg font-medium hover:bg-green-600 whitespace-nowrap">
+            <Plus className="w-3 h-3" /> Create Folder
+          </button>
+        )}
+      </div>
+
+      {driveError && <p className="text-[10px] text-red-500">{driveError}</p>}
+
+      {/* Drive Files */}
+      {loadingFiles ? (
+        <p className="text-[10px] text-gray-400 text-center py-2">Loading files...</p>
+      ) : driveFiles.length > 0 ? (
+        <div className="space-y-1 max-h-48 overflow-y-auto">
+          {driveFiles.map(file => (
+            <div key={file.id} className="flex items-center gap-2 bg-gray-50 rounded-lg px-2.5 py-1.5">
+              <FileText className="w-3 h-3 text-gray-400 flex-shrink-0" />
+              <a href={file.webViewLink} target="_blank" rel="noopener"
+                className="text-xs text-gray-700 flex-1 truncate hover:text-np-blue">{file.name}</a>
+              <span className="text-[9px] text-gray-300 flex-shrink-0">{formatSize(file.size)}</span>
+              <button onClick={() => handleDelete(file.id)} className="text-gray-300 hover:text-red-500 flex-shrink-0">
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : effectiveDriveFolder ? (
+        <p className="text-[10px] text-gray-400 italic text-center py-2">No files in this folder yet.</p>
+      ) : (
+        <p className="text-[10px] text-gray-400 italic text-center py-2">No Drive folder connected. Paste a URL or create one.</p>
+      )}
+
+      {/* Refresh button */}
+      {effectiveDriveFolder && !loadingFiles && (
+        <button onClick={() => loadDriveFiles()} className="text-[9px] text-gray-400 hover:text-np-blue">
+          Refresh files
+        </button>
+      )}
+    </div>
+  )
+}
+
 interface ContactDetailProps {
   contactId: string | null
   onClose: () => void
@@ -1026,67 +1234,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
                   </div>
 
                   {/* Files & Google Drive */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
-                        <FolderOpen className="w-3 h-3" /> Files & Drive
-                      </h4>
-                      <label className="flex items-center gap-1 text-[10px] text-np-blue font-medium hover:underline cursor-pointer">
-                        <Upload className="w-3 h-3" /> Upload
-                        <input type="file" className="hidden" onChange={async (e) => {
-                          const file = e.target.files?.[0]
-                          if (!file) return
-                          const files = [...((contact.custom_fields?.contact_files as any[]) || [])]
-                          files.push({ name: file.name, size: `${(file.size / 1024).toFixed(0)} KB`, uploaded_at: new Date().toISOString() })
-                          await updateContact(contact.id, { custom_fields: { ...contact.custom_fields, contact_files: files } } as any)
-                          load()
-                        }} />
-                      </label>
-                    </div>
-
-                    {/* Google Drive Link */}
-                    <div className="flex gap-1.5">
-                      <input
-                        value={(contact.custom_fields?.drive_folder as string) || ''}
-                        onChange={async (e) => {
-                          await updateContact(contact.id, { custom_fields: { ...contact.custom_fields, drive_folder: e.target.value } } as any)
-                        }}
-                        onBlur={() => load()}
-                        placeholder="https://drive.google.com/drive/folders/..."
-                        className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300"
-                      />
-                      {(contact.custom_fields?.drive_folder as string) && (
-                        <a href={contact.custom_fields?.drive_folder as string} target="_blank" rel="noopener"
-                          className="flex items-center gap-1 text-[10px] bg-np-blue text-white px-2.5 py-1.5 rounded-lg font-medium hover:bg-np-blue/90 whitespace-nowrap">
-                          Open <ExternalLink className="w-3 h-3" />
-                        </a>
-                      )}
-                    </div>
-
-                    {/* Uploaded Files */}
-                    {((contact.custom_fields?.contact_files as any[]) || []).length > 0 && (
-                      <div className="space-y-1">
-                        {((contact.custom_fields?.contact_files as any[]) || []).map((file: any, idx: number) => (
-                          <div key={idx} className="flex items-center gap-2 bg-gray-50 rounded-lg px-2.5 py-1.5">
-                            <FileText className="w-3 h-3 text-gray-400 flex-shrink-0" />
-                            <span className="text-xs text-gray-700 flex-1 truncate">{file.name}</span>
-                            <span className="text-[9px] text-gray-300">{file.size}</span>
-                            <button onClick={async () => {
-                              const files = ((contact.custom_fields?.contact_files as any[]) || []).filter((_: any, i: number) => i !== idx)
-                              await updateContact(contact.id, { custom_fields: { ...contact.custom_fields, contact_files: files } } as any)
-                              load()
-                            }} className="text-gray-300 hover:text-red-500">
-                              <X className="w-3 h-3" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {((contact.custom_fields?.contact_files as any[]) || []).length === 0 && !(contact.custom_fields?.drive_folder as string) && (
-                      <p className="text-[10px] text-gray-400 italic text-center py-2">No files yet. Upload or connect a Drive folder.</p>
-                    )}
-                  </div>
+                  <ContactDriveSection contact={contact} updateContact={updateContact} load={load} />
 
                   {/* Clickable Communication Counters */}
                   <div className="space-y-2">
