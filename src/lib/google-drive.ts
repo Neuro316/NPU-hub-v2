@@ -1,101 +1,80 @@
 import { google } from 'googleapis'
 import { Readable } from 'stream'
 
-function getAuth() {
-  const credentials = process.env.GOOGLE_SERVICE_ACCOUNT_JSON
-  if (!credentials) throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON not configured')
+function getOAuthClient() {
+  const clientId = process.env.GOOGLE_CLIENT_ID
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET
+  if (!clientId || !clientSecret) throw new Error('GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set')
 
-  const parsed = JSON.parse(credentials)
-  return new google.auth.GoogleAuth({
-    credentials: parsed,
-    scopes: ['https://www.googleapis.com/auth/drive'],
+  const redirectUri = process.env.NEXT_PUBLIC_APP_URL
+    ? `${process.env.NEXT_PUBLIC_APP_URL}/api/drive/callback`
+    : 'http://localhost:3000/api/drive/callback'
+
+  return new google.auth.OAuth2(clientId, clientSecret, redirectUri)
+}
+
+export function getAuthUrl(orgId?: string) {
+  const client = getOAuthClient()
+  return client.generateAuthUrl({
+    access_type: 'offline',
+    prompt: 'consent',
+    scope: ['https://www.googleapis.com/auth/drive'],
+    state: orgId || '',
   })
 }
 
-function getDrive() {
-  return google.drive({ version: 'v3', auth: getAuth() })
+export async function exchangeCode(code: string) {
+  const client = getOAuthClient()
+  const { tokens } = await client.getToken(code)
+  return tokens
 }
 
-/** Upload a file buffer to a specific Drive folder */
-export async function uploadFile(
-  folderId: string,
-  fileName: string,
-  mimeType: string,
-  buffer: Buffer
-): Promise<{ id: string; name: string; webViewLink: string }> {
-  const drive = getDrive()
+function getDrive(refreshToken: string) {
+  const client = getOAuthClient()
+  client.setCredentials({ refresh_token: refreshToken })
+  return google.drive({ version: 'v3', auth: client })
+}
 
+export async function uploadFile(
+  refreshToken: string, folderId: string, fileName: string, mimeType: string, buffer: Buffer
+): Promise<{ id: string; name: string; webViewLink: string }> {
+  const drive = getDrive(refreshToken)
   const res = await drive.files.create({
-    requestBody: {
-      name: fileName,
-      parents: [folderId],
-    },
-    media: {
-      mimeType,
-      body: Readable.from(buffer),
-    },
+    requestBody: { name: fileName, parents: [folderId] },
+    media: { mimeType, body: Readable.from(buffer) },
     fields: 'id, name, webViewLink',
   })
-
-  return {
-    id: res.data.id!,
-    name: res.data.name!,
-    webViewLink: res.data.webViewLink!,
-  }
+  return { id: res.data.id!, name: res.data.name!, webViewLink: res.data.webViewLink! }
 }
 
-/** List files in a Drive folder */
-export async function listFiles(folderId: string): Promise<Array<{
-  id: string; name: string; mimeType: string; size: string; webViewLink: string; createdTime: string
-}>> {
-  const drive = getDrive()
-
+export async function listFiles(refreshToken: string, folderId: string) {
+  const drive = getDrive(refreshToken)
   const res = await drive.files.list({
     q: `'${folderId}' in parents and trashed = false`,
     fields: 'files(id, name, mimeType, size, webViewLink, createdTime)',
     orderBy: 'createdTime desc',
     pageSize: 50,
   })
-
   return (res.data.files || []).map(f => ({
-    id: f.id!,
-    name: f.name!,
-    mimeType: f.mimeType || '',
-    size: f.size || '0',
-    webViewLink: f.webViewLink || '',
-    createdTime: f.createdTime || '',
+    id: f.id!, name: f.name!, mimeType: f.mimeType || '',
+    size: f.size || '0', webViewLink: f.webViewLink || '', createdTime: f.createdTime || '',
   }))
 }
 
-/** Create a subfolder inside a parent folder */
-export async function createSubfolder(
-  parentFolderId: string,
-  folderName: string
-): Promise<{ id: string; webViewLink: string }> {
-  const drive = getDrive()
-
+export async function createSubfolder(refreshToken: string, parentFolderId: string, folderName: string) {
+  const drive = getDrive(refreshToken)
   const res = await drive.files.create({
-    requestBody: {
-      name: folderName,
-      mimeType: 'application/vnd.google-apps.folder',
-      parents: [parentFolderId],
-    },
+    requestBody: { name: folderName, mimeType: 'application/vnd.google-apps.folder', parents: [parentFolderId] },
     fields: 'id, webViewLink',
   })
-
-  return {
-    id: res.data.id!,
-    webViewLink: res.data.webViewLink!,
-  }
+  return { id: res.data.id!, webViewLink: res.data.webViewLink! }
 }
 
-/** Delete a file from Drive */
-export async function deleteFile(fileId: string): Promise<void> {
-  const drive = getDrive()
+export async function deleteFile(refreshToken: string, fileId: string) {
+  const drive = getDrive(refreshToken)
   await drive.files.delete({ fileId })
 }
 
-/** Extract folder ID from a Google Drive URL */
 export function extractFolderId(url: string): string | null {
   const match = url.match(/folders\/([a-zA-Z0-9_-]+)/)
   return match ? match[1] : null

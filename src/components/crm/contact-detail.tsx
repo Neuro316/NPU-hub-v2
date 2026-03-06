@@ -78,6 +78,36 @@ function ContactDriveSection({ contact, updateContact, load }: {
   const [uploading, setUploading] = useState(false)
   const [driveFolder, setDriveFolder] = useState('')
   const [driveError, setDriveError] = useState('')
+  const [driveConnected, setDriveConnected] = useState<boolean | null>(null)
+
+  const orgId = contact.org_id
+
+  // Check Drive connection status
+  useEffect(() => {
+    if (!orgId) return
+    fetch('/api/drive', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'status', orgId }),
+    }).then(r => r.json()).then(d => setDriveConnected(d.connected ?? false)).catch(() => setDriveConnected(false))
+  }, [orgId])
+
+  // Connect Google Drive
+  const connectDrive = async () => {
+    try {
+      const res = await fetch('/api/drive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'authUrl', orgId }),
+      })
+      const data = await res.json()
+      if (data.success && data.url) {
+        window.open(data.url, '_blank')
+      }
+    } catch {
+      setDriveError('Failed to get auth URL')
+    }
+  }
 
   // Auto-set drive folder for Podcast pipeline contacts
   const effectiveDriveFolder = (contact.custom_fields?.drive_folder as string) ||
@@ -92,18 +122,21 @@ function ContactDriveSection({ contact, updateContact, load }: {
   // Load files from Drive folder
   const loadDriveFiles = async (folderUrl?: string) => {
     const url = folderUrl || effectiveDriveFolder
-    if (!url) return
+    if (!url || !orgId) return
     setLoadingFiles(true)
     setDriveError('')
     try {
       const res = await fetch('/api/drive', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'list', folderUrl: url }),
+        body: JSON.stringify({ action: 'list', folderUrl: url, orgId }),
       })
       const data = await res.json()
       if (data.success) {
         setDriveFiles(data.files || [])
+      } else if (data.needsAuth) {
+        setDriveConnected(false)
+        setDriveError('Google Drive not connected')
       } else {
         setDriveError(data.error || 'Failed to load files')
       }
@@ -114,19 +147,20 @@ function ContactDriveSection({ contact, updateContact, load }: {
   }
 
   useEffect(() => {
-    if (effectiveDriveFolder) loadDriveFiles(effectiveDriveFolder)
-  }, [contact.id, effectiveDriveFolder])
+    if (effectiveDriveFolder && driveConnected) loadDriveFiles(effectiveDriveFolder)
+  }, [contact.id, effectiveDriveFolder, driveConnected])
 
   // Upload file to Drive
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file || !effectiveDriveFolder) return
+    if (!file || !effectiveDriveFolder || !orgId) return
     setUploading(true)
     setDriveError('')
     try {
       const formData = new FormData()
       formData.append('file', file)
       formData.append('folderUrl', effectiveDriveFolder)
+      formData.append('orgId', orgId)
       const res = await fetch('/api/drive', { method: 'POST', body: formData })
       const data = await res.json()
       if (data.success) {
@@ -148,7 +182,7 @@ function ContactDriveSection({ contact, updateContact, load }: {
       const res = await fetch('/api/drive', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'delete', fileId }),
+        body: JSON.stringify({ action: 'delete', fileId, orgId }),
       })
       const data = await res.json()
       if (data.success) {
@@ -173,7 +207,7 @@ function ContactDriveSection({ contact, updateContact, load }: {
       const res = await fetch('/api/drive', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'createFolder', folderUrl: parentUrl, folderName: contactName }),
+        body: JSON.stringify({ action: 'createFolder', folderUrl: parentUrl, folderName: contactName, orgId }),
       })
       const data = await res.json()
       if (data.success && data.folder?.webViewLink) {
@@ -196,6 +230,35 @@ function ContactDriveSection({ contact, updateContact, load }: {
     if (b < 1024) return `${b} B`
     if (b < 1048576) return `${(b / 1024).toFixed(0)} KB`
     return `${(b / 1048576).toFixed(1)} MB`
+  }
+
+  // Still checking connection status
+  if (driveConnected === null) {
+    return (
+      <div className="space-y-2">
+        <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+          <FolderOpen className="w-3 h-3" /> Files & Drive
+        </h4>
+        <p className="text-[10px] text-gray-400 text-center py-2">Checking connection...</p>
+      </div>
+    )
+  }
+
+  // Not connected — show connect button
+  if (!driveConnected) {
+    return (
+      <div className="space-y-2">
+        <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+          <FolderOpen className="w-3 h-3" /> Files & Drive
+        </h4>
+        <button onClick={connectDrive}
+          className="w-full flex items-center justify-center gap-2 text-xs bg-np-blue text-white px-3 py-2 rounded-lg font-medium hover:bg-np-blue/90">
+          <ExternalLink className="w-3.5 h-3.5" /> Connect Google Drive
+        </button>
+        {driveError && <p className="text-[10px] text-red-500">{driveError}</p>}
+        <p className="text-[10px] text-gray-400 italic text-center">Connect your org&apos;s Google Drive to upload and manage files.</p>
+      </div>
+    )
   }
 
   return (
