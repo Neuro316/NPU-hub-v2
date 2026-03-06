@@ -6,7 +6,7 @@ import {
   X, Phone, Mail, MessageCircle, Tag, Clock, CheckCircle2, AlertTriangle,
   TrendingUp, Send, Pencil, Trash2, Plus, User, Activity, Brain,
   Route, Target, Calendar, FileText, Sparkles, ChevronRight, Heart,
-  ArrowRightLeft, GraduationCap, BarChart3, Shield, ExternalLink, Paperclip, GitBranch, MapPin, ChevronDown,
+  ArrowRightLeft, GraduationCap, BarChart3, Shield, ExternalLink, Paperclip, GitBranch, MapPin, ChevronDown, Upload, FolderOpen,
   Globe, Lightbulb, Linkedin, Instagram, Twitter, Youtube, BookOpen, Mic, Link2, ThumbsUp, ThumbsDown, Workflow
 } from 'lucide-react'
 import {
@@ -1023,6 +1023,69 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
                         })()}
                       </select>
                     </div>
+                  </div>
+
+                  {/* Files & Google Drive */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                        <FolderOpen className="w-3 h-3" /> Files & Drive
+                      </h4>
+                      <label className="flex items-center gap-1 text-[10px] text-np-blue font-medium hover:underline cursor-pointer">
+                        <Upload className="w-3 h-3" /> Upload
+                        <input type="file" className="hidden" onChange={async (e) => {
+                          const file = e.target.files?.[0]
+                          if (!file) return
+                          const files = [...((contact.custom_fields?.contact_files as any[]) || [])]
+                          files.push({ name: file.name, size: `${(file.size / 1024).toFixed(0)} KB`, uploaded_at: new Date().toISOString() })
+                          await updateContact(contact.id, { custom_fields: { ...contact.custom_fields, contact_files: files } } as any)
+                          load()
+                        }} />
+                      </label>
+                    </div>
+
+                    {/* Google Drive Link */}
+                    <div className="flex gap-1.5">
+                      <input
+                        value={(contact.custom_fields?.drive_folder as string) || ''}
+                        onChange={async (e) => {
+                          await updateContact(contact.id, { custom_fields: { ...contact.custom_fields, drive_folder: e.target.value } } as any)
+                        }}
+                        onBlur={() => load()}
+                        placeholder="https://drive.google.com/drive/folders/..."
+                        className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300"
+                      />
+                      {(contact.custom_fields?.drive_folder as string) && (
+                        <a href={contact.custom_fields.drive_folder as string} target="_blank" rel="noopener"
+                          className="flex items-center gap-1 text-[10px] bg-np-blue text-white px-2.5 py-1.5 rounded-lg font-medium hover:bg-np-blue/90 whitespace-nowrap">
+                          Open <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
+                    </div>
+
+                    {/* Uploaded Files */}
+                    {((contact.custom_fields?.contact_files as any[]) || []).length > 0 && (
+                      <div className="space-y-1">
+                        {((contact.custom_fields?.contact_files as any[]) || []).map((file: any, idx: number) => (
+                          <div key={idx} className="flex items-center gap-2 bg-gray-50 rounded-lg px-2.5 py-1.5">
+                            <FileText className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                            <span className="text-xs text-gray-700 flex-1 truncate">{file.name}</span>
+                            <span className="text-[9px] text-gray-300">{file.size}</span>
+                            <button onClick={async () => {
+                              const files = ((contact.custom_fields?.contact_files as any[]) || []).filter((_: any, i: number) => i !== idx)
+                              await updateContact(contact.id, { custom_fields: { ...contact.custom_fields, contact_files: files } } as any)
+                              load()
+                            }} className="text-gray-300 hover:text-red-500">
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {((contact.custom_fields?.contact_files as any[]) || []).length === 0 && !(contact.custom_fields?.drive_folder as string) && (
+                      <p className="text-[10px] text-gray-400 italic text-center py-2">No files yet. Upload or connect a Drive folder.</p>
+                    )}
                   </div>
 
                   {/* Clickable Communication Counters */}
