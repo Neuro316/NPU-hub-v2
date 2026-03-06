@@ -8,6 +8,7 @@ import {
   Plus, X, Trash2, Loader2, ArrowRight,
   CheckCircle2, Circle, Clock, MoreHorizontal, Edit3
 } from 'lucide-react'
+import { CardDetailPanel } from '@/components/journey/card-detail-panel'
 
 // ============================================================
 // TYPES
@@ -574,57 +575,26 @@ export default function JourneysPage() {
         </div>
       )}
 
-      {/* Card Edit Modal */}
-      {editingCard && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setEditingCard(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4" onClick={e => e.stopPropagation()}>
-            <div className="px-6 py-4 border-b flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-900">Edit Card</h3>
-              <button onClick={() => setEditingCard(null)}><X className="w-4 h-4 text-gray-400" /></button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Title</label>
-                <input value={editingCard.title} onChange={e => setEditingCard({ ...editingCard, title: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100" />
-              </div>
-              <div>
-                <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Description</label>
-                <textarea value={editingCard.description} onChange={e => setEditingCard({ ...editingCard, description: e.target.value })}
-                  rows={3} className="w-full mt-1 px-3 py-2 border rounded-lg text-sm resize-none outline-none focus:ring-2 focus:ring-blue-100" />
-              </div>
-              <div>
-                <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Status</label>
-                <div className="flex gap-2 mt-1">
-                  {(Object.keys(STATUS_CONFIG) as Array<keyof typeof STATUS_CONFIG>).map(key => {
-                    const cfg = STATUS_CONFIG[key]
-                    const Icon = cfg.icon
-                    return (
-                      <button key={key} onClick={() => setEditingCard({ ...editingCard, status: key })}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border ${editingCard.status === key ? 'border-current' : 'border-gray-200'}`}
-                        style={{ color: cfg.color, background: editingCard.status === key ? cfg.bg : 'transparent' }}>
-                        <Icon className="w-3 h-3" fill={key === 'done' ? cfg.color : 'none'} />{cfg.label}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-              <div>
-                <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Tags (comma separated)</label>
-                <input value={(editingCard.tags || []).join(', ')} onChange={e => setEditingCard({ ...editingCard, tags: e.target.value.split(',').map(t => t.trim()).filter(Boolean) })}
-                  placeholder="e.g. PAID TRAFFIC, LEAD MAGNET" className="w-full mt-1 px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100" />
-              </div>
-            </div>
-            <div className="px-6 py-4 border-t flex justify-end gap-2">
-              <button onClick={() => setEditingCard(null)} className="px-4 py-2 text-xs text-gray-600 hover:bg-gray-50 rounded-lg">Cancel</button>
-              <button onClick={async () => {
-                await updateCard(editingCard.id, { title: editingCard.title, description: editingCard.description, status: editingCard.status, tags: editingCard.tags, custom_fields: editingCard.custom_fields })
-                setEditingCard(null)
-              }} className="px-4 py-2 bg-[#386797] text-white text-xs font-medium rounded-lg">Save Changes</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Card Detail Panel */}
+      <CardDetailPanel
+        card={editingCard}
+        phases={phases}
+        onClose={() => setEditingCard(null)}
+        onUpdate={async (id, updates) => { await updateCard(id, updates); setCards(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c)) }}
+        onDelete={async (id) => { await deleteCard(id); setEditingCard(null) }}
+        onDuplicate={async (card, targetPhaseId, targetRow) => {
+          if (!currentOrg?.id) return
+          const rowCards = cards.filter(c => c.phase_id === targetPhaseId && c.row_index === targetRow)
+          const maxSort = rowCards.length > 0 ? Math.max(...rowCards.map(c => c.sort_order)) + 1 : 0
+          const { data } = await supabase.from('journey_cards').insert({
+            org_id: currentOrg.id, phase_id: targetPhaseId, title: card.title + ' (copy)',
+            description: card.description, status: card.status, row_index: targetRow,
+            sort_order: maxSort, custom_fields: card.custom_fields,
+          }).select().single()
+          if (data) setCards(prev => [...prev, data])
+        }}
+        orgId={currentOrg?.id}
+      />
 
       {/* Card context menu - portaled to body to escape overflow clipping */}
       {mounted && cardMenuOpen && menuPos && createPortal(
