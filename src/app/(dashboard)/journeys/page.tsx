@@ -378,7 +378,7 @@ export default function JourneysPage() {
 
       {/* Scrollable Canvas */}
       <div className="flex-1 overflow-auto px-7 pb-7">
-        <div className="flex flex-col gap-5 w-max min-w-full">
+        <div className="flex flex-col gap-5">
           {phases.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <ArrowRight className="w-8 h-8 text-gray-300 mb-4" />
@@ -399,7 +399,7 @@ export default function JourneysPage() {
               })
 
               return (
-                <div key={phase.id} className="inline-flex bg-white rounded-2xl border border-gray-200/80 min-w-full">
+                <div key={phase.id} className="flex bg-white rounded-2xl border border-gray-200/80">
                   {/* Phase sidebar */}
                   <div className="flex-shrink-0 w-44 flex flex-col justify-center px-5 py-6 rounded-l-2xl" style={{ borderRight: `4px solid ${phase.color}`, background: `${phase.color}08` }}>
                     <div className="flex items-center gap-2 mb-1">
@@ -426,7 +426,7 @@ export default function JourneysPage() {
                   </div>
 
                   {/* Rows area */}
-                  {!isPhaseCollapsed && <div className="p-4 w-max">
+                  {!isPhaseCollapsed && <div className="p-4 flex-1 min-w-0">
                     {rowNumbers.map((rowIdx, ri) => {
                       const rowCards = getRowCards(phase.id, rowIdx)
                       const rowKey = `${phase.id}:${rowIdx}`
@@ -452,7 +452,7 @@ export default function JourneysPage() {
                           {!isCollapsed && (
                           <div ref={el => { rowRefs.current[rowKey] = el }}
                             className="flex items-start gap-0 flex-nowrap rounded-xl transition-colors"
-                            style={{ minHeight: 80, padding: '8px 4px', paddingBottom: 12, background: isDropRow ? `${phase.color}08` : 'transparent' }}>
+                            style={{ minHeight: 80, padding: '8px 4px', paddingBottom: 12, overflowX: 'auto', background: isDropRow ? `${phase.color}08` : 'transparent' }}>
                             {rowCards.map((card, cardIdx) => {
                               const status = STATUS_CONFIG[card.status]
                               const StatusIcon = status.icon
