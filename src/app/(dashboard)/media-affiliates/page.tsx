@@ -1295,7 +1295,7 @@ function AppearanceCard({
         {/* Platform / Host */}
         {(item.platform || item.host) && (
           <p className="text-xs text-gray-500 mb-2">
-            {item.platform}{item.platform && item.host ? ' \u00b7 ' : ''}{item.host}
+            {item.platform || item.type}{item.host ? ` \u00b7 ${item.host}` : ''}
           </p>
         )}
 
@@ -1321,7 +1321,11 @@ function AppearanceCard({
               <CheckCircle2 className="w-3 h-3" /> {item.tasks_completed}/{item.tasks_created}
             </span>
           )}
-          {item.promo_code && <span className="flex items-center gap-0.5"><Tag className="w-3 h-3" /> {item.promo_code}</span>}
+          {item.promo_code && (
+            <span className="flex items-center gap-0.5 bg-green-50 text-green-600 px-1.5 py-0.5 rounded-full font-medium">
+              <Tag className="w-3 h-3" /> PROMO
+            </span>
+          )}
         </div>
       </div>
 
