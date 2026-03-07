@@ -98,11 +98,11 @@ const SUB_TABS = ['Appearances', 'Guest Sheet', 'UTM & Codes', 'Conversions', 'I
 
 const PIPELINE_STAGES: Record<string, string[]> = {
   podcast: ['prospect', 'pitched', 'booked', 'prepped', 'recorded', 'post_prod', 'live', 'archived'],
-  interview: ['prospect', 'pitched', 'confirmed', 'prepped', 'completed', 'published', 'archived'],
-  press: ['prospect', 'pitched', 'accepted', 'drafted', 'review', 'published', 'archived'],
-  speaking: ['prospect', 'applied', 'accepted', 'prepped', 'delivered', 'follow_up', 'archived'],
-  panel: ['prospect', 'invited', 'confirmed', 'prepped', 'delivered', 'archived'],
-  webinar: ['prospect', 'planned', 'promoted', 'prepped', 'delivered', 'replay_live', 'archived'],
+  interview: ['pitched', 'scheduled', 'completed', 'published', 'archived'],
+  press: ['pitched', 'in_review', 'published', 'archived'],
+  speaking: ['prospect', 'applied', 'booked', 'prepped', 'delivered', 'repurposed', 'archived'],
+  panel: ['invited', 'confirmed', 'completed', 'archived'],
+  webinar: ['planning', 'scheduled', 'promoted', 'delivered', 'archived'],
 }
 
 const DEFAULT_STAGES = ['prospect', 'pitched', 'booked', 'prepped', 'completed', 'live', 'archived']
@@ -112,22 +112,20 @@ const STAGE_COLORS: Record<string, string> = {
   pitched: 'bg-blue-50 text-blue-600',
   applied: 'bg-blue-50 text-blue-600',
   invited: 'bg-blue-50 text-blue-600',
-  planned: 'bg-blue-50 text-blue-600',
+  planning: 'bg-blue-50 text-blue-600',
   booked: 'bg-indigo-50 text-indigo-600',
   confirmed: 'bg-indigo-50 text-indigo-600',
-  accepted: 'bg-indigo-50 text-indigo-600',
+  scheduled: 'bg-indigo-50 text-indigo-600',
   prepped: 'bg-purple-50 text-purple-600',
-  drafted: 'bg-purple-50 text-purple-600',
   promoted: 'bg-purple-50 text-purple-600',
   recorded: 'bg-amber-50 text-amber-600',
   completed: 'bg-amber-50 text-amber-600',
   delivered: 'bg-amber-50 text-amber-600',
-  review: 'bg-amber-50 text-amber-600',
+  in_review: 'bg-amber-50 text-amber-600',
   post_prod: 'bg-orange-50 text-orange-600',
-  follow_up: 'bg-orange-50 text-orange-600',
+  repurposed: 'bg-orange-50 text-orange-600',
   live: 'bg-green-50 text-green-600',
   published: 'bg-green-50 text-green-600',
-  replay_live: 'bg-green-50 text-green-600',
   archived: 'bg-gray-50 text-gray-400',
 }
 
@@ -195,6 +193,7 @@ export default function MediaAffiliatesPage() {
   const [createEntryType, setCreateEntryType] = useState<'outbound' | 'inbound'>('outbound')
   const [showNewDropdown, setShowNewDropdown] = useState(false)
   const [guestSheetOpen, setGuestSheetOpen] = useState<Record<string, boolean>>({ bio: true })
+  const [editingAppearance, setEditingAppearance] = useState<Appearance | null>(null)
 
   // Create form state
   const [form, setForm] = useState({
@@ -334,6 +333,50 @@ export default function MediaAffiliatesPage() {
       return
     }
     setExpandedCard(null)
+    loadData()
+  }
+
+  const saveAppearance = async (updated: Appearance) => {
+    const { error } = await supabase.from('media_appearances').update({
+      type: updated.type,
+      title: updated.title,
+      platform: updated.platform,
+      host: updated.host,
+      recording_date: updated.recording_date,
+      air_date: updated.air_date,
+      description: updated.description,
+      affiliate_tier: updated.affiliate_tier,
+      promo_code: updated.promo_code,
+      utm_campaign: updated.utm_campaign,
+      utm_source: updated.utm_source,
+      utm_medium: updated.utm_medium,
+      status: updated.status,
+      url: updated.url,
+      verbal_cta: updated.verbal_cta,
+      key_topics: updated.key_topics,
+      key_quotes: updated.key_quotes,
+      performance_score: updated.performance_score,
+    }).eq('id', updated.id)
+    if (error) {
+      console.error('saveAppearance: Supabase error', error)
+      alert(`Failed to save: ${error.message}\n\nCode: ${error.code}\nDetails: ${error.details || 'none'}`)
+      return
+    }
+    setEditingAppearance(null)
+    loadData()
+  }
+
+  const advanceStage = async (item: Appearance) => {
+    const stages = PIPELINE_STAGES[item.type] || DEFAULT_STAGES
+    const currentIdx = stages.indexOf(item.status)
+    if (currentIdx === -1 || currentIdx >= stages.length - 1) return
+    const nextStatus = stages[currentIdx + 1]
+    const { error } = await supabase.from('media_appearances').update({ status: nextStatus }).eq('id', item.id)
+    if (error) {
+      console.error('advanceStage: Supabase error', error)
+      alert(`Failed to advance stage: ${error.message}`)
+      return
+    }
     loadData()
   }
 
@@ -499,6 +542,8 @@ export default function MediaAffiliatesPage() {
                           expanded={expandedCard === item.id}
                           onToggle={() => setExpandedCard(expandedCard === item.id ? null : item.id)}
                           onDelete={deleteAppearance}
+                          onEdit={setEditingAppearance}
+                          onAdvanceStage={advanceStage}
                           contentPieces={contentPieces.filter(cp => cp.appearance_id === item.id)}
                         />
                       ))}
@@ -517,6 +562,8 @@ export default function MediaAffiliatesPage() {
                   expanded={expandedCard === item.id}
                   onToggle={() => setExpandedCard(expandedCard === item.id ? null : item.id)}
                   onDelete={deleteAppearance}
+                  onEdit={setEditingAppearance}
+                  onAdvanceStage={advanceStage}
                   contentPieces={contentPieces.filter(cp => cp.appearance_id === item.id)}
                 />
               ))}
@@ -923,6 +970,263 @@ export default function MediaAffiliatesPage() {
           </div>
         </div>
       )}
+
+      {/* ═══════ EDIT MODAL ═══════ */}
+      {editingAppearance && (
+        <EditAppearanceModal
+          appearance={editingAppearance}
+          onClose={() => setEditingAppearance(null)}
+          onSave={saveAppearance}
+        />
+      )}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════
+// EDIT APPEARANCE MODAL
+// ═══════════════════════════════════════════════════════
+
+function EditAppearanceModal({
+  appearance,
+  onClose,
+  onSave,
+}: {
+  appearance: Appearance
+  onClose: () => void
+  onSave: (updated: Appearance) => void
+}) {
+  const [draft, setDraft] = useState<Appearance>({ ...appearance })
+  const [topicsText, setTopicsText] = useState((appearance.key_topics || []).join(', '))
+  const [quotesText, setQuotesText] = useState((appearance.key_quotes || []).join('\n'))
+
+  const typeStages = PIPELINE_STAGES[draft.type] || DEFAULT_STAGES
+
+  const handleSave = () => {
+    const updated = {
+      ...draft,
+      key_topics: topicsText.split(',').map(s => s.trim()).filter(Boolean),
+      key_quotes: quotesText.split('\n').map(s => s.trim()).filter(Boolean),
+    }
+    onSave(updated)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <h2 className="text-lg font-semibold text-np-dark">Edit Appearance</h2>
+          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="p-6 space-y-4">
+          {/* Status */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+            <select
+              value={draft.status}
+              onChange={e => setDraft(d => ({ ...d, status: e.target.value }))}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
+            >
+              {typeStages.map(s => (
+                <option key={s} value={s}>{s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Type */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+            <select
+              value={draft.type}
+              onChange={e => setDraft(d => ({ ...d, type: e.target.value }))}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
+            >
+              {TYPE_FILTERS.filter(t => t.key !== 'all').map(t => (
+                <option key={t.key} value={t.key}>{t.label.replace(/s$/, '')}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Title */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+            <input
+              type="text"
+              value={draft.title}
+              onChange={e => setDraft(d => ({ ...d, title: e.target.value }))}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
+            />
+          </div>
+
+          {/* Platform / Host */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Platform / Show</label>
+              <input
+                type="text"
+                value={draft.platform || ''}
+                onChange={e => setDraft(d => ({ ...d, platform: e.target.value || null }))}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Host</label>
+              <input
+                type="text"
+                value={draft.host || ''}
+                onChange={e => setDraft(d => ({ ...d, host: e.target.value || null }))}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
+              />
+            </div>
+          </div>
+
+          {/* Dates */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Recording Date</label>
+              <input
+                type="date"
+                value={draft.recording_date || ''}
+                onChange={e => setDraft(d => ({ ...d, recording_date: e.target.value || null }))}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Air Date</label>
+              <input
+                type="date"
+                value={draft.air_date || ''}
+                onChange={e => setDraft(d => ({ ...d, air_date: e.target.value || null }))}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
+              />
+            </div>
+          </div>
+
+          {/* URL */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">URL</label>
+            <input
+              type="url"
+              value={draft.url || ''}
+              onChange={e => setDraft(d => ({ ...d, url: e.target.value || null }))}
+              placeholder="Episode or article link"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
+            />
+          </div>
+
+          {/* Affiliate Tier / Promo Code */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Affiliate Tier</label>
+              <select
+                value={draft.affiliate_tier}
+                onChange={e => setDraft(d => ({ ...d, affiliate_tier: e.target.value }))}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
+              >
+                {AFFILIATE_TIERS.map(t => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Promo Code</label>
+              <input
+                type="text"
+                value={draft.promo_code || ''}
+                onChange={e => setDraft(d => ({ ...d, promo_code: e.target.value || null }))}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
+              />
+            </div>
+          </div>
+
+          {/* UTM Campaign / Performance Score */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">UTM Campaign</label>
+              <input
+                type="text"
+                value={draft.utm_campaign || ''}
+                onChange={e => setDraft(d => ({ ...d, utm_campaign: e.target.value || null }))}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Performance Score</label>
+              <select
+                value={draft.performance_score || ''}
+                onChange={e => setDraft(d => ({ ...d, performance_score: e.target.value || null }))}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
+              >
+                <option value="">None</option>
+                <option value="A">A</option>
+                <option value="B">B</option>
+                <option value="C">C</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Verbal CTA */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Verbal CTA</label>
+            <input
+              type="text"
+              value={draft.verbal_cta || ''}
+              onChange={e => setDraft(d => ({ ...d, verbal_cta: e.target.value || null }))}
+              placeholder="Exact CTA to say on air"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
+            />
+          </div>
+
+          {/* Key Topics */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Key Topics <span className="text-gray-400 font-normal">(comma-separated)</span></label>
+            <input
+              type="text"
+              value={topicsText}
+              onChange={e => setTopicsText(e.target.value)}
+              placeholder="neurofeedback, brain health, peak performance"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
+            />
+          </div>
+
+          {/* Key Quotes */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Key Quotes <span className="text-gray-400 font-normal">(one per line)</span></label>
+            <textarea
+              value={quotesText}
+              onChange={e => setQuotesText(e.target.value)}
+              rows={3}
+              placeholder="Notable quotes from the appearance..."
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue resize-none"
+            />
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <textarea
+              value={draft.description || ''}
+              onChange={e => setDraft(d => ({ ...d, description: e.target.value || null }))}
+              rows={3}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue resize-none"
+            />
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-100">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={!draft.title}
+            className="px-4 py-2 bg-np-blue text-white rounded-lg text-sm font-medium hover:bg-np-blue/90 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Save Changes
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -936,15 +1240,23 @@ function AppearanceCard({
   expanded,
   onToggle,
   onDelete,
+  onEdit,
+  onAdvanceStage,
   contentPieces,
 }: {
   item: Appearance
   expanded: boolean
   onToggle: () => void
   onDelete: (id: string) => void
+  onEdit: (item: Appearance) => void
+  onAdvanceStage: (item: Appearance) => void
   contentPieces: ContentPiece[]
 }) {
   const TypeIcon = TYPE_ICONS[item.type] || Globe
+  const typeStages = PIPELINE_STAGES[item.type] || DEFAULT_STAGES
+  const currentIdx = typeStages.indexOf(item.status)
+  const canAdvance = currentIdx >= 0 && currentIdx < typeStages.length - 1
+  const nextStage = canAdvance ? typeStages[currentIdx + 1] : null
 
   return (
     <div className="bg-white rounded-xl border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
@@ -959,11 +1271,22 @@ function AppearanceCard({
               {item.entry_type}
             </span>
           </div>
-          {item.performance_score && (
-            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${SCORE_COLORS[item.performance_score] || ''}`}>
-              {item.performance_score}
-            </span>
-          )}
+          <div className="flex items-center gap-1.5">
+            {item.performance_score && (
+              <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${SCORE_COLORS[item.performance_score] || ''}`}>
+                {item.performance_score}
+              </span>
+            )}
+            {canAdvance && (
+              <button
+                onClick={e => { e.stopPropagation(); onAdvanceStage(item) }}
+                title={`Move to ${nextStage?.replace(/_/g, ' ')}`}
+                className="p-1 rounded hover:bg-np-blue/10 text-gray-400 hover:text-np-blue transition-colors"
+              >
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Title */}
@@ -1063,7 +1386,7 @@ function AppearanceCard({
           {/* Action buttons */}
           <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
             <button
-              onClick={e => { e.stopPropagation(); console.log('Edit appearance:', item.id, item.title) }}
+              onClick={e => { e.stopPropagation(); onEdit(item) }}
               className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600"
             >
               <Edit3 className="w-3 h-3" /> Edit
