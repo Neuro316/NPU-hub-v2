@@ -100,10 +100,9 @@ export async function POST(req: NextRequest) {
         title: `Personally reach out to ${name || email} from ${showName}`,
         description: `New podcast-attributed enrollment via ${promo_code || utm_campaign || 'UTM link'}. They heard you on ${showName} and just enrolled. Reach out within 24 hours.\n\nEmail: ${email}\nSource: ${promo_code ? `Promo code ${promo_code}` : `UTM campaign ${utm_campaign}`}`,
         priority: 'high',
+        status: 'todo',
         due_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-        source: 'media_appearance',
         contact_id,
-        created_by: null,
       })
 
     if (taskError) {
