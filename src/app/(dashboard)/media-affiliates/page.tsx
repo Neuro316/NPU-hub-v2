@@ -137,7 +137,12 @@ const SCORE_COLORS: Record<string, string> = {
   C: 'bg-red-100 text-red-700',
 }
 
-const AFFILIATE_TIERS = ['none', 'bronze', 'silver', 'gold', 'platinum']
+const AFFILIATE_TIERS = [
+  { value: 'none', label: 'None' },
+  { value: 'tier1', label: 'Tier 1 — Awareness' },
+  { value: 'tier2', label: 'Tier 2 — Revenue Share' },
+  { value: 'tier3', label: 'Tier 3 — Full Partnership' },
+]
 
 const TYPE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   podcast: Mic,
@@ -867,7 +872,7 @@ export default function MediaAffiliatesPage() {
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
                   >
                     {AFFILIATE_TIERS.map(t => (
-                      <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
+                      <option key={t.value} value={t.value}>{t.label}</option>
                     ))}
                   </select>
                 </div>
