@@ -103,6 +103,7 @@ export async function POST(req: NextRequest) {
         due_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         source: 'media_appearance',
         contact_id,
+        created_by: null,
       })
 
     if (taskError) {
