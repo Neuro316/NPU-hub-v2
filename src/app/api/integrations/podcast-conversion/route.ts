@@ -140,7 +140,7 @@ export async function POST(req: NextRequest) {
       appearance_id: conversion?.appearance_id,
       task_created: !taskError,
       task_error: taskError ? { message: taskError.message, code: taskError.code, details: taskError.details } : null,
-      _version: '0e7105d',
+      _version: 'b75f540',
     })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal server error'
