@@ -229,6 +229,9 @@ export default function MediaAffiliatesPage() {
         .order('created_at', { ascending: false }),
     ])
 
+    if (appRes.error) console.error('loadData: media_appearances error', appRes.error)
+    if (convRes.error) console.error('loadData: podcast_conversions error', convRes.error)
+    if (contentRes.error) console.error('loadData: podcast_content_pieces error', contentRes.error)
     if (appRes.data) setAppearances(appRes.data)
     if (convRes.data) setConversions(convRes.data)
     if (contentRes.data) setContentPieces(contentRes.data)
@@ -283,9 +286,12 @@ export default function MediaAffiliatesPage() {
   // ─── CRUD ──────────────────────────────────────────
 
   const createAppearance = async () => {
-    if (!orgId || !form.title) return
+    if (!orgId || !form.title) {
+      console.error('createAppearance: missing orgId or title', { orgId, title: form.title })
+      return
+    }
     const status = createEntryType === 'inbound' ? 'booked' : 'prospect'
-    const { error } = await supabase.from('media_appearances').insert({
+    const payload = {
       org_id: orgId,
       type: form.type,
       entry_type: createEntryType,
@@ -294,37 +300,45 @@ export default function MediaAffiliatesPage() {
       host: form.host || null,
       recording_date: form.recording_date || null,
       air_date: form.air_date || null,
+      description: form.description || null,
       affiliate_tier: form.affiliate_tier,
       promo_code: form.promo_code || null,
+      utm_campaign: form.utm_campaign || null,
       utm_source: 'podcast',
       utm_medium: 'audio',
-      utm_campaign: form.utm_campaign || null,
-      description: form.description || null,
       status,
-      key_topics: [],
-      key_quotes: [],
-      social_posts_count: 0,
-      tasks_created: 0,
-      tasks_completed: 0,
-      calendar_events_count: 0,
-      repurposed: false,
-      metadata: {},
-    })
-    if (!error) {
-      setShowCreateModal(false)
-      setForm({ type: 'podcast', title: '', platform: '', host: '', recording_date: '', air_date: '', affiliate_tier: 'none', promo_code: '', utm_campaign: '', description: '' })
-      loadData()
     }
+    console.log('createAppearance: inserting', payload)
+    const { data, error } = await supabase.from('media_appearances').insert(payload).select()
+    if (error) {
+      console.error('createAppearance: Supabase error', error)
+      alert(`Failed to create appearance: ${error.message}\n\nCode: ${error.code}\nDetails: ${error.details || 'none'}`)
+      return
+    }
+    console.log('createAppearance: success', data)
+    setShowCreateModal(false)
+    setForm({ type: 'podcast', title: '', platform: '', host: '', recording_date: '', air_date: '', affiliate_tier: 'none', promo_code: '', utm_campaign: '', description: '' })
+    loadData()
   }
 
   const deleteAppearance = async (id: string) => {
-    await supabase.from('media_appearances').delete().eq('id', id)
+    const { error } = await supabase.from('media_appearances').delete().eq('id', id)
+    if (error) {
+      console.error('deleteAppearance: Supabase error', error)
+      alert(`Failed to delete: ${error.message}`)
+      return
+    }
     setExpandedCard(null)
     loadData()
   }
 
-  const updateOutreachStatus = async (id: string, status: string) => {
-    await supabase.from('podcast_conversions').update({ personal_outreach_status: status }).eq('id', id)
+  const updateOutreachStatus = async (id: string, newStatus: string) => {
+    const { error } = await supabase.from('podcast_conversions').update({ personal_outreach_status: newStatus }).eq('id', id)
+    if (error) {
+      console.error('updateOutreachStatus: Supabase error', error)
+      alert(`Failed to update outreach status: ${error.message}`)
+      return
+    }
     loadData()
   }
 
@@ -1043,10 +1057,16 @@ function AppearanceCard({
 
           {/* Action buttons */}
           <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
-            <button className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600">
+            <button
+              onClick={e => { e.stopPropagation(); console.log('Edit appearance:', item.id, item.title) }}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600"
+            >
               <Edit3 className="w-3 h-3" /> Edit
             </button>
-            <button className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600">
+            <button
+              onClick={e => { e.stopPropagation(); console.log('Repurpose appearance:', item.id, item.title) }}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600"
+            >
               <RefreshCw className="w-3 h-3" /> Repurpose
             </button>
             <button
