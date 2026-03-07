@@ -102,7 +102,6 @@ export async function POST(req: NextRequest) {
         priority: 'high',
         due_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         source: 'media_appearance',
-        source_ref_id: conversion?.appearance_id || null,
         contact_id,
       })
 
