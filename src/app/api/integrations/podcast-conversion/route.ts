@@ -99,17 +99,11 @@ export async function POST(req: NextRequest) {
         org_id,
         title: `Personally reach out to ${name || email} from ${showName}`,
         description: `New podcast-attributed enrollment via ${promo_code || utm_campaign || 'UTM link'}. They heard you on ${showName} and just enrolled. Reach out within 24 hours.\n\nEmail: ${email}\nSource: ${promo_code ? `Promo code ${promo_code}` : `UTM campaign ${utm_campaign}`}`,
-        status: 'todo',
         priority: 'high',
         due_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         source: 'media_appearance',
-        source_id: conversion?.appearance_id || null,
+        source_ref_id: conversion?.appearance_id || null,
         contact_id,
-        metadata: {
-          podcast_conversion_id: conversion?.id,
-          auto_generated: true,
-          conversion_type,
-        },
       })
 
     if (taskError) {
