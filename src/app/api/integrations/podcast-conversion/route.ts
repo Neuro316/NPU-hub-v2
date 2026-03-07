@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-// This endpoint is called by NPU University when someone enrolls
-// via a podcast UTM link or promo code. It must be EXCLUDED from
-// auth middleware (add to matcher exclusion in middleware.ts).
-
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -41,7 +37,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // 1. Check if contact exists, create if not
+    // 1. Check if contact exists
     let contact_id: string | null = null
     const { data: existingContact } = await supabase
       .from('contacts')
@@ -52,20 +48,9 @@ export async function POST(req: NextRequest) {
 
     if (existingContact) {
       contact_id = existingContact.id
-
-      // Add podcast-lead tag if not present
-      try {
-        await supabase.rpc('add_contact_tag', {
-          p_contact_id: contact_id,
-          p_tag: 'podcast-lead'
-        })
-      } catch {
-        // RPC might not exist yet, that's ok
-      }
     }
 
     // 2. Create podcast_conversion record
-    // The auto_link_podcast_conversion trigger will match to appearance
     const { data: conversion, error: convError } = await supabase
       .from('podcast_conversions')
       .insert({
@@ -93,7 +78,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // 3. Find the linked appearance (set by trigger) to get show name
+    // 3. Find linked appearance for show name
     let showName = utm_campaign || promo_code || 'Unknown show'
     if (conversion?.appearance_id) {
       const { data: appearance } = await supabase
@@ -105,33 +90,21 @@ export async function POST(req: NextRequest) {
       if (appearance) {
         showName = appearance.platform || showName
       }
-
-      // Update appearance metrics
-      try {
-        await supabase.rpc('increment_field', {
-          table_name: 'media_appearances',
-          row_id: conversion.appearance_id,
-          field_name: conversion_type === 'course_enroll' ? 'tasks_created' : 'social_posts_count',
-          increment_by: 0, // Just trigger updated_at
-        })
-      } catch {
-        // RPC might not exist yet
-      }
     }
 
-    // 4. Auto-create outreach task in tasks table
+    // 4. Auto-create outreach task
     const { error: taskError } = await supabase
       .from('tasks')
       .insert({
         org_id,
         title: `Personally reach out to ${name || email} from ${showName}`,
-        description: `New podcast-attributed enrollment via ${promo_code || utm_campaign || 'UTM link'}. They heard you on ${showName} and just enrolled. Reach out within 24 hours — this is a warm lead.\n\nEmail: ${email}\nSource: ${promo_code ? `Promo code ${promo_code}` : `UTM campaign ${utm_campaign}`}`,
+        description: `New podcast-attributed enrollment via ${promo_code || utm_campaign || 'UTM link'}. They heard you on ${showName} and just enrolled. Reach out within 24 hours.\n\nEmail: ${email}\nSource: ${promo_code ? `Promo code ${promo_code}` : `UTM campaign ${utm_campaign}`}`,
         status: 'todo',
         priority: 'high',
-        due_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // Due in 24h
+        due_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         source: 'media_appearance',
         source_id: conversion?.appearance_id || null,
-        contact_id: contact_id,
+        contact_id,
         metadata: {
           podcast_conversion_id: conversion?.id,
           auto_generated: true,
@@ -141,10 +114,9 @@ export async function POST(req: NextRequest) {
 
     if (taskError) {
       console.error('Failed to create outreach task:', taskError)
-      // Don't fail the whole request for this
     }
 
-    // 5. Send SMS notification via Twilio (if configured)
+    // 5. Send SMS notification via Twilio if configured
     if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_PHONE_NUMBER && process.env.NOTIFICATION_PHONE) {
       try {
         const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`
@@ -161,7 +133,7 @@ export async function POST(req: NextRequest) {
           body: new URLSearchParams({
             From: process.env.TWILIO_PHONE_NUMBER,
             To: process.env.NOTIFICATION_PHONE,
-            Body: `🎙️ New podcast lead: ${name || email} from ${showName}. Reach out within 24h. Source: ${promo_code || utm_campaign || 'UTM'}`,
+            Body: `New podcast lead: ${name || email} from ${showName}. Source: ${promo_code || utm_campaign || 'UTM'}`,
           }),
         })
       } catch (smsErr) {
@@ -175,16 +147,13 @@ export async function POST(req: NextRequest) {
       appearance_id: conversion?.appearance_id,
       task_created: !taskError,
     })
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal server error'
     console.error('Podcast conversion webhook error:', err)
-    return NextResponse.json(
-      { error: err.message || 'Internal server error' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }
 
-// GET for health check
 export async function GET() {
   return NextResponse.json({
     status: 'ok',

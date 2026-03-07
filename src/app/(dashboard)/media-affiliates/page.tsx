@@ -10,6 +10,7 @@ import {
   Link2, Tag, Calendar, Share2, Bell, CheckCircle2,
   AlertCircle, ArrowRight, Phone, DollarSign, Eye,
   FileText, Send, User, Globe, Megaphone, BarChart3,
+  LayoutGrid, Table, Columns3, X,
 } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════════
@@ -45,7 +46,7 @@ interface Appearance {
   tasks_completed: number
   calendar_events_count: number
   repurposed: boolean
-  metadata: Record<string, any>
+  metadata: Record<string, unknown>
   created_at: string
   updated_at: string
 }
@@ -55,96 +56,119 @@ interface Conversion {
   appearance_id: string | null
   contact_name: string | null
   contact_email: string | null
+  contact_id: string | null
   conversion_type: string
   source: string
-  promo_code: string | null
   utm_campaign: string | null
+  utm_content: string | null
+  promo_code: string | null
   value: number
   personal_outreach_status: string
   notified: boolean
   created_at: string
-  appearance?: { platform: string }
+}
+
+interface ContentPiece {
+  id: string
+  appearance_id: string
+  type: string
+  title: string
+  platform: string | null
+  url: string | null
+  status: string
+  published_at: string | null
+  created_at: string
 }
 
 // ═══════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════
 
-const TYPE_CONFIG: Record<string, { label: string; icon: any; color: string }> = {
-  all:       { label: 'All',        icon: Globe,        color: 'gray' },
-  podcast:   { label: 'Podcasts',   icon: Mic,          color: 'violet' },
-  interview: { label: 'Interviews', icon: Radio,        color: 'blue' },
-  press:     { label: 'Press',      icon: Newspaper,    color: 'emerald' },
-  speaking:  { label: 'Speaking',   icon: Presentation, color: 'amber' },
-  panel:     { label: 'Panels',     icon: Users,        color: 'rose' },
-  webinar:   { label: 'Webinars',   icon: Monitor,      color: 'cyan' },
-}
-
-const PIPELINE_BY_TYPE: Record<string, { name: string; key: string; color: string }[]> = {
-  podcast: [
-    { name: 'Prospect', key: 'prospect', color: 'bg-gray-100 text-gray-600 border-gray-200' },
-    { name: 'Pitched', key: 'pitched', color: 'bg-blue-50 text-blue-600 border-blue-200' },
-    { name: 'Booked', key: 'booked', color: 'bg-violet-50 text-violet-600 border-violet-200' },
-    { name: 'Prepped', key: 'prepped', color: 'bg-purple-50 text-purple-600 border-purple-200' },
-    { name: 'Recorded', key: 'recorded', color: 'bg-fuchsia-50 text-fuchsia-600 border-fuchsia-200' },
-    { name: 'Post-Prod', key: 'post_prod', color: 'bg-pink-50 text-pink-600 border-pink-200' },
-    { name: 'Live', key: 'live', color: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
-    { name: 'Archived', key: 'archived', color: 'bg-gray-50 text-gray-500 border-gray-200' },
-  ],
-  interview: [
-    { name: 'Pitched', key: 'pitched', color: 'bg-blue-50 text-blue-600 border-blue-200' },
-    { name: 'Scheduled', key: 'scheduled', color: 'bg-violet-50 text-violet-600 border-violet-200' },
-    { name: 'Completed', key: 'completed', color: 'bg-fuchsia-50 text-fuchsia-600 border-fuchsia-200' },
-    { name: 'Published', key: 'published', color: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
-    { name: 'Archived', key: 'archived', color: 'bg-gray-50 text-gray-500 border-gray-200' },
-  ],
-  press: [
-    { name: 'Pitched', key: 'pitched', color: 'bg-blue-50 text-blue-600 border-blue-200' },
-    { name: 'In Review', key: 'in_review', color: 'bg-pink-50 text-pink-600 border-pink-200' },
-    { name: 'Published', key: 'published', color: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
-    { name: 'Archived', key: 'archived', color: 'bg-gray-50 text-gray-500 border-gray-200' },
-  ],
-  speaking: [
-    { name: 'Prospect', key: 'prospect', color: 'bg-gray-100 text-gray-600 border-gray-200' },
-    { name: 'Applied', key: 'applied', color: 'bg-blue-50 text-blue-600 border-blue-200' },
-    { name: 'Booked', key: 'booked', color: 'bg-violet-50 text-violet-600 border-violet-200' },
-    { name: 'Prepped', key: 'prepped', color: 'bg-purple-50 text-purple-600 border-purple-200' },
-    { name: 'Delivered', key: 'delivered', color: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
-    { name: 'Repurposed', key: 'repurposed', color: 'bg-pink-50 text-pink-600 border-pink-200' },
-    { name: 'Archived', key: 'archived', color: 'bg-gray-50 text-gray-500 border-gray-200' },
-  ],
-  panel: [
-    { name: 'Invited', key: 'invited', color: 'bg-blue-50 text-blue-600 border-blue-200' },
-    { name: 'Confirmed', key: 'confirmed', color: 'bg-violet-50 text-violet-600 border-violet-200' },
-    { name: 'Completed', key: 'completed', color: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
-    { name: 'Archived', key: 'archived', color: 'bg-gray-50 text-gray-500 border-gray-200' },
-  ],
-  webinar: [
-    { name: 'Planning', key: 'planning', color: 'bg-blue-50 text-blue-600 border-blue-200' },
-    { name: 'Scheduled', key: 'scheduled', color: 'bg-violet-50 text-violet-600 border-violet-200' },
-    { name: 'Promoted', key: 'promoted', color: 'bg-purple-50 text-purple-600 border-purple-200' },
-    { name: 'Delivered', key: 'delivered', color: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
-    { name: 'Archived', key: 'archived', color: 'bg-gray-50 text-gray-500 border-gray-200' },
-  ],
-}
-
-const GUEST_SHEET = [
-  { title: 'Bio & Headshot', icon: User, items: ['Short bio (50 words) — social posts', 'Medium bio (100 words) — show notes', 'Full bio (200 words) — website features', 'High-res headshot (1000x1000px min)', 'Secondary action shot'] },
-  { title: 'Links for Show Notes', icon: Link2, items: ['Primary CTA link with UTM tags', 'Website link with UTM params', 'Promo code + what it unlocks', 'All social handles (IG, LI, X, YT)'] },
-  { title: 'Talking Points', icon: Mic, items: ['3-5 conversation starters for their audience', 'Key frameworks to discuss', 'Stories / case studies (anonymized)', 'Off-limits topics'] },
-  { title: 'Preferred Introduction', icon: FileText, items: ['Scripted intro paragraph', 'Pronunciation guide', 'Title / credential to emphasize'] },
-  { title: 'Cross-Promotion Requirements', icon: Megaphone, items: ['Minimum: share to social + tag', 'Preferred: 2-3 posts first week', 'UTM link in all posts (NOT generic)', 'Promo code in show notes'] },
-  { title: 'Affiliate Vetting (Internal)', icon: Tag, internal: true, items: ['Tier 1 — Awareness (promo code only)', 'Tier 2 — Revenue share on enrollments', 'Tier 3 — Full ongoing partnership', 'Criteria: audience, ICP alignment, commitment'] },
+const TYPE_FILTERS = [
+  { key: 'all', label: 'All', icon: Globe },
+  { key: 'podcast', label: 'Podcasts', icon: Mic },
+  { key: 'interview', label: 'Interviews', icon: Radio },
+  { key: 'press', label: 'Press', icon: Newspaper },
+  { key: 'speaking', label: 'Speaking', icon: Presentation },
+  { key: 'panel', label: 'Panels', icon: Users },
+  { key: 'webinar', label: 'Webinars', icon: Monitor },
 ]
 
-const SCORE_COLORS: Record<string, string> = {
-  A: 'text-emerald-600 bg-emerald-50',
-  B: 'text-amber-600 bg-amber-50',
-  C: 'text-red-500 bg-red-50',
+const SUB_TABS = ['Appearances', 'Guest Sheet', 'UTM & Codes', 'Conversions', 'Integrations']
+
+const PIPELINE_STAGES: Record<string, string[]> = {
+  podcast: ['prospect', 'pitched', 'booked', 'prepped', 'recorded', 'post_prod', 'live', 'archived'],
+  interview: ['prospect', 'pitched', 'confirmed', 'prepped', 'completed', 'published', 'archived'],
+  press: ['prospect', 'pitched', 'accepted', 'drafted', 'review', 'published', 'archived'],
+  speaking: ['prospect', 'applied', 'accepted', 'prepped', 'delivered', 'follow_up', 'archived'],
+  panel: ['prospect', 'invited', 'confirmed', 'prepped', 'delivered', 'archived'],
+  webinar: ['prospect', 'planned', 'promoted', 'prepped', 'delivered', 'replay_live', 'archived'],
 }
 
+const DEFAULT_STAGES = ['prospect', 'pitched', 'booked', 'prepped', 'completed', 'live', 'archived']
+
+const STAGE_COLORS: Record<string, string> = {
+  prospect: 'bg-gray-100 text-gray-600',
+  pitched: 'bg-blue-50 text-blue-600',
+  applied: 'bg-blue-50 text-blue-600',
+  invited: 'bg-blue-50 text-blue-600',
+  planned: 'bg-blue-50 text-blue-600',
+  booked: 'bg-indigo-50 text-indigo-600',
+  confirmed: 'bg-indigo-50 text-indigo-600',
+  accepted: 'bg-indigo-50 text-indigo-600',
+  prepped: 'bg-purple-50 text-purple-600',
+  drafted: 'bg-purple-50 text-purple-600',
+  promoted: 'bg-purple-50 text-purple-600',
+  recorded: 'bg-amber-50 text-amber-600',
+  completed: 'bg-amber-50 text-amber-600',
+  delivered: 'bg-amber-50 text-amber-600',
+  review: 'bg-amber-50 text-amber-600',
+  post_prod: 'bg-orange-50 text-orange-600',
+  follow_up: 'bg-orange-50 text-orange-600',
+  live: 'bg-green-50 text-green-600',
+  published: 'bg-green-50 text-green-600',
+  replay_live: 'bg-green-50 text-green-600',
+  archived: 'bg-gray-50 text-gray-400',
+}
+
+const SCORE_COLORS: Record<string, string> = {
+  A: 'bg-green-100 text-green-700',
+  B: 'bg-amber-100 text-amber-700',
+  C: 'bg-red-100 text-red-700',
+}
+
+const AFFILIATE_TIERS = ['none', 'bronze', 'silver', 'gold', 'platinum']
+
+const TYPE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  podcast: Mic,
+  interview: Radio,
+  press: Newspaper,
+  speaking: Presentation,
+  panel: Users,
+  webinar: Monitor,
+}
+
+const GUEST_SHEET_SECTIONS = [
+  { key: 'bio', title: 'Bio & Headshot', description: 'Your short bio and headshot link for show notes.' },
+  { key: 'links', title: 'Links for Show Notes', description: 'Website, social profiles, and landing pages to include in show notes.' },
+  { key: 'talking_points', title: 'Talking Points', description: 'Key topics, stories, and frameworks you want to discuss.' },
+  { key: 'intro', title: 'Preferred Introduction', description: 'How you prefer the host to introduce you.' },
+  { key: 'cross_promo', title: 'Cross-Promotion Requirements', description: 'Social sharing expectations, episode tagging, and promotional agreements.' },
+  { key: 'vetting', title: 'Affiliate Vetting', description: 'Internal criteria for evaluating potential affiliate partnerships.', internal: true },
+]
+
+const INTEGRATIONS_LIST = [
+  { name: 'CRM Contact Linking', description: 'Auto-link hosts to CRM contacts. Creates contact if not found. Tags with podcast-lead on conversion.', priority: 'CRITICAL' },
+  { name: 'Task Auto-Creation', description: 'Creates high-priority outreach tasks when conversions arrive. 24h due date for warm leads.', priority: 'CRITICAL' },
+  { name: 'Calendar Sync', description: 'Recording dates and air dates sync to Hub calendar. Pre-show prep reminders 48h before.', priority: 'HIGH' },
+  { name: 'Social Media Queue', description: 'Auto-generates social post drafts when episodes go live. Cross-promotion tracking.', priority: 'HIGH' },
+  { name: 'UTM & Promo Tracking', description: 'Convention: utm_source=podcast, utm_medium=audio, utm_campaign=[show-slug]. Promo codes: PODCAST-[SHOWNAME].', priority: 'HIGH' },
+  { name: 'SMS Notifications', description: 'Instant SMS alert when a podcast conversion comes in. Configurable via Twilio env vars.', priority: 'MEDIUM' },
+  { name: 'Content Repurposing', description: 'Track content pieces derived from each appearance: clips, blog posts, social cards, newsletters.', priority: 'MEDIUM' },
+]
+
 // ═══════════════════════════════════════════════════════
-// COMPONENT
+// MAIN COMPONENT
 // ═══════════════════════════════════════════════════════
 
 export default function MediaAffiliatesPage() {
@@ -155,826 +179,882 @@ export default function MediaAffiliatesPage() {
   // State
   const [appearances, setAppearances] = useState<Appearance[]>([])
   const [conversions, setConversions] = useState<Conversion[]>([])
+  const [contentPieces, setContentPieces] = useState<ContentPiece[]>([])
   const [loading, setLoading] = useState(true)
-  const [typeFilter, setTypeFilter] = useState('podcast')
+  const [typeFilter, setTypeFilter] = useState('all')
+  const [subTab, setSubTab] = useState('Appearances')
   const [viewMode, setViewMode] = useState<'pipeline' | 'cards' | 'table'>('pipeline')
-  const [subTab, setSubTab] = useState('appearances')
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [expandedSheet, setExpandedSheet] = useState<number | null>(null)
-  const [showNewMenu, setShowNewMenu] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [expandedCard, setExpandedCard] = useState<string | null>(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [createEntryType, setCreateEntryType] = useState<'outbound' | 'inbound'>('outbound')
+  const [showNewDropdown, setShowNewDropdown] = useState(false)
+  const [guestSheetOpen, setGuestSheetOpen] = useState<Record<string, boolean>>({ bio: true })
 
-  // New appearance form
-  const [formData, setFormData] = useState({
-    title: '', platform: '', host: '', type: 'podcast',
-    recording_date: '', air_date: '', description: '',
-    affiliate_tier: 'none', promo_code: '', utm_campaign: '',
+  // Create form state
+  const [form, setForm] = useState({
+    type: 'podcast',
+    title: '',
+    platform: '',
+    host: '',
+    recording_date: '',
+    air_date: '',
+    affiliate_tier: 'none',
+    promo_code: '',
+    utm_campaign: '',
+    description: '',
   })
 
-  // ─── Data Loading ───
+  // ─── Data Loading ──────────────────────────────────
+
   const loadData = useCallback(async () => {
     if (!orgId) return
     setLoading(true)
 
-    const [appRes, convRes] = await Promise.all([
-      supabase.from('media_appearances').select('*').eq('org_id', orgId).order('created_at', { ascending: false }),
-      supabase.from('podcast_conversions').select('*, appearance:media_appearances(platform)').eq('org_id', orgId).order('created_at', { ascending: false }).limit(50),
+    const [appRes, convRes, contentRes] = await Promise.all([
+      supabase
+        .from('media_appearances')
+        .select('*')
+        .eq('org_id', orgId)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('podcast_conversions')
+        .select('*')
+        .eq('org_id', orgId)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('podcast_content_pieces')
+        .select('*')
+        .eq('org_id', orgId)
+        .order('created_at', { ascending: false }),
     ])
 
     if (appRes.data) setAppearances(appRes.data)
-    if (convRes.data) setConversions(convRes.data as any)
+    if (convRes.data) setConversions(convRes.data)
+    if (contentRes.data) setContentPieces(contentRes.data)
     setLoading(false)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId])
 
-  useEffect(() => { loadData() }, [loadData])
+  useEffect(() => {
+    loadData()
+  }, [loadData])
 
-  // ─── Computed ───
+  // ─── Filtered Data ─────────────────────────────────
+
   const filtered = useMemo(() => {
-    if (typeFilter === 'all') return appearances
-    return appearances.filter(a => a.type === typeFilter)
-  }, [appearances, typeFilter])
-
-  const pipeline = PIPELINE_BY_TYPE[typeFilter] || PIPELINE_BY_TYPE.podcast
-  const pipelineGroups = useMemo(() => {
-    const g: Record<string, Appearance[]> = {}
-    pipeline.forEach(s => { g[s.key] = [] })
-    filtered.forEach(a => { if (g[a.status]) g[a.status].push(a) })
-    return g
-  }, [filtered, pipeline])
-
-  const typeCounts = useMemo(() => {
-    const c: Record<string, number> = { all: appearances.length }
-    appearances.forEach(a => { c[a.type] = (c[a.type] || 0) + 1 })
-    return c
-  }, [appearances])
-
-  const totals = useMemo(() => {
-    return {
-      clicks: conversions.filter(c => c.conversion_type === 'click').length,
-      promoUses: conversions.filter(c => c.source === 'promo_code').length,
-      enrollments: conversions.filter(c => c.conversion_type === 'course_enroll').length,
-      calls: conversions.filter(c => c.conversion_type === 'discovery_call').length,
-      revenue: conversions.reduce((s, c) => s + (c.value || 0), 0),
+    let items = appearances
+    if (typeFilter !== 'all') {
+      items = items.filter(a => a.type === typeFilter)
     }
-  }, [conversions])
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase()
+      items = items.filter(a =>
+        a.title.toLowerCase().includes(q) ||
+        a.platform?.toLowerCase().includes(q) ||
+        a.host?.toLowerCase().includes(q) ||
+        a.key_topics?.some(t => t.toLowerCase().includes(q))
+      )
+    }
+    return items
+  }, [appearances, typeFilter, searchQuery])
 
-  const pendingOutreach = conversions.filter(c => c.personal_outreach_status === 'pending')
-  const showPodcastTabs = typeFilter === 'podcast' || typeFilter === 'all'
+  const stages = useMemo(() => {
+    if (typeFilter !== 'all') return PIPELINE_STAGES[typeFilter] || DEFAULT_STAGES
+    return DEFAULT_STAGES
+  }, [typeFilter])
 
-  // ─── CRUD ───
+  // ─── Metrics ───────────────────────────────────────
+
+  const metrics = useMemo(() => {
+    const total = appearances.length
+    const totalConversions = conversions.length
+    const promoUses = conversions.filter(c => c.source === 'promo_code').length
+    const enrollments = conversions.filter(c => c.conversion_type === 'course_enroll').length
+    const calls = conversions.filter(c => c.conversion_type === 'call_booked').length
+    const revenue = conversions.reduce((sum, c) => sum + (c.value || 0), 0)
+    return { total, totalConversions, promoUses, enrollments, calls, revenue }
+  }, [appearances, conversions])
+
+  const pendingOutreach = useMemo(() =>
+    conversions.filter(c => c.personal_outreach_status === 'pending'),
+  [conversions])
+
+  // ─── CRUD ──────────────────────────────────────────
+
   const createAppearance = async () => {
-    if (!orgId || !formData.title) return
-    const startStatus = createEntryType === 'inbound' ? 'booked' : 'prospect'
-    const utmCampaign = formData.utm_campaign || formData.platform?.toLowerCase().replace(/\s+/g, '-') || ''
-
+    if (!orgId || !form.title) return
+    const status = createEntryType === 'inbound' ? 'booked' : 'prospect'
     const { error } = await supabase.from('media_appearances').insert({
       org_id: orgId,
-      type: formData.type,
+      type: form.type,
       entry_type: createEntryType,
-      title: formData.title,
-      platform: formData.platform || null,
-      host: formData.host || null,
-      recording_date: formData.recording_date || null,
-      air_date: formData.air_date || null,
-      description: formData.description || null,
-      affiliate_tier: formData.affiliate_tier,
-      promo_code: formData.promo_code || null,
-      utm_campaign: utmCampaign || null,
+      title: form.title,
+      platform: form.platform || null,
+      host: form.host || null,
+      recording_date: form.recording_date || null,
+      air_date: form.air_date || null,
+      affiliate_tier: form.affiliate_tier,
+      promo_code: form.promo_code || null,
       utm_source: 'podcast',
       utm_medium: 'audio',
-      status: startStatus,
+      utm_campaign: form.utm_campaign || null,
+      description: form.description || null,
+      status,
+      key_topics: [],
+      key_quotes: [],
+      social_posts_count: 0,
+      tasks_created: 0,
+      tasks_completed: 0,
+      calendar_events_count: 0,
+      repurposed: false,
+      metadata: {},
     })
-
     if (!error) {
       setShowCreateModal(false)
-      setFormData({ title: '', platform: '', host: '', type: 'podcast', recording_date: '', air_date: '', description: '', affiliate_tier: 'none', promo_code: '', utm_campaign: '' })
+      setForm({ type: 'podcast', title: '', platform: '', host: '', recording_date: '', air_date: '', affiliate_tier: 'none', promo_code: '', utm_campaign: '', description: '' })
       loadData()
     }
   }
 
-  const updateStatus = async (id: string, newStatus: string) => {
-    await supabase.from('media_appearances').update({ status: newStatus }).eq('id', id)
-    loadData()
-  }
-
-  const updateOutreach = async (convId: string, status: string) => {
-    await supabase.from('podcast_conversions').update({
-      personal_outreach_status: status,
-      outreach_sent_at: status === 'sent' ? new Date().toISOString() : null,
-    }).eq('id', convId)
-    loadData()
-  }
-
   const deleteAppearance = async (id: string) => {
     await supabase.from('media_appearances').delete().eq('id', id)
-    setSelectedId(null)
+    setExpandedCard(null)
     loadData()
   }
 
-  // ─── Status badge helper ───
-  const StatusBadge = ({ status }: { status: string }) => {
-    const stage = Object.values(PIPELINE_BY_TYPE).flat().find(s => s.key === status)
-    const cls = stage?.color || 'bg-gray-100 text-gray-500 border-gray-200'
-    return <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${cls}`}>{stage?.name || status}</span>
+  const updateOutreachStatus = async (id: string, status: string) => {
+    await supabase.from('podcast_conversions').update({ personal_outreach_status: status }).eq('id', id)
+    loadData()
   }
 
-  if (loading && appearances.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <RefreshCw className="w-5 h-5 text-gray-300 animate-spin" />
-      </div>
-    )
+  // ─── Stage label helper ────────────────────────────
+
+  const stageLabel = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+
+  // ═══════════════════════════════════════════════════════
+  // RENDER
+  // ═══════════════════════════════════════════════════════
+
+  if (!orgId) {
+    return <div className="p-8 text-gray-500">Select a workspace to view Media & Affiliates.</div>
   }
 
   return (
-    <div className="p-6 max-w-[1400px] mx-auto">
-      {/* ─── HEADER ─── */}
-      <div className="flex items-start justify-between mb-6">
+    <div className="p-6 max-w-[1600px] mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
         <div>
-          <div className="flex items-center gap-3 mb-1">
-            <h1 className="text-xl font-bold text-np-dark">Media & Affiliates</h1>
-            {pendingOutreach.length > 0 && (
-              <button
-                onClick={() => setSubTab('dashboard')}
-                className="flex items-center gap-1.5 px-3 py-1 bg-amber-50 border border-amber-200 rounded-full text-[11px] font-bold text-amber-600 hover:bg-amber-100 transition-colors"
-              >
-                <Bell className="w-3 h-3" />
-                {pendingOutreach.length} outreach pending
-              </button>
+          <h1 className="text-2xl font-bold text-np-dark">Media & Affiliates</h1>
+          <p className="text-sm text-gray-500 mt-1">Track appearances, conversions, and affiliate performance</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => loadData()} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500">
+            <RefreshCw className="w-4 h-4" />
+          </button>
+          <div className="relative">
+            <button
+              onClick={() => setShowNewDropdown(!showNewDropdown)}
+              className="flex items-center gap-2 px-4 py-2 bg-np-blue text-white rounded-lg hover:bg-np-blue/90 text-sm font-medium"
+            >
+              <Plus className="w-4 h-4" />
+              New Appearance
+              <ChevronDown className="w-3 h-3" />
+            </button>
+            {showNewDropdown && (
+              <div className="absolute right-0 mt-1 bg-white border border-gray-100 rounded-lg shadow-lg z-50 w-56">
+                <button
+                  onClick={() => { setCreateEntryType('outbound'); setShowCreateModal(true); setShowNewDropdown(false) }}
+                  className="w-full text-left px-4 py-3 hover:bg-gray-50 rounded-t-lg"
+                >
+                  <div className="text-sm font-medium text-np-dark">Outbound</div>
+                  <div className="text-xs text-gray-500">You pitched them. Starts at Prospect.</div>
+                </button>
+                <button
+                  onClick={() => { setCreateEntryType('inbound'); setShowCreateModal(true); setShowNewDropdown(false) }}
+                  className="w-full text-left px-4 py-3 hover:bg-gray-50 rounded-b-lg border-t border-gray-50"
+                >
+                  <div className="text-sm font-medium text-np-dark">Inbound</div>
+                  <div className="text-xs text-gray-500">They invited you. Starts at Booked.</div>
+                </button>
+              </div>
             )}
           </div>
-          <p className="text-xs text-gray-500">Track appearances, manage guest sheets, monitor podcast attribution</p>
-        </div>
-
-        <div className="relative">
-          <button
-            onClick={() => setShowNewMenu(!showNewMenu)}
-            className="flex items-center gap-1.5 px-4 py-2 bg-np-blue text-white rounded-xl text-sm font-semibold hover:bg-np-blue/90 transition-colors"
-          >
-            <Plus className="w-4 h-4" /> New Appearance
-          </button>
-          {showNewMenu && (
-            <div className="absolute right-0 top-full mt-2 w-64 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden">
-              <button
-                onClick={() => { setCreateEntryType('outbound'); setShowNewMenu(false); setShowCreateModal(true) }}
-                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 text-left transition-colors"
-              >
-                <Presentation className="w-5 h-5 text-np-blue" />
-                <div>
-                  <div className="text-sm font-semibold text-np-dark">Outbound Pitch</div>
-                  <div className="text-[10px] text-gray-400">You're pitching a show</div>
-                </div>
-              </button>
-              <button
-                onClick={() => { setCreateEntryType('inbound'); setShowNewMenu(false); setShowCreateModal(true) }}
-                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-emerald-50 text-left transition-colors border-t border-gray-100"
-              >
-                <ArrowRight className="w-5 h-5 text-emerald-500 rotate-180" />
-                <div>
-                  <div className="text-sm font-semibold text-emerald-600">Inbound Request</div>
-                  <div className="text-[10px] text-gray-400">Host reached out — starts at Booked</div>
-                </div>
-              </button>
-            </div>
-          )}
         </div>
       </div>
 
-      {/* ─── TYPE FILTERS ─── */}
-      <div className="flex gap-1.5 mb-4 overflow-x-auto pb-1">
-        {Object.entries(TYPE_CONFIG).map(([key, cfg]) => {
-          const Icon = cfg.icon
-          const count = typeCounts[key] || 0
-          const active = typeFilter === key
+      {/* Type Filter Pills */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {TYPE_FILTERS.map(tf => {
+          const Icon = tf.icon
+          const active = typeFilter === tf.key
           return (
             <button
-              key={key}
-              onClick={() => { setTypeFilter(key); setSelectedId(null) }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all border ${
-                active
-                  ? 'bg-np-blue/10 text-np-blue border-np-blue/20'
-                  : 'bg-white text-gray-500 border-gray-100 hover:border-gray-200 hover:text-gray-700'
+              key={tf.key}
+              onClick={() => setTypeFilter(tf.key)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                active ? 'bg-np-blue text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
               <Icon className="w-3.5 h-3.5" />
-              {cfg.label}
-              <span className={`text-[10px] font-bold px-1.5 rounded-full ${active ? 'bg-np-blue/15' : 'bg-gray-100'}`}>
-                {count}
-              </span>
+              {tf.label}
             </button>
           )
         })}
       </div>
 
-      {/* ─── SUB-TABS ─── */}
-      <div className="flex gap-0 border-b border-gray-100 mb-5">
-        {[
-          { id: 'appearances', label: 'Appearances' },
-          ...(showPodcastTabs ? [
-            { id: 'guestsheet', label: 'Guest Sheet' },
-            { id: 'utm', label: 'UTM & Codes' },
-            { id: 'dashboard', label: 'Conversions', badge: pendingOutreach.length || null },
-          ] : []),
-          { id: 'integrations', label: 'Integrations' },
-        ].map(tab => (
+      {/* Sub-Tabs */}
+      <div className="flex items-center gap-1 border-b border-gray-200">
+        {SUB_TABS.map(tab => (
           <button
-            key={tab.id}
-            onClick={() => setSubTab(tab.id)}
-            className={`px-4 py-2.5 text-xs font-semibold transition-colors border-b-2 flex items-center gap-1.5 ${
-              subTab === tab.id
+            key={tab}
+            onClick={() => setSubTab(tab)}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              subTab === tab
                 ? 'border-np-blue text-np-blue'
-                : 'border-transparent text-gray-400 hover:text-gray-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
-            {tab.label}
-            {tab.badge && (
-              <span className="bg-amber-100 text-amber-600 text-[9px] font-bold px-1.5 rounded-full">{tab.badge}</span>
-            )}
+            {tab}
           </button>
         ))}
       </div>
 
-      {/* ═══════════════════════════════════════ */}
-      {/* APPEARANCES TAB                         */}
-      {/* ═══════════════════════════════════════ */}
-      {subTab === 'appearances' && (
-        <div>
-          {/* View toggle */}
-          <div className="flex justify-between items-center mb-4">
-            <div className="flex gap-1">
-              {(typeFilter !== 'all' ? ['pipeline', 'cards', 'table'] as const : ['cards', 'table'] as const).map(v => (
+      {/* ═══════ APPEARANCES TAB ═══════ */}
+      {subTab === 'Appearances' && (
+        <div className="space-y-4">
+          {/* Search + View Toggle */}
+          <div className="flex items-center justify-between">
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search appearances..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
+              />
+            </div>
+            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+              {([['pipeline', Columns3], ['cards', LayoutGrid], ['table', Table]] as const).map(([mode, Icon]) => (
                 <button
-                  key={v}
-                  onClick={() => setViewMode(v)}
-                  className={`px-3 py-1 rounded-md text-[11px] font-semibold capitalize border transition-colors ${
-                    viewMode === v
-                      ? 'bg-np-blue/10 text-np-blue border-np-blue/20'
-                      : 'text-gray-400 border-transparent hover:text-gray-600'
+                  key={mode}
+                  onClick={() => setViewMode(mode)}
+                  className={`p-2 rounded-md transition-colors ${
+                    viewMode === mode ? 'bg-white shadow-sm text-np-blue' : 'text-gray-500 hover:text-gray-700'
                   }`}
+                  title={mode.charAt(0).toUpperCase() + mode.slice(1)}
                 >
-                  {v}
+                  <Icon className="w-4 h-4" />
                 </button>
               ))}
             </div>
-            <span className="text-xs text-gray-400">{filtered.length} total</span>
           </div>
 
-          {/* Pipeline View */}
-          {viewMode === 'pipeline' && typeFilter !== 'all' && (
+          {loading ? (
+            <div className="text-center py-16 text-gray-400">Loading appearances...</div>
+          ) : filtered.length === 0 ? (
+            <div className="text-center py-16">
+              <Mic className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <p className="text-gray-500 font-medium">No appearances yet</p>
+              <p className="text-sm text-gray-400 mt-1">Click &quot;New Appearance&quot; to add your first one.</p>
+            </div>
+          ) : viewMode === 'pipeline' ? (
+            /* ── Pipeline View ── */
             <div className="flex gap-3 overflow-x-auto pb-4">
-              {pipeline.map(stage => {
-                const cards = pipelineGroups[stage.key] || []
+              {stages.map(stage => {
+                const stageItems = filtered.filter(a => a.status === stage)
                 return (
-                  <div key={stage.key} className="min-w-[220px] max-w-[260px] flex-shrink-0">
-                    <div className={`flex items-center justify-between px-3 py-2 rounded-lg border mb-2 ${stage.color}`}>
-                      <span className="text-[10px] font-bold uppercase tracking-wider">{stage.name}</span>
-                      <span className="text-[10px] font-bold bg-white/60 rounded-full px-1.5">{cards.length}</span>
+                  <div key={stage} className="flex-shrink-0 w-72">
+                    <div className="flex items-center justify-between mb-2 px-1">
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STAGE_COLORS[stage] || 'bg-gray-100 text-gray-600'}`}>
+                        {stageLabel(stage)}
+                      </span>
+                      <span className="text-xs text-gray-400">{stageItems.length}</span>
                     </div>
-                    <div className="space-y-2">
-                      {cards.map(card => (
-                        <div
-                          key={card.id}
-                          onClick={() => setSelectedId(selectedId === card.id ? null : card.id)}
-                          className={`bg-white border rounded-xl p-3.5 cursor-pointer transition-all hover:shadow-sm ${
-                            selectedId === card.id ? 'border-np-blue/30 shadow-sm' : 'border-gray-100'
-                          }`}
-                        >
-                          {card.entry_type === 'inbound' && (
-                            <span className="inline-block text-[9px] font-bold text-emerald-600 bg-emerald-50 rounded px-1.5 py-0.5 mb-1.5">INBOUND</span>
-                          )}
-                          <div className="text-sm font-semibold text-np-dark mb-1 leading-snug">{card.title}</div>
-                          <div className="text-[11px] text-gray-500 mb-2">{card.platform} · {card.host}</div>
-
-                          {card.key_topics.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mb-2">
-                              {card.key_topics.slice(0, 2).map((t, i) => (
-                                <span key={i} className="text-[9px] px-1.5 py-0.5 rounded bg-gray-50 text-gray-500">{t}</span>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Integration indicators */}
-                          <div className="flex gap-2 items-center mb-1.5 text-[10px] text-gray-400">
-                            {card.host_contact_id && <span title="CRM linked">👤</span>}
-                            {card.calendar_events_count > 0 && <span>📅{card.calendar_events_count}</span>}
-                            {card.social_posts_count > 0 && <span>📱{card.social_posts_count}</span>}
-                            {card.tasks_created > 0 && (
-                              <span className={card.tasks_completed === card.tasks_created ? 'text-emerald-500' : 'text-amber-500'}>
-                                ✅{card.tasks_completed}/{card.tasks_created}
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="flex justify-between items-center">
-                            <span className="text-[10px] text-gray-400">
-                              {card.recording_date ? `Rec: ${card.recording_date}` : card.air_date ? `Air: ${card.air_date}` : 'TBD'}
-                            </span>
-                            <div className="flex gap-1.5 items-center">
-                              {card.promo_code && <span className="text-[8px] font-bold text-emerald-600 bg-emerald-50 rounded px-1 py-0.5">PROMO</span>}
-                              {card.performance_score && (
-                                <span className={`text-xs font-extrabold rounded px-1 ${SCORE_COLORS[card.performance_score] || ''}`}>
-                                  {card.performance_score}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Expanded detail */}
-                          {selectedId === card.id && (
-                            <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
-                              {card.host_contact_id && (
-                                <a href={`/crm/contacts?id=${card.host_contact_id}`} className="block text-center text-[11px] font-semibold text-blue-600 bg-blue-50 rounded-lg py-1.5 hover:bg-blue-100 transition-colors">
-                                  👤 Open {card.host}&apos;s CRM Card →
-                                </a>
-                              )}
-                              {card.affiliate_tier !== 'none' && (
-                                <div className="text-[11px] text-gray-500">
-                                  <span className="font-semibold text-violet-600">Affiliate:</span> {card.affiliate_tier} {card.promo_code && `· ${card.promo_code}`}
-                                </div>
-                              )}
-                              {card.key_quotes.length > 0 && (
-                                <div className="text-[11px] text-violet-600 italic bg-violet-50 rounded-lg p-2 border-l-2 border-violet-200">
-                                  &ldquo;{card.key_quotes[0]}&rdquo;
-                                </div>
-                              )}
-                              <div className="flex gap-1.5">
-                                <button className="flex-1 text-[10px] font-semibold text-gray-500 bg-gray-50 rounded-lg py-1.5 hover:bg-gray-100 transition-colors border border-gray-100">
-                                  <Edit3 className="w-3 h-3 inline mr-1" />Edit
-                                </button>
-                                <button className="flex-1 text-[10px] font-semibold text-fuchsia-600 bg-fuchsia-50 rounded-lg py-1.5 hover:bg-fuchsia-100 transition-colors border border-fuchsia-100">
-                                  <Share2 className="w-3 h-3 inline mr-1" />Repurpose
-                                </button>
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); deleteAppearance(card.id) }}
-                                  className="px-2 text-[10px] text-red-400 bg-red-50 rounded-lg py-1.5 hover:bg-red-100 transition-colors border border-red-100"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
+                    <div className="space-y-2 min-h-[200px]">
+                      {stageItems.map(item => (
+                        <AppearanceCard
+                          key={item.id}
+                          item={item}
+                          expanded={expandedCard === item.id}
+                          onToggle={() => setExpandedCard(expandedCard === item.id ? null : item.id)}
+                          onDelete={deleteAppearance}
+                          contentPieces={contentPieces.filter(cp => cp.appearance_id === item.id)}
+                        />
                       ))}
-                      {cards.length === 0 && (
-                        <div className="text-center py-6 text-[11px] text-gray-300 border border-dashed border-gray-200 rounded-xl">
-                          Empty
-                        </div>
-                      )}
                     </div>
                   </div>
                 )
               })}
             </div>
-          )}
-
-          {/* Cards View */}
-          {(viewMode === 'cards' || (viewMode === 'pipeline' && typeFilter === 'all')) && (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-              {filtered.map(card => (
-                <div key={card.id} className="bg-white border border-gray-100 rounded-xl p-4 hover:shadow-sm transition-all">
-                  <div className="flex justify-between items-start mb-2">
-                    <div className="flex-1 min-w-0">
-                      {card.entry_type === 'inbound' && (
-                        <span className="inline-block text-[9px] font-bold text-emerald-600 bg-emerald-50 rounded px-1.5 py-0.5 mb-1">INBOUND</span>
-                      )}
-                      <div className="text-sm font-semibold text-np-dark truncate">{card.title}</div>
-                      <div className="text-xs text-gray-500">{card.platform} · {card.host}</div>
-                    </div>
-                    <div className="flex items-center gap-1.5 ml-2 flex-shrink-0">
-                      <StatusBadge status={card.status} />
-                      {card.performance_score && (
-                        <span className={`text-xs font-extrabold rounded px-1 ${SCORE_COLORS[card.performance_score]}`}>{card.performance_score}</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex gap-2 text-[10px] text-gray-400">
-                    {card.host_contact_id && <span>👤</span>}
-                    {card.calendar_events_count > 0 && <span>📅{card.calendar_events_count}</span>}
-                    {card.social_posts_count > 0 && <span>📱{card.social_posts_count}</span>}
-                    {card.tasks_created > 0 && <span className={card.tasks_completed === card.tasks_created ? 'text-emerald-500' : 'text-amber-500'}>✅{card.tasks_completed}/{card.tasks_created}</span>}
-                  </div>
-                </div>
+          ) : viewMode === 'cards' ? (
+            /* ── Cards View ── */
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {filtered.map(item => (
+                <AppearanceCard
+                  key={item.id}
+                  item={item}
+                  expanded={expandedCard === item.id}
+                  onToggle={() => setExpandedCard(expandedCard === item.id ? null : item.id)}
+                  onDelete={deleteAppearance}
+                  contentPieces={contentPieces.filter(cp => cp.appearance_id === item.id)}
+                />
               ))}
-              {filtered.length === 0 && (
-                <div className="col-span-full text-center py-12 text-gray-400">
-                  <Mic className="w-8 h-8 mx-auto mb-2 text-gray-200" />
-                  <p className="text-sm font-medium">No appearances yet</p>
-                  <p className="text-xs mt-1">Click &quot;New Appearance&quot; to get started</p>
+            </div>
+          ) : (
+            /* ── Table View ── */
+            <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-100">
+                    <tr>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500">Title</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500">Type</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500">Platform</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500">Host</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500">Status</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500">Entry</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500">Score</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500">Promo</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500">Air Date</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {filtered.map(item => {
+                      const TypeIcon = TYPE_ICONS[item.type] || Globe
+                      return (
+                        <tr key={item.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setExpandedCard(expandedCard === item.id ? null : item.id)}>
+                          <td className="px-4 py-3 font-medium text-np-dark max-w-[200px] truncate">{item.title}</td>
+                          <td className="px-4 py-3"><TypeIcon className="w-4 h-4 text-gray-500" /></td>
+                          <td className="px-4 py-3 text-gray-600">{item.platform || '-'}</td>
+                          <td className="px-4 py-3 text-gray-600">{item.host || '-'}</td>
+                          <td className="px-4 py-3">
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STAGE_COLORS[item.status] || 'bg-gray-100 text-gray-600'}`}>
+                              {stageLabel(item.status)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${item.entry_type === 'inbound' ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
+                              {item.entry_type}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            {item.performance_score && (
+                              <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${SCORE_COLORS[item.performance_score] || ''}`}>
+                                {item.performance_score}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-gray-500 text-xs">{item.promo_code || '-'}</td>
+                          <td className="px-4 py-3 text-gray-500 text-xs">{item.air_date ? new Date(item.air_date).toLocaleDateString() : '-'}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ═══════ GUEST SHEET TAB ═══════ */}
+      {subTab === 'Guest Sheet' && (
+        <div className="space-y-4 max-w-3xl">
+          <p className="text-sm text-gray-500">Prepare these sections before each appearance. Hosts often request this info in advance.</p>
+          {GUEST_SHEET_SECTIONS.map(section => (
+            <div key={section.key} className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+              <button
+                onClick={() => setGuestSheetOpen(prev => ({ ...prev, [section.key]: !prev[section.key] }))}
+                className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="font-medium text-np-dark">{section.title}</span>
+                  {section.internal && (
+                    <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">Internal</span>
+                  )}
+                </div>
+                <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${guestSheetOpen[section.key] ? 'rotate-90' : ''}`} />
+              </button>
+              {guestSheetOpen[section.key] && (
+                <div className="px-5 pb-5 border-t border-gray-50">
+                  <p className="text-sm text-gray-500 mt-3 mb-3">{section.description}</p>
+                  <textarea
+                    className="w-full h-32 border border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue resize-none"
+                    placeholder={`Add your ${section.title.toLowerCase()} here...`}
+                  />
                 </div>
               )}
             </div>
-          )}
-
-          {/* Table View */}
-          {viewMode === 'table' && (
-            <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-100">
-                    {['Title','Platform','Host','Entry','Status','CRM','Cal','Posts','Tasks','Score'].map(h => (
-                      <th key={h} className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map(a => (
-                    <tr key={a.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-                      <td className="px-3 py-2.5 font-semibold text-np-dark max-w-[200px] truncate">{a.title}</td>
-                      <td className="px-3 py-2.5 text-gray-500">{a.platform}</td>
-                      <td className="px-3 py-2.5 text-gray-500">{a.host}</td>
-                      <td className="px-3 py-2.5"><span className={`text-[9px] font-bold ${a.entry_type === 'inbound' ? 'text-emerald-500' : 'text-gray-400'}`}>{a.entry_type === 'inbound' ? '📥 IN' : '🎯 OUT'}</span></td>
-                      <td className="px-3 py-2.5"><StatusBadge status={a.status} /></td>
-                      <td className="px-3 py-2.5">{a.host_contact_id ? '👤' : ''}</td>
-                      <td className="px-3 py-2.5 text-gray-400">{a.calendar_events_count || ''}</td>
-                      <td className="px-3 py-2.5 text-gray-400">{a.social_posts_count || ''}</td>
-                      <td className="px-3 py-2.5"><span className={a.tasks_created > 0 && a.tasks_completed === a.tasks_created ? 'text-emerald-500' : 'text-gray-400'}>{a.tasks_created ? `${a.tasks_completed}/${a.tasks_created}` : ''}</span></td>
-                      <td className="px-3 py-2.5">{a.performance_score && <span className={`font-extrabold ${SCORE_COLORS[a.performance_score]?.split(' ')[0]}`}>{a.performance_score}</span>}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          ))}
         </div>
       )}
 
-      {/* ═══════════════════════════════════════ */}
-      {/* GUEST SHEET TAB                         */}
-      {/* ═══════════════════════════════════════ */}
-      {subTab === 'guestsheet' && (
-        <div>
-          <div className="bg-violet-50 border border-violet-100 rounded-xl p-5 mb-5 flex justify-between items-center">
-            <div>
-              <h2 className="text-sm font-bold text-np-dark mb-1">Podcast Guest Sheet</h2>
-              <p className="text-xs text-gray-500">Sent to hosts after booking. Inbound requests auto-generate at Booked stage.</p>
+      {/* ═══════ UTM & CODES TAB ═══════ */}
+      {subTab === 'UTM & Codes' && (
+        <div className="space-y-6 max-w-3xl">
+          <div className="bg-white rounded-xl border border-gray-100 p-6">
+            <h3 className="font-semibold text-np-dark mb-3">UTM Convention</h3>
+            <div className="space-y-2 text-sm font-mono bg-gray-50 rounded-lg p-4">
+              <div><span className="text-gray-500">utm_source</span> = <span className="text-np-blue font-semibold">podcast</span></div>
+              <div><span className="text-gray-500">utm_medium</span> = <span className="text-np-blue font-semibold">audio</span></div>
+              <div><span className="text-gray-500">utm_campaign</span> = <span className="text-np-blue font-semibold">[show-slug]</span></div>
+              <div><span className="text-gray-500">utm_content</span> = <span className="text-np-blue font-semibold">[episode-slug]</span></div>
             </div>
-            <div className="flex gap-2 flex-shrink-0 ml-4">
-              <button className="px-4 py-2 rounded-lg border border-violet-200 text-xs font-semibold text-violet-600 hover:bg-violet-100 transition-colors">Download Template</button>
-              <button className="px-4 py-2 rounded-lg bg-np-blue text-white text-xs font-semibold hover:bg-np-blue/90 transition-colors">Generate for Show →</button>
+            <div className="mt-4 p-3 bg-amber-50 rounded-lg">
+              <p className="text-sm text-amber-700">
+                <strong>Promo Code Format:</strong> PODCAST-[SHOWNAME] (e.g., PODCAST-HUBERMAN)
+              </p>
             </div>
           </div>
 
-          <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 mb-5 flex items-center gap-3 text-xs text-blue-600">
-            <Link2 className="w-4 h-4 flex-shrink-0" />
-            <span><strong>Integration:</strong> &quot;Generate for Show&quot; pulls host data from CRM contact card, builds UTM links from appearance record, attaches promo code from affiliate tier.</span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {GUEST_SHEET.map((section, si) => {
-              const Icon = section.icon
-              const isExpanded = expandedSheet === si
-              const isInternal = section.internal
-              return (
-                <div
-                  key={si}
-                  onClick={() => setExpandedSheet(isExpanded ? null : si)}
-                  className={`rounded-xl border p-4 cursor-pointer transition-all ${
-                    isInternal ? 'bg-pink-50/50 border-pink-100' :
-                    isExpanded ? 'bg-white border-np-blue/20 shadow-sm' :
-                    'bg-white border-gray-100 hover:border-gray-200'
-                  } ${isExpanded ? 'md:col-span-2' : ''}`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isInternal ? 'bg-pink-100' : 'bg-violet-50'}`}>
-                      <Icon className={`w-4 h-4 ${isInternal ? 'text-pink-500' : 'text-violet-500'}`} />
+          <div className="bg-white rounded-xl border border-gray-100 p-6">
+            <h3 className="font-semibold text-np-dark mb-4">Active Promo Codes</h3>
+            {appearances.filter(a => a.promo_code).length === 0 ? (
+              <p className="text-sm text-gray-400">No promo codes configured yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {appearances.filter(a => a.promo_code).map(a => (
+                  <div key={a.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <Tag className="w-4 h-4 text-gray-400" />
+                      <span className="font-mono text-sm font-semibold text-np-dark">{a.promo_code}</span>
+                      <span className="text-xs text-gray-500">{a.platform || a.title}</span>
                     </div>
-                    <div className="flex-1">
-                      <div className={`text-sm font-bold ${isInternal ? 'text-pink-600' : 'text-np-dark'}`}>{section.title}</div>
-                      {isInternal && !isExpanded && <div className="text-[9px] font-bold text-pink-500 mt-0.5">INTERNAL — Do not send to host</div>}
-                    </div>
-                    <ChevronDown className={`w-4 h-4 text-gray-300 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                    <button
+                      onClick={() => navigator.clipboard.writeText(a.promo_code || '')}
+                      className="p-1.5 hover:bg-gray-200 rounded text-gray-400 hover:text-gray-600"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                    </button>
                   </div>
-                  {isExpanded && (
-                    <div className="mt-4 space-y-2">
-                      {section.items.map((item, ii) => (
-                        <div key={ii} className="flex items-start gap-2.5 bg-gray-50 rounded-lg p-2.5">
-                          <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${isInternal ? 'bg-pink-400' : 'bg-violet-400'}`} />
-                          <span className="text-xs text-gray-600">{item}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* ═══════════════════════════════════════ */}
-      {/* UTM & CODES TAB                         */}
-      {/* ═══════════════════════════════════════ */}
-      {subTab === 'utm' && (
-        <div>
-          <div className="bg-blue-50 border border-blue-100 rounded-xl p-5 mb-5">
-            <h2 className="text-sm font-bold text-blue-700 mb-3">UTM Convention</h2>
-            <div className="font-mono text-xs text-blue-600 bg-white/60 rounded-lg p-4 space-y-0.5 leading-relaxed">
-              <div className="text-gray-400">// Course enrollment link:</div>
-              <div>neuroprogeny.com/courses/free?</div>
-              <div>&nbsp;&nbsp;utm_source=<span className="text-violet-600 font-bold">podcast</span></div>
-              <div>&nbsp;&nbsp;&amp;utm_medium=<span className="text-violet-600 font-bold">audio</span></div>
-              <div>&nbsp;&nbsp;&amp;utm_campaign=<span className="text-pink-500 font-bold">[show-slug]</span></div>
-              <div>&nbsp;&nbsp;&amp;utm_content=<span className="text-pink-500 font-bold">[episode-slug]</span></div>
-              <div className="mt-3 text-gray-400">// Promo code:</div>
-              <div>PODCAST-<span className="text-pink-500 font-bold">[SHOWNAME]</span></div>
-            </div>
-          </div>
-
-          <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 mb-5 flex items-center gap-3 text-xs text-amber-700">
-            <AlertCircle className="w-4 h-4 flex-shrink-0" />
-            <span><strong>Critical:</strong> NPU University must capture UTM params at enrollment and POST to <code className="bg-white/60 px-1 rounded">/api/integrations/podcast-conversion</code></span>
-          </div>
-
-          <h3 className="text-sm font-bold text-np-dark mb-3">Active Promo Codes</h3>
-          <div className="space-y-2">
-            {appearances.filter(a => a.promo_code).map(a => (
-              <div key={a.id} className="flex items-center justify-between bg-white border border-gray-100 rounded-xl p-4">
-                <div className="flex items-center gap-3">
-                  <span className="font-mono text-sm font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-lg">{a.promo_code}</span>
-                  <div>
-                    <div className="text-sm font-semibold text-np-dark">{a.platform}</div>
-                    <div className="text-[11px] text-gray-400">Tier: {a.affiliate_tier} · <StatusBadge status={a.status} /></div>
-                  </div>
-                </div>
+                ))}
               </div>
-            ))}
-            {appearances.filter(a => a.promo_code).length === 0 && (
-              <div className="text-center py-8 text-gray-400 text-xs">No promo codes yet. Create one when adding an appearance.</div>
             )}
           </div>
         </div>
       )}
 
-      {/* ═══════════════════════════════════════ */}
-      {/* CONVERSIONS DASHBOARD TAB                */}
-      {/* ═══════════════════════════════════════ */}
-      {subTab === 'dashboard' && (
-        <div>
-          {/* Metric cards */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+      {/* ═══════ CONVERSIONS TAB ═══════ */}
+      {subTab === 'Conversions' && (
+        <div className="space-y-6">
+          {/* Metric Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             {[
-              { icon: Globe, label: 'Appearances', value: appearances.length },
-              { icon: Link2, label: 'UTM Clicks', value: totals.clicks },
-              { icon: Tag, label: 'Promo Uses', value: totals.promoUses },
-              { icon: CheckCircle2, label: 'Enrollments', value: totals.enrollments },
-              { icon: Phone, label: 'Calls', value: totals.calls },
-              { icon: DollarSign, label: 'Revenue', value: `$${totals.revenue.toLocaleString()}` },
-            ].map((m, i) => {
+              { label: 'Appearances', value: metrics.total, icon: Mic, color: 'text-np-blue' },
+              { label: 'Total Clicks', value: metrics.totalConversions, icon: Eye, color: 'text-indigo-600' },
+              { label: 'Promo Uses', value: metrics.promoUses, icon: Tag, color: 'text-purple-600' },
+              { label: 'Enrollments', value: metrics.enrollments, icon: CheckCircle2, color: 'text-green-600' },
+              { label: 'Calls Booked', value: metrics.calls, icon: Phone, color: 'text-amber-600' },
+              { label: 'Revenue', value: `$${metrics.revenue.toLocaleString()}`, icon: DollarSign, color: 'text-emerald-600' },
+            ].map(m => {
               const Icon = m.icon
               return (
-                <div key={i} className="bg-white border border-gray-100 rounded-xl p-4 text-center">
-                  <Icon className="w-5 h-5 mx-auto text-gray-300 mb-1" />
-                  <div className="text-lg font-extrabold text-np-dark">{m.value}</div>
-                  <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">{m.label}</div>
+                <div key={m.label} className="bg-white rounded-xl border border-gray-100 p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Icon className={`w-4 h-4 ${m.color}`} />
+                    <span className="text-xs text-gray-500">{m.label}</span>
+                  </div>
+                  <div className={`text-2xl font-bold ${m.color}`}>{m.value}</div>
                 </div>
               )
             })}
           </div>
 
-          {/* Outreach queue */}
-          <div className="bg-amber-50 border border-amber-100 rounded-xl p-5 mb-6">
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="text-sm font-bold text-amber-700">Personal Outreach Queue</h3>
-              <span className={`text-xl font-extrabold ${pendingOutreach.length > 0 ? 'text-amber-600' : 'text-emerald-500'}`}>
-                {pendingOutreach.length}
-              </span>
-            </div>
-            <div className="bg-white/50 rounded-lg p-3 mb-4 text-[11px] text-amber-700 border-l-3 border-amber-300">
-              <strong>Notification chain:</strong> University webhook → task + conversion record → Hub bell → SMS via Twilio → daily digest. Tasks also show in main Tasks page.
-            </div>
-            <div className="space-y-2">
-              {conversions.filter(c => ['pending','sent','converted'].includes(c.personal_outreach_status)).slice(0, 10).map(conv => {
-                const isPending = conv.personal_outreach_status === 'pending'
-                const isSent = conv.personal_outreach_status === 'sent'
-                const isConverted = conv.personal_outreach_status === 'converted'
-                return (
-                  <div key={conv.id} className={`flex items-center justify-between p-3 rounded-lg border ${
-                    isPending ? 'bg-amber-50/50 border-amber-200' :
-                    isConverted ? 'bg-emerald-50/50 border-emerald-200' :
-                    'bg-white border-gray-100'
-                  }`}>
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-500">
-                        {(conv.contact_name || conv.contact_email || '?')[0].toUpperCase()}
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold text-np-dark">{conv.contact_name || conv.contact_email}</div>
-                        <div className="text-[10px] text-gray-400">
-                          via {conv.promo_code || conv.utm_campaign || 'UTM'} · {conv.appearance?.platform || 'Unknown show'} · {new Date(conv.created_at).toLocaleDateString()}
-                        </div>
+          {/* Personal Outreach Queue */}
+          <div className="bg-white rounded-xl border border-gray-100 p-6">
+            <h3 className="font-semibold text-np-dark mb-4 flex items-center gap-2">
+              <Bell className="w-4 h-4 text-amber-500" />
+              Personal Outreach Queue
+            </h3>
+            {pendingOutreach.length === 0 ? (
+              <p className="text-sm text-gray-400">No pending outreach. All caught up!</p>
+            ) : (
+              <div className="space-y-2">
+                {pendingOutreach.map(c => (
+                  <div key={c.id} className="flex items-center justify-between p-3 bg-amber-50 rounded-lg">
+                    <div>
+                      <div className="font-medium text-sm text-np-dark">{c.contact_name || c.contact_email}</div>
+                      <div className="text-xs text-gray-500">
+                        via {c.source === 'promo_code' ? c.promo_code : c.utm_campaign} &middot; {new Date(c.created_at).toLocaleDateString()}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      {conv.notified && <Bell className="w-3 h-3 text-amber-400" />}
-                      <span className={`text-[9px] font-bold uppercase tracking-wider ${
-                        isPending ? 'text-amber-600' : isConverted ? 'text-emerald-600' : 'text-violet-500'
-                      }`}>
-                        {conv.personal_outreach_status}
-                      </span>
-                      {isPending && (
-                        <button
-                          onClick={() => updateOutreach(conv.id, 'sent')}
-                          className="px-3 py-1 rounded-md text-[10px] font-semibold bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors"
-                        >
-                          Mark Sent
-                        </button>
-                      )}
-                      {isSent && (
-                        <button
-                          onClick={() => updateOutreach(conv.id, 'converted')}
-                          className="px-3 py-1 rounded-md text-[10px] font-semibold bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors"
-                        >
-                          Converted
-                        </button>
-                      )}
+                      <button
+                        onClick={() => updateOutreachStatus(c.id, 'sent')}
+                        className="text-xs px-3 py-1.5 bg-np-blue text-white rounded-lg hover:bg-np-blue/90 font-medium"
+                      >
+                        Mark Sent
+                      </button>
+                      <button
+                        onClick={() => updateOutreachStatus(c.id, 'converted')}
+                        className="text-xs px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
+                      >
+                        Converted
+                      </button>
                     </div>
                   </div>
-                )
-              })}
-              {conversions.length === 0 && (
-                <div className="text-center py-6 text-xs text-gray-400">
-                  No conversions yet. Conversions appear here when someone enrolls via podcast UTM or promo code.
-                </div>
-              )}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Performance table */}
-          <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-            <div className="px-5 py-3 border-b border-gray-100">
-              <h3 className="text-sm font-bold text-np-dark">Appearance Performance</h3>
-            </div>
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="bg-gray-50">
-                  {['Show','Air Date','Status','Promo','Enrollments','Revenue','Outreach','Score'].map(h => (
-                    <th key={h} className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-400 uppercase">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {appearances.filter(a => ['live','published','delivered'].includes(a.status)).map(a => {
-                  const appConversions = conversions.filter(c => c.appearance_id === a.id)
-                  const enrolls = appConversions.filter(c => c.conversion_type === 'course_enroll').length
-                  const revenue = appConversions.reduce((s, c) => s + (c.value || 0), 0)
-                  const outreachDone = appConversions.filter(c => c.personal_outreach_status !== 'pending').length
-                  const outreachTotal = appConversions.length
-                  return (
-                    <tr key={a.id} className="border-b border-gray-50">
-                      <td className="px-4 py-2.5 font-semibold text-np-dark">{a.platform}</td>
-                      <td className="px-4 py-2.5 text-gray-500">{a.air_date || '—'}</td>
-                      <td className="px-4 py-2.5"><StatusBadge status={a.status} /></td>
-                      <td className="px-4 py-2.5 text-gray-500">{a.promo_code || '—'}</td>
-                      <td className="px-4 py-2.5 text-gray-500">{enrolls}</td>
-                      <td className="px-4 py-2.5 font-semibold text-emerald-600">{revenue > 0 ? `$${revenue}` : '—'}</td>
-                      <td className="px-4 py-2.5">
-                        <span className={outreachTotal > 0 && outreachDone === outreachTotal ? 'text-emerald-500' : 'text-amber-500'}>
-                          {outreachTotal > 0 ? `${outreachDone}/${outreachTotal}` : '—'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5">
-                        {a.performance_score && (
-                          <span className={`font-extrabold text-sm ${SCORE_COLORS[a.performance_score]?.split(' ')[0]}`}>{a.performance_score}</span>
-                        )}
-                      </td>
+          {/* Conversions Table */}
+          {conversions.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-100">
+                <h3 className="font-semibold text-np-dark">All Conversions</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-100">
+                    <tr>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500">Contact</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500">Type</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500">Source</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500">Value</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500">Outreach</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500">Date</th>
                     </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {conversions.map(c => (
+                      <tr key={c.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 font-medium text-np-dark">{c.contact_name || c.contact_email}</td>
+                        <td className="px-4 py-3 text-gray-600">{c.conversion_type}</td>
+                        <td className="px-4 py-3 text-gray-500 text-xs font-mono">{c.promo_code || c.utm_campaign || c.source}</td>
+                        <td className="px-4 py-3 text-gray-600">{c.value ? `$${c.value}` : '-'}</td>
+                        <td className="px-4 py-3">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                            c.personal_outreach_status === 'converted' ? 'bg-green-100 text-green-700' :
+                            c.personal_outreach_status === 'sent' ? 'bg-blue-100 text-blue-700' :
+                            'bg-amber-100 text-amber-700'
+                          }`}>
+                            {c.personal_outreach_status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-gray-500 text-xs">{new Date(c.created_at).toLocaleDateString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* ═══════════════════════════════════════ */}
-      {/* INTEGRATIONS TAB                         */}
-      {/* ═══════════════════════════════════════ */}
-      {subTab === 'integrations' && (
-        <div>
-          <div className="bg-violet-50 border border-violet-100 rounded-xl p-5 mb-5">
-            <h2 className="text-sm font-bold text-np-dark mb-1">Integration Connection Map</h2>
-            <p className="text-xs text-gray-500">Every integration needed for the podcast pipeline to work end-to-end. These touch existing Hub systems without modifying their core logic.</p>
-          </div>
-
-          <div className="flex gap-3 mb-5">
-            {[
-              { label: 'CRITICAL', color: 'bg-red-50 text-red-600 border-red-200', count: 2 },
-              { label: 'HIGH', color: 'bg-amber-50 text-amber-600 border-amber-200', count: 3 },
-              { label: 'MEDIUM', color: 'bg-blue-50 text-blue-600 border-blue-200', count: 2 },
-            ].map((p, i) => (
-              <div key={i} className={`flex items-center gap-2 px-4 py-2 rounded-lg border ${p.color}`}>
-                <span className="text-lg font-extrabold">{p.count}</span>
-                <span className="text-[10px] font-bold uppercase tracking-wider">{p.label}</span>
-              </div>
-            ))}
-          </div>
-
-          <div className="space-y-3">
-            {[
-              { title: 'Enrollment → Attribution Loop', priority: 'CRITICAL', priColor: 'text-red-500', from: 'NPU University', to: 'Hub Media & Affiliates', desc: 'University captures UTM params at enrollment, POSTs to /api/integrations/podcast-conversion. Hub creates conversion record + auto-task + notification.' },
-              { title: 'Real-Time Notifications', priority: 'CRITICAL', priColor: 'text-red-500', from: 'Podcast Conversions', to: 'Hub Bell + SMS + Email', desc: 'Supabase trigger fires on new conversion → Hub bell notification → SMS via Twilio → daily email digest. Ensures you know immediately.' },
-              { title: 'Host ↔ CRM Contact Card', priority: 'HIGH', priColor: 'text-amber-500', from: 'Media & Affiliates', to: 'CRM Contacts + Network', desc: 'Every host is a CRM contact tagged podcast_host. Appearance card links to CRM card. Contact card shows all appearances with this host.' },
-              { title: 'Tasks System Integration', priority: 'HIGH', priColor: 'text-amber-500', from: 'Pipeline Stage Changes', to: 'Hub Tasks Page', desc: 'Status changes auto-create tasks visible in both outreach queue AND main Tasks page. Booked → send guest sheet. Live → 14-day promo sequence.' },
-              { title: 'Calendar Integration', priority: 'HIGH', priColor: 'text-amber-500', from: 'Appearance Dates', to: 'Hub Calendar + Google Calendar', desc: 'Recording and air dates auto-create Google Calendar events with reminders via existing OAuth connection.' },
-              { title: 'Social Creator ↔ Repurpose', priority: 'MEDIUM', priColor: 'text-blue-500', from: 'Media & Affiliates', to: 'Social Creator', desc: 'Repurpose button passes appearance data to Social Creator in campaign-connected mode. Transcript, quotes, UTM links pre-loaded.' },
-              { title: 'Inbound Quick-Add', priority: 'MEDIUM', priColor: 'text-blue-500', from: 'Email / DM', to: 'Media & Affiliates at Booked', desc: 'Inbound path skips Prospect + Pitched, starts at Booked, auto-creates CRM contact, generates guest sheet ready to send.' },
-            ].map((intg, i) => (
-              <div key={i} className="bg-white border border-gray-100 rounded-xl p-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className="text-sm font-bold text-np-dark">{intg.title}</span>
-                      <span className={`text-[9px] font-bold uppercase ${intg.priColor}`}>{intg.priority}</span>
-                    </div>
-                    <div className="text-[10px] text-gray-400 mb-1">{intg.from} → {intg.to}</div>
-                    <p className="text-xs text-gray-500 leading-relaxed">{intg.desc}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ═══════════════════════════════════════ */}
-      {/* CREATE MODAL                             */}
-      {/* ═══════════════════════════════════════ */}
-      {showCreateModal && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => setShowCreateModal(false)}>
-          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-              <div>
-                <h2 className="text-base font-bold text-np-dark">New Appearance</h2>
-                <span className={`text-[10px] font-bold ${createEntryType === 'inbound' ? 'text-emerald-600' : 'text-gray-400'}`}>
-                  {createEntryType === 'inbound' ? '📥 Inbound — starts at Booked' : '🎯 Outbound — starts at Prospect'}
+      {/* ═══════ INTEGRATIONS TAB ═══════ */}
+      {subTab === 'Integrations' && (
+        <div className="space-y-4 max-w-3xl">
+          <p className="text-sm text-gray-500">How Media & Affiliates connects to the rest of NPU Hub.</p>
+          {INTEGRATIONS_LIST.map(intg => (
+            <div key={intg.name} className="bg-white rounded-xl border border-gray-100 p-5">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-semibold text-np-dark">{intg.name}</h3>
+                <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${
+                  intg.priority === 'CRITICAL' ? 'bg-red-100 text-red-700' :
+                  intg.priority === 'HIGH' ? 'bg-amber-100 text-amber-700' :
+                  'bg-gray-100 text-gray-600'
+                }`}>
+                  {intg.priority}
                 </span>
               </div>
-              <button onClick={() => setShowCreateModal(false)} className="text-gray-300 hover:text-gray-500 text-lg">&times;</button>
+              <p className="text-sm text-gray-600">{intg.description}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ═══════ CREATE MODAL ═══════ */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setShowCreateModal(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <h2 className="text-lg font-semibold text-np-dark">
+                New {createEntryType === 'inbound' ? 'Inbound' : 'Outbound'} Appearance
+              </h2>
+              <button onClick={() => setShowCreateModal(false)} className="p-1.5 hover:bg-gray-100 rounded-lg">
+                <X className="w-4 h-4" />
+              </button>
             </div>
             <div className="p-6 space-y-4">
               <div>
-                <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Type</label>
-                <select value={formData.type} onChange={e => setFormData(f => ({ ...f, type: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20">
-                  {Object.entries(TYPE_CONFIG).filter(([k]) => k !== 'all').map(([k, v]) => (
-                    <option key={k} value={k}>{v.label}</option>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                <select
+                  value={form.type}
+                  onChange={e => setForm(f => ({ ...f, type: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
+                >
+                  {TYPE_FILTERS.filter(t => t.key !== 'all').map(t => (
+                    <option key={t.key} value={t.key}>{t.label.replace(/s$/, '')}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Title / Episode Topic *</label>
-                <input value={formData.title} onChange={e => setFormData(f => ({ ...f, title: e.target.value }))} placeholder="e.g., Nervous System Capacity & VR Biofeedback" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Title *</label>
+                <input
+                  type="text"
+                  value={form.title}
+                  onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+                  placeholder="Episode or appearance title"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
+                />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Show / Platform</label>
-                  <input value={formData.platform} onChange={e => setFormData(f => ({ ...f, platform: e.target.value }))} placeholder="e.g., Mind Body Podcast" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20" />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Platform / Show</label>
+                  <input
+                    type="text"
+                    value={form.platform}
+                    onChange={e => setForm(f => ({ ...f, platform: e.target.value }))}
+                    placeholder="e.g., Huberman Lab"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
+                  />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Host</label>
-                  <input value={formData.host} onChange={e => setFormData(f => ({ ...f, host: e.target.value }))} placeholder="e.g., Dr. Sarah Chen" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20" />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Host</label>
+                  <input
+                    type="text"
+                    value={form.host}
+                    onChange={e => setForm(f => ({ ...f, host: e.target.value }))}
+                    placeholder="Host name"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
+                  />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Recording Date</label>
-                  <input type="date" value={formData.recording_date} onChange={e => setFormData(f => ({ ...f, recording_date: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20" />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Recording Date</label>
+                  <input
+                    type="date"
+                    value={form.recording_date}
+                    onChange={e => setForm(f => ({ ...f, recording_date: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
+                  />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Air Date</label>
-                  <input type="date" value={formData.air_date} onChange={e => setFormData(f => ({ ...f, air_date: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20" />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Air Date</label>
+                  <input
+                    type="date"
+                    value={form.air_date}
+                    onChange={e => setForm(f => ({ ...f, air_date: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
+                  />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Affiliate Tier</label>
-                  <select value={formData.affiliate_tier} onChange={e => setFormData(f => ({ ...f, affiliate_tier: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20">
-                    <option value="none">None</option>
-                    <option value="tier1">Tier 1 — Awareness</option>
-                    <option value="tier2">Tier 2 — Revenue Share</option>
-                    <option value="tier3">Tier 3 — Full Partnership</option>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Affiliate Tier</label>
+                  <select
+                    value={form.affiliate_tier}
+                    onChange={e => setForm(f => ({ ...f, affiliate_tier: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
+                  >
+                    {AFFILIATE_TIERS.map(t => (
+                      <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
+                    ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Promo Code</label>
-                  <input value={formData.promo_code} onChange={e => setFormData(f => ({ ...f, promo_code: e.target.value }))} placeholder="e.g., PODCAST-MINDBODY" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20" />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Promo Code</label>
+                  <input
+                    type="text"
+                    value={form.promo_code}
+                    onChange={e => setForm(f => ({ ...f, promo_code: e.target.value }))}
+                    placeholder="PODCAST-SHOWNAME"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
+                  />
                 </div>
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">UTM Campaign Slug</label>
-                <input value={formData.utm_campaign} onChange={e => setFormData(f => ({ ...f, utm_campaign: e.target.value }))} placeholder="Auto-generates from platform name if blank" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">UTM Campaign</label>
+                <input
+                  type="text"
+                  value={form.utm_campaign}
+                  onChange={e => setForm(f => ({ ...f, utm_campaign: e.target.value }))}
+                  placeholder="show-slug (auto-used as utm_campaign)"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
+                />
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Notes</label>
-                <textarea value={formData.description} onChange={e => setFormData(f => ({ ...f, description: e.target.value }))} rows={3} placeholder="Key topics, audience notes, etc." className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 resize-none" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea
+                  value={form.description}
+                  onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                  placeholder="Notes about this appearance..."
+                  rows={3}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue resize-none"
+                />
               </div>
             </div>
-            <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-2">
-              <button onClick={() => setShowCreateModal(false)} className="px-4 py-2 text-sm font-semibold text-gray-500 hover:text-gray-700">Cancel</button>
-              <button onClick={createAppearance} disabled={!formData.title} className="px-6 py-2 bg-np-blue text-white rounded-lg text-sm font-semibold hover:bg-np-blue/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-100">
+              <button onClick={() => setShowCreateModal(false)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">
+                Cancel
+              </button>
+              <button
+                onClick={createAppearance}
+                disabled={!form.title}
+                className="px-4 py-2 bg-np-blue text-white rounded-lg text-sm font-medium hover:bg-np-blue/90 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
                 Create Appearance
               </button>
             </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════
+// APPEARANCE CARD COMPONENT
+// ═══════════════════════════════════════════════════════
+
+function AppearanceCard({
+  item,
+  expanded,
+  onToggle,
+  onDelete,
+  contentPieces,
+}: {
+  item: Appearance
+  expanded: boolean
+  onToggle: () => void
+  onDelete: (id: string) => void
+  contentPieces: ContentPiece[]
+}) {
+  const TypeIcon = TYPE_ICONS[item.type] || Globe
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
+      <div className="p-4 cursor-pointer" onClick={onToggle}>
+        {/* Top row: type icon + entry badge */}
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <TypeIcon className="w-4 h-4 text-gray-400" />
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+              item.entry_type === 'inbound' ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'
+            }`}>
+              {item.entry_type}
+            </span>
+          </div>
+          {item.performance_score && (
+            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${SCORE_COLORS[item.performance_score] || ''}`}>
+              {item.performance_score}
+            </span>
+          )}
+        </div>
+
+        {/* Title */}
+        <h3 className="font-medium text-np-dark text-sm leading-snug mb-1 line-clamp-2">{item.title}</h3>
+
+        {/* Platform / Host */}
+        {(item.platform || item.host) && (
+          <p className="text-xs text-gray-500 mb-2">
+            {item.platform}{item.platform && item.host ? ' \u00b7 ' : ''}{item.host}
+          </p>
+        )}
+
+        {/* Topics */}
+        {item.key_topics?.length > 0 && (
+          <div className="flex flex-wrap gap-1 mb-2">
+            {item.key_topics.slice(0, 3).map(t => (
+              <span key={t} className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">{t}</span>
+            ))}
+            {item.key_topics.length > 3 && (
+              <span className="text-[10px] text-gray-400">+{item.key_topics.length - 3}</span>
+            )}
+          </div>
+        )}
+
+        {/* Integration indicators */}
+        <div className="flex items-center gap-3 text-[10px] text-gray-400">
+          {item.host_contact_id && <span className="flex items-center gap-0.5"><Link2 className="w-3 h-3" /> CRM</span>}
+          {item.calendar_events_count > 0 && <span className="flex items-center gap-0.5"><Calendar className="w-3 h-3" /> {item.calendar_events_count}</span>}
+          {item.social_posts_count > 0 && <span className="flex items-center gap-0.5"><Share2 className="w-3 h-3" /> {item.social_posts_count}</span>}
+          {item.tasks_created > 0 && (
+            <span className="flex items-center gap-0.5">
+              <CheckCircle2 className="w-3 h-3" /> {item.tasks_completed}/{item.tasks_created}
+            </span>
+          )}
+          {item.promo_code && <span className="flex items-center gap-0.5"><Tag className="w-3 h-3" /> {item.promo_code}</span>}
+        </div>
+      </div>
+
+      {/* Expanded details */}
+      {expanded && (
+        <div className="border-t border-gray-100 p-4 space-y-3 bg-gray-50/50">
+          {item.description && <p className="text-sm text-gray-600">{item.description}</p>}
+
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            <div>
+              <span className="text-gray-400">Status</span>
+              <div className="font-medium text-np-dark mt-0.5">{item.status.replace(/_/g, ' ')}</div>
+            </div>
+            <div>
+              <span className="text-gray-400">Affiliate Tier</span>
+              <div className="font-medium text-np-dark mt-0.5 capitalize">{item.affiliate_tier}</div>
+            </div>
+            {item.recording_date && (
+              <div>
+                <span className="text-gray-400">Recording</span>
+                <div className="font-medium text-np-dark mt-0.5">{new Date(item.recording_date).toLocaleDateString()}</div>
+              </div>
+            )}
+            {item.air_date && (
+              <div>
+                <span className="text-gray-400">Air Date</span>
+                <div className="font-medium text-np-dark mt-0.5">{new Date(item.air_date).toLocaleDateString()}</div>
+              </div>
+            )}
+          </div>
+
+          {item.key_quotes?.length > 0 && (
+            <div>
+              <span className="text-xs text-gray-400">Key Quotes</span>
+              {item.key_quotes.map((q, i) => (
+                <p key={i} className="text-sm text-gray-600 italic mt-1">&ldquo;{q}&rdquo;</p>
+              ))}
+            </div>
+          )}
+
+          {item.url && (
+            <a href={item.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-sm text-np-blue hover:underline">
+              <ExternalLink className="w-3.5 h-3.5" /> View Episode
+            </a>
+          )}
+
+          {contentPieces.length > 0 && (
+            <div>
+              <span className="text-xs text-gray-400 mb-1 block">Content Pieces ({contentPieces.length})</span>
+              {contentPieces.map(cp => (
+                <div key={cp.id} className="flex items-center gap-2 text-xs text-gray-600 mt-1">
+                  <FileText className="w-3 h-3 text-gray-400" />
+                  <span>{cp.title}</span>
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] ${cp.status === 'published' ? 'bg-green-50 text-green-600' : 'bg-gray-100 text-gray-500'}`}>
+                    {cp.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Action buttons */}
+          <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+            <button className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600">
+              <Edit3 className="w-3 h-3" /> Edit
+            </button>
+            <button className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600">
+              <RefreshCw className="w-3 h-3" /> Repurpose
+            </button>
+            <button
+              onClick={e => { e.stopPropagation(); onDelete(item.id) }}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-white border border-red-200 rounded-lg hover:bg-red-50 text-red-500"
+            >
+              <Trash2 className="w-3 h-3" /> Delete
+            </button>
           </div>
         </div>
       )}
