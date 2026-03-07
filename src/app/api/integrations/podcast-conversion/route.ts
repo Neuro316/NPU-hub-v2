@@ -92,21 +92,40 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 4. Auto-create outreach task
-    const { error: taskError } = await supabase
-      .from('tasks')
-      .insert({
-        org_id,
-        title: `Personally reach out to ${name || email} from ${showName}`,
-        description: `New podcast-attributed enrollment via ${promo_code || utm_campaign || 'UTM link'}. They heard you on ${showName} and just enrolled. Reach out within 24 hours.\n\nEmail: ${email}\nSource: ${promo_code ? `Promo code ${promo_code}` : `UTM campaign ${utm_campaign}`}`,
-        priority: 'high',
-        status: 'todo',
-        due_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-        contact_id,
-      })
+    // 4. Auto-create outreach task in kanban_tasks
+    // Find the first (default) column for this org
+    const { data: defaultCol } = await supabase
+      .from('kanban_columns')
+      .select('id')
+      .eq('org_id', org_id)
+      .order('sort_order', { ascending: true })
+      .limit(1)
+      .single()
 
-    if (taskError) {
-      console.error('Failed to create outreach task:', taskError)
+    let taskError: { message: string; code: string; details: string | null } | null = null
+    if (defaultCol) {
+      const { error } = await supabase
+        .from('kanban_tasks')
+        .insert({
+          org_id,
+          column_id: defaultCol.id,
+          title: `Personally reach out to ${name || email} from ${showName}`,
+          description: `New podcast-attributed enrollment via ${promo_code || utm_campaign || 'UTM link'}. They heard you on ${showName} and just enrolled. Reach out within 24 hours.\n\nEmail: ${email}\nSource: ${promo_code ? `Promo code ${promo_code}` : `UTM campaign ${utm_campaign}`}`,
+          priority: 'high',
+          due_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          source: 'media_appearance',
+          visibility: 'everyone',
+          sort_order: 0,
+          custom_fields: {},
+          ai_generated: false,
+        })
+      if (error) {
+        taskError = error
+        console.error('Failed to create outreach task:', error)
+      }
+    } else {
+      taskError = { message: 'No kanban_columns found for org', code: 'NO_COLUMN', details: null }
+      console.error('Failed to create outreach task: no kanban columns for org', org_id)
     }
 
     // 5. Send SMS notification via Twilio if configured
@@ -140,7 +159,7 @@ export async function POST(req: NextRequest) {
       appearance_id: conversion?.appearance_id,
       task_created: !taskError,
       task_error: taskError ? { message: taskError.message, code: taskError.code, details: taskError.details } : null,
-      _version: 'b75f540',
+      _version: '76c2250',
     })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal server error'
