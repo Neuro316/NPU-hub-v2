@@ -394,7 +394,7 @@ export default function MediaAffiliatesPage() {
         .from('kanban_columns')
         .select('id')
         .eq('org_id', orgId)
-        .eq('name', 'Action Steps')
+        .eq('title', 'Action Steps')
         .limit(1)
         .single()
 

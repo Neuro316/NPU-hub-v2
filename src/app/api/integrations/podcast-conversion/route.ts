@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
       .from('kanban_columns')
       .select('id')
       .eq('org_id', org_id)
-      .eq('name', 'Action Steps')
+      .eq('title', 'Action Steps')
       .limit(1)
       .single()
 
