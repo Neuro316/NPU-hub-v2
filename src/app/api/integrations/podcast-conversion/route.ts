@@ -93,14 +93,23 @@ export async function POST(req: NextRequest) {
     }
 
     // 4. Auto-create outreach task in kanban_tasks
-    // Find the first (default) column for this org
-    const { data: defaultCol } = await supabase
+    // Look for "Action Steps" column, fall back to first column
+    const { data: actionStepsCol } = await supabase
+      .from('kanban_columns')
+      .select('id')
+      .eq('org_id', org_id)
+      .eq('name', 'Action Steps')
+      .limit(1)
+      .single()
+
+    const defaultCol = actionStepsCol || (await supabase
       .from('kanban_columns')
       .select('id')
       .eq('org_id', org_id)
       .order('sort_order', { ascending: true })
       .limit(1)
       .single()
+    ).data
 
     let taskError: { message: string; code: string; details: string | null } | null = null
     if (defaultCol) {
