@@ -171,6 +171,53 @@ const INTEGRATIONS_LIST = [
 ]
 
 // ═══════════════════════════════════════════════════════
+// AUTO-TASK CREATION ON STATUS CHANGE
+// ═══════════════════════════════════════════════════════
+
+interface AutoTaskDef {
+  titleTemplate: string
+  dueDays: number
+  priority: 'high' | 'medium'
+}
+
+const STATUS_TASK_MAP: Record<string, Record<string, AutoTaskDef[]>> = {
+  podcast: {
+    booked: [{ titleTemplate: 'Send guest sheet to [Host] for [Platform]', dueDays: 2, priority: 'high' }],
+    prepped: [{ titleTemplate: 'Confirm talking points with [Host]', dueDays: 3, priority: 'medium' }],
+    recorded: [{ titleTemplate: 'Request transcript from [Host]', dueDays: 3, priority: 'medium' }],
+    post_prod: [{ titleTemplate: 'Create social media posts for [Title]', dueDays: 5, priority: 'medium' }],
+    live: [
+      { titleTemplate: 'Day-of announcement post for [Title] on [Platform]', dueDays: 0, priority: 'high' },
+      { titleTemplate: '14-day promo schedule for [Title]', dueDays: 14, priority: 'high' },
+      { titleTemplate: 'Verify show notes have UTM links for [Platform]', dueDays: 1, priority: 'high' },
+    ],
+    archived: [{ titleTemplate: '30-day review: Score [Title] on [Platform]', dueDays: 0, priority: 'medium' }],
+  },
+  interview: {
+    scheduled: [{ titleTemplate: 'Prepare talking points for [Platform] interview', dueDays: 3, priority: 'medium' }],
+    published: [{ titleTemplate: 'Create social posts promoting [Title]', dueDays: 1, priority: 'medium' }],
+  },
+  speaking: {
+    booked: [{ titleTemplate: 'Prepare presentation for [Platform]', dueDays: 7, priority: 'high' }],
+    delivered: [{ titleTemplate: 'Repurpose [Title] content into social posts', dueDays: 3, priority: 'medium' }],
+  },
+  press: {
+    published: [{ titleTemplate: 'Share [Title] press coverage on social', dueDays: 1, priority: 'medium' }],
+  },
+  webinar: {
+    scheduled: [{ titleTemplate: 'Create promotion plan for [Title]', dueDays: 5, priority: 'medium' }],
+    delivered: [{ titleTemplate: 'Repurpose [Title] recording into clips', dueDays: 3, priority: 'medium' }],
+  },
+}
+
+function buildTaskTitle(template: string, appearance: Appearance): string {
+  return template
+    .replace('[Host]', appearance.host || 'host')
+    .replace('[Platform]', appearance.platform || appearance.type)
+    .replace('[Title]', appearance.title || 'Untitled')
+}
+
+// ═══════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════
 
@@ -336,6 +383,56 @@ export default function MediaAffiliatesPage() {
     loadData()
   }
 
+  const createAutoTask = async (appearance: Appearance, newStatus: string) => {
+    if (!orgId) return
+    const taskDefs = STATUS_TASK_MAP[appearance.type]?.[newStatus]
+    if (!taskDefs || taskDefs.length === 0) return
+
+    try {
+      // Look for "Action Steps" column, fall back to first column
+      const { data: actionStepsCol } = await supabase
+        .from('kanban_columns')
+        .select('id')
+        .eq('org_id', orgId)
+        .eq('name', 'Action Steps')
+        .limit(1)
+        .single()
+
+      const columnId = actionStepsCol?.id || (await supabase
+        .from('kanban_columns')
+        .select('id')
+        .eq('org_id', orgId)
+        .order('sort_order', { ascending: true })
+        .limit(1)
+        .single()
+      ).data?.id
+
+      if (!columnId) {
+        console.error('createAutoTask: no kanban columns found for org', orgId)
+        return
+      }
+
+      for (const def of taskDefs) {
+        const { error } = await supabase.from('kanban_tasks').insert({
+          org_id: orgId,
+          column_id: columnId,
+          title: buildTaskTitle(def.titleTemplate, appearance),
+          description: `Auto-created when "${appearance.title}" moved to ${newStatus.replace(/_/g, ' ')}.`,
+          priority: def.priority,
+          due_date: new Date(Date.now() + def.dueDays * 24 * 60 * 60 * 1000).toISOString(),
+          source: 'media_appearance',
+          visibility: 'everyone',
+          sort_order: 0,
+          custom_fields: {},
+          ai_generated: false,
+        })
+        if (error) console.error('createAutoTask: failed to create task', error)
+      }
+    } catch (err) {
+      console.error('createAutoTask: unexpected error', err)
+    }
+  }
+
   const saveAppearance = async (updated: Appearance) => {
     const { error } = await supabase.from('media_appearances').update({
       type: updated.type,
@@ -362,6 +459,9 @@ export default function MediaAffiliatesPage() {
       alert(`Failed to save: ${error.message}\n\nCode: ${error.code}\nDetails: ${error.details || 'none'}`)
       return
     }
+    if (updated.status !== editingAppearance?.status) {
+      createAutoTask(updated, updated.status)
+    }
     setEditingAppearance(null)
     loadData()
   }
@@ -377,6 +477,7 @@ export default function MediaAffiliatesPage() {
       alert(`Failed to advance stage: ${error.message}`)
       return
     }
+    createAutoTask(item, nextStatus)
     loadData()
   }
 
