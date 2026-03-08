@@ -121,16 +121,29 @@ export default function GuestSheetPage() {
       {/* Print styles */}
       <style jsx global>{`
         @media print {
-          /* Hide sidebar, nav, header, topbar, and non-content elements */
-          nav, aside, header, [data-sidebar], [data-topbar],
+          /* Aggressively hide ALL navigation, sidebar, and chrome */
+          nav, aside, header,
+          [data-sidebar], [data-topbar],
+          [class*="sidebar"], [class*="Sidebar"],
+          [class*="nav-"], [class*="Nav"],
+          [role="navigation"],
           .no-print, button.no-print,
-          div[class*="sidebar"], div[class*="Sidebar"],
-          h1[class*="NPU"], div:has(> h1:first-child) > div:first-child {
+          .fixed {
+            display: none !important;
+          }
+
+          /* Target common Next.js layout wrappers for sidebar/nav */
+          body > div > div > aside,
+          body > div > div > nav,
+          body > div > div > header {
             display: none !important;
           }
 
           /* Reset layout for print — override all wrapper margins/padding */
-          main, [data-main-content], body > div, body > div > div, body > div > div > div {
+          main, [role="main"], .guest-sheet-content,
+          [data-main-content],
+          body > div, body > div > div, body > div > div > div,
+          body > div > div > main {
             margin: 0 !important;
             padding: 0 !important;
             max-width: 100% !important;
@@ -159,7 +172,7 @@ export default function GuestSheetPage() {
         }
       `}</style>
 
-      <div className="max-w-4xl mx-auto p-6 print:p-0 print:max-w-none">
+      <div className="guest-sheet-content max-w-4xl mx-auto p-6 print:p-0 print:max-w-none">
         {/* Print button - hidden in print */}
         <div className="no-print mb-6 flex items-center justify-between">
           <button
@@ -393,12 +406,7 @@ export default function GuestSheetPage() {
 
       {/* Print-only footer logo — fixed position shows on every printed page */}
       <div className="guest-sheet-print-footer hidden" aria-hidden="true">
-        <div className="flex items-center gap-1.5">
-          <div className="w-5 h-5 rounded bg-[#386797] flex items-center justify-center">
-            <span className="text-white text-[8px] font-bold leading-none">NP</span>
-          </div>
-          <span className="text-[10px] font-semibold tracking-wider text-slate-400 uppercase">Neuro Progeny</span>
-        </div>
+        <img src="/images/np-logo.png" alt="Neuro Progeny" style={{ height: '24px', opacity: 0.6 }} />
       </div>
     </>
   )
