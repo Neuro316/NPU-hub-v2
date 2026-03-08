@@ -729,32 +729,58 @@ export default function MediaAffiliatesPage() {
       {/* ═══════ GUEST SHEET TAB ═══════ */}
       {subTab === 'Guest Sheet' && (
         <div className="space-y-4 max-w-3xl">
-          <p className="text-sm text-gray-500">Prepare these sections before each appearance. Hosts often request this info in advance.</p>
-          {GUEST_SHEET_SECTIONS.map(section => (
-            <div key={section.key} className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-              <button
-                onClick={() => setGuestSheetOpen(prev => ({ ...prev, [section.key]: !prev[section.key] }))}
-                className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="font-medium text-np-dark">{section.title}</span>
-                  {section.internal && (
-                    <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">Internal</span>
-                  )}
-                </div>
-                <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${guestSheetOpen[section.key] ? 'rotate-90' : ''}`} />
-              </button>
-              {guestSheetOpen[section.key] && (
-                <div className="px-5 pb-5 border-t border-gray-50">
-                  <p className="text-sm text-gray-500 mt-3 mb-3">{section.description}</p>
-                  <textarea
-                    className="w-full h-32 border border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue resize-none"
-                    placeholder={`Add your ${section.title.toLowerCase()} here...`}
-                  />
-                </div>
+          <p className="text-sm text-gray-500">Generate a print-ready guest sheet for any appearance. Select an appearance below to open its guest sheet.</p>
+          <div className="bg-white rounded-xl border border-gray-100 p-5">
+            <h3 className="font-semibold text-np-dark mb-3">Generate Guest Sheet</h3>
+            <div className="space-y-2">
+              {appearances.filter(a => ['booked', 'prepped', 'recorded', 'scheduled', 'confirmed'].includes(a.status)).length === 0 ? (
+                <p className="text-sm text-gray-400">No upcoming appearances to generate sheets for. Sheets can be generated for booked/prepped/scheduled appearances.</p>
+              ) : (
+                appearances.filter(a => ['booked', 'prepped', 'recorded', 'scheduled', 'confirmed'].includes(a.status)).map(a => (
+                  <button
+                    key={a.id}
+                    onClick={() => window.open(`/guest-sheet/${a.id}`, '_blank')}
+                    className="w-full flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-np-blue/5 hover:border-np-blue/20 border border-transparent transition-colors text-left"
+                  >
+                    <div className="flex items-center gap-3">
+                      <FileText className="w-4 h-4 text-gray-400" />
+                      <div>
+                        <span className="text-sm font-medium text-np-dark">{a.title}</span>
+                        <span className="text-xs text-gray-500 ml-2">{a.platform || a.type}{a.host ? ` \u00b7 ${a.host}` : ''}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STAGE_COLORS[a.status] || 'bg-gray-100 text-gray-600'}`}>
+                        {a.status.replace(/_/g, ' ')}
+                      </span>
+                      <ArrowRight className="w-3.5 h-3.5 text-gray-400" />
+                    </div>
+                  </button>
+                ))
               )}
             </div>
-          ))}
+          </div>
+          <div className="bg-white rounded-xl border border-gray-100 p-5">
+            <h3 className="font-semibold text-np-dark mb-3">All Appearances</h3>
+            <div className="space-y-2">
+              {appearances.map(a => (
+                <button
+                  key={a.id}
+                  onClick={() => window.open(`/guest-sheet/${a.id}`, '_blank')}
+                  className="w-full flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-np-blue/5 hover:border-np-blue/20 border border-transparent transition-colors text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <FileText className="w-4 h-4 text-gray-400" />
+                    <div>
+                      <span className="text-sm font-medium text-np-dark">{a.title}</span>
+                      <span className="text-xs text-gray-500 ml-2">{a.platform || a.type}</span>
+                    </div>
+                  </div>
+                  <ArrowRight className="w-3.5 h-3.5 text-gray-400" />
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
@@ -1497,10 +1523,10 @@ function AppearanceCard({
               <Edit3 className="w-3 h-3" /> Edit
             </button>
             <button
-              onClick={e => { e.stopPropagation(); console.log('Repurpose appearance:', item.id, item.title) }}
+              onClick={e => { e.stopPropagation(); window.open(`/guest-sheet/${item.id}`, '_blank') }}
               className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600"
             >
-              <RefreshCw className="w-3 h-3" /> Repurpose
+              <FileText className="w-3 h-3" /> Guest Sheet
             </button>
             <button
               onClick={e => { e.stopPropagation(); onDelete(item.id) }}
