@@ -406,7 +406,7 @@ export default function GuestSheetPage() {
 
       {/* Print-only footer logo — fixed position shows on every printed page */}
       <div className="guest-sheet-print-footer hidden" aria-hidden="true">
-        <img src="/images/np-logo.png" alt="Neuro Progeny" style={{ height: '24px', opacity: 0.6 }} />
+        <img src="/images/np-logo.png" alt="Neuro Progeny" style={{ height: '40px', opacity: 0.8 }} />
       </div>
     </>
   )
