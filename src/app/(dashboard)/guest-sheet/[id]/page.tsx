@@ -121,27 +121,41 @@ export default function GuestSheetPage() {
       {/* Print styles */}
       <style jsx global>{`
         @media print {
-          /* Hide sidebar, nav, and non-content elements */
+          /* Hide sidebar, nav, header, topbar, and non-content elements */
           nav, aside, header, [data-sidebar], [data-topbar],
-          .no-print, button.no-print { display: none !important; }
+          .no-print, button.no-print,
+          div[class*="sidebar"], div[class*="Sidebar"],
+          h1[class*="NPU"], div:has(> h1:first-child) > div:first-child {
+            display: none !important;
+          }
 
-          /* Reset layout for print */
-          main, [data-main-content] {
+          /* Reset layout for print — override all wrapper margins/padding */
+          main, [data-main-content], body > div, body > div > div, body > div > div > div {
             margin: 0 !important;
             padding: 0 !important;
             max-width: 100% !important;
             width: 100% !important;
+            margin-left: 0 !important;
+            padding-left: 0 !important;
           }
 
           body { background: white !important; }
 
           @page {
-            margin: 0.6in 0.75in;
+            margin: 0.6in 0.75in 1in 0.75in;
             size: letter;
           }
 
           .print-page-break { break-before: page; }
           .print-avoid-break { break-inside: avoid; }
+
+          /* Fixed footer logo on every printed page */
+          .guest-sheet-print-footer {
+            display: block !important;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+          }
         }
       `}</style>
 
@@ -251,9 +265,17 @@ export default function GuestSheetPage() {
           </div>
 
           {appearance.promo_code && (
-            <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4 text-center">
-              <span className="text-xs font-bold text-green-600 block mb-1">PROMO CODE</span>
-              <span className="text-2xl font-bold text-green-700 font-mono tracking-wider">{appearance.promo_code}</span>
+            <div>
+              <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4 text-center">
+                <span className="text-xs font-bold text-green-600 block mb-1">PROMO CODE</span>
+                <span className="text-2xl font-bold text-green-700 font-mono tracking-wider">{appearance.promo_code}</span>
+              </div>
+              <div className="mt-3 bg-green-50/50 border border-green-100 rounded-lg p-4">
+                <span className="text-xs font-bold text-green-700 block mb-1.5">Here&apos;s what to tell your listeners:</span>
+                <p className="text-sm text-green-800 italic leading-relaxed">
+                  &ldquo;Head to neuroprogeny.com/courses/free and use the code <span className="font-bold not-italic">{appearance.promo_code}</span> for instant access to a free nervous system training course.&rdquo;
+                </p>
+              </div>
             </div>
           )}
 
@@ -366,6 +388,16 @@ export default function GuestSheetPage() {
 
         <div className="no-print text-center mt-8 text-xs text-gray-300">
           Generated from NPU Hub &bull; {new Date().toLocaleDateString()}
+        </div>
+      </div>
+
+      {/* Print-only footer logo — fixed position shows on every printed page */}
+      <div className="guest-sheet-print-footer hidden" aria-hidden="true">
+        <div className="flex items-center gap-1.5">
+          <div className="w-5 h-5 rounded bg-[#386797] flex items-center justify-center">
+            <span className="text-white text-[8px] font-bold leading-none">NP</span>
+          </div>
+          <span className="text-[10px] font-semibold tracking-wider text-slate-400 uppercase">Neuro Progeny</span>
         </div>
       </div>
     </>
