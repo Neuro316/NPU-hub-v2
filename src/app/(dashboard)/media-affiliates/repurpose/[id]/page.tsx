@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
 import {
   ArrowLeft, Mic, MessageCircle, Smartphone, Heart, Brain,
-  Copy, ExternalLink, Check, Calendar, ChevronDown, ChevronRight,
+  Copy, ExternalLink, Check, Calendar,
   Instagram, Linkedin, Twitter, Youtube, Facebook,
 } from 'lucide-react'
 
@@ -106,7 +106,6 @@ export default function RepurposePage() {
   const [profile, setProfile] = useState<GuestProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'posts' | 'schedule' | 'platforms'>('posts')
-  const [expandedPost, setExpandedPost] = useState<string | null>(null)
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const [selectedPlatforms, setSelectedPlatforms] = useState<Set<string>>(new Set(['instagram', 'linkedin', 'x']))
 
@@ -176,15 +175,10 @@ export default function RepurposePage() {
         <div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {POST_TYPES.map(pt => {
-              const Icon = pt.icon
-              const isExpanded = expandedPost === pt.key
               const text = generatePostText(pt, appearance, profile)
               return (
-                <div key={pt.key} className="bg-white border border-gray-100 rounded-xl overflow-hidden hover:border-gray-200 transition-colors">
-                  <button
-                    onClick={() => setExpandedPost(isExpanded ? null : pt.key)}
-                    className="w-full flex items-center gap-3 p-4 text-left"
-                  >
+                <div key={pt.key} className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+                  <div className="flex items-center gap-3 p-4">
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${pt.bg} flex-shrink-0`}>
                       <span className="text-lg">{pt.emoji}</span>
                     </div>
@@ -192,41 +186,35 @@ export default function RepurposePage() {
                       <p className="text-sm font-semibold text-np-dark">{pt.label}</p>
                       <p className="text-xs text-gray-400 mt-0.5">{pt.timing}</p>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex gap-0.5">
-                        {pt.platforms.slice(0, 3).map(p => {
-                          const pInfo = PLATFORM_INFO.find(pi => pi.key === p)
-                          return pInfo ? <div key={p} className="w-4 h-4 rounded-full flex items-center justify-center" style={{ backgroundColor: pInfo.color + '15' }}>
-                            <pInfo.icon className="w-2.5 h-2.5" style={{ color: pInfo.color }} />
-                          </div> : null
-                        })}
-                        {pt.platforms.length > 3 && <span className="text-[9px] text-gray-400">+{pt.platforms.length - 3}</span>}
-                      </div>
-                      {isExpanded ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+                    <div className="flex gap-0.5">
+                      {pt.platforms.slice(0, 3).map(p => {
+                        const pInfo = PLATFORM_INFO.find(pi => pi.key === p)
+                        return pInfo ? <div key={p} className="w-4 h-4 rounded-full flex items-center justify-center" style={{ backgroundColor: pInfo.color + '15' }}>
+                          <pInfo.icon className="w-2.5 h-2.5" style={{ color: pInfo.color }} />
+                        </div> : null
+                      })}
+                      {pt.platforms.length > 3 && <span className="text-[9px] text-gray-400">+{pt.platforms.length - 3}</span>}
                     </div>
-                  </button>
-
-                  {isExpanded && (
-                    <div className="px-4 pb-4 border-t border-gray-50">
-                      <div className="mt-3 p-3 bg-gray-50 rounded-lg">
-                        <p className="text-xs text-gray-600 leading-relaxed whitespace-pre-line">{text}</p>
-                      </div>
-                      <div className="flex items-center gap-2 mt-3">
-                        <a
-                          href={`/social?source=repurpose&appearance_id=${id}&post_type=${pt.key}`}
-                          className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-np-blue text-white rounded-lg hover:bg-np-blue/90 font-medium"
-                        >
-                          <ExternalLink className="w-3 h-3" /> Send to Social Creator
-                        </a>
-                        <button
-                          onClick={() => copyText(pt.key, text)}
-                          className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600"
-                        >
-                          {copiedKey === pt.key ? <><Check className="w-3 h-3 text-green-500" /> Copied</> : <><Copy className="w-3 h-3" /> Copy Text</>}
-                        </button>
-                      </div>
+                  </div>
+                  <div className="px-4 pb-4 border-t border-gray-50">
+                    <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+                      <p className="text-xs text-gray-600 leading-relaxed whitespace-pre-line">{text}</p>
                     </div>
-                  )}
+                    <div className="flex items-center gap-2 mt-3">
+                      <a
+                        href={`/social?source=repurpose&appearance_id=${id}&post_type=${pt.key}`}
+                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-np-blue text-white rounded-lg hover:bg-np-blue/90 font-medium"
+                      >
+                        <ExternalLink className="w-3 h-3" /> Send to Social Creator
+                      </a>
+                      <button
+                        onClick={() => copyText(pt.key, text)}
+                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600"
+                      >
+                        {copiedKey === pt.key ? <><Check className="w-3 h-3 text-green-500" /> Copied</> : <><Copy className="w-3 h-3" /> Copy Text</>}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )
             })}
