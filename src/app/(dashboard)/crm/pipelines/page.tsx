@@ -21,7 +21,7 @@ interface PipelineConfig {
   id: string; name: string; description?: string; stages: PipelineStageConfig[]; is_default?: boolean; card_config?: CardConfig
 }
 
-interface CardConfig {
+export interface CardConfig {
   template: 'marketing' | 'clinical' | 'mastermind' | 'minimal' | 'custom'
   sections: {
     contact_info: boolean
