@@ -42,15 +42,38 @@ const INTERNAL_EMAILS = new Set([
   'admin@neuroprogeny.com',
 ])
 
-// Pipeline stage mapping per track
+// Pipeline stage mapping per track — used as fallback only if pipeline lookup fails
 const STAGE_MAP: Record<string, string> = {
   subscribed:    'Subscribed',
   enrolled:      'Enrolled',
-  mastermind:    'Signed up',
+  mastermind:    'Awareness',
   discovery:     'Discovery',
   application:   'Application',
   payment_plan:  'Payment plan',
   new_lead:      'New Lead',
+}
+
+// Look up stage 1 of the active pipeline from org_settings
+async function resolveFirstStage(db: any, pipelineId: string, fallback: string): Promise<string> {
+  try {
+    const { data } = await db
+      .from('org_settings')
+      .select('setting_value')
+      .eq('org_id', NP_ORG_ID)
+      .eq('setting_key', 'crm_pipelines')
+      .single()
+    if (!data?.setting_value?.pipelines) return fallback
+    const pipelines: any[] = data.setting_value.pipelines
+    const pipeline = pipelineId
+      ? pipelines.find((p: any) => p.id === pipelineId)
+      : pipelines.find((p: any) => p.is_default) || pipelines[0]
+    if (!pipeline?.stages?.length) return fallback
+    // Return stage at position 0
+    const sorted = [...pipeline.stages].sort((a: any, b: any) => a.position - b.position)
+    return sorted[0].name || fallback
+  } catch {
+    return fallback
+  }
 }
 
 // Tags applied per track
@@ -167,7 +190,7 @@ export async function runOnboardingPipeline(
   const fullName = [firstName, lastName].filter(Boolean).join(' ')
 
   const track        = params.track
-  const pipelineStage = STAGE_MAP[track] || 'New Lead'
+  const pipelineStage = await resolveFirstStage(db, params.pipelineId || NP_PIPELINE_ID, STAGE_MAP[track] || 'New Lead')
   const trackTags    = TRACK_TAGS[track] || []
   const allTags      = Array.from(new Set([...trackTags, ...(params.extraTags || [])]))
 
