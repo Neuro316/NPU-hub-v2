@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
 import {
   Settings, Palette, MessageSquare, Target, Megaphone, Brain, Shield,
-  Save, ChevronDown, ChevronRight, Plus, X, Trash2, Loader2, Check, Sparkles, Mail, Wand2, Send
+  Save, ChevronDown, ChevronRight, Plus, X, Trash2, Loader2, Check, Sparkles, Mail, Wand2, Send, User, Upload
 } from 'lucide-react'
 import { SlackConfig } from '@/components/settings/slack-config'
 
@@ -331,7 +331,7 @@ Use Voss-style emotional labeling in objection-handling content.`,
   ugc_guidelines: 'Encourage capacity-focused language. Provide templates. Always get permission before reposting.',
 }
 
-type SectionKey = 'identity' | 'voice' | 'vocabulary' | 'messaging' | 'value' | 'psychology' | 'visual' | 'platforms' | 'ai_prompts' | 'email_templates' | 'guardrails' | 'engagement' | 'slack'
+type SectionKey = 'identity' | 'voice' | 'vocabulary' | 'messaging' | 'value' | 'psychology' | 'visual' | 'platforms' | 'ai_prompts' | 'email_templates' | 'guardrails' | 'engagement' | 'slack' | 'guest_profile'
 
 const TRIGGER_OPTIONS = [
   { value: 'manual', label: 'Manual', desc: 'Send from Journey Cards or integrations' },
@@ -339,6 +339,180 @@ const TRIGGER_OPTIONS = [
   { value: 'module_access', label: 'Auto: Module Access', desc: 'Sent when a member gets access to a new module' },
   { value: 'journey_complete', label: 'Auto: Journey Complete', desc: 'Sent when a journey card is marked complete' },
 ]
+
+const DEFAULT_GUEST_PROFILE = {
+  name: 'Cameron Allen',
+  title: 'Founder, Neuro Progeny & Sensorium Neuro Wellness',
+  email: 'cameron@neuroprogeny.com',
+  website: 'neuroprogeny.com',
+  bio_short: 'Cameron Allen is the founder of Neuro Progeny and Sensorium Neuro Wellness, where he develops capacity-based nervous system training programs using VR biofeedback and HRV monitoring. His work reframes nervous system states as adaptive capacities rather than deficits.',
+  preferred_intro: "Today's guest is Cameron Allen, founder of Neuro Progeny and Sensorium Neuro Wellness. Cameron is pioneering a capacity-based approach to nervous system training — using VR biofeedback and HRV monitoring to help people develop greater nervous system range. His philosophy is simple but powerful: your nervous system isn't broken, it's showing you evidence of its capacity. Cameron, welcome to the show.",
+  verbal_cta_template: "If this resonates with you, head to neuroprogeny.com/courses/free — I've put together a free nervous system training course that walks you through the capacity model.",
+  avoid_topics: ['Specific client medical diagnoses', 'Guarantees about clinical outcomes', 'Comparisons to specific competitor programs'],
+  social: {
+    instagram: '@neuroprogeny',
+    linkedin: 'linkedin.com/in/cameronallen-np',
+    youtube: '@neuroprogeny',
+    x: '@neuroprogeny',
+  },
+  headshot_url: null as string | null,
+}
+
+function GuestProfileEditor({ orgId }: { orgId: string | null }) {
+  const supabase = createClient()
+  const [profile, setProfile] = useState(DEFAULT_GUEST_PROFILE)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [uploading, setUploading] = useState(false)
+
+  useEffect(() => {
+    if (!orgId) return
+    supabase.from('organizations').select('guest_profile').eq('id', orgId).single()
+      .then(({ data }) => {
+        if (data?.guest_profile && typeof data.guest_profile === 'object') {
+          setProfile(prev => ({ ...prev, ...data.guest_profile as any }))
+        }
+      })
+  }, [orgId])
+
+  const handleSave = async () => {
+    if (!orgId) return
+    setSaving(true)
+    const { error } = await supabase.from('organizations').update({ guest_profile: profile }).eq('id', orgId)
+    if (error) {
+      console.error('Failed to save guest profile:', error)
+      alert(`Failed to save guest profile: ${error.message}\n\nCode: ${error.code}\nDetails: ${error.details || 'none'}`)
+    }
+    setSaving(false)
+    if (!error) {
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    }
+  }
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !orgId) return
+    setUploading(true)
+    const ext = file.name.split('.').pop()
+    const path = `${orgId}/headshot-${Date.now()}.${ext}`
+    const { error } = await supabase.storage.from('headshots').upload(path, file, { upsert: true })
+    if (error) {
+      console.error('Headshot upload failed:', error)
+      alert(`Headshot upload failed: ${error.message}`)
+      setUploading(false)
+      return
+    }
+    const { data: urlData } = supabase.storage.from('headshots').getPublicUrl(path)
+    setProfile(prev => ({ ...prev, headshot_url: urlData.publicUrl }))
+    setUploading(false)
+  }
+
+  const inputCls = "w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300"
+  const labelCls = "text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1"
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-gray-500 mb-2">This profile is used to generate guest sheets for podcast and media appearances.</p>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="mb-3">
+          <label className={labelCls}>Guest Name</label>
+          <input value={profile.name} onChange={e => setProfile(p => ({ ...p, name: e.target.value }))} className={inputCls} placeholder="Full name" />
+        </div>
+        <div className="mb-3">
+          <label className={labelCls}>Title</label>
+          <input value={profile.title} onChange={e => setProfile(p => ({ ...p, title: e.target.value }))} className={inputCls} placeholder="Your title" />
+        </div>
+        <div className="mb-3">
+          <label className={labelCls}>Email</label>
+          <input value={profile.email} onChange={e => setProfile(p => ({ ...p, email: e.target.value }))} className={inputCls} placeholder="Email" />
+        </div>
+        <div className="mb-3">
+          <label className={labelCls}>Website</label>
+          <input value={profile.website} onChange={e => setProfile(p => ({ ...p, website: e.target.value }))} className={inputCls} placeholder="yoursite.com" />
+        </div>
+      </div>
+
+      <div className="mb-3">
+        <label className={labelCls}>Short Bio</label>
+        <textarea value={profile.bio_short} onChange={e => setProfile(p => ({ ...p, bio_short: e.target.value }))}
+          rows={4} className={`${inputCls} resize-none`} placeholder="A short bio for show notes..." />
+      </div>
+
+      <div className="mb-3">
+        <label className={labelCls}>Preferred Introduction</label>
+        <textarea value={profile.preferred_intro} onChange={e => setProfile(p => ({ ...p, preferred_intro: e.target.value }))}
+          rows={5} className={`${inputCls} resize-none`} placeholder="How you'd like the host to introduce you..." />
+      </div>
+
+      <div className="mb-3">
+        <label className={labelCls}>Verbal CTA Template</label>
+        <textarea value={profile.verbal_cta_template} onChange={e => setProfile(p => ({ ...p, verbal_cta_template: e.target.value }))}
+          rows={3} className={`${inputCls} resize-none`} placeholder="Your go-to call to action..." />
+      </div>
+
+      <div className="mb-3">
+        <label className={labelCls}>Topics to Avoid (one per line)</label>
+        <textarea value={(profile.avoid_topics || []).join('\n')} onChange={e => setProfile(p => ({ ...p, avoid_topics: e.target.value.split('\n').filter(Boolean) }))}
+          rows={3} className={`${inputCls} resize-none`} placeholder="One topic per line..." />
+      </div>
+
+      <div className="border-t border-gray-100 pt-4 mt-4">
+        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-2">Social Handles</label>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="mb-3">
+            <label className="text-[10px] text-gray-400 block mb-1">Instagram</label>
+            <input value={profile.social?.instagram || ''} onChange={e => setProfile(p => ({ ...p, social: { ...p.social, instagram: e.target.value } }))} className={inputCls} placeholder="@handle" />
+          </div>
+          <div className="mb-3">
+            <label className="text-[10px] text-gray-400 block mb-1">LinkedIn</label>
+            <input value={profile.social?.linkedin || ''} onChange={e => setProfile(p => ({ ...p, social: { ...p.social, linkedin: e.target.value } }))} className={inputCls} placeholder="linkedin.com/in/..." />
+          </div>
+          <div className="mb-3">
+            <label className="text-[10px] text-gray-400 block mb-1">YouTube</label>
+            <input value={profile.social?.youtube || ''} onChange={e => setProfile(p => ({ ...p, social: { ...p.social, youtube: e.target.value } }))} className={inputCls} placeholder="@channel" />
+          </div>
+          <div className="mb-3">
+            <label className="text-[10px] text-gray-400 block mb-1">X / Twitter</label>
+            <input value={profile.social?.x || ''} onChange={e => setProfile(p => ({ ...p, social: { ...p.social, x: e.target.value } }))} className={inputCls} placeholder="@handle" />
+          </div>
+        </div>
+      </div>
+
+      <div className="border-t border-gray-100 pt-4 mt-4">
+        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-2">Headshot</label>
+        <div className="flex items-center gap-4">
+          {profile.headshot_url ? (
+            <img src={profile.headshot_url} alt="Headshot" className="w-20 h-20 rounded-xl object-cover border border-gray-200" />
+          ) : (
+            <div className="w-20 h-20 rounded-xl bg-gray-100 flex items-center justify-center border border-gray-200">
+              <User className="w-8 h-8 text-gray-300" />
+            </div>
+          )}
+          <div>
+            <label className="cursor-pointer flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm hover:bg-gray-50 text-gray-600">
+              <Upload className="w-4 h-4" />
+              {uploading ? 'Uploading...' : 'Upload Headshot'}
+              <input type="file" accept="image/*" onChange={handleUpload} className="hidden" />
+            </label>
+            {profile.headshot_url && (
+              <button onClick={() => setProfile(p => ({ ...p, headshot_url: null }))} className="text-xs text-red-400 hover:text-red-600 mt-1">Remove</button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex justify-end pt-4 border-t border-gray-100 mt-4">
+        <button onClick={handleSave} disabled={saving}
+          className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-50">
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+          {saving ? 'Saving...' : saved ? 'Saved!' : 'Save Guest Profile'}
+        </button>
+      </div>
+    </div>
+  )
+}
 
 function EmailTemplateEditor({ template, onUpdate, onDelete, brandSettings }: {
   template: EmailTemplate
@@ -969,6 +1143,11 @@ export default function SettingsPage() {
           <TextInput label="DM Approach" value={settings.dm_approach} onChange={v => updateField('dm_approach', v)} multiline />
           <TextInput label="Collaboration Criteria" value={settings.collaboration_criteria} onChange={v => updateField('collaboration_criteria', v)} multiline />
           <TextInput label="UGC Guidelines" value={settings.ugc_guidelines} onChange={v => updateField('ugc_guidelines', v)} multiline />
+        </Section>
+
+        {/* Guest Profile */}
+        <Section id="guest_profile" icon={User} title="Guest Profile" color="#059669">
+          <GuestProfileEditor orgId={currentOrg?.id || null} />
         </Section>
 
         {/* Slack Notifications */}

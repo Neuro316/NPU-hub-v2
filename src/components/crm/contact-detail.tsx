@@ -336,18 +336,13 @@ function ContactDriveSection({ contact, updateContact, load }: {
   )
 }
 
-import type { CardConfig } from '@/app/(dashboard)/crm/pipelines/page'
-
 interface ContactDetailProps {
   contactId: string | null
   onClose: () => void
   onUpdate?: () => void
-  cardConfig?: CardConfig
 }
 
-export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig }: ContactDetailProps) {
-  const show = (key: keyof NonNullable<CardConfig>['sections']) =>
-    !cardConfig || cardConfig.sections[key] !== false
+export default function ContactDetail({ contactId, onClose, onUpdate }: ContactDetailProps) {
   const supabase = createClient()
   const [contact, setContact] = useState<CrmContact | null>(null)
   const [tab, setTab] = useState<'overview' | 'intel' | 'connections' | 'timeline' | 'tasks' | 'notes' | 'comms' | 'stats'>('overview')
@@ -899,7 +894,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
               {tab === 'overview' && (
                 <>
                   {/* Contact Info Card */}
-                  {show('contact_info') && <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
+                  <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
                     {contact.preferred_name && (
                       <div className="flex items-center gap-3 px-3 py-2.5">
                         <User className="w-3.5 h-3.5 text-np-blue flex-shrink-0" />
@@ -1000,10 +995,10 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                         </div>
                       </div>
                     )}
-                  </div>}
+                  </div>
 
                   {/* Emergency + Consent + Billing row */}
-                  {show('consent_billing') && <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     {contact.emergency_contact_name && (
                       <div className="bg-red-50/50 rounded-lg p-2 border border-red-100/50">
                         <p className="text-[8px] font-bold text-red-500 uppercase">Emergency</p>
@@ -1020,7 +1015,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                       <p className="text-[8px] font-bold uppercase" style={{ color: contact.billing_info_saved ? '#16a34a' : '#6b7280' }}>Billing</p>
                       <p className="text-[10px] font-medium text-np-dark mt-0.5">{contact.billing_info_saved ? 'Saved' : 'None'}</p>
                     </div>
-                  </div>}
+                  </div>
 
                   {/* Subscription Banner */}
                   {contact.subscription_status && (
@@ -1037,39 +1032,6 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                           {contact.subscription_end && <p className="text-[9px] text-gray-400">Expires: {new Date(contact.subscription_end).toLocaleDateString()}</p>}
                         </div>
                       </div>
-                    </div>
-                  )}
-
-
-                  {/* Demographics */}
-                  {show('demographics') && (contact.race || contact.gender_identity || contact.ethnicity || contact.primary_language || contact.education_level || contact.household_income_range || contact.marital_status || contact.disability_status || contact.veteran_status) && (
-                    <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
-                      <div className="px-3 py-2 flex items-center gap-2">
-                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Demographics</span>
-                      </div>
-                      {contact.gender_identity && <div className="flex items-center gap-3 px-3 py-2"><div className="flex-1"><p className="text-[9px] text-gray-400 uppercase tracking-wider">Gender Identity</p><p className="text-[11px] font-medium text-np-dark">{contact.gender_identity}</p></div></div>}
-                      {contact.sex_assigned_at_birth && <div className="flex items-center gap-3 px-3 py-2"><div className="flex-1"><p className="text-[9px] text-gray-400 uppercase tracking-wider">Sex Assigned at Birth</p><p className="text-[11px] font-medium text-np-dark">{contact.sex_assigned_at_birth}</p></div></div>}
-                      {contact.race && <div className="flex items-center gap-3 px-3 py-2"><div className="flex-1"><p className="text-[9px] text-gray-400 uppercase tracking-wider">Race</p><p className="text-[11px] font-medium text-np-dark">{contact.race}</p></div></div>}
-                      {contact.ethnicity && <div className="flex items-center gap-3 px-3 py-2"><div className="flex-1"><p className="text-[9px] text-gray-400 uppercase tracking-wider">Ethnicity</p><p className="text-[11px] font-medium text-np-dark">{contact.ethnicity}</p></div></div>}
-                      {contact.primary_language && <div className="flex items-center gap-3 px-3 py-2"><div className="flex-1"><p className="text-[9px] text-gray-400 uppercase tracking-wider">Primary Language</p><p className="text-[11px] font-medium text-np-dark">{contact.primary_language}</p></div></div>}
-                      {contact.marital_status && <div className="flex items-center gap-3 px-3 py-2"><div className="flex-1"><p className="text-[9px] text-gray-400 uppercase tracking-wider">Marital Status</p><p className="text-[11px] font-medium text-np-dark">{contact.marital_status}</p></div></div>}
-                      {contact.education_level && <div className="flex items-center gap-3 px-3 py-2"><div className="flex-1"><p className="text-[9px] text-gray-400 uppercase tracking-wider">Education</p><p className="text-[11px] font-medium text-np-dark">{contact.education_level}</p></div></div>}
-                      {contact.household_income_range && <div className="flex items-center gap-3 px-3 py-2"><div className="flex-1"><p className="text-[9px] text-gray-400 uppercase tracking-wider">Household Income</p><p className="text-[11px] font-medium text-np-dark">{contact.household_income_range}</p></div></div>}
-                      {contact.veteran_status && <div className="flex items-center gap-3 px-3 py-2"><div className="flex-1"><p className="text-[9px] text-gray-400 uppercase tracking-wider">Veteran Status</p><p className="text-[11px] font-medium text-np-dark">Veteran</p></div></div>}
-                      {contact.disability_status && <div className="flex items-center gap-3 px-3 py-2"><div className="flex-1"><p className="text-[9px] text-gray-400 uppercase tracking-wider">Disability Status</p><p className="text-[11px] font-medium text-np-dark">{contact.disability_status}</p></div></div>}
-                    </div>
-                  )}
-
-                  {/* Minor / Guardian */}
-                  {show('minor_guardian') && contact.is_minor && (
-                    <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3">
-                      <p className="text-[9px] font-bold text-amber-600 uppercase tracking-wider mb-2">Minor Client</p>
-                      {(contact.guardian_first_name || contact.guardian_last_name) && (
-                        <p className="text-xs font-semibold text-np-dark">{contact.guardian_first_name} {contact.guardian_last_name}</p>
-                      )}
-                      {contact.guardian_relationship && <p className="text-[10px] text-gray-500">{contact.guardian_relationship}</p>}
-                      {contact.guardian_phone && <p className="text-[10px] text-gray-500">{contact.guardian_phone}</p>}
-                      {contact.guardian_email && <p className="text-[10px] text-gray-500">{contact.guardian_email}</p>}
                     </div>
                   )}
 
