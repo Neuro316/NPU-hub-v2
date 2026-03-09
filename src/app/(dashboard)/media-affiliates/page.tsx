@@ -10,7 +10,7 @@ import {
   Link2, Tag, Calendar, Share2, Bell, CheckCircle2,
   AlertCircle, ArrowRight, Phone, DollarSign, Eye,
   FileText, Send, User, Globe, Megaphone, BarChart3,
-  LayoutGrid, Table, Columns3, X,
+  LayoutGrid, Table, Columns3, X, BookOpen,
 } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════════
@@ -453,6 +453,7 @@ export default function MediaAffiliatesPage() {
       key_topics: updated.key_topics,
       key_quotes: updated.key_quotes,
       performance_score: updated.performance_score,
+      metadata: updated.metadata,
     }).eq('id', updated.id)
     if (error) {
       console.error('saveAppearance: Supabase error', error)
@@ -1243,6 +1244,18 @@ function EditAppearanceModal({
             />
           </div>
 
+          {/* Prep Doc URL */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Prep Doc URL</label>
+            <input
+              type="url"
+              value={((draft.metadata as Record<string, unknown>)?.prep_doc_url as string) || ''}
+              onChange={e => setDraft(d => ({ ...d, metadata: { ...d.metadata, prep_doc_url: e.target.value || undefined } }))}
+              placeholder="Google Drive link for prep document"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
+            />
+          </div>
+
           {/* Affiliate Tier / Promo Code */}
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -1493,11 +1506,20 @@ function AppearanceCard({
             </div>
           )}
 
-          {item.url && (
-            <a href={item.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-sm text-np-blue hover:underline">
-              <ExternalLink className="w-3.5 h-3.5" /> View Episode
-            </a>
-          )}
+          {(item.url || (item.metadata as Record<string, string>)?.prep_doc_url) ? (
+            <div className="flex items-center gap-4">
+              {item.url && (
+                <a href={item.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-sm text-np-blue hover:underline">
+                  <ExternalLink className="w-3.5 h-3.5" /> View Episode
+                </a>
+              )}
+              {(item.metadata as Record<string, string>)?.prep_doc_url && (
+                <a href={(item.metadata as Record<string, string>).prep_doc_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-sm text-teal-600 hover:underline">
+                  <BookOpen className="w-3.5 h-3.5" /> Help Prepare
+                </a>
+              )}
+            </div>
+          ) : null}
 
           {contentPieces.length > 0 && (
             <div>
