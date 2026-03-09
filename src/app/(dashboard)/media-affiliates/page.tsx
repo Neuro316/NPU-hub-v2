@@ -104,15 +104,28 @@ const toDatetimeLocal = (d: string | null) => {
   return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`
 }
 
-// Build a Google Calendar URL for an event
+// Build a Google Calendar URL for an event — use raw local time strings, no Date conversion
 const gcalUrl = (title: string, date: string, description: string) => {
-  // Format date for Google Calendar (YYYYMMDD for all-day)
-  const d = date.length === 10 ? date.replace(/-/g, '') : new Date(date).toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '')
-  const endD = date.length === 10
-    ? (() => { const nd = new Date(date + 'T00:00:00Z'); nd.setUTCDate(nd.getUTCDate() + 1); return nd.toISOString().slice(0, 10).replace(/-/g, '') })()
-    : (() => { const nd = new Date(date); nd.setHours(nd.getHours() + 1); return nd.toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '') })()
+  // Strip to digits only from the raw string to avoid timezone shifts
+  const strip = (s: string) => s.replace(/[-:T]/g, '').replace(/\.\d+.*$/, '').replace(/Z$/, '')
+  let d: string, endD: string
+  if (date.length === 10) {
+    // All-day: YYYYMMDD format, end = next day
+    d = date.replace(/-/g, '')
+    const [y, m, day] = date.split('-').map(Number)
+    const next = new Date(y, m - 1, day + 1) // local date math, no UTC
+    endD = `${next.getFullYear()}${String(next.getMonth() + 1).padStart(2, '0')}${String(next.getDate()).padStart(2, '0')}`
+  } else {
+    // Timed event: use raw local datetime string directly (e.g. 2026-04-02T14:00 → 20260402T140000)
+    const raw = strip(date.slice(0, 19)) // take YYYY-MM-DDTHH:mm:ss max
+    d = raw.length <= 8 ? raw : raw.padEnd(15, '0') // ensure YYYYMMDDTHHmmss
+    // End = 1 hour later, computed without Date to avoid TZ shift
+    const hh = parseInt(date.slice(11, 13) || '0')
+    const endHH = String((hh + 1) % 24).padStart(2, '0')
+    endD = d.slice(0, 9) + endHH + d.slice(11)
+  }
   const params = new URLSearchParams({ action: 'TEMPLATE', text: title, dates: `${d}/${endD}`, details: description })
-  return `https://calendar.google.com/calendar/render?${params}`
+  return `https://calendar.google.com/calendar/render?${params}&add=cameron%40neuroprogeny.com&add=cameron.s.allen%40gmail.com`
 }
 
 const TYPE_FILTERS = [
