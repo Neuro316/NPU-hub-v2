@@ -336,6 +336,50 @@ export default function MediaAffiliatesPage() {
 
   // ─── CRUD ──────────────────────────────────────────
 
+  const linkHostContact = async (appearanceId: string, hostName: string) => {
+    if (!orgId || !hostName.trim()) return
+    const nameParts = hostName.trim().split(/\s+/)
+    const firstName = nameParts[0]
+    const lastName = nameParts.slice(1).join(' ') || ''
+
+    // Search for existing contact by name
+    const { data: existing } = await supabase
+      .from('contacts')
+      .select('id')
+      .eq('org_id', orgId)
+      .ilike('first_name', firstName)
+      .ilike('last_name', lastName)
+      .is('merged_into_id', null)
+      .limit(1)
+
+    let contactId: string | null = null
+
+    if (existing && existing.length > 0) {
+      contactId = existing[0].id
+    } else {
+      // Create new contact
+      const { data: newContact, error: createErr } = await supabase.from('contacts').insert({
+        org_id: orgId,
+        first_name: firstName,
+        last_name: lastName,
+        tags: ['podcast_host'],
+        source: 'media_appearance',
+        sms_consent: false,
+        email_consent: false,
+        do_not_contact: false,
+      }).select('id').single()
+      if (createErr) {
+        console.error('linkHostContact: failed to create contact', createErr)
+        return
+      }
+      contactId = newContact?.id || null
+    }
+
+    if (contactId) {
+      await supabase.from('media_appearances').update({ host_contact_id: contactId }).eq('id', appearanceId)
+    }
+  }
+
   const createAppearance = async () => {
     if (!orgId || !form.title) {
       console.error('createAppearance: missing orgId or title', { orgId, title: form.title })
@@ -367,6 +411,10 @@ export default function MediaAffiliatesPage() {
       return
     }
     console.log('createAppearance: success', data)
+    // Auto-link host to CRM contact
+    if (data?.[0]?.id && form.host) {
+      await linkHostContact(data[0].id, form.host)
+    }
     setShowCreateModal(false)
     setForm({ type: 'podcast', title: '', platform: '', host: '', recording_date: '', air_date: '', affiliate_tier: 'none', promo_code: '', utm_campaign: '', description: '' })
     loadData()
@@ -462,6 +510,10 @@ export default function MediaAffiliatesPage() {
     }
     if (updated.status !== editingAppearance?.status) {
       createAutoTask(updated, updated.status)
+    }
+    // Re-link host contact if host name changed
+    if (updated.host && updated.host !== editingAppearance?.host) {
+      await linkHostContact(updated.id, updated.host)
     }
     setEditingAppearance(null)
     loadData()
@@ -1453,7 +1505,15 @@ function AppearanceCard({
 
         {/* Integration indicators */}
         <div className="flex items-center gap-3 text-[10px] text-gray-400">
-          {item.host_contact_id && <span className="flex items-center gap-0.5"><Link2 className="w-3 h-3" /> CRM</span>}
+          {item.host_contact_id && (
+            <a
+              href={`/crm/contacts?id=${item.host_contact_id}`}
+              onClick={e => e.stopPropagation()}
+              className="flex items-center gap-0.5 text-np-blue hover:underline"
+            >
+              <Link2 className="w-3 h-3" /> CRM
+            </a>
+          )}
           {item.calendar_events_count > 0 && <span className="flex items-center gap-0.5"><Calendar className="w-3 h-3" /> {item.calendar_events_count}</span>}
           {item.social_posts_count > 0 && <span className="flex items-center gap-0.5"><Share2 className="w-3 h-3" /> {item.social_posts_count}</span>}
           {item.tasks_created > 0 && (

@@ -401,6 +401,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
   const [headerForm, setHeaderForm] = useState({ first_name: '', last_name: '', email: '', phone: '', company: '' })
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [mediaAppearances, setMediaAppearances] = useState<{ id: string; title: string; platform: string | null; status: string; type: string }[]>([])
 
   const load = useCallback(async () => {
     if (!contactId) return
@@ -467,6 +468,11 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
       // Engagement topics
       Promise.resolve(supabase.from('contact_engagement_topics').select('*').eq('contact_id', contactId).order('outreach_date', { ascending: false }))
         .then(({ data }: { data: any }) => { if (data) setEngagementTopics(data) }).catch(() => {})
+
+      // Media appearances where this contact is the host
+      supabase.from('media_appearances').select('id, title, platform, status, type')
+        .eq('host_contact_id', contactId).order('created_at', { ascending: false })
+        .then(({ data }) => { if (data) setMediaAppearances(data) })
 
       // Referral chain (walk up referred_by chain)
       const chain: any[] = []
@@ -1527,6 +1533,37 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                       </div>
                     </div>
                   </div>
+
+                  {/* Media Appearances */}
+                  {mediaAppearances.length > 0 && (
+                    <div className="bg-white rounded-xl border border-gray-100 p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Mic className="w-3.5 h-3.5 text-np-blue" />
+                        <h4 className="text-xs font-semibold text-np-dark uppercase tracking-wider">Media Appearances</h4>
+                      </div>
+                      <div className="space-y-1.5">
+                        {mediaAppearances.map(a => (
+                          <a
+                            key={a.id}
+                            href="/media-affiliates"
+                            className="flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-gray-50 transition-colors group"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[12px] font-medium text-np-dark truncate">{a.title}</p>
+                              {a.platform && <p className="text-[10px] text-gray-400">{a.platform}</p>}
+                            </div>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                              a.status === 'aired' || a.status === 'published' ? 'bg-green-50 text-green-600' :
+                              a.status === 'booked' || a.status === 'prepped' ? 'bg-blue-50 text-blue-600' :
+                              'bg-gray-100 text-gray-500'
+                            }`}>
+                              {a.status.replace(/_/g, ' ')}
+                            </span>
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
 

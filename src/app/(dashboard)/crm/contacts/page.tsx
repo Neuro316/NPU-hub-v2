@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useState, useMemo, useCallback, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import {
   Search, Plus, Tag, X, Settings2, GripVertical, Check, Eye, EyeOff, Sparkles, Loader2,
   ArrowUp, ArrowDown, ArrowUpDown, Pencil
@@ -50,6 +51,7 @@ const emptyForm: NewContactForm = {
 
 export default function ContactsPage() {
   const { currentOrg } = useWorkspace()
+  const searchParams = useSearchParams()
   const [contacts, setContacts] = useState<CrmContact[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -75,6 +77,14 @@ export default function ContactsPage() {
   const [aiResult, setAiResult] = useState<string | null>(null)
   const [refSearchResults, setRefSearchResults] = useState<CrmContact[]>([])
   const [refSearchQuery, setRefSearchQuery] = useState('')
+
+  // ── Open contact from query param ──
+  useEffect(() => {
+    const idParam = searchParams.get('id')
+    if (idParam && !selectedContactId) {
+      setSelectedContactId(idParam)
+    }
+  }, [searchParams]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Sorting ──
   const [sortBy, setSortBy] = useState<string>('updated_at')
