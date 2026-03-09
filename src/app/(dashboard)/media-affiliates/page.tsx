@@ -334,6 +334,80 @@ export default function MediaAffiliatesPage() {
     conversions.filter(c => c.personal_outreach_status === 'pending'),
   [conversions])
 
+  // ─── CALENDAR SYNC ─────────────────────────────────
+
+  const syncCalendarEvents = async (
+    appearanceId: string,
+    item: { title: string; platform: string | null; host: string | null; promo_code: string | null; recording_date: string | null; air_date: string | null; metadata: Record<string, unknown> }
+  ) => {
+    try {
+      const calIds = (item.metadata?.calendar_event_ids as Record<string, string>) || {}
+
+      // Helper: create or update a calendar event
+      const upsertEvent = async (key: string, date: string | null, summary: string, description: string, reminders: { method: string; minutes: number }[]) => {
+        // Delete old event if date changed or cleared
+        if (calIds[key]) {
+          try { await fetch('/api/gcal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete_event', eventId: calIds[key] }) }) } catch {}
+          delete calIds[key]
+        }
+        if (!date) return
+        const res = await fetch('/api/gcal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'create_event', summary, description, start: date, allDay: true, reminders }),
+        })
+        const data = await res.json()
+        if (data.event?.id) calIds[key] = data.event.id
+      }
+
+      const platform = item.platform || 'Unknown Show'
+      const host = item.host || 'TBD'
+      const promo = item.promo_code ? `\nPromo code: ${item.promo_code}` : ''
+
+      // Recording date event
+      await upsertEvent(
+        'recording',
+        item.recording_date,
+        `🎙️ Record: ${item.title} — ${platform}`,
+        `Recording session with ${host} for ${platform}\nTopic: ${item.title}${promo}`,
+        [{ method: 'popup', minutes: 1440 }, { method: 'popup', minutes: 60 }]
+      )
+
+      // Air date event
+      await upsertEvent(
+        'air',
+        item.air_date,
+        `🚀 LIVE: ${item.title} on ${platform}`,
+        `Episode goes live!\nHost: ${host}${promo}\nReminder: Post announcement and verify show notes have UTM links`,
+        [{ method: 'popup', minutes: 1440 }]
+      )
+
+      // 30-day review event (air_date + 30 days)
+      let reviewDate: string | null = null
+      if (item.air_date) {
+        const d = new Date(item.air_date)
+        d.setDate(d.getDate() + 30)
+        reviewDate = d.toISOString().split('T')[0]
+      }
+      await upsertEvent(
+        'review_30d',
+        reviewDate,
+        `📊 30-Day Review: ${item.title} on ${platform}`,
+        'Review performance metrics and assign A/B/C score',
+        [{ method: 'popup', minutes: 1440 }]
+      )
+
+      // Save calendar event IDs and update count
+      const eventCount = Object.keys(calIds).length
+      await supabase.from('media_appearances').update({
+        metadata: { ...item.metadata, calendar_event_ids: calIds },
+        calendar_events_count: eventCount,
+      }).eq('id', appearanceId)
+    } catch (err) {
+      console.error('syncCalendarEvents: failed (non-blocking)', err)
+    }
+  }
+
   // ─── CRUD ──────────────────────────────────────────
 
   const linkHostContact = async (appearanceId: string, hostName: string) => {
@@ -414,6 +488,14 @@ export default function MediaAffiliatesPage() {
     // Auto-link host to CRM contact
     if (data?.[0]?.id && form.host) {
       await linkHostContact(data[0].id, form.host)
+    }
+    // Sync calendar events for recording/air dates
+    if (data?.[0]?.id && (form.recording_date || form.air_date)) {
+      syncCalendarEvents(data[0].id, {
+        title: form.title, platform: form.platform, host: form.host,
+        promo_code: form.promo_code || null, recording_date: form.recording_date || null,
+        air_date: form.air_date || null, metadata: {},
+      })
     }
     setShowCreateModal(false)
     setForm({ type: 'podcast', title: '', platform: '', host: '', recording_date: '', air_date: '', affiliate_tier: 'none', promo_code: '', utm_campaign: '', description: '' })
@@ -514,6 +596,14 @@ export default function MediaAffiliatesPage() {
     // Re-link host contact if host name changed
     if (updated.host && updated.host !== editingAppearance?.host) {
       await linkHostContact(updated.id, updated.host)
+    }
+    // Sync calendar events if dates changed
+    if (updated.recording_date !== editingAppearance?.recording_date || updated.air_date !== editingAppearance?.air_date) {
+      syncCalendarEvents(updated.id, {
+        title: updated.title, platform: updated.platform, host: updated.host,
+        promo_code: updated.promo_code, recording_date: updated.recording_date,
+        air_date: updated.air_date, metadata: updated.metadata,
+      })
     }
     setEditingAppearance(null)
     loadData()
