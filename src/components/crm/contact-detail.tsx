@@ -6,7 +6,7 @@ import {
   X, Phone, Mail, MessageCircle, Tag, Clock, CheckCircle2, AlertTriangle,
   TrendingUp, Send, Pencil, Trash2, Plus, User, Activity, Brain,
   Route, Target, Calendar, FileText, Sparkles, ChevronRight, Heart,
-  ArrowRightLeft, GraduationCap, BarChart3, Shield, ExternalLink, Paperclip, GitBranch, MapPin, ChevronDown,
+  ArrowRightLeft, GraduationCap, BarChart3, Shield, ExternalLink, Paperclip, GitBranch, MapPin, ChevronDown, Upload, FolderOpen,
   Globe, Lightbulb, Linkedin, Instagram, Twitter, Youtube, BookOpen, Mic, Link2, ThumbsUp, ThumbsDown, Workflow
 } from 'lucide-react'
 import {
@@ -65,13 +65,289 @@ const MASTERMIND_STATUS: Record<string, { color: string; label: string }> = {
   alumni: { color: '#64748b', label: 'Alumni' },
 }
 
+// Default Drive folder for Podcast pipeline contacts
+const PODCAST_DRIVE_FOLDER = 'https://drive.google.com/drive/u/0/folders/13a4Pn8vLyaWwtfJEU935Z_Q40jxsM4_p'
+
+function ContactDriveSection({ contact, updateContact, load }: {
+  contact: CrmContact
+  updateContact: (id: string, updates: Partial<CrmContact>) => Promise<any>
+  load: () => void
+}) {
+  const [driveFiles, setDriveFiles] = useState<any[]>([])
+  const [loadingFiles, setLoadingFiles] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [driveFolder, setDriveFolder] = useState('')
+  const [driveError, setDriveError] = useState('')
+  const [driveConnected, setDriveConnected] = useState<boolean | null>(null)
+
+  const orgId = contact.org_id
+
+  // Check Drive connection status
+  useEffect(() => {
+    if (!orgId) return
+    fetch('/api/drive', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'status', orgId }),
+    }).then(r => r.json()).then(d => setDriveConnected(d.connected ?? false)).catch(() => setDriveConnected(false))
+  }, [orgId])
+
+  // Connect Google Drive
+  const connectDrive = async () => {
+    try {
+      const res = await fetch('/api/drive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'authUrl', orgId }),
+      })
+      const data = await res.json()
+      if (data.success && data.url) {
+        window.open(data.url, '_blank')
+      }
+    } catch {
+      setDriveError('Failed to get auth URL')
+    }
+  }
+
+  // Auto-set drive folder for Podcast pipeline contacts
+  const effectiveDriveFolder = (contact.custom_fields?.drive_folder as string) ||
+    (contact.pipeline_stage && ['Podcasts', 'Podcast'].some(p =>
+      (contact as any).pipeline_name?.toLowerCase().includes(p.toLowerCase())
+    ) ? PODCAST_DRIVE_FOLDER : '')
+
+  useEffect(() => {
+    setDriveFolder((contact.custom_fields?.drive_folder as string) || '')
+  }, [contact.id, contact.custom_fields?.drive_folder])
+
+  // Load files from Drive folder
+  const loadDriveFiles = async (folderUrl?: string) => {
+    const url = folderUrl || effectiveDriveFolder
+    if (!url || !orgId) return
+    setLoadingFiles(true)
+    setDriveError('')
+    try {
+      const res = await fetch('/api/drive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'list', folderUrl: url, orgId }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setDriveFiles(data.files || [])
+      } else if (data.needsAuth) {
+        setDriveConnected(false)
+        setDriveError('Google Drive not connected')
+      } else {
+        setDriveError(data.error || 'Failed to load files')
+      }
+    } catch {
+      setDriveError('Connection error')
+    }
+    setLoadingFiles(false)
+  }
+
+  useEffect(() => {
+    if (effectiveDriveFolder && driveConnected) loadDriveFiles(effectiveDriveFolder)
+  }, [contact.id, effectiveDriveFolder, driveConnected])
+
+  // Upload file to Drive
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !effectiveDriveFolder || !orgId) return
+    setUploading(true)
+    setDriveError('')
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('folderUrl', effectiveDriveFolder)
+      formData.append('orgId', orgId)
+      const res = await fetch('/api/drive', { method: 'POST', body: formData })
+      const data = await res.json()
+      if (data.success) {
+        loadDriveFiles()
+      } else {
+        setDriveError(data.error || 'Upload failed')
+      }
+    } catch {
+      setDriveError('Upload error')
+    }
+    setUploading(false)
+    e.target.value = ''
+  }
+
+  // Delete file from Drive
+  const handleDelete = async (fileId: string) => {
+    if (!confirm('Delete this file from Google Drive?')) return
+    try {
+      const res = await fetch('/api/drive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', fileId, orgId }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setDriveFiles(prev => prev.filter(f => f.id !== fileId))
+      }
+    } catch {}
+  }
+
+  // Save drive folder URL
+  const saveDriveFolder = async () => {
+    await updateContact(contact.id, { custom_fields: { ...contact.custom_fields, drive_folder: driveFolder } } as any)
+    load()
+    if (driveFolder) loadDriveFiles(driveFolder)
+  }
+
+  // Create contact subfolder in the podcast Drive
+  const createContactFolder = async () => {
+    const parentUrl = PODCAST_DRIVE_FOLDER
+    const contactName = [contact.first_name, contact.last_name].filter(Boolean).join(' ') || 'Unknown'
+    setDriveError('')
+    try {
+      const res = await fetch('/api/drive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'createFolder', folderUrl: parentUrl, folderName: contactName, orgId }),
+      })
+      const data = await res.json()
+      if (data.success && data.folder?.webViewLink) {
+        const folderUrl = data.folder.webViewLink
+        setDriveFolder(folderUrl)
+        await updateContact(contact.id, { custom_fields: { ...contact.custom_fields, drive_folder: folderUrl } } as any)
+        load()
+        loadDriveFiles(folderUrl)
+      } else {
+        setDriveError(data.error || 'Failed to create folder')
+      }
+    } catch {
+      setDriveError('Connection error')
+    }
+  }
+
+  const formatSize = (bytes: string) => {
+    const b = parseInt(bytes)
+    if (!b || isNaN(b)) return ''
+    if (b < 1024) return `${b} B`
+    if (b < 1048576) return `${(b / 1024).toFixed(0)} KB`
+    return `${(b / 1048576).toFixed(1)} MB`
+  }
+
+  // Still checking connection status
+  if (driveConnected === null) {
+    return (
+      <div className="space-y-2">
+        <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+          <FolderOpen className="w-3 h-3" /> Files & Drive
+        </h4>
+        <p className="text-[10px] text-gray-400 text-center py-2">Checking connection...</p>
+      </div>
+    )
+  }
+
+  // Not connected — show connect button
+  if (!driveConnected) {
+    return (
+      <div className="space-y-2">
+        <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+          <FolderOpen className="w-3 h-3" /> Files & Drive
+        </h4>
+        <button onClick={connectDrive}
+          className="w-full flex items-center justify-center gap-2 text-xs bg-np-blue text-white px-3 py-2 rounded-lg font-medium hover:bg-np-blue/90">
+          <ExternalLink className="w-3.5 h-3.5" /> Connect Google Drive
+        </button>
+        {driveError && <p className="text-[10px] text-red-500">{driveError}</p>}
+        <p className="text-[10px] text-gray-400 italic text-center">Connect your org&apos;s Google Drive to upload and manage files.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+          <FolderOpen className="w-3 h-3" /> Files & Drive
+        </h4>
+        <div className="flex items-center gap-2">
+          {effectiveDriveFolder && (
+            <label className={`flex items-center gap-1 text-[10px] font-medium cursor-pointer ${uploading ? 'text-gray-300' : 'text-np-blue hover:underline'}`}>
+              <Upload className="w-3 h-3" /> {uploading ? 'Uploading...' : 'Upload'}
+              <input type="file" className="hidden" onChange={handleUpload} disabled={uploading} />
+            </label>
+          )}
+          {effectiveDriveFolder && (
+            <a href={effectiveDriveFolder} target="_blank" rel="noopener"
+              className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-np-blue font-medium">
+              <ExternalLink className="w-3 h-3" /> Open
+            </a>
+          )}
+        </div>
+      </div>
+
+      {/* Drive folder URL */}
+      <div className="flex gap-1.5">
+        <input
+          value={driveFolder}
+          onChange={e => setDriveFolder(e.target.value)}
+          onBlur={saveDriveFolder}
+          onKeyDown={e => e.key === 'Enter' && saveDriveFolder()}
+          placeholder="https://drive.google.com/drive/folders/..."
+          className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300"
+        />
+        {!driveFolder && !effectiveDriveFolder && (
+          <button onClick={createContactFolder}
+            className="flex items-center gap-1 text-[10px] bg-green-500 text-white px-2.5 py-1.5 rounded-lg font-medium hover:bg-green-600 whitespace-nowrap">
+            <Plus className="w-3 h-3" /> Create Folder
+          </button>
+        )}
+      </div>
+
+      {driveError && <p className="text-[10px] text-red-500">{driveError}</p>}
+
+      {/* Drive Files */}
+      {loadingFiles ? (
+        <p className="text-[10px] text-gray-400 text-center py-2">Loading files...</p>
+      ) : driveFiles.length > 0 ? (
+        <div className="space-y-1 max-h-48 overflow-y-auto">
+          {driveFiles.map(file => (
+            <div key={file.id} className="flex items-center gap-2 bg-gray-50 rounded-lg px-2.5 py-1.5">
+              <FileText className="w-3 h-3 text-gray-400 flex-shrink-0" />
+              <a href={file.webViewLink} target="_blank" rel="noopener"
+                className="text-xs text-gray-700 flex-1 truncate hover:text-np-blue">{file.name}</a>
+              <span className="text-[9px] text-gray-300 flex-shrink-0">{formatSize(file.size)}</span>
+              <button onClick={() => handleDelete(file.id)} className="text-gray-300 hover:text-red-500 flex-shrink-0">
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : effectiveDriveFolder ? (
+        <p className="text-[10px] text-gray-400 italic text-center py-2">No files in this folder yet.</p>
+      ) : (
+        <p className="text-[10px] text-gray-400 italic text-center py-2">No Drive folder connected. Paste a URL or create one.</p>
+      )}
+
+      {/* Refresh button */}
+      {effectiveDriveFolder && !loadingFiles && (
+        <button onClick={() => loadDriveFiles()} className="text-[9px] text-gray-400 hover:text-np-blue">
+          Refresh files
+        </button>
+      )}
+    </div>
+  )
+}
+
+import type { CardConfig } from '@/app/(dashboard)/crm/pipelines/page'
+
 interface ContactDetailProps {
   contactId: string | null
   onClose: () => void
   onUpdate?: () => void
+  cardConfig?: CardConfig
 }
 
-export default function ContactDetail({ contactId, onClose, onUpdate }: ContactDetailProps) {
+export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig }: ContactDetailProps) {
+  const show = (key: keyof NonNullable<CardConfig>['sections']) =>
+    !cardConfig || cardConfig.sections[key] !== false
   const supabase = createClient()
   const [contact, setContact] = useState<CrmContact | null>(null)
   const [tab, setTab] = useState<'overview' | 'intel' | 'connections' | 'timeline' | 'tasks' | 'notes' | 'comms' | 'stats'>('overview')
@@ -623,7 +899,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
               {tab === 'overview' && (
                 <>
                   {/* Contact Info Card */}
-                  <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
+                  {show('contact_info') && <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
                     {contact.preferred_name && (
                       <div className="flex items-center gap-3 px-3 py-2.5">
                         <User className="w-3.5 h-3.5 text-np-blue flex-shrink-0" />
@@ -724,10 +1000,10 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
                         </div>
                       </div>
                     )}
-                  </div>
+                  </div>}
 
                   {/* Emergency + Consent + Billing row */}
-                  <div className="grid grid-cols-3 gap-2">
+                  {show('consent_billing') && <div className="grid grid-cols-3 gap-2">
                     {contact.emergency_contact_name && (
                       <div className="bg-red-50/50 rounded-lg p-2 border border-red-100/50">
                         <p className="text-[8px] font-bold text-red-500 uppercase">Emergency</p>
@@ -744,7 +1020,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
                       <p className="text-[8px] font-bold uppercase" style={{ color: contact.billing_info_saved ? '#16a34a' : '#6b7280' }}>Billing</p>
                       <p className="text-[10px] font-medium text-np-dark mt-0.5">{contact.billing_info_saved ? 'Saved' : 'None'}</p>
                     </div>
-                  </div>
+                  </div>}
 
                   {/* Subscription Banner */}
                   {contact.subscription_status && (
@@ -761,6 +1037,39 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
                           {contact.subscription_end && <p className="text-[9px] text-gray-400">Expires: {new Date(contact.subscription_end).toLocaleDateString()}</p>}
                         </div>
                       </div>
+                    </div>
+                  )}
+
+
+                  {/* Demographics */}
+                  {show('demographics') && (contact.race || contact.gender_identity || contact.ethnicity || contact.primary_language || contact.education_level || contact.household_income_range || contact.marital_status || contact.disability_status || contact.veteran_status) && (
+                    <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
+                      <div className="px-3 py-2 flex items-center gap-2">
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Demographics</span>
+                      </div>
+                      {contact.gender_identity && <div className="flex items-center gap-3 px-3 py-2"><div className="flex-1"><p className="text-[9px] text-gray-400 uppercase tracking-wider">Gender Identity</p><p className="text-[11px] font-medium text-np-dark">{contact.gender_identity}</p></div></div>}
+                      {contact.sex_assigned_at_birth && <div className="flex items-center gap-3 px-3 py-2"><div className="flex-1"><p className="text-[9px] text-gray-400 uppercase tracking-wider">Sex Assigned at Birth</p><p className="text-[11px] font-medium text-np-dark">{contact.sex_assigned_at_birth}</p></div></div>}
+                      {contact.race && <div className="flex items-center gap-3 px-3 py-2"><div className="flex-1"><p className="text-[9px] text-gray-400 uppercase tracking-wider">Race</p><p className="text-[11px] font-medium text-np-dark">{contact.race}</p></div></div>}
+                      {contact.ethnicity && <div className="flex items-center gap-3 px-3 py-2"><div className="flex-1"><p className="text-[9px] text-gray-400 uppercase tracking-wider">Ethnicity</p><p className="text-[11px] font-medium text-np-dark">{contact.ethnicity}</p></div></div>}
+                      {contact.primary_language && <div className="flex items-center gap-3 px-3 py-2"><div className="flex-1"><p className="text-[9px] text-gray-400 uppercase tracking-wider">Primary Language</p><p className="text-[11px] font-medium text-np-dark">{contact.primary_language}</p></div></div>}
+                      {contact.marital_status && <div className="flex items-center gap-3 px-3 py-2"><div className="flex-1"><p className="text-[9px] text-gray-400 uppercase tracking-wider">Marital Status</p><p className="text-[11px] font-medium text-np-dark">{contact.marital_status}</p></div></div>}
+                      {contact.education_level && <div className="flex items-center gap-3 px-3 py-2"><div className="flex-1"><p className="text-[9px] text-gray-400 uppercase tracking-wider">Education</p><p className="text-[11px] font-medium text-np-dark">{contact.education_level}</p></div></div>}
+                      {contact.household_income_range && <div className="flex items-center gap-3 px-3 py-2"><div className="flex-1"><p className="text-[9px] text-gray-400 uppercase tracking-wider">Household Income</p><p className="text-[11px] font-medium text-np-dark">{contact.household_income_range}</p></div></div>}
+                      {contact.veteran_status && <div className="flex items-center gap-3 px-3 py-2"><div className="flex-1"><p className="text-[9px] text-gray-400 uppercase tracking-wider">Veteran Status</p><p className="text-[11px] font-medium text-np-dark">Veteran</p></div></div>}
+                      {contact.disability_status && <div className="flex items-center gap-3 px-3 py-2"><div className="flex-1"><p className="text-[9px] text-gray-400 uppercase tracking-wider">Disability Status</p><p className="text-[11px] font-medium text-np-dark">{contact.disability_status}</p></div></div>}
+                    </div>
+                  )}
+
+                  {/* Minor / Guardian */}
+                  {show('minor_guardian') && contact.is_minor && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                      <p className="text-[9px] font-bold text-amber-600 uppercase tracking-wider mb-2">Minor Client</p>
+                      {(contact.guardian_first_name || contact.guardian_last_name) && (
+                        <p className="text-xs font-semibold text-np-dark">{contact.guardian_first_name} {contact.guardian_last_name}</p>
+                      )}
+                      {contact.guardian_relationship && <p className="text-[10px] text-gray-500">{contact.guardian_relationship}</p>}
+                      {contact.guardian_phone && <p className="text-[10px] text-gray-500">{contact.guardian_phone}</p>}
+                      {contact.guardian_email && <p className="text-[10px] text-gray-500">{contact.guardian_email}</p>}
                     </div>
                   )}
 
@@ -1024,6 +1333,9 @@ export default function ContactDetail({ contactId, onClose, onUpdate }: ContactD
                       </select>
                     </div>
                   </div>
+
+                  {/* Files & Google Drive */}
+                  <ContactDriveSection contact={contact} updateContact={updateContact} load={load} />
 
                   {/* Clickable Communication Counters */}
                   <div className="space-y-2">

@@ -5,7 +5,7 @@ import ContactDetail from '@/components/crm/contact-detail'
 import {
   Plus, MoreHorizontal, ChevronDown, GripVertical,
   X, DollarSign, Trash2, Settings, BarChart3,
-  Clock, TrendingUp, Target, Percent, Save, User, ArrowRightLeft
+  Clock, TrendingUp, Target, Percent, Save, User, ArrowRightLeft, LayoutGrid
 } from 'lucide-react'
 import { fetchContacts, updateContact } from '@/lib/crm-client'
 import type { CrmContact } from '@/types/crm'
@@ -18,7 +18,41 @@ interface PipelineStageConfig {
   id: string; name: string; color: string; is_closed_won?: boolean; is_closed_lost?: boolean; position: number
 }
 interface PipelineConfig {
-  id: string; name: string; description?: string; stages: PipelineStageConfig[]; is_default?: boolean
+  id: string; name: string; description?: string; stages: PipelineStageConfig[]; is_default?: boolean; card_config?: CardConfig
+}
+
+interface CardConfig {
+  template: 'marketing' | 'clinical' | 'mastermind' | 'minimal' | 'custom'
+  sections: {
+    contact_info: boolean
+    address: boolean
+    social_attribution: boolean
+    demographics: boolean
+    professional: boolean
+    emergency_contact: boolean
+    consent_billing: boolean
+    minor_guardian: boolean
+    intelligence_ai: boolean
+  }
+}
+
+const CARD_CONFIG_TEMPLATES: Record<string, CardConfig> = {
+  marketing: { template: 'marketing', sections: { contact_info: true, address: false, social_attribution: true, demographics: false, professional: true, emergency_contact: false, consent_billing: false, minor_guardian: false, intelligence_ai: true } },
+  clinical:  { template: 'clinical',  sections: { contact_info: true, address: true,  social_attribution: false, demographics: true,  professional: false, emergency_contact: true,  consent_billing: true,  minor_guardian: true,  intelligence_ai: false } },
+  mastermind:{ template: 'mastermind',sections: { contact_info: true, address: false, social_attribution: true,  demographics: false, professional: true,  emergency_contact: false, consent_billing: true,  minor_guardian: false, intelligence_ai: true  } },
+  minimal:   { template: 'minimal',   sections: { contact_info: true, address: false, social_attribution: false, demographics: false, professional: false, emergency_contact: false, consent_billing: false, minor_guardian: false, intelligence_ai: false } },
+}
+
+const SECTION_LABELS: Record<string, string> = {
+  contact_info: 'Contact Info',
+  address: 'Address',
+  social_attribution: 'Social & Attribution',
+  demographics: 'Demographics',
+  professional: 'Professional',
+  emergency_contact: 'Emergency Contact',
+  consent_billing: 'Consent & Billing',
+  minor_guardian: 'Minor / Guardian',
+  intelligence_ai: 'Intelligence & AI Notes',
 }
 
 const PRESET_COLORS = ['#228DC4','#2A9D8F','#3DB5A6','#FBBF24','#E76F51','#34D399','#F87171','#8B5CF6','#EC4899','#6366F1','#14B8A6','#F97316','#06B6D4','#84CC16']
@@ -223,6 +257,68 @@ function StageEditor({ stages, onSave, onClose }: { stages: PipelineStageConfig[
   )
 }
 
+function CardConfigEditor({ pipeline, onSave, onClose }: { pipeline: PipelineConfig; onSave: (cfg: CardConfig) => void; onClose: () => void }) {
+  const [cfg, setCfg] = useState<CardConfig>(() => {
+    const existing = pipeline.card_config || CARD_CONFIG_TEMPLATES.marketing
+    return { ...existing, sections: { ...existing.sections } }
+  })
+
+  const setTemplate = (tpl: string) => {
+    const t = CARD_CONFIG_TEMPLATES[tpl] || CARD_CONFIG_TEMPLATES.marketing
+    setCfg({ ...t, sections: { ...t.sections } })
+  }
+
+  const toggle = (key: keyof CardConfig['sections']) =>
+    setCfg(prev => ({ ...prev, template: 'custom', sections: { ...prev.sections, [key]: !prev.sections[key] } }))
+
+  const sectionKeys = Object.keys(SECTION_LABELS) as Array<keyof CardConfig['sections']>
+  const TPL_OPTIONS: [string, string][] = [['marketing','Marketing / Outreach'],['clinical','Clinical / Research'],['mastermind','Mastermind'],['minimal','Minimal']]
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="w-full max-w-md bg-white rounded-xl shadow-2xl border border-gray-100 p-5 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-base font-bold text-np-dark">Card Field Sections</h3>
+            <p className="text-[10px] text-gray-400 mt-0.5">Control which info shows on contact cards in <span className="font-semibold text-np-blue">{pipeline.name}</span></p>
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:bg-gray-50"><X size={14} /></button>
+        </div>
+
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Start from Template</p>
+        <div className="grid grid-cols-2 gap-1.5 mb-4">
+          {TPL_OPTIONS.map(([k, l]) => (
+            <button key={k} onClick={() => setTemplate(k)}
+              className={'px-3 py-2 text-[11px] rounded-lg border transition-all text-left ' + (cfg.template === k ? 'border-np-blue bg-np-blue/5 text-np-blue font-semibold' : 'border-gray-100 text-gray-500')}>
+              {l}
+            </button>
+          ))}
+        </div>
+
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Field Sections</p>
+        <div className="space-y-1.5 mb-5">
+          {sectionKeys.map(key => (
+            <button key={key} onClick={() => toggle(key)}
+              className={'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all ' + (cfg.sections[key] ? 'border-np-blue/30 bg-np-blue/5' : 'border-gray-100 bg-gray-50/50')}>
+              <div className={'w-8 h-4 rounded-full relative flex-shrink-0 transition-colors ' + (cfg.sections[key] ? 'bg-np-blue' : 'bg-gray-200')}>
+                <div className="absolute top-0.5 w-3 h-3 bg-white rounded-full shadow-sm transition-all" style={{ left: cfg.sections[key] ? '17px' : '2px' }} />
+              </div>
+              <span className={'text-xs font-medium ' + (cfg.sections[key] ? 'text-np-dark' : 'text-gray-400')}>{SECTION_LABELS[key]}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className="px-3 py-2 text-xs text-gray-400">Cancel</button>
+          <button onClick={() => onSave(cfg)} className="px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark transition-colors flex items-center gap-1.5">
+            <Save size={12} /> Save Card Config
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function NewPipelineModal({ onSave, onClose }: { onSave: (p: PipelineConfig) => void; onClose: () => void }) {
   const [name, setName] = useState(''); const [desc, setDesc] = useState(''); const [tpl, setTpl] = useState<string>('sales')
   return (
@@ -245,7 +341,7 @@ function NewPipelineModal({ onSave, onClose }: { onSave: (p: PipelineConfig) => 
         </div>
         <div className="flex justify-end gap-2 mt-5">
           <button onClick={onClose} className="px-3 py-2 text-xs text-gray-400">Cancel</button>
-          <button onClick={() => { if(!name.trim()) return; onSave({ id:`pipeline-${Date.now()}`, name:name.trim(), description:desc.trim()||undefined, stages:TEMPLATES[tpl] }) }} disabled={!name.trim()}
+          <button onClick={() => { if(!name.trim()) return; onSave({ id:`pipeline-${Date.now()}`, name:name.trim(), description:desc.trim()||undefined, stages:TEMPLATES[tpl], card_config: CARD_CONFIG_TEMPLATES[tpl==='blank'?'minimal':tpl] || CARD_CONFIG_TEMPLATES.marketing }) }} disabled={!name.trim()}
             className="px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark disabled:opacity-40 transition-colors">Create Pipeline</button>
         </div>
       </div>
@@ -263,6 +359,7 @@ export default function PipelinesPage() {
   const [showDropdown, setShowDropdown] = useState(false)
   const [showStageEditor, setShowStageEditor] = useState(false)
   const [showNewPipeline, setShowNewPipeline] = useState(false)
+  const [showCardConfig, setShowCardConfig] = useState(false)
   const [showMetrics, setShowMetrics] = useState(true)
   const activePipeline = pipelines.find(p => p.id === activePipelineId) || pipelines[0]
 
@@ -347,6 +444,7 @@ export default function PipelinesPage() {
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setShowMetrics(!showMetrics)} className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg transition-colors ${showMetrics ? 'bg-np-blue/10 text-np-blue' : 'bg-gray-50 text-gray-400'}`}><BarChart3 size={13} /> Metrics</button>
+          <button onClick={() => setShowCardConfig(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-50 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-100 transition-colors"><LayoutGrid size={13} /> Card Fields</button>
           <button onClick={() => setShowStageEditor(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-50 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-100 transition-colors"><Settings size={13} /> Edit Stages</button>
         </div>
       </div>
@@ -381,7 +479,8 @@ export default function PipelinesPage() {
 
       {showStageEditor && <StageEditor stages={activePipeline.stages} onSave={s => { savePipelines(pipelines.map(p => p.id===activePipelineId ? { ...p, stages:s } : p)); setShowStageEditor(false) }} onClose={() => setShowStageEditor(false)} />}
       {showNewPipeline && <NewPipelineModal onSave={p => { savePipelines([...pipelines, p], p.id); setShowNewPipeline(false) }} onClose={() => setShowNewPipeline(false)} />}
-      {selectedContactId && <ContactDetail contactId={selectedContactId} onClose={() => setSelectedContactId(null)} onUpdate={() => {
+      {showCardConfig && <CardConfigEditor pipeline={activePipeline} onSave={cfg => { savePipelines(pipelines.map(p => p.id===activePipelineId ? { ...p, card_config:cfg } : p)); setShowCardConfig(false) }} onClose={() => setShowCardConfig(false)} />}
+      {selectedContactId && <ContactDetail contactId={selectedContactId} cardConfig={activePipeline.card_config} onClose={() => setSelectedContactId(null)} onUpdate={() => {
         if (currentOrg) fetchContacts({ org_id: currentOrg.id, limit: 500 }).then(r => setContacts(r.contacts)).catch(console.error)
       }} />}
     </div>

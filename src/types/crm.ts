@@ -88,6 +88,24 @@ export interface CrmContact {
   ai_research_notes?: string | null
   ai_connection_discoveries?: Array<{ contact_id: string; confidence: number; basis: string }> | null
   import_batch_id?: string | null
+  // Demographics (NIH-aligned)
+  gender_identity?: string | null
+  sex_assigned_at_birth?: string | null
+  race?: string | null
+  ethnicity?: string | null
+  primary_language?: string | null
+  marital_status?: string | null
+  education_level?: string | null
+  household_income_range?: string | null
+  veteran_status?: boolean | null
+  disability_status?: string | null
+  // Minor / Guardian
+  is_minor?: boolean | null
+  guardian_first_name?: string | null
+  guardian_last_name?: string | null
+  guardian_phone?: string | null
+  guardian_email?: string | null
+  guardian_relationship?: string | null
   // Engagement rollup
   engagement_response_rate?: number | null
   top_responding_topics?: string[] | null
