@@ -3,15 +3,17 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
-import Link from 'next/link'
 import {
-  ChevronLeft, ChevronRight, Plus, Clock, X, ArrowLeft, Trash2, Loader2,
-  Target, Mic, Megaphone, ClipboardList, Brain, Filter, Users, Send,
+  ChevronLeft, ChevronRight, Clock, X, Loader2,
+  Mic, Megaphone, Brain, Filter, Users, Send,
   Wand2, Sparkles, CalendarDays, Eye, EyeOff, Mail, Check
 } from 'lucide-react'
 
 /* ═══ Event Types ═══ */
-type EventCategory = 'social' | 'appearances' | 'marketing' | 'sessions' | 'assessments'
+type EventCategory = 'recording' | 'appearances' | 'review'
+
+// Strip timezone suffix so datetime-local values stored as UTC are treated as local time
+const stripTZ = (d: string) => d.replace(/([+-]\d{2}:\d{2}|Z)$/, '')
 
 interface CalEvent {
   id: string
@@ -24,6 +26,7 @@ interface CalEvent {
   color: string
   assignee?: string     // team member name or id
   meta?: Record<string, any>
+  href?: string         // clickable link
 }
 
 interface TeamMember {
@@ -31,20 +34,13 @@ interface TeamMember {
 }
 
 const CATEGORIES: { key: EventCategory; label: string; icon: any; color: string; bg: string; dot: string }[] = [
-  { key: 'social', label: 'Social Media', icon: Target, color: 'text-pink-500', bg: 'bg-pink-50', dot: '#E4405F' },
-  { key: 'appearances', label: 'Media Appearances', icon: Mic, color: 'text-purple-500', bg: 'bg-purple-50', dot: '#8B5CF6' },
-  { key: 'marketing', label: 'Marketing', icon: Megaphone, color: 'text-blue-500', bg: 'bg-blue-50', dot: '#3B82F6' },
-  { key: 'sessions', label: 'Client Sessions', icon: ClipboardList, color: 'text-green-500', bg: 'bg-green-50', dot: '#10B981' },
-  { key: 'assessments', label: 'Assessments', icon: Brain, color: 'text-amber-500', bg: 'bg-amber-50', dot: '#F59E0B' },
+  { key: 'recording', label: 'Recordings', icon: Mic, color: 'text-purple-500', bg: 'bg-purple-50', dot: '#8B5CF6' },
+  { key: 'appearances', label: 'Live / Air Dates', icon: Megaphone, color: 'text-emerald-500', bg: 'bg-emerald-50', dot: '#10B981' },
+  { key: 'review', label: '30-Day Reviews', icon: Brain, color: 'text-amber-500', bg: 'bg-amber-50', dot: '#F59E0B' },
 ]
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-const PLATFORMS: Record<string, { icon: string; color: string }> = {
-  instagram: { icon: 'IG', color: '#E4405F' }, facebook: { icon: 'FB', color: '#1877F2' },
-  linkedin: { icon: 'LI', color: '#0A66C2' }, tiktok: { icon: 'TT', color: '#000' },
-  x: { icon: 'X', color: '#1DA1F2' }, youtube: { icon: 'YT', color: '#FF0000' },
-}
 
 export default function CalendarPage() {
   const { currentOrg, user, loading: orgLoading } = useWorkspace()
@@ -80,80 +76,76 @@ export default function CalendarPage() {
   const year = currentDate.getFullYear()
   const month = currentDate.getMonth()
 
-  /* ─── Load all event sources ─── */
+  /* ─── Load media appearance events ─── */
   const loadEvents = useCallback(async () => {
     if (!currentOrg) return
     setLoading(true)
-    const startOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-01`
-    const endOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-${new Date(year, month + 1, 0).getDate()}`
 
     const allEvents: CalEvent[] = []
 
-    // 1. Social media posts
-    const { data: posts } = await supabase.from('social_posts')
-      .select('id, content_original, status, scheduled_at, platform_versions, custom_fields, brand')
+    // Fetch all media appearances with dates
+    const { data: appearances } = await supabase.from('media_appearances')
+      .select('id, title, platform, host, status, recording_date, air_date, promo_code')
       .eq('org_id', currentOrg.id)
-      .not('scheduled_at', 'is', null)
-    if (posts) {
-      posts.forEach(p => {
-        if (!p.scheduled_at) return
-        const d = new Date(p.scheduled_at)
-        const cf = p.custom_fields || {}
-        const platforms = (p.platform_versions || []).map((v: any) => v.platform).join(', ')
-        allEvents.push({
-          id: `social-${p.id}`, category: 'social',
-          title: cf.hook || p.content_original?.slice(0, 40) || 'Post',
-          subtitle: platforms ? platforms.toUpperCase() : undefined,
-          date: d.toISOString().slice(0, 10),
-          time: d.toTimeString().slice(0, 5),
-          color: '#E4405F',
-          meta: { ...p, source: 'social_posts' },
-        })
+
+    if (appearances) {
+      const pad2 = (n: number) => String(n).padStart(2, '0')
+      const parseDate = (raw: string) => {
+        const clean = stripTZ(raw)
+        if (clean.length === 10) return { date: clean, time: undefined }
+        const dt = new Date(clean)
+        return { date: clean.slice(0, 10), time: `${pad2(dt.getHours())}:${pad2(dt.getMinutes())}` }
+      }
+
+      appearances.forEach(a => {
+        const sub = [a.platform, a.host].filter(Boolean).join(' \u00b7 ')
+
+        // Recording date event
+        if (a.recording_date) {
+          const { date, time } = parseDate(a.recording_date)
+          allEvents.push({
+            id: `rec-${a.id}`, category: 'recording',
+            title: `🎙️ Record: ${a.title}`,
+            subtitle: sub || undefined,
+            date, time,
+            color: '#8B5CF6',
+            href: '/media-affiliates',
+            meta: { ...a, source: 'media_appearances' },
+          })
+        }
+
+        // Air date event
+        if (a.air_date) {
+          const { date, time } = parseDate(a.air_date)
+          allEvents.push({
+            id: `air-${a.id}`, category: 'appearances',
+            title: `🚀 Live: ${a.title}`,
+            subtitle: sub || undefined,
+            date, time,
+            color: '#10B981',
+            href: '/media-affiliates',
+            meta: { ...a, source: 'media_appearances' },
+          })
+
+          // 30-day review event
+          const airClean = stripTZ(a.air_date)
+          const airDt = airClean.length === 10 ? new Date(airClean + 'T00:00:00') : new Date(airClean)
+          airDt.setDate(airDt.getDate() + 30)
+          const reviewDate = `${airDt.getFullYear()}-${pad2(airDt.getMonth() + 1)}-${pad2(airDt.getDate())}`
+          allEvents.push({
+            id: `review-${a.id}`, category: 'review',
+            title: `📊 Review: ${a.title}`,
+            subtitle: `Score performance for ${a.platform || 'show'}`,
+            date: reviewDate,
+            color: '#F59E0B',
+            href: '/media-affiliates',
+            meta: { ...a, source: 'media_appearances' },
+          })
+        }
       })
     }
 
-    // 2. Email campaigns (marketing)
-    const { data: campaigns } = await supabase.from('email_campaigns')
-      .select('id, name, status, scheduled_at, created_at')
-      .eq('org_id', currentOrg.id)
-    if (campaigns) {
-      campaigns.forEach(c => {
-        const dateStr = c.scheduled_at || c.created_at
-        if (!dateStr) return
-        const d = new Date(dateStr)
-        allEvents.push({
-          id: `mktg-${c.id}`, category: 'marketing',
-          title: c.name || 'Campaign',
-          subtitle: c.status,
-          date: d.toISOString().slice(0, 10),
-          time: d.toTimeString().slice(0, 5),
-          color: '#3B82F6',
-          meta: { ...c, source: 'email_campaigns' },
-        })
-      })
-    }
-
-    // 3. Session notes (client sessions)
-    const { data: sessions } = await supabase.from('ehr_session_notes')
-      .select('id, contact_id, session_date, session_time, tech_name, status, contacts!inner(first_name, last_name)')
-      .eq('org_id', currentOrg.id)
-    if (sessions) {
-      sessions.forEach((s: any) => {
-        const name = s.contacts ? `${s.contacts.first_name} ${s.contacts.last_name}` : 'Client'
-        allEvents.push({
-          id: `session-${s.id}`, category: 'sessions',
-          title: name,
-          subtitle: s.status === 'completed' ? 'Completed' : 'Scheduled',
-          date: s.session_date,
-          time: s.session_time?.slice(0, 5),
-          color: '#10B981',
-          assignee: s.tech_name,
-          meta: { ...s, source: 'ehr_session_notes' },
-        })
-      })
-    }
-
-    // 4. Load team
+    // Load team
     const { data: teamData } = await supabase.from('team_profiles')
       .select('id, display_name, email, user_id')
       .eq('org_id', currentOrg.id)
@@ -539,8 +531,10 @@ Keep responses concise. No em dashes.`
                   {selectedDayEvents.map(ev => {
                     const cat = CATEGORIES.find(c => c.key === ev.category)
                     const Icon = cat?.icon || CalendarDays
+                    const Wrapper = ev.href ? 'a' : 'div'
                     return (
-                      <div key={ev.id} className="border border-gray-100 rounded-xl p-3 hover:border-gray-200 transition-colors">
+                      <Wrapper key={ev.id} href={ev.href as any}
+                        className="block border border-gray-100 rounded-xl p-3 hover:border-gray-200 transition-colors cursor-pointer">
                         <div className="flex items-start gap-2.5">
                           <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${cat?.bg || 'bg-gray-50'}`}>
                             <Icon className={`w-4 h-4 ${cat?.color || 'text-gray-500'}`} />
@@ -565,7 +559,7 @@ Keep responses concise. No em dashes.`
                             </div>
                           </div>
                         </div>
-                      </div>
+                      </Wrapper>
                     )
                   })}
                 </div>
