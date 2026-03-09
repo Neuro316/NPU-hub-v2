@@ -84,45 +84,57 @@ interface ContentPiece {
 // CONSTANTS
 // ═══════════════════════════════════════════════════════
 
-// Format date/datetime string for display, avoiding timezone shift
+// Supabase stores datetime-local values as UTC (e.g. "2026-04-01T10:31:00+00:00")
+// but the user entered them as local time. Strip the timezone suffix so we
+// treat the literal digits as the intended local time.
+const stripTZ = (d: string) => d.replace(/([+-]\d{2}:\d{2}|Z)$/, '')
+
+const pad2 = (n: number) => String(n).padStart(2, '0')
+
+// Format date/datetime string for display
 const formatDate = (d: string) => {
   if (!d) return ''
-  // If it's just a date (YYYY-MM-DD), display as UTC to avoid off-by-one
-  if (d.length === 10) return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { timeZone: 'UTC' })
-  // If it has time info, show date + time in local timezone
-  const dt = new Date(d)
-  return dt.toLocaleDateString('en-US') + ' ' + dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  const clean = stripTZ(d)
+  if (clean.length === 10) {
+    // Date-only: parse as local
+    const [y, m, day] = clean.split('-').map(Number)
+    return new Date(y, m - 1, day).toLocaleDateString('en-US')
+  }
+  // Datetime: parse the literal digits as local time
+  const dt = new Date(clean)
+  return dt.toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
 
 // Format datetime value for datetime-local input (YYYY-MM-DDTHH:mm)
 const toDatetimeLocal = (d: string | null) => {
   if (!d) return ''
-  if (d.length === 10) return d + 'T00:00' // date-only → add midnight
-  if (d.includes('T') && !d.includes('Z') && d.length <= 16) return d // already local format
-  const dt = new Date(d)
-  const pad = (n: number) => n.toString().padStart(2, '0')
-  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`
+  const clean = stripTZ(d)
+  // Already in YYYY-MM-DDTHH:mm format
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(clean)) return clean.slice(0, 16)
+  // Date-only
+  if (clean.length === 10) return clean + 'T00:00'
+  return clean
 }
 
-// Build a Google Calendar URL for an event — use raw local time strings, no Date conversion
+// Build a Google Calendar URL — format: YYYYMMDDTHHmmss in local time
 const gcalUrl = (title: string, date: string, description: string) => {
-  // Strip to digits only from the raw string to avoid timezone shifts
-  const strip = (s: string) => s.replace(/[-:T]/g, '').replace(/\.\d+.*$/, '').replace(/Z$/, '')
+  const clean = stripTZ(date)
   let d: string, endD: string
-  if (date.length === 10) {
-    // All-day: YYYYMMDD format, end = next day
-    d = date.replace(/-/g, '')
-    const [y, m, day] = date.split('-').map(Number)
-    const next = new Date(y, m - 1, day + 1) // local date math, no UTC
-    endD = `${next.getFullYear()}${String(next.getMonth() + 1).padStart(2, '0')}${String(next.getDate()).padStart(2, '0')}`
+  if (clean.length === 10) {
+    // All-day event
+    d = clean.replace(/-/g, '')
+    const [y, m, day] = clean.split('-').map(Number)
+    const next = new Date(y, m - 1, day + 1)
+    endD = `${next.getFullYear()}${pad2(next.getMonth() + 1)}${pad2(next.getDate())}`
   } else {
-    // Timed event: use raw local datetime string directly (e.g. 2026-04-02T14:00 → 20260402T140000)
-    const raw = strip(date.slice(0, 19)) // take YYYY-MM-DDTHH:mm:ss max
-    d = raw.length <= 8 ? raw : raw.padEnd(15, '0') // ensure YYYYMMDDTHHmmss
-    // End = 1 hour later, computed without Date to avoid TZ shift
-    const hh = parseInt(date.slice(11, 13) || '0')
-    const endHH = String((hh + 1) % 24).padStart(2, '0')
-    endD = d.slice(0, 9) + endHH + d.slice(11)
+    // Timed event: extract digits from YYYY-MM-DDTHH:mm(:ss)
+    const parts = clean.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/)
+    if (!parts) { d = ''; endD = ''; } else {
+      const [, y, mo, dy, hh, mm] = parts
+      d = `${y}${mo}${dy}T${hh}${mm}00`
+      const endHH = pad2((parseInt(hh) + 1) % 24)
+      endD = `${y}${mo}${dy}T${endHH}${mm}00`
+    }
   }
   const params = new URLSearchParams({ action: 'TEMPLATE', text: title, dates: `${d}/${endD}`, details: description })
   return `https://calendar.google.com/calendar/render?${params}&add=cameron%40neuroprogeny.com&add=cameron.s.allen%40gmail.com`
@@ -327,7 +339,13 @@ export default function MediaAffiliatesPage() {
     if (appRes.error) console.error('loadData: media_appearances error', appRes.error)
     if (convRes.error) console.error('loadData: podcast_conversions error', convRes.error)
     if (contentRes.error) console.error('loadData: podcast_content_pieces error', contentRes.error)
-    if (appRes.data) setAppearances(appRes.data)
+    if (appRes.data) {
+      // Debug: log raw date format from Supabase
+      appRes.data.slice(0, 3).forEach(a => {
+        if (a.recording_date || a.air_date) console.log('Raw dates from Supabase:', { id: a.id, title: a.title, recording_date: a.recording_date, air_date: a.air_date })
+      })
+      setAppearances(appRes.data)
+    }
     if (convRes.data) setConversions(convRes.data)
     if (contentRes.data) setContentPieces(contentRes.data)
     setLoading(false)
