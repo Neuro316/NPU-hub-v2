@@ -176,7 +176,7 @@ export default function GuestSheetPage() {
         {/* Print button - hidden in print */}
         <div className="no-print mb-6 flex items-center justify-between">
           <button
-            onClick={() => window.history.back()}
+            onClick={() => { window.location.href = '/media-affiliates' }}
             className="text-sm text-gray-500 hover:text-gray-700"
           >
             &larr; Back
