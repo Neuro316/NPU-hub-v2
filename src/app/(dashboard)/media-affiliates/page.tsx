@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
 import {
@@ -278,8 +279,13 @@ function buildTaskTitle(template: string, appearance: Appearance): string {
 // ═══════════════════════════════════════════════════════
 
 export default function MediaAffiliatesPage() {
+  return <Suspense fallback={null}><MediaAffiliatesContent /></Suspense>
+}
+
+function MediaAffiliatesContent() {
   const supabase = createClient()
   const { currentOrg } = useWorkspace()
+  const searchParams = useSearchParams()
   const orgId = currentOrg?.id
 
   // State
@@ -355,6 +361,14 @@ export default function MediaAffiliatesPage() {
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  // ─── Highlight from query param (e.g. from Calendar click) ───
+  useEffect(() => {
+    const highlight = searchParams.get('highlight')
+    if (highlight && appearances.length > 0 && !expandedCard) {
+      setExpandedCard(highlight)
+    }
+  }, [searchParams, appearances.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Filtered Data ─────────────────────────────────
 

@@ -109,7 +109,7 @@ export default function CalendarPage() {
             subtitle: sub || undefined,
             date, time,
             color: '#8B5CF6',
-            href: '/media-affiliates',
+            href: `/media-affiliates?highlight=${a.id}`,
             meta: { ...a, source: 'media_appearances' },
           })
         }
@@ -123,7 +123,7 @@ export default function CalendarPage() {
             subtitle: sub || undefined,
             date, time,
             color: '#10B981',
-            href: '/media-affiliates',
+            href: `/media-affiliates?highlight=${a.id}`,
             meta: { ...a, source: 'media_appearances' },
           })
 
@@ -138,7 +138,7 @@ export default function CalendarPage() {
             subtitle: `Score performance for ${a.platform || 'show'}`,
             date: reviewDate,
             color: '#F59E0B',
-            href: '/media-affiliates',
+            href: `/media-affiliates?highlight=${a.id}`,
             meta: { ...a, source: 'media_appearances' },
           })
         }
@@ -318,7 +318,7 @@ Keep responses concise. No em dashes.`
 
         {/* Category tabs */}
         <div className="flex items-center gap-1 mb-3 overflow-x-auto pb-1">
-          <button onClick={() => setActiveTab('all')}
+          <button onClick={() => { setActiveTab('all'); setVisibleCategories(new Set(CATEGORIES.map(c => c.key))) }}
             className={`flex-shrink-0 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors
               ${activeTab === 'all' ? 'bg-np-blue text-white' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>
             <CalendarDays className="w-3 h-3 inline mr-1" /> All
@@ -326,12 +326,11 @@ Keep responses concise. No em dashes.`
           {CATEGORIES.map(cat => {
             const Icon = cat.icon
             const count = events.filter(e => e.category === cat.key).length
-            const visible = visibleCategories.has(cat.key)
+            const isActive = activeTab === cat.key
             return (
-              <button key={cat.key} onClick={() => { setActiveTab(cat.key); if (!visible) toggleCategory(cat.key) }}
+              <button key={cat.key} onClick={() => { setActiveTab(cat.key); setVisibleCategories(new Set([cat.key])) }}
                 className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors
-                  ${activeTab === cat.key ? `${cat.bg} ${cat.color}` : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}
-                  ${!visible ? 'opacity-40' : ''}`}>
+                  ${isActive ? `${cat.bg} ${cat.color}` : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>
                 <Icon className="w-3 h-3" /> {cat.label}
                 {count > 0 && <span className="text-[9px] bg-white/60 px-1 rounded">{count}</span>}
               </button>
