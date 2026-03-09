@@ -84,6 +84,37 @@ interface ContentPiece {
 // CONSTANTS
 // ═══════════════════════════════════════════════════════
 
+// Format date/datetime string for display, avoiding timezone shift
+const formatDate = (d: string) => {
+  if (!d) return ''
+  // If it's just a date (YYYY-MM-DD), display as UTC to avoid off-by-one
+  if (d.length === 10) return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { timeZone: 'UTC' })
+  // If it has time info, show date + time in local timezone
+  const dt = new Date(d)
+  return dt.toLocaleDateString('en-US') + ' ' + dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+}
+
+// Format datetime value for datetime-local input (YYYY-MM-DDTHH:mm)
+const toDatetimeLocal = (d: string | null) => {
+  if (!d) return ''
+  if (d.length === 10) return d + 'T00:00' // date-only → add midnight
+  if (d.includes('T') && !d.includes('Z') && d.length <= 16) return d // already local format
+  const dt = new Date(d)
+  const pad = (n: number) => n.toString().padStart(2, '0')
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`
+}
+
+// Build a Google Calendar URL for an event
+const gcalUrl = (title: string, date: string, description: string) => {
+  // Format date for Google Calendar (YYYYMMDD for all-day)
+  const d = date.length === 10 ? date.replace(/-/g, '') : new Date(date).toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '')
+  const endD = date.length === 10
+    ? (() => { const nd = new Date(date + 'T00:00:00Z'); nd.setUTCDate(nd.getUTCDate() + 1); return nd.toISOString().slice(0, 10).replace(/-/g, '') })()
+    : (() => { const nd = new Date(date); nd.setHours(nd.getHours() + 1); return nd.toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '') })()
+  const params = new URLSearchParams({ action: 'TEMPLATE', text: title, dates: `${d}/${endD}`, details: description })
+  return `https://calendar.google.com/calendar/render?${params}`
+}
+
 const TYPE_FILTERS = [
   { key: 'all', label: 'All', icon: Globe },
   { key: 'podcast', label: 'Podcasts', icon: Mic },
@@ -857,7 +888,7 @@ export default function MediaAffiliatesPage() {
                             )}
                           </td>
                           <td className="px-4 py-3 text-gray-500 text-xs">{item.promo_code || '-'}</td>
-                          <td className="px-4 py-3 text-gray-500 text-xs">{item.air_date ? new Date(item.air_date).toLocaleDateString() : '-'}</td>
+                          <td className="px-4 py-3 text-gray-500 text-xs">{item.air_date ? formatDate(item.air_date) : '-'}</td>
                         </tr>
                       )
                     })}
@@ -1164,7 +1195,7 @@ export default function MediaAffiliatesPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Recording Date</label>
                   <input
-                    type="date"
+                    type="datetime-local"
                     value={form.recording_date}
                     onChange={e => setForm(f => ({ ...f, recording_date: e.target.value }))}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
@@ -1357,8 +1388,8 @@ function EditAppearanceModal({
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Recording Date</label>
               <input
-                type="date"
-                value={draft.recording_date || ''}
+                type="datetime-local"
+                value={toDatetimeLocal(draft.recording_date)}
                 onChange={e => setDraft(d => ({ ...d, recording_date: e.target.value || null }))}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
               />
@@ -1366,8 +1397,8 @@ function EditAppearanceModal({
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Air Date</label>
               <input
-                type="date"
-                value={draft.air_date || ''}
+                type="datetime-local"
+                value={toDatetimeLocal(draft.air_date)}
                 onChange={e => setDraft(d => ({ ...d, air_date: e.target.value || null }))}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
               />
@@ -1636,13 +1667,27 @@ function AppearanceCard({
             {item.recording_date && (
               <div>
                 <span className="text-gray-400">Recording</span>
-                <div className="font-medium text-np-dark mt-0.5">{new Date(item.recording_date).toLocaleDateString()}</div>
+                <div className="font-medium text-np-dark mt-0.5">{formatDate(item.recording_date)}</div>
+                <a
+                  href={gcalUrl(`🎙️ Record: ${item.title} — ${item.platform || 'TBD'}`, item.recording_date, `Recording session with ${item.host || 'TBD'} for ${item.platform || 'TBD'}\nTopic: ${item.title}${item.promo_code ? `\nPromo code: ${item.promo_code}` : ''}`)}
+                  target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+                  className="text-[10px] text-np-blue hover:underline mt-0.5 inline-flex items-center gap-0.5"
+                >
+                  <Calendar className="w-2.5 h-2.5" /> Add to Cal
+                </a>
               </div>
             )}
             {item.air_date && (
               <div>
                 <span className="text-gray-400">Air Date</span>
-                <div className="font-medium text-np-dark mt-0.5">{new Date(item.air_date).toLocaleDateString()}</div>
+                <div className="font-medium text-np-dark mt-0.5">{formatDate(item.air_date)}</div>
+                <a
+                  href={gcalUrl(`🚀 LIVE: ${item.title} on ${item.platform || 'TBD'}`, item.air_date, `Episode goes live!\nHost: ${item.host || 'TBD'}${item.promo_code ? `\nPromo code: ${item.promo_code}` : ''}\nReminder: Post announcement and verify show notes have UTM links`)}
+                  target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+                  className="text-[10px] text-np-blue hover:underline mt-0.5 inline-flex items-center gap-0.5"
+                >
+                  <Calendar className="w-2.5 h-2.5" /> Add to Cal
+                </a>
               </div>
             )}
           </div>
