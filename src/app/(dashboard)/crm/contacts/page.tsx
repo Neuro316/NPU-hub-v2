@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useState, useMemo, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import {
   Search, Plus, Tag, X, Settings2, GripVertical, Check, Eye, EyeOff, Sparkles, Loader2,
@@ -52,6 +52,14 @@ const emptyForm: NewContactForm = {
 }
 
 export default function ContactsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ContactsPageContent />
+    </Suspense>
+  )
+}
+
+function ContactsPageContent() {
   const { currentOrg } = useWorkspace()
   const searchParams = useSearchParams()
   const [contacts, setContacts] = useState<CrmContact[]>([])
