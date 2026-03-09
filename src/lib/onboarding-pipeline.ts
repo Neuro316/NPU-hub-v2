@@ -115,6 +115,9 @@ export interface OnboardingParams {
   dateOfBirth?: string
   notes?: string
 
+  // Pipeline override
+  pipelineId?: string       // if provided, resolves stage 1 of this specific pipeline
+
   // Flags
   createAccount?: boolean   // whether to send invite email
   sendInviteEmail?: boolean // if createAccount=true, send email or just create silently
