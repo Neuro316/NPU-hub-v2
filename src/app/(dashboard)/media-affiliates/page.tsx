@@ -1790,6 +1790,13 @@ function AppearanceCard({
             >
               <FileText className="w-3 h-3" /> Guest Sheet
             </button>
+            <a
+              href={`/media-affiliates/repurpose/${item.id}`}
+              onClick={e => e.stopPropagation()}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-white border border-purple-200 rounded-lg hover:bg-purple-50 text-purple-600"
+            >
+              <Share2 className="w-3 h-3" /> Repurpose
+            </a>
             <button
               onClick={e => { e.stopPropagation(); onDelete(item.id) }}
               className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-white border border-red-200 rounded-lg hover:bg-red-50 text-red-500"
