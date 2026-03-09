@@ -72,7 +72,7 @@ export async function GET(req: NextRequest) {
 
   const { data: existingContacts } = await supabase
     .from('contacts')
-    .select('id, email, mastermind_user_id, tags, pipeline_stage')
+    .select('id, email, mastermind_user_id, tags, pipeline_stage, source')
     .in('email', emails)
     .eq('org_id', NP_ORG_ID)
 
