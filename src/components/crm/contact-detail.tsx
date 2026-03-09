@@ -899,118 +899,142 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
               {tab === 'overview' && (
                 <>
                   {/* Contact Info Card */}
-                  {show('contact_info') && <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
-                    {contact.preferred_name && (
-                      <div className="flex items-center gap-3 px-3 py-2.5">
-                        <User className="w-3.5 h-3.5 text-np-blue flex-shrink-0" />
-                        <div className="flex-1">
-                          <p className="text-[9px] text-gray-400 uppercase tracking-wider">Goes By</p>
-                          <p className="text-[12px] font-medium text-np-dark">{contact.preferred_name}</p>
-                        </div>
-                      </div>
-                    )}
-                    {contact.phone && (
-                      <div className="flex items-center gap-3 px-3 py-2.5">
-                        <Phone className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
-                        <div className="flex-1">
-                          <p className="text-[9px] text-gray-400 uppercase tracking-wider">Phone</p>
-                          <p className="text-[12px] font-medium text-np-dark">{contact.phone}</p>
-                        </div>
-                        {contact.preferred_contact_method && (
-                          <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-np-blue/10 text-np-blue">Prefers {contact.preferred_contact_method}</span>
+                  {show('contact_info') && (() => {
+                    const hasPhone = !!contact.phone
+                    const hasEmail = !!contact.email
+                    const hasAddress = !!(contact.address_street || contact.address_city)
+                    const hasProfessional = !!(contact.occupation || contact.industry || contact.custom_fields?.company)
+                    const hasSocial = !!(contact.instagram_handle || contact.linkedin_url || contact.how_heard_about_us || contact.referred_by_contact)
+                    const hasAny = hasPhone || hasEmail || !!contact.preferred_name || hasAddress || !!contact.reason_for_contact || hasProfessional || !!contact.date_of_birth || hasSocial
+                    const cfg = cardConfig
+                    const empty = (label: string) => (
+                      <button onClick={() => setEditingInfo(true)}
+                        className="w-full flex items-center gap-3 px-3 py-2 hover:bg-np-blue/5 transition-colors group">
+                        <div className="w-3.5 h-3.5 rounded-full border border-dashed border-gray-300 flex-shrink-0 group-hover:border-np-blue/50 transition-colors" />
+                        <p className="text-[11px] text-gray-400 italic group-hover:text-np-blue transition-colors">+ Add {label}</p>
+                      </button>
+                    )
+                    return (
+                      <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
+                        {contact.preferred_name && (
+                          <div className="flex items-center gap-3 px-3 py-2.5">
+                            <User className="w-3.5 h-3.5 text-np-blue flex-shrink-0" />
+                            <div className="flex-1">
+                              <p className="text-[9px] text-gray-400 uppercase tracking-wider">Goes By</p>
+                              <p className="text-[12px] font-medium text-np-dark">{contact.preferred_name}</p>
+                            </div>
+                          </div>
+                        )}
+                        {hasPhone ? (
+                          <div className="flex items-center gap-3 px-3 py-2.5">
+                            <Phone className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
+                            <div className="flex-1">
+                              <p className="text-[9px] text-gray-400 uppercase tracking-wider">Phone</p>
+                              <p className="text-[12px] font-medium text-np-dark">{contact.phone}</p>
+                            </div>
+                            {contact.preferred_contact_method && (
+                              <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-np-blue/10 text-np-blue">Prefers {contact.preferred_contact_method}</span>
+                            )}
+                          </div>
+                        ) : cfg && empty('Phone')}
+                        {hasEmail ? (
+                          <div className="flex items-center gap-3 px-3 py-2.5">
+                            <Mail className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                            <div className="flex-1">
+                              <p className="text-[9px] text-gray-400 uppercase tracking-wider">Email</p>
+                              <p className="text-[12px] font-medium text-np-dark">{contact.email}</p>
+                            </div>
+                          </div>
+                        ) : cfg && empty('Email')}
+                        {show('address') && (hasAddress ? (
+                          <div className="flex items-center gap-3 px-3 py-2.5">
+                            <MapPin className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+                            <div className="flex-1">
+                              <p className="text-[9px] text-gray-400 uppercase tracking-wider">Address</p>
+                              <p className="text-[12px] font-medium text-np-dark">
+                                {[contact.address_street, contact.address_city, contact.address_state, contact.address_zip].filter(Boolean).join(', ')}
+                              </p>
+                            </div>
+                          </div>
+                        ) : cfg && empty('Address'))}
+                        {contact.reason_for_contact && (
+                          <div className="flex items-center gap-3 px-3 py-2.5">
+                            <Target className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" />
+                            <div className="flex-1">
+                              <p className="text-[9px] text-gray-400 uppercase tracking-wider">Primary Reason</p>
+                              <p className="text-[12px] font-medium text-np-dark">{contact.reason_for_contact}</p>
+                            </div>
+                          </div>
+                        )}
+                        {show('professional') && (hasProfessional ? (
+                          <div className="flex items-center gap-3 px-3 py-2.5">
+                            <User className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                            <div className="flex-1">
+                              <p className="text-[9px] text-gray-400 uppercase tracking-wider">Professional</p>
+                              <p className="text-[12px] font-medium text-np-dark">
+                                {[contact.occupation, contact.industry, contact.custom_fields?.company as string].filter(Boolean).join(' Â· ')}
+                              </p>
+                            </div>
+                          </div>
+                        ) : cfg && empty('Occupation / Industry'))}
+                        {contact.date_of_birth && (
+                          <div className="flex items-center gap-3 px-3 py-2.5">
+                            <Calendar className="w-3.5 h-3.5 text-pink-500 flex-shrink-0" />
+                            <div className="flex-1">
+                              <p className="text-[9px] text-gray-400 uppercase tracking-wider">Date of Birth</p>
+                              <p className="text-[12px] font-medium text-np-dark">{new Date(contact.date_of_birth + 'T00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+                            </div>
+                          </div>
+                        )}
+                        {show('social_attribution') && ((contact.instagram_handle || contact.linkedin_url) ? (
+                          <div className="flex items-center gap-3 px-3 py-2.5">
+                            <ExternalLink className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
+                            <div className="flex-1">
+                              <p className="text-[9px] text-gray-400 uppercase tracking-wider">Social</p>
+                              <div className="flex gap-3">
+                                {contact.instagram_handle && <span className="text-[11px] text-np-dark">IG: @{contact.instagram_handle.replace('@','')}</span>}
+                                {contact.linkedin_url && <a href={contact.linkedin_url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-np-blue hover:underline">LinkedIn</a>}
+                              </div>
+                            </div>
+                          </div>
+                        ) : cfg && empty('Social handles'))}
+                        {show('social_attribution') && contact.how_heard_about_us && (
+                          <div className="flex items-center gap-3 px-3 py-2.5">
+                            <Route className="w-3.5 h-3.5 text-teal-500 flex-shrink-0" />
+                            <div className="flex-1">
+                              <p className="text-[9px] text-gray-400 uppercase tracking-wider">How They Found Us</p>
+                              <p className="text-[12px] font-medium text-np-dark">{contact.how_heard_about_us}</p>
+                            </div>
+                          </div>
+                        )}
+                        {show('social_attribution') && contact.referred_by_contact && (
+                          <div className="flex items-center gap-3 px-3 py-2.5">
+                            <Heart className="w-3.5 h-3.5 text-rose-500 flex-shrink-0" />
+                            <div className="flex-1">
+                              <p className="text-[9px] text-gray-400 uppercase tracking-wider">Referred By</p>
+                              <p className="text-[12px] font-medium text-np-dark">{contact.referred_by_contact.first_name} {contact.referred_by_contact.last_name}</p>
+                            </div>
+                          </div>
                         )}
                       </div>
-                    )}
-                    {contact.email && (
-                      <div className="flex items-center gap-3 px-3 py-2.5">
-                        <Mail className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
-                        <div className="flex-1">
-                          <p className="text-[9px] text-gray-400 uppercase tracking-wider">Email</p>
-                          <p className="text-[12px] font-medium text-np-dark">{contact.email}</p>
-                        </div>
-                      </div>
-                    )}
-                    {show('address') && (contact.address_street || contact.address_city) && (
-                      <div className="flex items-center gap-3 px-3 py-2.5">
-                        <MapPin className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
-                        <div className="flex-1">
-                          <p className="text-[9px] text-gray-400 uppercase tracking-wider">Address</p>
-                          <p className="text-[12px] font-medium text-np-dark">
-                            {[contact.address_street, contact.address_city, contact.address_state, contact.address_zip].filter(Boolean).join(', ')}
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                    {contact.reason_for_contact && (
-                      <div className="flex items-center gap-3 px-3 py-2.5">
-                        <Target className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" />
-                        <div className="flex-1">
-                          <p className="text-[9px] text-gray-400 uppercase tracking-wider">Primary Reason</p>
-                          <p className="text-[12px] font-medium text-np-dark">{contact.reason_for_contact}</p>
-                        </div>
-                      </div>
-                    )}
-                    {show('professional') && (contact.occupation || contact.industry || contact.custom_fields?.company) && (
-                      <div className="flex items-center gap-3 px-3 py-2.5">
-                        <User className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                        <div className="flex-1">
-                          <p className="text-[9px] text-gray-400 uppercase tracking-wider">Professional</p>
-                          <p className="text-[12px] font-medium text-np-dark">
-                            {[contact.occupation, contact.industry, contact.custom_fields?.company as string].filter(Boolean).join(' Â· ')}
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                    {contact.date_of_birth && (
-                      <div className="flex items-center gap-3 px-3 py-2.5">
-                        <Calendar className="w-3.5 h-3.5 text-pink-500 flex-shrink-0" />
-                        <div className="flex-1">
-                          <p className="text-[9px] text-gray-400 uppercase tracking-wider">Date of Birth</p>
-                          <p className="text-[12px] font-medium text-np-dark">{new Date(contact.date_of_birth + 'T00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
-                        </div>
-                      </div>
-                    )}
-                    {show('social_attribution') && (contact.instagram_handle || contact.linkedin_url) && (
-                      <div className="flex items-center gap-3 px-3 py-2.5">
-                        <ExternalLink className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
-                        <div className="flex-1">
-                          <p className="text-[9px] text-gray-400 uppercase tracking-wider">Social</p>
-                          <div className="flex gap-3">
-                            {contact.instagram_handle && <span className="text-[11px] text-np-dark">IG: @{contact.instagram_handle.replace('@','')}</span>}
-                            {contact.linkedin_url && <a href={contact.linkedin_url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-np-blue hover:underline">LinkedIn</a>}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                    {show('social_attribution') && contact.how_heard_about_us && (
-                      <div className="flex items-center gap-3 px-3 py-2.5">
-                        <Route className="w-3.5 h-3.5 text-teal-500 flex-shrink-0" />
-                        <div className="flex-1">
-                          <p className="text-[9px] text-gray-400 uppercase tracking-wider">How They Found Us</p>
-                          <p className="text-[12px] font-medium text-np-dark">{contact.how_heard_about_us}</p>
-                        </div>
-                      </div>
-                    )}
-                    {show('social_attribution') && contact.referred_by_contact && (
-                      <div className="flex items-center gap-3 px-3 py-2.5">
-                        <Heart className="w-3.5 h-3.5 text-rose-500 flex-shrink-0" />
-                        <div className="flex-1">
-                          <p className="text-[9px] text-gray-400 uppercase tracking-wider">Referred By</p>
-                          <p className="text-[12px] font-medium text-np-dark">{contact.referred_by_contact.first_name} {contact.referred_by_contact.last_name}</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>}
+                    )
+                  })()}
 
                   {/* Emergency + Consent + Billing row */}
                   {(show('consent_billing') || show('emergency_contact')) && <div className="grid grid-cols-3 gap-2">
-                    {show('emergency_contact') && contact.emergency_contact_name && (
+                    {show('emergency_contact') && (contact.emergency_contact_name ? (
                       <div className="bg-red-50/50 rounded-lg p-2 border border-red-100/50">
                         <p className="text-[8px] font-bold text-red-500 uppercase">Emergency</p>
                         <p className="text-[10px] font-medium text-np-dark mt-0.5">{contact.emergency_contact_name}</p>
                         <p className="text-[9px] text-gray-400">{contact.emergency_contact_phone}</p>
                       </div>
-                    )}
+                    ) : cardConfig && (
+                      <button onClick={() => setEditingInfo(true)}
+                        className="rounded-lg p-2 border border-dashed border-gray-200 bg-gray-50/50 hover:border-np-blue/40 hover:bg-np-blue/5 transition-colors text-left w-full">
+                        <p className="text-[8px] font-bold text-gray-400 uppercase">Emergency</p>
+                        <p className="text-[10px] text-gray-300 italic mt-0.5">+ Add contact</p>
+                      </button>
+                    ))}
                     <div className={`rounded-lg p-2 border ${contact.informed_consent_signed ? 'bg-green-50/50 border-green-100/50' : 'bg-amber-50/50 border-amber-100/50'}`}>
                       <p className="text-[8px] font-bold uppercase" style={{ color: contact.informed_consent_signed ? '#16a34a' : '#d97706' }}>Consent</p>
                       <p className="text-[10px] font-medium text-np-dark mt-0.5">{contact.informed_consent_signed ? 'Signed' : 'Not Signed'}</p>
