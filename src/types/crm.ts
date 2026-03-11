@@ -111,6 +111,55 @@ export interface CrmContact {
   top_responding_topics?: string[] | null
   last_enriched_at?: string | null
   referral_depth?: number | null
+  // â”€â”€ Outreach / Partner Intelligence (from Master Partner Template) â”€â”€
+  outreach_rank?: number | null
+  platform?: string | null
+  profile_handle?: string | null
+  primary_niche?: string | null
+  audience_type?: string | null
+  fit_category?: string | null
+  alignment_score?: number | null
+  commercial_relevance_score?: number | null
+  outreach_ease_score?: number | null
+  credibility_score?: number | null
+  outreach_total_score?: number | null
+  priority_tier?: string | null
+  offer_angle?: string | null
+  outreach_opener?: string | null
+  partnership_type?: string | null
+  outreach_owner?: string | null
+  outreach_status?: 'not_started' | 'contacted' | 'responded' | 'in_relationship' | 'partner' | 'not_a_fit' | null
+  outreach_last_touch?: string | null
+  outreach_next_step?: string | null
+  outreach_response_summary?: string | null
+  outreach_follow_up_date?: string | null
+  outreach_strategy?: string | null
+  // â”€â”€ Follower / Reach counts â”€â”€
+  instagram_followers?: number | null
+  linkedin_followers?: number | null
+  youtube_subscribers?: number | null
+  tiktok_followers?: number | null
+  facebook_followers?: number | null
+  twitter_followers?: number | null
+  podcast_listeners?: number | null
+  email_list_subscribers?: number | null
+  total_est_reach?: number | null
+  // â”€â”€ Market & Research Intel â”€â”€
+  est_audience_size?: string | null
+  engagement_rate?: string | null
+  content_frequency?: string | null
+  content_type?: string | null
+  market_segment?: string | null
+  geographic_market?: string | null
+  competitor_partnerships?: string | null
+  market_opportunity_notes?: string | null
+  revenue_potential?: string | null
+  npu_sensorium_fit?: string | null
+  // â”€â”€ 10-day follow-up sequence â”€â”€
+  outreach_sequence_started?: string | null
+  followup_day3_message?: string | null
+  followup_day7_message?: string | null
+  followup_day10_message?: string | null
 }
 
 export interface TeamMember {

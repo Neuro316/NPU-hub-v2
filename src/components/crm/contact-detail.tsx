@@ -1761,137 +1761,313 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
               {/* CONNECTIONS TAB */}
               {tab === 'intel' && contact && (
                 <div className="space-y-4">
-                  {/* Contact Type & Population */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <p className="text-[8px] font-bold text-gray-400 uppercase mb-1">Contact Type</p>
-                      <p className="text-[11px] font-semibold text-np-dark">
-                        {contact.contact_type ? contact.contact_type.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()) : 'Not set'}
-                      </p>
+
+                  {/* â”€â”€ PARTNER SCORE â”€â”€ */}
+                  {(contact.outreach_total_score || contact.alignment_score) && (
+                    <div className="bg-white border border-gray-100 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-[9px] font-bold uppercase tracking-wider text-np-blue flex items-center gap-1"><Target className="w-3 h-3" /> Partner Score</p>
+                        <div className="flex items-center gap-2">
+                          {contact.priority_tier && (
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${contact.priority_tier === 'A Tier' || contact.priority_tier === 'A' ? 'bg-green-100 text-green-700' : contact.priority_tier === 'B Tier' || contact.priority_tier === 'B' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
+                              {contact.priority_tier}
+                            </span>
+                          )}
+                          {contact.outreach_total_score && (
+                            <span className="text-lg font-black text-np-dark">{contact.outreach_total_score}<span className="text-[10px] font-normal text-gray-400">/20</span></span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-4 gap-2">
+                        {[
+                          { label: 'Alignment', val: contact.alignment_score, color: 'bg-blue-500' },
+                          { label: 'Commercial', val: contact.commercial_relevance_score, color: 'bg-purple-500' },
+                          { label: 'Outreach Ease', val: contact.outreach_ease_score, color: 'bg-amber-500' },
+                          { label: 'Credibility', val: contact.credibility_score, color: 'bg-green-500' },
+                        ].map(({ label, val, color }) => (
+                          <div key={label} className="text-center">
+                            <p className="text-[8px] text-gray-400 mb-1">{label}</p>
+                            <div className="flex gap-0.5 justify-center mb-1">
+                              {[1,2,3,4,5].map(i => (
+                                <div key={i} className={`w-2 h-2 rounded-sm ${i <= (val || 0) ? color : 'bg-gray-100'}`} />
+                              ))}
+                            </div>
+                            <p className="text-[10px] font-bold text-np-dark">{val ?? 'â€”'}<span className="text-[8px] font-normal text-gray-400">/5</span></p>
+                          </div>
+                        ))}
+                      </div>
+                      {contact.fit_category && (
+                        <div className="mt-3 pt-3 border-t border-gray-100 flex flex-wrap gap-2">
+                          {contact.fit_category && <span className="text-[9px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-medium">{contact.fit_category}</span>}
+                          {contact.primary_niche && <span className="text-[9px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{contact.primary_niche}</span>}
+                          {contact.audience_type && <span className="text-[9px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{contact.audience_type}</span>}
+                          {contact.partnership_type && <span className="text-[9px] bg-np-blue/10 text-np-blue px-2 py-0.5 rounded-full font-medium">{contact.partnership_type}</span>}
+                        </div>
+                      )}
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <p className="text-[8px] font-bold text-gray-400 uppercase mb-1">Population Served</p>
-                      <p className="text-[11px] text-np-dark">{contact.population_served || 'Not set'}</p>
+                  )}
+
+                  {/* â”€â”€ OUTREACH STATUS â”€â”€ */}
+                  <div className="bg-white border border-gray-100 rounded-xl p-4">
+                    <p className="text-[9px] font-bold uppercase tracking-wider text-np-blue mb-3 flex items-center gap-1"><MessageCircle className="w-3 h-3" /> Outreach Status</p>
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                      <div>
+                        <p className="text-[8px] text-gray-400 uppercase font-semibold">Status</p>
+                        <span className={`inline-block mt-0.5 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                          contact.outreach_status === 'partner' ? 'bg-green-100 text-green-700' :
+                          contact.outreach_status === 'responded' || contact.outreach_status === 'in_relationship' ? 'bg-blue-100 text-blue-700' :
+                          contact.outreach_status === 'contacted' ? 'bg-amber-100 text-amber-700' :
+                          contact.outreach_status === 'not_a_fit' ? 'bg-red-100 text-red-600' :
+                          'bg-gray-100 text-gray-500'
+                        }`}>
+                          {contact.outreach_status ? contact.outreach_status.replace(/_/g,' ').replace(/\w/g,(c:string)=>c.toUpperCase()) : 'Not Started'}
+                        </span>
+                      </div>
+                      {contact.outreach_owner && (
+                        <div>
+                          <p className="text-[8px] text-gray-400 uppercase font-semibold">Owner</p>
+                          <p className="text-[11px] font-semibold text-np-dark mt-0.5">{contact.outreach_owner}</p>
+                        </div>
+                      )}
+                      {contact.outreach_last_touch && (
+                        <div>
+                          <p className="text-[8px] text-gray-400 uppercase font-semibold">Last Touch</p>
+                          <p className="text-[11px] text-np-dark mt-0.5">{new Date(contact.outreach_last_touch).toLocaleDateString()}</p>
+                        </div>
+                      )}
+                      {contact.outreach_follow_up_date && (
+                        <div>
+                          <p className="text-[8px] text-gray-400 uppercase font-semibold">Follow-up Due</p>
+                          <p className={`text-[11px] font-semibold mt-0.5 ${new Date(contact.outreach_follow_up_date) < new Date() ? 'text-red-600' : 'text-np-dark'}`}>
+                            {new Date(contact.outreach_follow_up_date).toLocaleDateString()}
+                          </p>
+                        </div>
+                      )}
                     </div>
+                    {contact.outreach_next_step && (
+                      <div className="bg-amber-50 rounded-lg p-2.5 mb-2">
+                        <p className="text-[8px] font-bold text-amber-600 uppercase mb-0.5">Next Step</p>
+                        <p className="text-[11px] text-amber-800">{contact.outreach_next_step}</p>
+                      </div>
+                    )}
+                    {contact.outreach_response_summary && (
+                      <div className="bg-gray-50 rounded-lg p-2.5">
+                        <p className="text-[8px] font-bold text-gray-500 uppercase mb-0.5">Response Summary</p>
+                        <p className="text-[11px] text-gray-700">{contact.outreach_response_summary}</p>
+                      </div>
+                    )}
                   </div>
 
-                  {/* Key Differentiator */}
-                  {contact.key_differentiator && (
-                    <div className="bg-amber-50 border border-amber-100 rounded-lg p-3">
-                      <p className="text-[8px] font-bold text-amber-600 uppercase mb-1 flex items-center gap-1"><Sparkles className="w-3 h-3" /> Key Differentiator</p>
-                      <p className="text-[11px] text-amber-800">{contact.key_differentiator}</p>
+                  {/* â”€â”€ OFFER ANGLE â”€â”€ */}
+                  {contact.offer_angle && (
+                    <div className="bg-purple-50 border border-purple-100 rounded-xl p-4">
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-purple-600 mb-2 flex items-center gap-1"><Sparkles className="w-3 h-3" /> Offer Angle</p>
+                      <p className="text-[11px] text-purple-800">{contact.offer_angle}</p>
                     </div>
                   )}
 
-                  {/* Outreach Strategy */}
-                  {contact.preferred_outreach_strategy && (
-                    <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
-                      <p className="text-[8px] font-bold text-blue-600 uppercase mb-1 flex items-center gap-1"><Target className="w-3 h-3" /> Outreach Strategy</p>
-                      <p className="text-[11px] text-blue-800">{contact.preferred_outreach_strategy}</p>
-                    </div>
-                  )}
-
-                  {/* Offer Angle */}
-                  {(contact as any).offer_angle && (
-                    <div className="bg-purple-50 border border-purple-100 rounded-lg p-3">
-                      <p className="text-[8px] font-bold text-purple-600 uppercase mb-1 flex items-center gap-1"><Sparkles className="w-3 h-3" /> Offer Angle</p>
-                      <p className="text-[11px] text-purple-800">{(contact as any).offer_angle}</p>
-                    </div>
-                  )}
-
-                  {/* Outreach Opener */}
-                  {(contact as any).outreach_opener && (
-                    <div className="bg-white border border-gray-200 rounded-lg p-3">
+                  {/* â”€â”€ OUTREACH OPENER â”€â”€ */}
+                  {contact.outreach_opener && (
+                    <div className="bg-white border border-gray-200 rounded-xl p-4">
                       <div className="flex items-center justify-between mb-2">
-                        <p className="text-[8px] font-bold text-gray-500 uppercase flex items-center gap-1"><MessageCircle className="w-3 h-3" /> Outreach Opener</p>
+                        <p className="text-[9px] font-bold uppercase tracking-wider text-gray-500 flex items-center gap-1"><MessageCircle className="w-3 h-3" /> Initial Outreach Opener</p>
                         <div className="flex gap-1.5">
-                          <button
-                            onClick={() => navigator.clipboard.writeText((contact as any).outreach_opener)}
-                            className="text-[8px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors">
-                            Copy
-                          </button>
+                          <button onClick={() => navigator.clipboard.writeText(contact.outreach_opener!)}
+                            className="text-[8px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors">Copy</button>
                           {contact.email && (
-                            <button
-                              onClick={() => {
-                                setEmailInitialSubject('Partnership Opportunity â€” Neuro Progeny')
-                                setEmailInitialBody((contact as any).outreach_opener)
-                                setShowEmailComposer(true)
-                              }}
+                            <button onClick={() => { setEmailInitialSubject('Partnership Opportunity â€” Neuro Progeny'); setEmailInitialBody(contact.outreach_opener!); setShowEmailComposer(true) }}
                               className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-np-blue/10 text-np-blue hover:bg-np-blue/20 transition-colors flex items-center gap-1">
                               <Mail className="w-2.5 h-2.5" /> Send Email
                             </button>
                           )}
                         </div>
                       </div>
-                      <p className="text-[11px] text-gray-700 leading-relaxed italic whitespace-pre-wrap">{(contact as any).outreach_opener}</p>
+                      <p className="text-[11px] text-gray-700 leading-relaxed italic whitespace-pre-wrap">{contact.outreach_opener}</p>
                     </div>
                   )}
 
-                  {/* Social Profiles */}
-                  <div className="bg-white border border-gray-100 rounded-lg p-3">
-                    <p className="text-[8px] font-bold text-gray-400 uppercase mb-2 flex items-center gap-1"><Globe className="w-3 h-3" /> Social Profiles</p>
-                    <div className="space-y-1.5">
-                      {contact.linkedin_url && (
-                        <a href={contact.linkedin_url} target="_blank" rel="noopener" className="flex items-center gap-2 text-[10px] text-blue-600 hover:underline">
-                          <Linkedin className="w-3 h-3" /> {contact.linkedin_url.replace('https://linkedin.com/in/', '').replace('https://www.linkedin.com/in/', '')}
-                        </a>
-                      )}
-                      {contact.instagram_handle && (() => {
-                        const raw = String(contact.instagram_handle)
-                        const handle = raw.replace(/^https?:\/\/(www\.)?instagram\.com\//, '').replace(/\/$/, '').replace(/^@/, '')
-                        return (
-                          <a href={`https://instagram.com/${handle}`} target="_blank" rel="noopener" className="flex items-center gap-2 text-[10px] text-pink-600 hover:underline">
-                            <Instagram className="w-3 h-3" /> @{handle}
-                          </a>
-                        )
-                      })()}
-                      {contact.twitter_handle && (
-                        <a href={`https://x.com/${contact.twitter_handle}`} target="_blank" rel="noopener" className="flex items-center gap-2 text-[10px] text-gray-700 hover:underline">
-                          <Twitter className="w-3 h-3" /> @{contact.twitter_handle}
-                        </a>
-                      )}
-                      {contact.youtube_url && (
-                        <a href={contact.youtube_url} target="_blank" rel="noopener" className="flex items-center gap-2 text-[10px] text-red-600 hover:underline">
-                          <Youtube className="w-3 h-3" /> YouTube
-                        </a>
-                      )}
-                      {contact.facebook_url && (
-                        <a href={contact.facebook_url} target="_blank" rel="noopener" className="flex items-center gap-2 text-[10px] text-blue-700 hover:underline">
-                          <Globe className="w-3 h-3" /> Facebook
-                        </a>
-                      )}
-                      {contact.tiktok_handle && (
-                        <a href={`https://tiktok.com/@${String(contact.tiktok_handle).replace('@','')}`} target="_blank" rel="noopener" className="flex items-center gap-2 text-[10px] text-gray-700 hover:underline">
-                          <Globe className="w-3 h-3" /> @{contact.tiktok_handle}
-                        </a>
-                      )}
-                      {contact.website_url && (
-                        <a href={contact.website_url} target="_blank" rel="noopener" className="flex items-center gap-2 text-[10px] text-np-blue hover:underline">
-                          <Link2 className="w-3 h-3" /> {contact.website_url.replace(/https?:\/\/(www\.)?/, '')}
-                        </a>
-                      )}
-                      {contact.blog_url && (
-                        <a href={contact.blog_url} target="_blank" rel="noopener" className="flex items-center gap-2 text-[10px] text-green-600 hover:underline">
-                          <BookOpen className="w-3 h-3" /> Blog
-                        </a>
-                      )}
-                      {contact.social_follow_suggestion && (
-                        <div className="mt-2 bg-green-50 rounded px-2 py-1">
-                          <p className="text-[9px] font-bold text-green-700 flex items-center gap-1"><ThumbsUp className="w-3 h-3" /> Suggested: Follow/connect on social media</p>
+                  {/* â”€â”€ 10-DAY FOLLOW-UP SEQUENCE â”€â”€ */}
+                  {(contact.outreach_sequence_started || contact.followup_day3_message || contact.followup_day7_message || contact.followup_day10_message) && (
+                    <div className="bg-white border border-gray-200 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-[9px] font-bold uppercase tracking-wider text-np-blue flex items-center gap-1"><Clock className="w-3 h-3" /> 10-Day Follow-Up Sequence</p>
+                        {contact.outreach_sequence_started && (
+                          <span className="text-[9px] text-gray-400">Started {new Date(contact.outreach_sequence_started).toLocaleDateString()}</span>
+                        )}
+                      </div>
+                      <div className="space-y-3">
+                        {[
+                          { day: 3, label: 'Day 3', msg: contact.followup_day3_message, color: 'border-amber-200 bg-amber-50', badge: 'bg-amber-100 text-amber-700' },
+                          { day: 7, label: 'Day 7', msg: contact.followup_day7_message, color: 'border-blue-200 bg-blue-50', badge: 'bg-blue-100 text-blue-700' },
+                          { day: 10, label: 'Day 10', msg: contact.followup_day10_message, color: 'border-green-200 bg-green-50', badge: 'bg-green-100 text-green-700' },
+                        ].filter(f => f.msg).map(({ day, label, msg, color, badge }) => {
+                          const dueDate = contact.outreach_sequence_started
+                            ? new Date(new Date(contact.outreach_sequence_started).getTime() + day * 86400000)
+                            : null
+                          const isOverdue = dueDate && dueDate < new Date()
+                          return (
+                            <div key={day} className={`border rounded-lg p-3 ${color}`}>
+                              <div className="flex items-center justify-between mb-1.5">
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${badge}`}>{label}</span>
+                                  {dueDate && (
+                                    <span className={`text-[9px] ${isOverdue ? 'text-red-600 font-semibold' : 'text-gray-400'}`}>
+                                      {isOverdue ? 'Overdue Â· ' : 'Due Â· '}{dueDate.toLocaleDateString()}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex gap-1.5">
+                                  <button onClick={() => navigator.clipboard.writeText(msg!)}
+                                    className="text-[8px] font-medium px-1.5 py-0.5 rounded bg-white/60 text-gray-500 hover:bg-white transition-colors">Copy</button>
+                                  {contact.email && (
+                                    <button onClick={() => { setEmailInitialSubject(`Following up â€” Neuro Progeny`); setEmailInitialBody(msg!); setShowEmailComposer(true) }}
+                                      className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-np-blue/10 text-np-blue hover:bg-np-blue/20 transition-colors flex items-center gap-1">
+                                      <Mail className="w-2.5 h-2.5" /> Send
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                              <p className="text-[10px] text-gray-700 leading-relaxed italic whitespace-pre-wrap">{msg}</p>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* â”€â”€ AUDIENCE & REACH â”€â”€ */}
+                  {(contact.total_est_reach || contact.instagram_followers || contact.linkedin_followers || contact.est_audience_size) && (
+                    <div className="bg-white border border-gray-100 rounded-xl p-4">
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-np-blue mb-3 flex items-center gap-1"><Globe className="w-3 h-3" /> Audience & Reach</p>
+                      {contact.total_est_reach && (
+                        <div className="bg-np-blue/5 rounded-lg p-2.5 mb-3 flex items-center justify-between">
+                          <p className="text-[9px] font-bold text-np-blue uppercase">Total Est. Reach</p>
+                          <p className="text-base font-black text-np-dark">{Number(contact.total_est_reach).toLocaleString()}</p>
                         </div>
                       )}
-                      {!contact.linkedin_url && !contact.instagram_handle && !contact.twitter_handle && !contact.website_url && (
-                        <p className="text-[10px] text-gray-400 italic">No social profiles on file</p>
+                      <div className="grid grid-cols-3 gap-2 mb-3">
+                        {[
+                          { label: 'Instagram', val: contact.instagram_followers },
+                          { label: 'LinkedIn', val: contact.linkedin_followers },
+                          { label: 'YouTube', val: contact.youtube_subscribers },
+                          { label: 'TikTok', val: contact.tiktok_followers },
+                          { label: 'Twitter/X', val: contact.twitter_followers },
+                          { label: 'Facebook', val: contact.facebook_followers },
+                          { label: 'Podcast', val: contact.podcast_listeners },
+                          { label: 'Email List', val: contact.email_list_subscribers },
+                        ].filter(i => i.val).map(({ label, val }) => (
+                          <div key={label} className="bg-gray-50 rounded-lg p-2 text-center">
+                            <p className="text-[8px] text-gray-400">{label}</p>
+                            <p className="text-[11px] font-bold text-np-dark">{Number(val).toLocaleString()}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        {contact.engagement_rate && <div className="bg-gray-50 rounded-lg p-2"><p className="text-[8px] text-gray-400">Engagement</p><p className="text-[11px] font-semibold text-np-dark">{contact.engagement_rate}</p></div>}
+                        {contact.content_frequency && <div className="bg-gray-50 rounded-lg p-2"><p className="text-[8px] text-gray-400">Frequency</p><p className="text-[11px] font-semibold text-np-dark">{contact.content_frequency}</p></div>}
+                        {contact.content_type && <div className="bg-gray-50 rounded-lg p-2"><p className="text-[8px] text-gray-400">Content Type</p><p className="text-[11px] font-semibold text-np-dark">{contact.content_type}</p></div>}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* â”€â”€ MARKET INTEL â”€â”€ */}
+                  {(contact.market_segment || contact.geographic_market || contact.market_opportunity_notes || contact.competitor_partnerships) && (
+                    <div className="bg-white border border-gray-100 rounded-xl p-4">
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-np-blue mb-3 flex items-center gap-1"><Brain className="w-3 h-3" /> Market Intel</p>
+                      <div className="grid grid-cols-2 gap-2 mb-3">
+                        {contact.market_segment && <div className="bg-gray-50 rounded-lg p-2"><p className="text-[8px] text-gray-400">Segment</p><p className="text-[11px] font-semibold text-np-dark">{contact.market_segment}</p></div>}
+                        {contact.geographic_market && <div className="bg-gray-50 rounded-lg p-2"><p className="text-[8px] text-gray-400">Geography</p><p className="text-[11px] font-semibold text-np-dark">{contact.geographic_market}</p></div>}
+                        {contact.revenue_potential && <div className="bg-gray-50 rounded-lg p-2"><p className="text-[8px] text-gray-400">Revenue Potential</p><p className="text-[11px] font-semibold text-np-dark">{contact.revenue_potential}</p></div>}
+                        {contact.npu_sensorium_fit && <div className="bg-gray-50 rounded-lg p-2"><p className="text-[8px] text-gray-400">NPU / Sensorium Fit</p><p className="text-[11px] font-semibold text-np-dark">{contact.npu_sensorium_fit}</p></div>}
+                      </div>
+                      {contact.competitor_partnerships && (
+                        <div className="bg-red-50 rounded-lg p-2.5 mb-2">
+                          <p className="text-[8px] font-bold text-red-500 uppercase mb-0.5">Competitor Partnerships</p>
+                          <p className="text-[11px] text-red-800">{contact.competitor_partnerships}</p>
+                        </div>
+                      )}
+                      {contact.market_opportunity_notes && (
+                        <div className="bg-green-50 rounded-lg p-2.5">
+                          <p className="text-[8px] font-bold text-green-600 uppercase mb-0.5">Opportunity Notes</p>
+                          <p className="text-[11px] text-green-800">{contact.market_opportunity_notes}</p>
+                        </div>
                       )}
                     </div>
-                  </div>
+                  )}
 
-                  {/* Topics */}
-                  {(contact.topics_of_interest?.length || contact.presentation_topics?.length) ? (
+                  {/* â”€â”€ SOCIAL PROFILES â”€â”€ */}
+                  {(contact.linkedin_url || contact.instagram_handle || contact.twitter_handle || contact.website_url || contact.youtube_url || contact.tiktok_handle) && (
+                    <div className="bg-white border border-gray-100 rounded-xl p-4">
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400 mb-2 flex items-center gap-1"><Globe className="w-3 h-3" /> Social Profiles</p>
+                      <div className="space-y-1.5">
+                        {contact.linkedin_url && (
+                          <a href={contact.linkedin_url} target="_blank" rel="noopener" className="flex items-center gap-2 text-[10px] text-[#0A66C2] hover:underline">
+                            <Linkedin className="w-3 h-3" /> {contact.linkedin_url.replace(/https?:\/\/(www\.)?linkedin\.com\/in\//, '')}
+                          </a>
+                        )}
+                        {contact.instagram_handle && (() => {
+                          const raw = String(contact.instagram_handle)
+                          const handle = raw.replace(/^https?:\/\/(www\.)?instagram\.com\//, '').replace(/\/$/, '').replace(/^@/, '')
+                          return <a href={`https://instagram.com/${handle}`} target="_blank" rel="noopener" className="flex items-center gap-2 text-[10px] text-pink-600 hover:underline"><Instagram className="w-3 h-3" /> @{handle}</a>
+                        })()}
+                        {contact.twitter_handle && (
+                          <a href={`https://x.com/${String(contact.twitter_handle).replace('@','')}`} target="_blank" rel="noopener" className="flex items-center gap-2 text-[10px] text-gray-700 hover:underline">
+                            <Twitter className="w-3 h-3" /> @{contact.twitter_handle}
+                          </a>
+                        )}
+                        {contact.tiktok_handle && (
+                          <a href={`https://tiktok.com/@${String(contact.tiktok_handle).replace('@','')}`} target="_blank" rel="noopener" className="flex items-center gap-2 text-[10px] text-gray-700 hover:underline">
+                            <Globe className="w-3 h-3" /> @{contact.tiktok_handle}
+                          </a>
+                        )}
+                        {contact.youtube_url && (
+                          <a href={contact.youtube_url} target="_blank" rel="noopener" className="flex items-center gap-2 text-[10px] text-red-600 hover:underline">
+                            <Youtube className="w-3 h-3" /> YouTube
+                          </a>
+                        )}
+                        {contact.website_url && (
+                          <a href={contact.website_url} target="_blank" rel="noopener" className="flex items-center gap-2 text-[10px] text-np-blue hover:underline">
+                            <Link2 className="w-3 h-3" /> {contact.website_url.replace(/https?:\/\/(www\.)?/, '')}
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* â”€â”€ CONTACT TYPE & POPULATION â”€â”€ */}
+                  {(contact.contact_type || contact.population_served) && (
+                    <div className="grid grid-cols-2 gap-3">
+                      {contact.contact_type && (
+                        <div className="bg-gray-50 rounded-lg p-3">
+                          <p className="text-[8px] font-bold text-gray-400 uppercase mb-1">Contact Type</p>
+                          <p className="text-[11px] font-semibold text-np-dark">
+                            {contact.contact_type.replace(/_/g, ' ').replace(/\w/g, (c: string) => c.toUpperCase())}
+                          </p>
+                        </div>
+                      )}
+                      {contact.population_served && (
+                        <div className="bg-gray-50 rounded-lg p-3">
+                          <p className="text-[8px] font-bold text-gray-400 uppercase mb-1">Population Served</p>
+                          <p className="text-[11px] text-np-dark">{contact.population_served}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* â”€â”€ KEY DIFFERENTIATOR â”€â”€ */}
+                  {contact.key_differentiator && (
+                    <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
+                      <p className="text-[9px] font-bold text-amber-600 uppercase mb-1 flex items-center gap-1"><Sparkles className="w-3 h-3" /> Key Differentiator</p>
+                      <p className="text-[11px] text-amber-800">{contact.key_differentiator}</p>
+                    </div>
+                  )}
+
+                  {/* â”€â”€ TOPICS & PRESENTATIONS â”€â”€ */}
+                  {(contact.topics_of_interest?.length || contact.presentation_topics?.length) && (
                     <div className="grid grid-cols-2 gap-3">
                       {contact.topics_of_interest?.length ? (
                         <div className="bg-gray-50 rounded-lg p-3">
-                          <p className="text-[8px] font-bold text-gray-400 uppercase mb-1.5 flex items-center gap-1"><Globe className="w-3 h-3" /> Social Topics</p>
+                          <p className="text-[8px] font-bold text-gray-400 uppercase mb-1.5">Topics of Interest</p>
                           <div className="flex flex-wrap gap-1">
                             {contact.topics_of_interest.map((t: string) => (
                               <span key={t} className="text-[8px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full">{t}</span>
@@ -1910,33 +2086,33 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                         </div>
                       ) : null}
                     </div>
-                  ) : null}
+                  )}
 
-                  {/* Publications */}
+                  {/* â”€â”€ PUBLICATIONS â”€â”€ */}
                   {contact.publications && (
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <p className="text-[8px] font-bold text-gray-400 uppercase mb-1 flex items-center gap-1"><BookOpen className="w-3 h-3" /> Publications</p>
+                    <div className="bg-gray-50 rounded-xl p-4">
+                      <p className="text-[9px] font-bold text-gray-400 uppercase mb-1 flex items-center gap-1"><BookOpen className="w-3 h-3" /> Publications</p>
                       <p className="text-[10px] text-gray-700 whitespace-pre-wrap">{contact.publications}</p>
                     </div>
                   )}
 
-                  {/* AI Research Notes */}
+                  {/* â”€â”€ AI RESEARCH NOTES â”€â”€ */}
                   {contact.ai_research_notes && (
-                    <div className="bg-purple-50 border border-purple-100 rounded-lg p-3">
-                      <p className="text-[8px] font-bold text-purple-600 uppercase mb-1 flex items-center gap-1"><Brain className="w-3 h-3" /> AI Research Notes</p>
+                    <div className="bg-purple-50 border border-purple-100 rounded-xl p-4">
+                      <p className="text-[9px] font-bold text-purple-600 uppercase mb-1 flex items-center gap-1"><Brain className="w-3 h-3" /> AI Research Notes</p>
                       <p className="text-[10px] text-purple-800 whitespace-pre-wrap">{contact.ai_research_notes}</p>
                     </div>
                   )}
 
-                  {/* Referral Chain */}
+                  {/* â”€â”€ REFERRAL CHAIN â”€â”€ */}
                   {referralChain.length > 0 && (
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <p className="text-[8px] font-bold text-gray-400 uppercase mb-2 flex items-center gap-1"><Route className="w-3 h-3" /> Referral Chain</p>
+                    <div className="bg-gray-50 rounded-xl p-4">
+                      <p className="text-[9px] font-bold text-gray-400 uppercase mb-2 flex items-center gap-1"><Route className="w-3 h-3" /> Referral Chain</p>
                       <div className="flex items-center gap-1 flex-wrap">
                         <span className="text-[10px] font-semibold text-np-dark bg-np-blue/10 px-2 py-0.5 rounded-full">
                           {contact.first_name} {contact.last_name}
                         </span>
-                        {referralChain.map((ref, i) => (
+                        {referralChain.map((ref) => (
                           <div key={ref.id} className="flex items-center gap-1">
                             <ChevronRight className="w-3 h-3 text-gray-300" />
                             <span className="text-[10px] text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full">
@@ -1948,92 +2124,8 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                     </div>
                   )}
 
-                  {/* Engagement Tracking */}
-                  <div className="bg-white border border-gray-100 rounded-lg p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-[8px] font-bold text-gray-400 uppercase flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Engagement Tracking</p>
-                      <button onClick={() => setShowEngagementForm(!showEngagementForm)}
-                        className="text-[9px] font-bold text-np-blue flex items-center gap-0.5">
-                        <Plus className="w-3 h-3" /> Log Outreach
-                      </button>
-                    </div>
-
-                    {/* Response rate summary */}
-                    {contact.engagement_response_rate !== null && contact.engagement_response_rate !== undefined && (
-                      <div className="mb-2 flex items-center gap-3">
-                        <div className="bg-green-50 rounded px-2 py-1">
-                          <p className="text-[9px] font-bold text-green-700">{contact.engagement_response_rate?.toFixed(0)}% response rate</p>
-                        </div>
-                        {contact.top_responding_topics?.length ? (
-                          <div className="flex gap-1">
-                            {contact.top_responding_topics.slice(0, 3).map((t: string) => (
-                              <span key={t} className="text-[8px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">{t}</span>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    )}
-
-                    {showEngagementForm && (
-                      <div className="bg-gray-50 rounded-lg p-3 mb-3 space-y-2">
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="text-[8px] font-bold text-gray-400 uppercase">Topic</label>
-                            <input value={engTopic} onChange={e => setEngTopic(e.target.value)}
-                              className="w-full text-[10px] border border-gray-200 rounded px-2 py-1 mt-0.5" placeholder="e.g. VR biofeedback" />
-                          </div>
-                          <div>
-                            <label className="text-[8px] font-bold text-gray-400 uppercase">Channel</label>
-                            <select value={engChannel} onChange={e => setEngChannel(e.target.value)}
-                              className="w-full text-[10px] border border-gray-200 rounded px-2 py-1 mt-0.5">
-                              <option value="email">Email</option>
-                              <option value="social">Social Media</option>
-                              <option value="call">Call</option>
-                              <option value="text">Text</option>
-                              <option value="in_person">In Person</option>
-                            </select>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <label className="flex items-center gap-1.5 text-[10px]">
-                            <input type="checkbox" checked={engResponse} onChange={e => setEngResponse(e.target.checked)} className="rounded" />
-                            Got response
-                          </label>
-                          {engResponse && (
-                            <select value={engSentiment} onChange={e => setEngSentiment(e.target.value)}
-                              className="text-[10px] border border-gray-200 rounded px-2 py-1">
-                              <option value="positive">Positive</option>
-                              <option value="neutral">Neutral</option>
-                              <option value="negative">Negative</option>
-                            </select>
-                          )}
-                        </div>
-                        <input value={engNotes} onChange={e => setEngNotes(e.target.value)}
-                          className="w-full text-[10px] border border-gray-200 rounded px-2 py-1" placeholder="Notes..." />
-                        <button onClick={handleLogEngagement}
-                          className="text-[10px] font-bold text-white bg-np-blue px-3 py-1 rounded hover:bg-np-blue/90">
-                          Log Engagement
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Engagement history */}
-                    <div className="space-y-1">
-                      {engagementTopics.slice(0, 8).map((e: any) => (
-                        <div key={e.id} className="flex items-center gap-2 text-[9px] py-1 border-b border-gray-50 last:border-0">
-                          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${e.got_response ? (e.response_sentiment === 'positive' ? 'bg-green-500' : e.response_sentiment === 'negative' ? 'bg-red-500' : 'bg-amber-500') : 'bg-gray-300'}`} />
-                          <span className="font-semibold text-np-dark">{e.topic}</span>
-                          <span className="text-gray-400">via {e.channel}</span>
-                          {e.got_response && <span className="text-green-600 font-medium">responded</span>}
-                          <span className="ml-auto text-gray-300">{new Date(e.outreach_date).toLocaleDateString()}</span>
-                        </div>
-                      ))}
-                      {engagementTopics.length === 0 && (
-                        <p className="text-[10px] text-gray-400 italic text-center py-2">No engagement logged yet</p>
-                      )}
-                    </div>
-                  </div>
                 </div>
+              )}
               )}
 
               {tab === 'connections' && (
