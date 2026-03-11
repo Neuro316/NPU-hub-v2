@@ -6,7 +6,7 @@ import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
 import {
   Plus, X, Trash2, Loader2, ArrowRight,
-  CheckCircle2, Circle, Clock, MoreHorizontal, Edit3, ChevronDown, ChevronRight
+  CheckCircle2, Circle, Clock, MoreHorizontal, Edit3, ChevronDown, ChevronRight, GripVertical
 } from 'lucide-react'
 import { CardDetailPanel } from '@/components/journey/card-detail-panel'
 
@@ -105,6 +105,18 @@ export default function JourneysPage() {
     newRow?: boolean
   } | null>(null)
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({})
+
+  // Phase drag state
+  const [phaseDragging, setPhaseDragging] = useState<{
+    phaseId: string
+    startY: number
+    offsetY: number
+    height: number
+    active: boolean
+  } | null>(null)
+  const [phaseMouseY, setPhaseMouseY] = useState(0)
+  const [phaseDropIdx, setPhaseDropIdx] = useState<number | null>(null)
+  const phaseRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   // ── Data Loading ──
   const loadData = useCallback(async () => {
@@ -345,6 +357,89 @@ export default function JourneysPage() {
   const draggedCard = isDraggingActive ? cards.find(c => c.id === dragging?.cardId) : null
   const draggedPhase = draggedCard ? phases.find(p => p.id === draggedCard.phase_id) : null
   const totalCards = cards.length
+  const isPhaseDragging = phaseDragging?.active || false
+
+  // ── PHASE DRAG ──
+  const handlePhaseMouseDown = useCallback((e: React.MouseEvent, phaseId: string) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    const phaseEl = phaseRefs.current[phaseId]
+    if (!phaseEl) return
+    const rect = phaseEl.getBoundingClientRect()
+    setPhaseDragging({
+      phaseId,
+      startY: e.clientY,
+      offsetY: e.clientY - rect.top,
+      height: rect.height,
+      active: false,
+    })
+    setPhaseMouseY(e.clientY)
+  }, [])
+
+  useEffect(() => {
+    if (!phaseDragging) return
+
+    const sorted = [...phases].sort((a, b) => a.sort_order - b.sort_order)
+
+    const handleMouseMove = (e: MouseEvent) => {
+      setPhaseMouseY(e.clientY)
+      setPhaseDragging(prev => {
+        if (!prev) return null
+        if (!prev.active) {
+          if (Math.abs(e.clientY - prev.startY) < 5) return prev
+          return { ...prev, active: true }
+        }
+        return prev
+      })
+
+      // Find drop index
+      let bestIdx: number | null = null
+      for (let i = 0; i < sorted.length; i++) {
+        const el = phaseRefs.current[sorted[i].id]
+        if (!el) continue
+        const rect = el.getBoundingClientRect()
+        const midY = rect.top + rect.height / 2
+        if (e.clientY < midY) {
+          bestIdx = i
+          break
+        }
+      }
+      if (bestIdx === null) bestIdx = sorted.length
+      setPhaseDropIdx(bestIdx)
+    }
+
+    const handleMouseUp = async () => {
+      if (phaseDragging.active && phaseDropIdx !== null) {
+        const draggedIdx = sorted.findIndex(p => p.id === phaseDragging.phaseId)
+        if (draggedIdx !== -1 && phaseDropIdx !== draggedIdx && phaseDropIdx !== draggedIdx + 1) {
+          // Build new order
+          const reordered = sorted.filter(p => p.id !== phaseDragging.phaseId)
+          const insertAt = phaseDropIdx > draggedIdx ? phaseDropIdx - 1 : phaseDropIdx
+          reordered.splice(insertAt, 0, sorted[draggedIdx])
+
+          // Optimistic update
+          setPhases(reordered.map((p, i) => ({ ...p, sort_order: i })))
+
+          // Persist
+          for (let i = 0; i < reordered.length; i++) {
+            if (reordered[i].sort_order !== i) {
+              await supabase.from('journey_phases').update({ sort_order: i }).eq('id', reordered[i].id)
+            }
+          }
+        }
+      }
+      setPhaseDragging(null)
+      setPhaseDropIdx(null)
+    }
+
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [phaseDragging, phaseDropIdx, phases, supabase])
 
   // ── Loading ──
   if (loading) {
@@ -352,7 +447,7 @@ export default function JourneysPage() {
   }
 
   return (
-    <div className="h-full flex flex-col overflow-hidden bg-[#F5F6FA]" style={{ userSelect: isDraggingActive ? 'none' : 'auto' }}>
+    <div className="h-full flex flex-col overflow-hidden bg-[#F5F6FA]" style={{ userSelect: isDraggingActive || isPhaseDragging ? 'none' : 'auto' }}>
       {/* Header */}
       <div className="flex-shrink-0 px-7 pt-5 pb-4">
         <div className="flex items-start justify-between">
@@ -387,7 +482,7 @@ export default function JourneysPage() {
               <button onClick={() => setAddingPhase(true)} className="px-4 py-2 bg-[#386797] text-white rounded-lg text-xs font-medium">Add First Path</button>
             </div>
           ) : (
-            [...phases].sort((a, b) => a.sort_order - b.sort_order).map(phase => {
+            [...phases].sort((a, b) => a.sort_order - b.sort_order).map((phase, phaseIdx, sortedPhases) => {
               const rowNumbers = getRowNumbers(phase.id)
               const phaseCards = getPhaseCards(phase.id)
 
@@ -398,14 +493,32 @@ export default function JourneysPage() {
                 return next
               })
 
+              const isBeingDraggedPhase = isPhaseDragging && phaseDragging?.phaseId === phase.id
+              const showPhaseDropBefore = isPhaseDragging && phaseDropIdx === phaseIdx && phaseDragging?.phaseId !== phase.id &&
+                phaseDropIdx !== sortedPhases.findIndex(p => p.id === phaseDragging?.phaseId) + 1
+
               return (
-                <div key={phase.id} className="flex bg-white rounded-2xl border border-gray-200/80">
+                <div key={phase.id}>
+                  {/* Phase drop indicator (before) */}
+                  <div className="transition-all rounded-lg" style={{
+                    height: showPhaseDropBefore ? 4 : 0,
+                    background: showPhaseDropBefore ? '#386797' : 'transparent',
+                    marginBottom: showPhaseDropBefore ? 4 : 0,
+                  }} />
+                <div ref={el => { phaseRefs.current[phase.id] = el }} className="flex bg-white rounded-2xl border border-gray-200/80 transition-opacity" style={{ opacity: isBeingDraggedPhase ? 0.3 : 1 }}>
                   {/* Phase sidebar */}
                   <div className="flex-shrink-0 w-44 flex flex-col justify-center px-5 py-6 rounded-l-2xl" style={{ borderRight: `4px solid ${phase.color}`, background: `${phase.color}08` }}>
                     <div className="flex items-center gap-2 mb-1">
-                      <button onClick={togglePhase} className="text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0">
-                        {isPhaseCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                      </button>
+                      <div className="flex items-center gap-0.5">
+                        <div onMouseDown={e => handlePhaseMouseDown(e, phase.id)}
+                          className="text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing flex-shrink-0 -ml-2 mr-0.5"
+                          title="Drag to reorder">
+                          <GripVertical className="w-3.5 h-3.5" />
+                        </div>
+                        <button onClick={togglePhase} className="text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0">
+                          {isPhaseCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
                       {editingPhase === phase.id ? (
                         <input value={editPhaseLabel} onChange={e => setEditPhaseLabel(e.target.value)}
                           onBlur={() => updatePhaseLabel(phase.id, editPhaseLabel)} onKeyDown={e => e.key === 'Enter' && updatePhaseLabel(phase.id, editPhaseLabel)}
@@ -578,8 +691,14 @@ export default function JourneysPage() {
                     )}
                   </div>}
                 </div>
+                </div>
               )
-            })
+            }).concat(
+              // End-of-list drop indicator
+              isPhaseDragging && phaseDropIdx === phases.length ? [
+                <div key="phase-drop-end" className="rounded-lg" style={{ height: 4, background: '#386797' }} />
+              ] : []
+            )
           )}
         </div>
       </div>
@@ -602,6 +721,30 @@ export default function JourneysPage() {
           </div>
         </div>
       )}
+
+      {/* Phase drag ghost */}
+      {isPhaseDragging && phaseDragging && (() => {
+        const dp = phases.find(p => p.id === phaseDragging.phaseId)
+        if (!dp) return null
+        const dpCards = getPhaseCards(dp.id)
+        return (
+          <div className="fixed pointer-events-none z-[9999]" style={{
+            left: 40, right: 40,
+            top: phaseMouseY - phaseDragging.offsetY,
+            opacity: 0.85, transform: 'scale(0.98)',
+          }}>
+            <div className="flex bg-white rounded-2xl border border-gray-200/80 shadow-2xl" style={{ maxHeight: 80, overflow: 'hidden' }}>
+              <div className="flex-shrink-0 w-44 flex flex-col justify-center px-5 py-4 rounded-l-2xl" style={{ borderRight: `4px solid ${dp.color}`, background: `${dp.color}08` }}>
+                <h3 className="text-sm font-bold text-gray-900">{dp.label}</h3>
+                <span className="text-[11px] text-gray-400">{dpCards.length} card{dpCards.length !== 1 ? 's' : ''}</span>
+              </div>
+              <div className="flex-1 flex items-center px-4">
+                <span className="text-xs text-gray-400">...</span>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Card Detail Panel */}
       <CardDetailPanel
