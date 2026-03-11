@@ -8,6 +8,7 @@ import {
   X, ChevronDown, ChevronRight, Copy, Sparkles, Users, ArrowRight,
   Trash2, Settings, Globe, Linkedin, Instagram, Twitter, Youtube, Clock
 } from 'lucide-react'
+import * as XLSX from 'xlsx'
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // CONSTANTS
@@ -23,42 +24,195 @@ const CONTACT_TYPES = [
 ]
 
 const CRM_FIELDS = [
+  // â”€â”€ Basic Identity â”€â”€
   { key: 'first_name', label: 'First Name', required: true, group: 'Basic' },
   { key: 'last_name', label: 'Last Name', required: true, group: 'Basic' },
   { key: 'email', label: 'Email', required: false, group: 'Basic' },
   { key: 'phone', label: 'Phone', required: false, group: 'Basic' },
-  { key: 'company', label: 'Company', required: false, group: 'Basic' },
+  { key: 'company', label: 'Company / Org', required: false, group: 'Basic' },
+  { key: 'occupation', label: 'Occupation / Title', required: false, group: 'Basic' },
+  { key: 'address_city', label: 'City', required: false, group: 'Basic' },
+  { key: 'address_state', label: 'State / Country', required: false, group: 'Basic' },
+  { key: 'address_street', label: 'Street', required: false, group: 'Basic' },
+  { key: 'address_zip', label: 'Zip', required: false, group: 'Basic' },
+  // â”€â”€ Pipeline â”€â”€
   { key: 'pipeline_id', label: 'Pipeline', required: false, group: 'Pipeline' },
   { key: 'pipeline_stage', label: 'Pipeline Stage', required: false, group: 'Pipeline' },
+  // â”€â”€ Platform & Social â”€â”€
+  { key: 'platform', label: 'Primary Platform', required: false, group: 'Social' },
+  { key: 'profile_handle', label: 'Handle / Profile URL', required: false, group: 'Social' },
+  { key: 'linkedin_url', label: 'LinkedIn URL', required: false, group: 'Social' },
+  { key: 'instagram_handle', label: 'Instagram', required: false, group: 'Social' },
+  { key: 'twitter_handle', label: 'Twitter/X', required: false, group: 'Social' },
+  { key: 'youtube_url', label: 'YouTube', required: false, group: 'Social' },
+  { key: 'tiktok_handle', label: 'TikTok', required: false, group: 'Social' },
+  { key: 'facebook_url', label: 'Facebook', required: false, group: 'Social' },
+  { key: 'website_url', label: 'Blog / Website', required: false, group: 'Social' },
+  { key: 'blog_url', label: 'Blog URL', required: false, group: 'Social' },
+  // â”€â”€ Follower Counts â”€â”€
+  { key: 'instagram_followers', label: 'Instagram Followers', required: false, group: 'Reach' },
+  { key: 'linkedin_followers', label: 'LinkedIn Followers', required: false, group: 'Reach' },
+  { key: 'youtube_subscribers', label: 'YouTube Subscribers', required: false, group: 'Reach' },
+  { key: 'tiktok_followers', label: 'TikTok Followers', required: false, group: 'Reach' },
+  { key: 'facebook_followers', label: 'Facebook Followers', required: false, group: 'Reach' },
+  { key: 'twitter_followers', label: 'Twitter/X Followers', required: false, group: 'Reach' },
+  { key: 'podcast_listeners', label: 'Podcast Listeners', required: false, group: 'Reach' },
+  { key: 'email_list_subscribers', label: 'Email List Subscribers', required: false, group: 'Reach' },
+  { key: 'total_est_reach', label: 'Total Est. Reach', required: false, group: 'Reach' },
+  // â”€â”€ Partner Scoring â”€â”€
+  { key: 'alignment_score', label: 'Alignment (1-5)', required: false, group: 'Scoring' },
+  { key: 'commercial_relevance_score', label: 'Commercial Relevance (1-5)', required: false, group: 'Scoring' },
+  { key: 'outreach_ease_score', label: 'Outreach Ease (1-5)', required: false, group: 'Scoring' },
+  { key: 'credibility_score', label: 'Credibility (1-5)', required: false, group: 'Scoring' },
+  { key: 'outreach_total_score', label: 'Total Score', required: false, group: 'Scoring' },
+  { key: 'priority_tier', label: 'Priority Tier', required: false, group: 'Scoring' },
+  // â”€â”€ Partnership Fit â”€â”€
+  { key: 'fit_category', label: 'Fit Category', required: false, group: 'Partner Fit' },
+  { key: 'primary_niche', label: 'Primary Niche', required: false, group: 'Partner Fit' },
+  { key: 'audience_type', label: 'Audience Type', required: false, group: 'Partner Fit' },
+  { key: 'offer_angle', label: 'Likely Offer Angle', required: false, group: 'Partner Fit' },
+  { key: 'outreach_opener', label: 'Custom Outreach Opener', required: false, group: 'Partner Fit' },
+  { key: 'partnership_type', label: 'Partnership Type', required: false, group: 'Partner Fit' },
+  // â”€â”€ CRM / Pipeline â”€â”€
   { key: 'contact_type', label: 'Contact Type (B2B/B2C)', required: false, group: 'Intelligence' },
   { key: 'population_served', label: 'Population Served', required: false, group: 'Intelligence' },
-  { key: 'preferred_outreach_strategy', label: 'Outreach Strategy', required: false, group: 'Intelligence' },
   { key: 'topics_of_interest', label: 'Topics of Interest', required: false, group: 'Intelligence' },
   { key: 'presentation_topics', label: 'Presentation Topics', required: false, group: 'Intelligence' },
   { key: 'publications', label: 'Publications', required: false, group: 'Intelligence' },
   { key: 'key_differentiator', label: 'Key Differentiator', required: false, group: 'Intelligence' },
-  { key: 'occupation', label: 'Occupation/Title', required: false, group: 'Professional' },
-  { key: 'industry', label: 'Industry', required: false, group: 'Professional' },
-  { key: 'website_url', label: 'Website', required: false, group: 'Social' },
-  { key: 'linkedin_url', label: 'LinkedIn URL', required: false, group: 'Social' },
-  { key: 'instagram_handle', label: 'Instagram', required: false, group: 'Social' },
-  { key: 'twitter_handle', label: 'Twitter/X', required: false, group: 'Social' },
-  { key: 'facebook_url', label: 'Facebook', required: false, group: 'Social' },
-  { key: 'youtube_url', label: 'YouTube', required: false, group: 'Social' },
-  { key: 'tiktok_handle', label: 'TikTok', required: false, group: 'Social' },
-  { key: 'blog_url', label: 'Blog URL', required: false, group: 'Social' },
-  { key: 'address_city', label: 'City', required: false, group: 'Location' },
-  { key: 'address_state', label: 'State', required: false, group: 'Location' },
-  { key: 'address_street', label: 'Street', required: false, group: 'Location' },
-  { key: 'address_zip', label: 'Zip', required: false, group: 'Location' },
+  { key: 'industry', label: 'Industry', required: false, group: 'Intelligence' },
+  // â”€â”€ Outreach Ops â”€â”€
+  { key: 'outreach_owner', label: 'Outreach Owner', required: false, group: 'Outreach' },
+  { key: 'outreach_status', label: 'Status', required: false, group: 'Outreach' },
+  { key: 'outreach_strategy', label: 'Outreach Strategy', required: false, group: 'Outreach' },
+  { key: 'outreach_last_touch', label: 'Last Touch', required: false, group: 'Outreach' },
+  { key: 'outreach_next_step', label: 'Next Step', required: false, group: 'Outreach' },
+  { key: 'outreach_response_summary', label: 'Response Summary', required: false, group: 'Outreach' },
+  { key: 'outreach_follow_up_date', label: 'Follow-up Date', required: false, group: 'Outreach' },
+  // â”€â”€ Market & Research Intel â”€â”€
+  { key: 'est_audience_size', label: 'Est. Audience Size', required: false, group: 'Market Intel' },
+  { key: 'engagement_rate', label: 'Engagement Rate', required: false, group: 'Market Intel' },
+  { key: 'content_frequency', label: 'Content Frequency', required: false, group: 'Market Intel' },
+  { key: 'content_type', label: 'Content Type', required: false, group: 'Market Intel' },
+  { key: 'market_segment', label: 'Market Segment', required: false, group: 'Market Intel' },
+  { key: 'geographic_market', label: 'Geographic Market', required: false, group: 'Market Intel' },
+  { key: 'competitor_partnerships', label: 'Competitor Partnerships', required: false, group: 'Market Intel' },
+  { key: 'market_opportunity_notes', label: 'Market Opportunity Notes', required: false, group: 'Market Intel' },
+  { key: 'revenue_potential', label: 'Revenue Potential', required: false, group: 'Market Intel' },
+  { key: 'npu_sensorium_fit', label: 'NPU / Sensorium Fit', required: false, group: 'Market Intel' },
+  // â”€â”€ Attribution / Admin â”€â”€
   { key: 'source', label: 'Source', required: false, group: 'Attribution' },
+  { key: 'tags', label: 'Tags (pipe-separated)', required: false, group: 'Attribution' },
+  { key: 'ai_research_notes', label: 'AI Research Notes', required: false, group: 'Attribution' },
   { key: 'how_heard_about_us', label: 'How Heard About Us', required: false, group: 'Attribution' },
   { key: 'reason_for_contact', label: 'Reason for Contact', required: false, group: 'Attribution' },
-  { key: 'tags', label: 'Tags (comma-separated)', required: false, group: 'Other' },
-  { key: 'notes', label: 'Notes', required: false, group: 'Other' },
-  { key: 'social_follow_suggestion', label: 'Suggest Follow?', required: false, group: 'Other' },
-  { key: 'ai_research_notes', label: 'AI Research Notes', required: false, group: 'Other' },
+  { key: 'notes', label: 'Notes', required: false, group: 'Attribution' },
+  { key: 'social_follow_suggestion', label: 'Suggest Follow?', required: false, group: 'Attribution' },
+  { key: 'preferred_outreach_strategy', label: 'Preferred Outreach Strategy', required: false, group: 'Attribution' },
 ]
+
+// Spreadsheet column â†’ CRM field key (exact match for NP Master Partner Template)
+const SPREADSHEET_AUTO_MAP: Record<string, string> = {
+  'first name': 'first_name',
+  'last name': 'last_name',
+  'email': 'email',
+  'phone': 'phone',
+  'company / org': 'company',
+  'company': 'company',
+  'occupation / title': 'occupation',
+  'occupation': 'occupation',
+  'title': 'occupation',
+  'city': 'address_city',
+  'state / country': 'address_state',
+  'state': 'address_state',
+  'primary platform': 'platform',
+  'platform': 'platform',
+  'handle / profile url': 'profile_handle',
+  'handle': 'profile_handle',
+  'linkedin url': 'linkedin_url',
+  'linkedin': 'linkedin_url',
+  'instagram': 'instagram_handle',
+  'twitter/x': 'twitter_handle',
+  'twitter': 'twitter_handle',
+  'x': 'twitter_handle',
+  'youtube': 'youtube_url',
+  'tiktok': 'tiktok_handle',
+  'facebook': 'facebook_url',
+  'blog / website': 'website_url',
+  'website': 'website_url',
+  'blog': 'blog_url',
+  'instagram followers': 'instagram_followers',
+  'instagram\nfollowers': 'instagram_followers',
+  'linkedin followers': 'linkedin_followers',
+  'linkedin\nfollowers': 'linkedin_followers',
+  'youtube subscribers': 'youtube_subscribers',
+  'youtube\nsubscribers': 'youtube_subscribers',
+  'tiktok followers': 'tiktok_followers',
+  'tiktok\nfollowers': 'tiktok_followers',
+  'facebook followers': 'facebook_followers',
+  'facebook\nfollowers': 'facebook_followers',
+  'twitter/x followers': 'twitter_followers',
+  'twitter/x\nfollowers': 'twitter_followers',
+  'podcast listeners': 'podcast_listeners',
+  'podcast\nlisteners': 'podcast_listeners',
+  'email list subscribers': 'email_list_subscribers',
+  'email list\nsubscribers': 'email_list_subscribers',
+  'total est. reach': 'total_est_reach',
+  'total est.\nreach': 'total_est_reach',
+  'alignment (1â€“5)': 'alignment_score',
+  'alignment\n(1â€“5)': 'alignment_score',
+  'alignment (1-5)': 'alignment_score',
+  'commercial relevance (1â€“5)': 'commercial_relevance_score',
+  'commercial\nrelevance (1â€“5)': 'commercial_relevance_score',
+  'commercial relevance (1-5)': 'commercial_relevance_score',
+  'outreach ease (1â€“5)': 'outreach_ease_score',
+  'outreach\nease (1â€“5)': 'outreach_ease_score',
+  'outreach ease (1-5)': 'outreach_ease_score',
+  'credibility (1â€“5)': 'credibility_score',
+  'credibility\n(1â€“5)': 'credibility_score',
+  'credibility (1-5)': 'credibility_score',
+  'total score': 'outreach_total_score',
+  'priority tier': 'priority_tier',
+  'fit category': 'fit_category',
+  'primary niche': 'primary_niche',
+  'audience type': 'audience_type',
+  'likely offer angle': 'offer_angle',
+  'offer angle': 'offer_angle',
+  'custom outreach opener': 'outreach_opener',
+  'outreach opener': 'outreach_opener',
+  'partnership type': 'partnership_type',
+  'pipeline': 'pipeline_id',
+  'pipeline stage': 'pipeline_stage',
+  'contact type\n(b2b/b2c)': 'contact_type',
+  'contact type (b2b/b2c)': 'contact_type',
+  'contact type': 'contact_type',
+  'population served': 'population_served',
+  'topics of interest': 'topics_of_interest',
+  'presentation topics': 'presentation_topics',
+  'publications': 'publications',
+  'outreach owner': 'outreach_owner',
+  'status': 'outreach_status',
+  'outreach strategy': 'outreach_strategy',
+  'last touch': 'outreach_last_touch',
+  'last touch\n(date)': 'outreach_last_touch',
+  'next step': 'outreach_next_step',
+  'response summary': 'outreach_response_summary',
+  'follow-up date': 'outreach_follow_up_date',
+  'est. audience size': 'est_audience_size',
+  'engagement rate': 'engagement_rate',
+  'engagement rate (%)': 'engagement_rate',
+  'content frequency': 'content_frequency',
+  'content type': 'content_type',
+  'market segment': 'market_segment',
+  'geographic market': 'geographic_market',
+  'competitor partnerships': 'competitor_partnerships',
+  'market opportunity notes': 'market_opportunity_notes',
+  'revenue potential': 'revenue_potential',
+  'npu / sensorium fit': 'npu_sensorium_fit',
+  'source': 'source',
+  'tags': 'tags',
+  'ai research notes': 'ai_research_notes',
+}
 
 const AI_PROMPT_TEMPLATE = `You are preparing a contact list for import into a CRM system for Neuro Progeny / Sensorium Neuro Wellness, a neurotechnology company focused on VR biofeedback and nervous system capacity training.
 
@@ -232,16 +386,73 @@ export default function ImportPage() {
     setStep('map')
   }
 
+  const parseXLSX = (buffer: ArrayBuffer) => {
+    const wb = XLSX.read(buffer, { type: 'array' })
+    // Look for 'Master Contact DB' sheet first, otherwise use first sheet
+    const sheetName = wb.SheetNames.includes('Master Contact DB')
+      ? 'Master Contact DB'
+      : wb.SheetNames[0]
+    const ws = wb.Sheets[sheetName]
+    // Convert to array of arrays
+    const raw: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+    // Find header row (look for 'First Name' or 'first_name' in first 6 rows)
+    let headerRowIdx = 0
+    for (let i = 0; i < Math.min(6, raw.length); i++) {
+      const row = raw[i].map((v: any) => String(v).toLowerCase().replace(/[\n\r]+/g, ' ').trim())
+      if (row.some(c => c.includes('first name') || c === 'first_name')) {
+        headerRowIdx = i
+        break
+      }
+    }
+    const headerRow = raw[headerRowIdx].map((v: any) =>
+      String(v ?? '').replace(/[\n\r]+/g, '\n').trim()
+    )
+    const dataRows = raw.slice(headerRowIdx + 1).filter(r => r.some((v: any) => v !== '' && v != null))
+    const stringRows = dataRows.map(row =>
+      row.map((v: any) => {
+        if (v === null || v === undefined) return ''
+        // Skip Excel formula results that are just numbers from SUM formulas for scores
+        if (typeof v === 'number') return String(v)
+        return String(v).trim()
+      })
+    )
+    setRawHeaders(headerRow)
+    setRawRows(stringRows)
+    // Auto-map using SPREADSHEET_AUTO_MAP first, then fuzzy fallback
+    const autoMap: Record<string, string> = {}
+    headerRow.forEach(h => {
+      const lower = h.toLowerCase().replace(/[\n\r]+/g, ' ').trim()
+      // Try exact spreadsheet map first
+      if (SPREADSHEET_AUTO_MAP[lower]) {
+        autoMap[h] = SPREADSHEET_AUTO_MAP[lower]
+        return
+      }
+      // Fuzzy fallback
+      const stripped = lower.replace(/[^a-z0-9]/g, '')
+      const match = CRM_FIELDS.find(f => {
+        const fLower = f.key.replace(/_/g, '')
+        const fLabel = f.label.toLowerCase().replace(/[^a-z0-9]/g, '')
+        return stripped === fLower || stripped === fLabel
+      })
+      if (match) autoMap[h] = match.key
+    })
+    setColumnMap(autoMap)
+    setStep('map')
+  }
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     setFileName(file.name)
 
-    if (file.name.endsWith('.csv') || file.name.endsWith('.tsv')) {
+    if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+      const buf = await file.arrayBuffer()
+      parseXLSX(buf)
+    } else if (file.name.endsWith('.csv') || file.name.endsWith('.tsv')) {
       const text = await file.text()
       parseCSV(text)
     } else {
-      alert('Please upload a .csv or .tsv file')
+      alert('Please upload a .xlsx, .csv, or .tsv file')
     }
   }
 
@@ -250,7 +461,10 @@ export default function ImportPage() {
     const file = e.dataTransfer.files[0]
     if (!file) return
     setFileName(file.name)
-    if (file.name.endsWith('.csv') || file.name.endsWith('.tsv')) {
+    if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+      const buf = await file.arrayBuffer()
+      parseXLSX(buf)
+    } else if (file.name.endsWith('.csv') || file.name.endsWith('.tsv')) {
       const text = await file.text()
       parseCSV(text)
     }
@@ -375,8 +589,32 @@ export default function ImportPage() {
           'facebook_url', 'youtube_url', 'tiktok_handle', 'blog_url',
           'address_city', 'address_state', 'address_street', 'address_zip',
           'how_heard_about_us', 'reason_for_contact', 'notes', 'ai_research_notes',
+          // Partner intel fields
+          'platform', 'profile_handle', 'primary_niche', 'audience_type', 'fit_category',
+          'priority_tier', 'offer_angle', 'outreach_opener', 'partnership_type',
+          'outreach_owner', 'outreach_status', 'outreach_strategy',
+          'outreach_last_touch', 'outreach_next_step', 'outreach_response_summary',
+          'outreach_follow_up_date',
+          'est_audience_size', 'engagement_rate', 'content_frequency', 'content_type',
+          'market_segment', 'geographic_market', 'competitor_partnerships',
+          'market_opportunity_notes', 'revenue_potential', 'npu_sensorium_fit',
         ]
         directFields.forEach(f => { if (row[f]) contact[f] = row[f] })
+
+        // Numeric partner fields
+        const numericFields = [
+          'alignment_score', 'commercial_relevance_score', 'outreach_ease_score',
+          'credibility_score', 'outreach_total_score', 'outreach_rank',
+          'instagram_followers', 'linkedin_followers', 'youtube_subscribers',
+          'tiktok_followers', 'facebook_followers', 'twitter_followers',
+          'podcast_listeners', 'email_list_subscribers', 'total_est_reach',
+        ]
+        numericFields.forEach(f => {
+          if (row[f]) {
+            const n = Number(String(row[f]).replace(/[^0-9.]/g, ''))
+            if (!isNaN(n) && n > 0) contact[f] = n
+          }
+        })
 
         if (row.topics_of_interest) contact.topics_of_interest = parseArray(row.topics_of_interest)
         if (row.presentation_topics) contact.presentation_topics = parseArray(row.presentation_topics)
@@ -544,33 +782,53 @@ export default function ImportPage() {
   }
 
   const downloadTemplate = () => {
-    const headers = CRM_FIELDS.map(f => f.label).join(',')
-    const example = CRM_FIELDS.map(f => {
-      const ex: Record<string, string> = {
-        first_name: 'Jane', last_name: 'Smith', email: 'jane@example.com',
-        phone: '8285551234', company: 'Brain Health Clinic',
-        contact_type: 'b2b_coach', population_served: 'children with ADHD',
-        preferred_outreach_strategy: 'LinkedIn DM - active poster',
-        topics_of_interest: 'neurofeedback|brain health|biohacking',
-        presentation_topics: 'qEEG analysis|VR therapy',
-        publications: 'Smith et al. (2024) Journal of Neurofeedback',
-        key_differentiator: 'Only provider combining VR with traditional neurofeedback',
-        occupation: 'Clinical Director', industry: 'Neurotechnology',
-        website_url: 'https://brainhealthclinic.com',
-        linkedin_url: 'https://linkedin.com/in/janesmith',
-        instagram_handle: 'janesmith_neuro', twitter_handle: 'janesmith',
-        tags: 'neurofeedback|VR|clinic-owner', social_follow_suggestion: 'yes',
-        address_city: 'Asheville', address_state: 'NC', source: 'Conference',
-      }
-      return ex[f.key] || ''
-    }).join(',')
-    
-    const csv = [headers, example].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url; a.download = 'crm-import-template.csv'; a.click()
-    URL.revokeObjectURL(url)
+    // Build xlsx that exactly matches the NP Master Partner Template column structure
+    const headers = [
+      'First Name','Last Name','Email','Phone','Company / Org','Occupation / Title',
+      'City','State / Country',
+      'Primary Platform','Handle / Profile URL','LinkedIn URL','Instagram','Twitter/X',
+      'YouTube','TikTok','Facebook','Blog / Website',
+      'Instagram Followers','LinkedIn Followers','YouTube Subscribers','TikTok Followers',
+      'Facebook Followers','Twitter/X Followers','Podcast Listeners','Email List Subscribers','Total Est. Reach',
+      'Alignment (1-5)','Commercial Relevance (1-5)','Outreach Ease (1-5)','Credibility (1-5)','Total Score',
+      'Priority Tier','Fit Category','Primary Niche','Audience Type',
+      'Likely Offer Angle','Custom Outreach Opener','Partnership Type',
+      'Pipeline','Pipeline Stage','Contact Type (B2B/B2C)','Population Served',
+      'Topics of Interest','Presentation Topics','Publications',
+      'Outreach Owner','Status','Outreach Strategy','Last Touch','Next Step','Response Summary','Follow-up Date',
+      'Est. Audience Size','Engagement Rate','Content Frequency','Content Type',
+      'Market Segment','Geographic Market','Competitor Partnerships','Market Opportunity Notes',
+      'Source','Tags','AI Research Notes',
+    ]
+    const example = [
+      'Jane','Smith','jane@example.com','8285551234','Brain Health Clinic','Clinical Director',
+      'Asheville','NC',
+      'LinkedIn','https://linkedin.com/in/janesmith','https://linkedin.com/in/janesmith','janesmith_neuro','janesmith',
+      '','','','https://brainhealthclinic.com',
+      '','','','','','','','','',
+      '5','5','4','5','19',
+      'A Tier','HRV / Performance','HRV, biofeedback, and performance recovery','Measurement-minded performance audience',
+      'Position NP as HRV-friendly regulation & recovery tool',
+      'Hi Jane â€” following your work on HRV biofeedback for clinical outcomes. Building Neuro Progeny and see a strong alignment fit.',
+      'Affiliate',
+      'Mastermind','Prospect','B2B / Clinic','Children with ADHD',
+      'neurofeedback|brain health|biohacking','qEEG analysis|VR therapy','Smith et al. (2024) Journal of Neurofeedback',
+      'Laura','Prospect','LinkedIn DM - active poster','','Schedule intro call','','',
+      '~12,000','4.2%','Daily','Short-form video + long-form posts',
+      'B2B','Southeast US','None known','Only provider combining VR with traditional neurofeedback â€” strong clinical credibility',
+      'Conference','neurofeedback|VR|clinic-owner','Strong clinical background, published research, active poster. High priority.',
+    ]
+    const wb = XLSX.utils.book_new()
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['NEURO PROGENY  Â·  MASTER PARTNER & CONTACT DATABASE'],
+      ['Fill in your contacts below. Upload this file on the Import page.'],
+      headers,
+      example,
+    ])
+    // Style header row (row index 2, 0-based)
+    ws['!cols'] = headers.map(() => ({ wch: 22 }))
+    XLSX.utils.book_append_sheet(wb, ws, 'Master Contact DB')
+    XLSX.writeFile(wb, 'NP_Partner_Import_Template.xlsx')
   }
 
   const copyPrompt = () => {
@@ -601,7 +859,7 @@ export default function ImportPage() {
         <div>
           <h1 className="text-lg font-bold text-np-dark">Import Contacts</h1>
           <p className="text-xs text-gray-500 mt-0.5">
-            Upload a CSV or Excel file, map columns, review, and import into your CRM
+            Upload the NP Partner Template (.xlsx) or any CSV file â€” columns auto-map to CRM fields
           </p>
         </div>
         <div className="flex gap-2">
@@ -686,8 +944,8 @@ export default function ImportPage() {
           >
             <FileSpreadsheet className="w-12 h-12 text-gray-300 mx-auto mb-4" />
             <p className="text-sm font-semibold text-np-dark mb-1">Drop your file here or click to browse</p>
-            <p className="text-xs text-gray-400">Supports .csv and .tsv (export from Excel or Sheets as CSV)</p>
-            <input ref={fileRef} type="file" accept=".csv,.tsv" onChange={handleFileUpload} className="hidden" />
+            <p className="text-xs text-gray-400">Supports .xlsx (NP Partner Template), .csv, and .tsv</p>
+            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.tsv" onChange={handleFileUpload} className="hidden" />
           </div>
 
           <div className="mt-6 grid grid-cols-2 gap-4">
