@@ -2126,7 +2126,6 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
 
                 </div>
               )}
-              )}
 
               {tab === 'connections' && (
                 <>
