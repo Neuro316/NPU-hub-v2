@@ -212,6 +212,7 @@ const SPREADSHEET_AUTO_MAP: Record<string, string> = {
   'source': 'source',
   'tags': 'tags',
   'ai research notes': 'ai_research_notes',
+  'last touch (date)': 'outreach_last_touch',
 }
 
 const AI_PROMPT_TEMPLATE = `You are preparing a contact list for import into a CRM system for Neuro Progeny / Sensorium Neuro Wellness, a neurotechnology company focused on VR biofeedback and nervous system capacity training.
@@ -388,51 +389,62 @@ export default function ImportPage() {
 
   const parseXLSX = (buffer: ArrayBuffer) => {
     const wb = XLSX.read(buffer, { type: 'array' })
-    // Look for 'Master Contact DB' sheet first, otherwise use first sheet
+    // Prefer 'Master Contact DB' sheet, otherwise first sheet
     const sheetName = wb.SheetNames.includes('Master Contact DB')
       ? 'Master Contact DB'
       : wb.SheetNames[0]
     const ws = wb.Sheets[sheetName]
-    // Convert to array of arrays
     const raw: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
-    // Find header row (look for 'First Name' or 'first_name' in first 6 rows)
+
+    // Find the real header row â€” look for row containing 'First Name' in first 8 rows
     let headerRowIdx = 0
-    for (let i = 0; i < Math.min(6, raw.length); i++) {
-      const row = raw[i].map((v: any) => String(v).toLowerCase().replace(/[\n\r]+/g, ' ').trim())
-      if (row.some(c => c.includes('first name') || c === 'first_name')) {
+    for (let i = 0; i < Math.min(8, raw.length); i++) {
+      const cells = raw[i].map((v: any) => String(v).toLowerCase().trim())
+      if (cells.some(c => c === 'first name' || c === 'first_name' || c.includes('first name'))) {
         headerRowIdx = i
         break
       }
     }
+
+    // Normalize header: collapse newlines to space, trim
     const headerRow = raw[headerRowIdx].map((v: any) =>
-      String(v ?? '').replace(/[\n\r]+/g, '\n').trim()
+      String(v ?? '').replace(/[\n\r]+/g, ' ').trim()
     )
-    const dataRows = raw.slice(headerRowIdx + 1).filter(r => r.some((v: any) => v !== '' && v != null))
+
+    // Data rows start after header; skip any blank rows and the 'Rank' label row
+    const dataRows = raw.slice(headerRowIdx + 1).filter(r => {
+      const first = String(r[0] ?? '').trim()
+      // Skip the duplicate label row (has 'Rank' in col 0 and 'Name' or label in col 1)
+      if (first.toLowerCase() === 'rank') return false
+      // Skip fully blank rows
+      return r.some((v: any) => v !== '' && v != null)
+    })
+
     const stringRows = dataRows.map(row =>
       row.map((v: any) => {
         if (v === null || v === undefined) return ''
-        // Skip Excel formula results that are just numbers from SUM formulas for scores
-        if (typeof v === 'number') return String(v)
+        // Drop Excel formula strings
+        if (typeof v === 'string' && v.startsWith('=')) return ''
         return String(v).trim()
       })
     )
+
     setRawHeaders(headerRow)
     setRawRows(stringRows)
-    // Auto-map using SPREADSHEET_AUTO_MAP first, then fuzzy fallback
+
+    // Auto-map: exact SPREADSHEET_AUTO_MAP lookup (normalized) then fuzzy fallback
     const autoMap: Record<string, string> = {}
     headerRow.forEach(h => {
-      const lower = h.toLowerCase().replace(/[\n\r]+/g, ' ').trim()
-      // Try exact spreadsheet map first
+      const lower = h.toLowerCase().trim()
       if (SPREADSHEET_AUTO_MAP[lower]) {
         autoMap[h] = SPREADSHEET_AUTO_MAP[lower]
         return
       }
-      // Fuzzy fallback
       const stripped = lower.replace(/[^a-z0-9]/g, '')
       const match = CRM_FIELDS.find(f => {
-        const fLower = f.key.replace(/_/g, '')
+        const fKey = f.key.replace(/_/g, '')
         const fLabel = f.label.toLowerCase().replace(/[^a-z0-9]/g, '')
-        return stripped === fLower || stripped === fLabel
+        return stripped === fKey || stripped === fLabel
       })
       if (match) autoMap[h] = match.key
     })
@@ -782,53 +794,10 @@ export default function ImportPage() {
   }
 
   const downloadTemplate = () => {
-    // Build xlsx that exactly matches the NP Master Partner Template column structure
-    const headers = [
-      'First Name','Last Name','Email','Phone','Company / Org','Occupation / Title',
-      'City','State / Country',
-      'Primary Platform','Handle / Profile URL','LinkedIn URL','Instagram','Twitter/X',
-      'YouTube','TikTok','Facebook','Blog / Website',
-      'Instagram Followers','LinkedIn Followers','YouTube Subscribers','TikTok Followers',
-      'Facebook Followers','Twitter/X Followers','Podcast Listeners','Email List Subscribers','Total Est. Reach',
-      'Alignment (1-5)','Commercial Relevance (1-5)','Outreach Ease (1-5)','Credibility (1-5)','Total Score',
-      'Priority Tier','Fit Category','Primary Niche','Audience Type',
-      'Likely Offer Angle','Custom Outreach Opener','Partnership Type',
-      'Pipeline','Pipeline Stage','Contact Type (B2B/B2C)','Population Served',
-      'Topics of Interest','Presentation Topics','Publications',
-      'Outreach Owner','Status','Outreach Strategy','Last Touch','Next Step','Response Summary','Follow-up Date',
-      'Est. Audience Size','Engagement Rate','Content Frequency','Content Type',
-      'Market Segment','Geographic Market','Competitor Partnerships','Market Opportunity Notes',
-      'Source','Tags','AI Research Notes',
-    ]
-    const example = [
-      'Jane','Smith','jane@example.com','8285551234','Brain Health Clinic','Clinical Director',
-      'Asheville','NC',
-      'LinkedIn','https://linkedin.com/in/janesmith','https://linkedin.com/in/janesmith','janesmith_neuro','janesmith',
-      '','','','https://brainhealthclinic.com',
-      '','','','','','','','','',
-      '5','5','4','5','19',
-      'A Tier','HRV / Performance','HRV, biofeedback, and performance recovery','Measurement-minded performance audience',
-      'Position NP as HRV-friendly regulation & recovery tool',
-      'Hi Jane â€” following your work on HRV biofeedback for clinical outcomes. Building Neuro Progeny and see a strong alignment fit.',
-      'Affiliate',
-      'Mastermind','Prospect','B2B / Clinic','Children with ADHD',
-      'neurofeedback|brain health|biohacking','qEEG analysis|VR therapy','Smith et al. (2024) Journal of Neurofeedback',
-      'Laura','Prospect','LinkedIn DM - active poster','','Schedule intro call','','',
-      '~12,000','4.2%','Daily','Short-form video + long-form posts',
-      'B2B','Southeast US','None known','Only provider combining VR with traditional neurofeedback â€” strong clinical credibility',
-      'Conference','neurofeedback|VR|clinic-owner','Strong clinical background, published research, active poster. High priority.',
-    ]
-    const wb = XLSX.utils.book_new()
-    const ws = XLSX.utils.aoa_to_sheet([
-      ['NEURO PROGENY  Â·  MASTER PARTNER & CONTACT DATABASE'],
-      ['Fill in your contacts below. Upload this file on the Import page.'],
-      headers,
-      example,
-    ])
-    // Style header row (row index 2, 0-based)
-    ws['!cols'] = headers.map(() => ({ wch: 22 }))
-    XLSX.utils.book_append_sheet(wb, ws, 'Master Contact DB')
-    XLSX.writeFile(wb, 'NP_Partner_Import_Template.xlsx')
+    const a = document.createElement('a')
+    a.href = '/templates/NP_Partner_Import_Template.xlsx'
+    a.download = 'NP_Partner_Import_Template.xlsx'
+    a.click()
   }
 
   const copyPrompt = () => {
