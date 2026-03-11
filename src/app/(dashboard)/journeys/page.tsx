@@ -20,6 +20,7 @@ interface JourneyPhase {
   label: string
   color: string
   sort_order: number
+  row_labels?: Record<string, string>
 }
 
 interface JourneyCard {
@@ -82,6 +83,8 @@ export default function JourneysPage() {
   const [editingCard, setEditingCard] = useState<JourneyCard | null>(null)
   const [cardMenuOpen, setCardMenuOpen] = useState<string | null>(null)
   const [emptyRows, setEmptyRows] = useState<Record<string, number[]>>({})
+  const [editingRowLabel, setEditingRowLabel] = useState<{ phaseId: string; rowIdx: number } | null>(null)
+  const [editRowLabelValue, setEditRowLabelValue] = useState('')
   const [collapsedRows, setCollapsedRows] = useState<Set<string>>(new Set())
   const [collapsedPhases, setCollapsedPhases] = useState<Set<string>>(new Set())
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null)
@@ -210,6 +213,20 @@ export default function JourneysPage() {
       ...prev,
       [phaseId]: [...(prev[phaseId] || []), nextRow],
     }))
+  }
+
+  const getRowLabel = (phaseId: string, rowIdx: number, displayIdx: number) => {
+    const phase = phases.find(p => p.id === phaseId)
+    return phase?.row_labels?.[String(rowIdx)] || `Row ${displayIdx + 1}`
+  }
+
+  const updateRowLabel = async (phaseId: string, rowIdx: number, label: string) => {
+    const phase = phases.find(p => p.id === phaseId)
+    if (!phase) return
+    const rowLabels = { ...(phase.row_labels || {}), [String(rowIdx)]: label }
+    await supabase.from('journey_phases').update({ row_labels: rowLabels }).eq('id', phaseId)
+    setPhases(prev => prev.map(p => p.id === phaseId ? { ...p, row_labels: rowLabels } : p))
+    setEditingRowLabel(null)
   }
 
   // ── MOUSE DRAG ──
@@ -565,10 +582,32 @@ export default function JourneysPage() {
                         <div key={rowIdx}>
                           {/* Row toggle header */}
                           <div className="flex items-center gap-1.5 px-1 py-1">
-                            <button onClick={toggleRow} className="flex items-center gap-1 text-gray-400 hover:text-gray-600 transition-colors">
+                            <button onClick={toggleRow} className="flex items-center gap-1 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0">
                               {isCollapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                              <span className="text-[10px] font-medium">Row {ri + 1}</span>
                             </button>
+                            {editingRowLabel?.phaseId === phase.id && editingRowLabel?.rowIdx === rowIdx ? (
+                              <input
+                                value={editRowLabelValue}
+                                onChange={e => setEditRowLabelValue(e.target.value)}
+                                onBlur={() => updateRowLabel(phase.id, rowIdx, editRowLabelValue.trim() || `Row ${ri + 1}`)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') updateRowLabel(phase.id, rowIdx, editRowLabelValue.trim() || `Row ${ri + 1}`)
+                                  if (e.key === 'Escape') setEditingRowLabel(null)
+                                }}
+                                className="text-[10px] font-medium text-gray-600 border-b border-blue-400 outline-none bg-transparent w-32"
+                                autoFocus
+                              />
+                            ) : (
+                              <span
+                                className="text-[10px] font-medium text-gray-400 cursor-pointer hover:text-gray-600"
+                                onClick={() => {
+                                  setEditingRowLabel({ phaseId: phase.id, rowIdx })
+                                  setEditRowLabelValue(getRowLabel(phase.id, rowIdx, ri))
+                                }}
+                              >
+                                {getRowLabel(phase.id, rowIdx, ri)}
+                              </span>
+                            )}
                             <span className="text-[9px] text-gray-300">{rowCards.length} card{rowCards.length !== 1 ? 's' : ''}</span>
                           </div>
 
