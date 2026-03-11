@@ -5,12 +5,12 @@ import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
 import {
   ChevronLeft, ChevronRight, Clock, X, Loader2,
-  Mic, Megaphone, Brain, Filter, Users, Send,
+  Mic, Megaphone, Filter, Users, Send,
   Wand2, Sparkles, CalendarDays, Eye, EyeOff, Mail, Check
 } from 'lucide-react'
 
 /* ═══ Event Types ═══ */
-type EventCategory = 'recording' | 'appearances' | 'review'
+type EventCategory = 'recording' | 'appearances'
 
 // Strip timezone suffix so datetime-local values stored as UTC are treated as local time
 const stripTZ = (d: string) => d.replace(/([+-]\d{2}:\d{2}|Z)$/, '')
@@ -36,7 +36,6 @@ interface TeamMember {
 const CATEGORIES: { key: EventCategory; label: string; icon: any; color: string; bg: string; dot: string }[] = [
   { key: 'recording', label: 'Recordings', icon: Mic, color: 'text-purple-500', bg: 'bg-purple-50', dot: '#8B5CF6' },
   { key: 'appearances', label: 'Live / Air Dates', icon: Megaphone, color: 'text-emerald-500', bg: 'bg-emerald-50', dot: '#10B981' },
-  { key: 'review', label: '30-Day Reviews', icon: Brain, color: 'text-amber-500', bg: 'bg-amber-50', dot: '#F59E0B' },
 ]
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -127,20 +126,6 @@ export default function CalendarPage() {
             meta: { ...a, source: 'media_appearances' },
           })
 
-          // 30-day review event
-          const airClean = stripTZ(a.air_date)
-          const airDt = airClean.length === 10 ? new Date(airClean + 'T00:00:00') : new Date(airClean)
-          airDt.setDate(airDt.getDate() + 30)
-          const reviewDate = `${airDt.getFullYear()}-${pad2(airDt.getMonth() + 1)}-${pad2(airDt.getDate())}`
-          allEvents.push({
-            id: `review-${a.id}`, category: 'review',
-            title: `📊 Review: ${a.title}`,
-            subtitle: `Score performance for ${a.platform || 'show'}`,
-            date: reviewDate,
-            color: '#F59E0B',
-            href: `/media-affiliates?highlight=${a.id}`,
-            meta: { ...a, source: 'media_appearances' },
-          })
         }
       })
     }

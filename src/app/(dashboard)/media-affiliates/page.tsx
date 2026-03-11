@@ -248,7 +248,7 @@ const STATUS_TASK_MAP: Record<string, Record<string, AutoTaskDef[]>> = {
       { titleTemplate: '14-day promo schedule for [Title]', dueDays: 14, priority: 'high' },
       { titleTemplate: 'Verify show notes have UTM links for [Platform]', dueDays: 1, priority: 'high' },
     ],
-    archived: [{ titleTemplate: '30-day review: Score [Title] on [Platform]', dueDays: 0, priority: 'medium' }],
+    archived: [],
   },
   interview: {
     scheduled: [{ titleTemplate: 'Prepare talking points for [Platform] interview', dueDays: 3, priority: 'medium' }],
@@ -458,21 +458,6 @@ function MediaAffiliatesContent() {
         [{ method: 'popup', minutes: 1440 }]
       )
 
-      // 30-day review event (air_date + 30 days)
-      let reviewDate: string | null = null
-      if (item.air_date) {
-        const d = new Date(item.air_date)
-        d.setDate(d.getDate() + 30)
-        reviewDate = d.toISOString().split('T')[0]
-      }
-      await upsertEvent(
-        'review_30d',
-        reviewDate,
-        `📊 30-Day Review: ${item.title} on ${platform}`,
-        'Review performance metrics and assign A/B/C score',
-        [{ method: 'popup', minutes: 1440 }]
-      )
-
       // Save calendar event IDs and update count
       const eventCount = Object.keys(calIds).length
       await supabase.from('media_appearances').update({
@@ -486,7 +471,7 @@ function MediaAffiliatesContent() {
 
   // ─── CRUD ──────────────────────────────────────────
 
-  const linkHostContact = async (appearanceId: string, hostName: string) => {
+  const linkHostContact = async (appearanceId: string, hostName: string, email?: string) => {
     if (!orgId || !hostName.trim()) return
     const nameParts = hostName.trim().split(/\s+/)
     const firstName = nameParts[0]
@@ -506,12 +491,17 @@ function MediaAffiliatesContent() {
 
     if (existing && existing.length > 0) {
       contactId = existing[0].id
+      // Update email on existing contact if provided
+      if (email) {
+        await supabase.from('contacts').update({ email }).eq('id', contactId)
+      }
     } else {
       // Create new contact
       const { data: newContact, error: createErr } = await supabase.from('contacts').insert({
         org_id: orgId,
         first_name: firstName,
         last_name: lastName,
+        ...(email ? { email } : {}),
         tags: ['podcast_host'],
         source: 'media_appearance',
         sms_consent: false,
@@ -579,6 +569,7 @@ function MediaAffiliatesContent() {
   }
 
   const deleteAppearance = async (id: string) => {
+    if (!confirm('Delete this appearance? This cannot be undone.')) return
     const { error } = await supabase.from('media_appearances').delete().eq('id', id)
     if (error) {
       console.error('deleteAppearance: Supabase error', error)
@@ -669,9 +660,16 @@ function MediaAffiliatesContent() {
     if (updated.status !== editingAppearance?.status) {
       createAutoTask(updated, updated.status)
     }
-    // Re-link host contact if host name changed
+    const hostEmail = (updated.metadata?.host_email as string) || undefined
+    // Re-link host contact if host name changed, or sync email
     if (updated.host && updated.host !== editingAppearance?.host) {
-      await linkHostContact(updated.id, updated.host)
+      await linkHostContact(updated.id, updated.host, hostEmail)
+    } else if (hostEmail && updated.host_contact_id) {
+      // Host didn't change but email was added/updated — sync to existing contact
+      await supabase.from('contacts').update({ email: hostEmail }).eq('id', updated.host_contact_id)
+    } else if (hostEmail && updated.host && !updated.host_contact_id) {
+      // Has host name and email but no linked contact yet — create link
+      await linkHostContact(updated.id, updated.host, hostEmail)
     }
     // Sync calendar events if dates changed
     if (updated.recording_date !== editingAppearance?.recording_date || updated.air_date !== editingAppearance?.air_date) {
@@ -1428,6 +1426,19 @@ function EditAppearanceModal({
             </div>
           </div>
 
+          {/* Email */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <input
+              type="email"
+              placeholder="Host or contact email"
+              value={(draft.metadata?.host_email as string) || ''}
+              onChange={e => setDraft(d => ({ ...d, metadata: { ...d.metadata, host_email: e.target.value || undefined } }))}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
+            />
+            <p className="text-[10px] text-gray-400 mt-0.5">Also syncs to the linked CRM contact</p>
+          </div>
+
           {/* Dates */}
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -1644,6 +1655,13 @@ function AppearanceCard({
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             )}
+            <button
+              onClick={e => { e.stopPropagation(); onDelete(item.id) }}
+              title="Delete"
+              className="p-1 rounded hover:bg-red-50 text-gray-300 hover:text-red-500 transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
 
