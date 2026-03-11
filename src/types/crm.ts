@@ -19,6 +19,7 @@ export interface CrmContact {
   do_not_contact: boolean
   tags: string[]
   pipeline_stage?: string | null
+  pipeline_id?: string | null
   assigned_to?: string | null
   source?: string | null
   notes?: string | null
@@ -42,17 +43,91 @@ export interface CrmContact {
   mastermind_status?: 'prospect' | 'enrolled' | 'active' | 'completed' | 'graduated' | 'alumni' | null
   // Sensorium EHR (future)
   ehr_patient_id?: string | null
+  // Contact card fields
+  address_street?: string | null
+  address_city?: string | null
+  address_state?: string | null
+  address_zip?: string | null
+  reason_for_contact?: string | null
+  date_of_birth?: string | null
+  preferred_name?: string | null
+  timezone?: string | null
+  preferred_contact_method?: 'call' | 'text' | 'email' | null
+  occupation?: string | null
+  industry?: string | null
+  referred_by_contact_id?: string | null
+  referred_by_contact?: { first_name: string; last_name: string } | null
+  instagram_handle?: string | null
+  linkedin_url?: string | null
+  how_heard_about_us?: string | null
+  emergency_contact_name?: string | null
+  emergency_contact_phone?: string | null
+  informed_consent_signed?: boolean
+  informed_consent_signed_at?: string | null
+  billing_info_saved?: boolean
+  stripe_customer_id?: string | null
+  subscription_plan?: string | null
+  subscription_start?: string | null
+  subscription_end?: string | null
+  subscription_status?: 'active' | 'past_due' | 'canceled' | 'trialing' | 'expired' | null
+  // Intelligence fields
+  contact_type?: 'b2b_coach' | 'b2b_clinic' | 'b2b_partner' | 'b2c_client' | 'b2c_prospect' | 'other' | null
+  population_served?: string | null
+  preferred_outreach_strategy?: string | null
+  topics_of_interest?: string[] | null
+  presentation_topics?: string[] | null
+  publications?: string | null
+  key_differentiator?: string | null
+  twitter_handle?: string | null
+  facebook_url?: string | null
+  youtube_url?: string | null
+  tiktok_handle?: string | null
+  website_url?: string | null
+  blog_url?: string | null
+  social_follow_suggestion?: boolean
+  ai_research_notes?: string | null
+  ai_connection_discoveries?: Array<{ contact_id: string; confidence: number; basis: string }> | null
+  import_batch_id?: string | null
+  // Demographics (NIH-aligned)
+  gender_identity?: string | null
+  sex_assigned_at_birth?: string | null
+  race?: string | null
+  ethnicity?: string | null
+  primary_language?: string | null
+  marital_status?: string | null
+  education_level?: string | null
+  household_income_range?: string | null
+  veteran_status?: boolean | null
+  disability_status?: string | null
+  // Minor / Guardian
+  is_minor?: boolean | null
+  guardian_first_name?: string | null
+  guardian_last_name?: string | null
+  guardian_phone?: string | null
+  guardian_email?: string | null
+  guardian_relationship?: string | null
+  // Engagement rollup
+  engagement_response_rate?: number | null
+  top_responding_topics?: string[] | null
+  last_enriched_at?: string | null
+  referral_depth?: number | null
 }
 
 export interface TeamMember {
   id: string
   org_id: string
-  user_id: string
+  user_id: string | null
   display_name: string
-  email: string
-  role: 'admin' | 'manager' | 'member'
-  is_active: boolean
-  auto_assign_weight: number
+  email: string | null
+  role: 'super_admin' | 'admin' | 'team_member' | 'facilitator' | 'participant'
+  job_title?: string | null
+  avatar_url?: string | null
+  slack_user_id?: string | null
+  slack_display_name?: string | null
+  phone?: string | null
+  status: 'active' | 'invited' | 'inactive'
+  permissions: Record<string, any>
+  auto_assign_weight?: number
   created_at: string
   updated_at: string
 }
@@ -258,18 +333,36 @@ export interface CrmTask {
   completed_at?: string | null
   created_at: string
   updated_at: string
+  // RACI
+  raci_accountable?: string | null
+  raci_responsible?: string[]
+  raci_consulted?: string[]
+  raci_informed?: string[]
+  // Hub sync
+  hub_task_id?: string | null
+  last_synced_at?: string | null
+  // Extended
+  checklist?: any
+  labels?: any
+  estimated_minutes?: number | null
+  actual_minutes?: number | null
+  attachments?: any
+  kanban_column?: string | null
   // Joined
   contact?: CrmContact | null
   assigned_member?: TeamMember | null
+  custom_fields?: Record<string, any>
 }
 
 // â”€â”€â”€ Activity & Lifecycle â”€â”€â”€
 
 export interface ContactNote {
   id: string
+  org_id?: string
   contact_id: string
   author_id: string
   body: string
+  type?: string
   is_pinned: boolean
   created_at: string
 }
@@ -477,6 +570,7 @@ export interface BulkActionRequest {
 }
 
 export interface ContactSearchParams {
+  org_id?: string
   q?: string
   tags?: string[]
   pipeline_stage?: string
@@ -487,6 +581,87 @@ export interface ContactSearchParams {
   has_email?: boolean
   sms_consent?: boolean
   email_consent?: boolean
+  include_archived?: boolean
+  sort_by?: string
+  sort_dir?: 'asc' | 'desc'
   limit?: number
   offset?: number
+}
+
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// Network Intelligence Types
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+export interface ContactTagCategory {
+  id: string; org_id: string; name: string; color: string; sort_order: number
+  tags?: ContactTagDefinition[]
+}
+
+export interface ContactTagDefinition {
+  id: string; org_id: string; category_id: string; name: string
+  description?: string; is_active: boolean; sort_order: number
+  category?: ContactTagCategory
+}
+
+export interface ContactRelationship {
+  id: string; org_id: string; from_contact_id: string; to_contact_id: string
+  relationship_type: string; notes?: string; strength: number
+  is_bidirectional: boolean; created_by?: string
+  created_at: string; updated_at: string
+  from_contact?: CrmContact; to_contact?: CrmContact
+  type_config?: RelationshipType
+}
+
+export interface RelationshipType {
+  id: string; org_id: string; name: string; label: string
+  icon?: string; reverse_label: string; color?: string
+  sort_order: number; is_active: boolean
+}
+
+export interface ContactNetworkScore {
+  contact_id: string; org_id: string; relationship_count: number
+  inbound_refs: number; outbound_refs: number; tag_count: number
+  last_interaction?: string; interaction_score: number
+  network_centrality: number; bridge_score: number
+  cluster_id?: number; computed_at: string
+}
+
+export interface NetworkEvent {
+  id: string; org_id: string; name: string; description?: string
+  event_date?: string; target_contacts: string[]
+  bridge_contacts: string[]; suggested_invites: string[]
+  status: 'planning' | 'invites_sent' | 'completed' | 'cancelled'
+  created_by?: string; created_at: string
+}
+
+export interface NetworkGraphData {
+  nodes: NetworkNode[]; edges: NetworkEdge[]; clusters: NetworkCluster[]
+}
+
+export interface NetworkNode {
+  id: string; name: string; avatar: string; tags: string[]
+  pipeline_stage?: string; relationship_count: number
+  interaction_score: number; network_centrality: number
+  bridge_score: number; cluster_id?: number
+  x?: number; y?: number
+  // Contact info for detail panel
+  phone?: string | null; email?: string | null
+  address_city?: string | null; address_state?: string | null
+  preferred_name?: string | null; reason_for_contact?: string | null
+  occupation?: string | null; instagram_handle?: string | null; linkedin_url?: string | null
+}
+
+export interface NetworkEdge {
+  id: string; from: string; to: string; type: string
+  label: string; strength: number; color?: string
+}
+
+export interface NetworkCluster {
+  id: number; contact_ids: string[]; label?: string; dominant_tags: string[]
+}
+
+export interface NetworkInsight {
+  type: 'bridge_opportunity' | 'dormant_connector' | 'cluster_gap' | 'referral_chain' | 'event_suggestion' | 'engagement_alert'
+  title: string; description: string; contact_ids: string[]
+  confidence: number; action?: string; priority: 'high' | 'medium' | 'low'
 }
