@@ -122,6 +122,18 @@ export default function JourneysPage() {
   const [phaseDropIdx, setPhaseDropIdx] = useState<number | null>(null)
   const phaseRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
+  // Row drag state
+  const [rowDragging, setRowDragging] = useState<{
+    phaseId: string
+    rowIdx: number
+    startY: number
+    offsetY: number
+    active: boolean
+  } | null>(null)
+  const [rowMouseY, setRowMouseY] = useState(0)
+  const [rowDropIdx, setRowDropIdx] = useState<number | null>(null)
+  const rowBlockRefs = useRef<Record<string, HTMLDivElement | null>>({})
+
   // ── Data Loading ──
   const loadData = useCallback(async () => {
     if (!currentOrg?.id) return
@@ -385,6 +397,119 @@ export default function JourneysPage() {
   const draggedPhase = draggedCard ? phases.find(p => p.id === draggedCard.phase_id) : null
   const totalCards = cards.length
   const isPhaseDragging = phaseDragging?.active || false
+  const isRowDragging = rowDragging?.active || false
+  const anyDragging = isDraggingActive || isPhaseDragging || isRowDragging
+
+  // ── ROW DRAG ──
+  const handleRowMouseDown = useCallback((e: React.MouseEvent, phaseId: string, rowIdx: number) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    setPhaseDragging(null)
+    setDragging(null)
+    setRowDragging({
+      phaseId, rowIdx,
+      startY: e.clientY,
+      offsetY: e.clientY - (e.currentTarget as HTMLElement).getBoundingClientRect().top,
+      active: false,
+    })
+    setRowMouseY(e.clientY)
+  }, [])
+
+  useEffect(() => {
+    if (!rowDragging) return
+
+    const phaseId = rowDragging.phaseId
+    // Get current row numbers for this phase
+    const phaseCards = cards.filter(c => c.phase_id === phaseId)
+    const cardRows = phaseCards.map(c => c.row_index || 0)
+    const empty = emptyRows[phaseId] || []
+    const rowNums = Array.from(new Set([...cardRows, ...empty])).sort((a, b) => a - b)
+    if (rowNums.length === 0) rowNums.push(0)
+
+    const handleMouseMove = (e: MouseEvent) => {
+      setRowMouseY(e.clientY)
+      setRowDragging(prev => {
+        if (!prev) return null
+        if (!prev.active && Math.abs(e.clientY - prev.startY) >= 5) return { ...prev, active: true }
+        return prev
+      })
+
+      let bestIdx: number | null = null
+      for (let i = 0; i < rowNums.length; i++) {
+        const el = rowBlockRefs.current[`${phaseId}:${rowNums[i]}`]
+        if (!el) continue
+        const rect = el.getBoundingClientRect()
+        if (e.clientY < rect.top + rect.height / 2) { bestIdx = i; break }
+      }
+      if (bestIdx === null) bestIdx = rowNums.length
+      setRowDropIdx(bestIdx)
+    }
+
+    const handleMouseUp = async () => {
+      if (rowDragging.active && rowDropIdx !== null) {
+        const draggedRowNum = rowDragging.rowIdx
+        const draggedPos = rowNums.indexOf(draggedRowNum)
+        if (draggedPos !== -1 && rowDropIdx !== draggedPos && rowDropIdx !== draggedPos + 1) {
+          // Build new order
+          const reordered = rowNums.filter(r => r !== draggedRowNum)
+          const insertAt = rowDropIdx > draggedPos ? rowDropIdx - 1 : rowDropIdx
+          reordered.splice(insertAt, 0, draggedRowNum)
+
+          // Assign new row_index values: use fresh indices 0,1,2,...
+          const mapping: Record<number, number> = {}
+          reordered.forEach((oldIdx, newIdx) => { mapping[oldIdx] = newIdx })
+
+          // Update cards
+          const updatedCards = cards.map(c => {
+            if (c.phase_id !== phaseId) return c
+            const oldRow = c.row_index || 0
+            if (mapping[oldRow] !== undefined && mapping[oldRow] !== oldRow) {
+              return { ...c, row_index: mapping[oldRow] }
+            }
+            return c
+          })
+          setCards(updatedCards)
+
+          // Update empty rows
+          setEmptyRows(prev => {
+            const phaseEmpty = (prev[phaseId] || []).map(r => mapping[r] ?? r)
+            return { ...prev, [phaseId]: phaseEmpty }
+          })
+
+          // Update row_labels
+          const phase = phases.find(p => p.id === phaseId)
+          if (phase?.row_labels) {
+            const newLabels: Record<string, string> = {}
+            for (const [oldKey, label] of Object.entries(phase.row_labels)) {
+              const oldNum = parseInt(oldKey)
+              const newNum = mapping[oldNum]
+              newLabels[String(newNum ?? oldNum)] = label
+            }
+            setPhases(prev => prev.map(p => p.id === phaseId ? { ...p, row_labels: newLabels } : p))
+            await supabase.from('journey_phases').update({ row_labels: newLabels }).eq('id', phaseId)
+          }
+
+          // Persist card row_index changes
+          for (const c of updatedCards.filter(c => c.phase_id === phaseId)) {
+            const orig = cards.find(x => x.id === c.id)
+            if (orig && orig.row_index !== c.row_index) {
+              await supabase.from('journey_cards').update({ row_index: c.row_index, updated_at: new Date().toISOString() }).eq('id', c.id)
+            }
+          }
+        }
+      }
+      setRowDragging(null)
+      setRowDropIdx(null)
+    }
+
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [rowDragging, rowDropIdx, cards, phases, emptyRows, supabase])
 
   // ── PHASE DRAG ──
   const handlePhaseMouseDown = useCallback((e: React.MouseEvent, phaseId: string) => {
@@ -474,7 +599,7 @@ export default function JourneysPage() {
   }
 
   return (
-    <div className="h-full flex flex-col overflow-hidden bg-[#F5F6FA]" style={{ userSelect: isDraggingActive || isPhaseDragging ? 'none' : 'auto' }}>
+    <div className="h-full flex flex-col overflow-hidden bg-[#F5F6FA]" style={{ userSelect: anyDragging ? 'none' : 'auto' }}>
       {/* Header */}
       <div className="flex-shrink-0 px-7 pt-5 pb-4">
         <div className="flex items-start justify-between">
@@ -578,10 +703,27 @@ export default function JourneysPage() {
                         return next
                       })
 
+                      const isRowBeingDragged = isRowDragging && rowDragging?.phaseId === phase.id && rowDragging?.rowIdx === rowIdx
+                      const showRowDropBefore = isRowDragging && rowDragging?.phaseId === phase.id && rowDropIdx === ri &&
+                        rowDragging?.rowIdx !== rowIdx && rowDropIdx !== rowNumbers.indexOf(rowDragging?.rowIdx ?? -1) + 1
+
                       return (
                         <div key={rowIdx}>
+                          {/* Row drop indicator */}
+                          <div className="transition-all rounded" style={{
+                            height: showRowDropBefore ? 3 : 0,
+                            background: showRowDropBefore ? phase.color : 'transparent',
+                            marginBottom: showRowDropBefore ? 3 : 0,
+                          }} />
+                        <div ref={el => { rowBlockRefs.current[`${phase.id}:${rowIdx}`] = el }}
+                          style={{ opacity: isRowBeingDragged ? 0.3 : 1, transition: 'opacity 0.15s' }}>
                           {/* Row toggle header */}
                           <div className="flex items-center gap-1.5 px-1 py-1">
+                            <div onMouseDown={e => handleRowMouseDown(e, phase.id, rowIdx)}
+                              className="text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing flex-shrink-0"
+                              title="Drag to reorder row">
+                              <GripVertical className="w-3 h-3" />
+                            </div>
                             <button onClick={toggleRow} className="flex items-center gap-1 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0">
                               {isCollapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                             </button>
@@ -714,8 +856,14 @@ export default function JourneysPage() {
                           {/* Row divider */}
                           {ri < rowNumbers.length - 1 && <div className="border-b border-dashed border-gray-200 mx-1 my-1" />}
                         </div>
+                        </div>
                       )
-                    })}
+                    }).concat(
+                      // End-of-rows drop indicator
+                      isRowDragging && rowDragging?.phaseId === phase.id && rowDropIdx === rowNumbers.length ? [
+                        <div key="row-drop-end" className="rounded" style={{ height: 3, background: phase.color }} />
+                      ] : []
+                    )}
 
                     {/* Add row / new row drop zone */}
                     <div data-newrow={phase.id}
@@ -790,6 +938,31 @@ export default function JourneysPage() {
               </div>
               <div className="flex-1 flex items-center px-4">
                 <span className="text-xs text-gray-400">...</span>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Row drag ghost */}
+      {isRowDragging && rowDragging && (() => {
+        const rPhase = phases.find(p => p.id === rowDragging.phaseId)
+        if (!rPhase) return null
+        const rCards = getRowCards(rowDragging.phaseId, rowDragging.rowIdx)
+        const rRowNums = getRowNumbers(rowDragging.phaseId)
+        const ri = rRowNums.indexOf(rowDragging.rowIdx)
+        const label = getRowLabel(rowDragging.phaseId, rowDragging.rowIdx, ri >= 0 ? ri : 0)
+        return (
+          <div className="fixed pointer-events-none z-[9999]" style={{
+            left: 240, right: 40,
+            top: rowMouseY - rowDragging.offsetY,
+            opacity: 0.85, transform: 'scale(0.98)',
+          }}>
+            <div className="bg-white rounded-xl border border-gray-200/80 shadow-2xl px-3 py-2" style={{ maxHeight: 56, overflow: 'hidden' }}>
+              <div className="flex items-center gap-2">
+                <GripVertical className="w-3 h-3 text-gray-400" />
+                <span className="text-[10px] font-medium text-gray-600">{label}</span>
+                <span className="text-[9px] text-gray-300">{rCards.length} card{rCards.length !== 1 ? 's' : ''}</span>
               </div>
             </div>
           </div>
