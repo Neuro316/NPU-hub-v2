@@ -584,6 +584,7 @@ function MediaAffiliatesContent() {
   }
 
   const deleteAppearance = async (id: string) => {
+    if (!confirm('Delete this appearance? This cannot be undone.')) return
     const { error } = await supabase.from('media_appearances').delete().eq('id', id)
     if (error) {
       console.error('deleteAppearance: Supabase error', error)
@@ -1669,6 +1670,13 @@ function AppearanceCard({
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             )}
+            <button
+              onClick={e => { e.stopPropagation(); onDelete(item.id) }}
+              title="Delete"
+              className="p-1 rounded hover:bg-red-50 text-gray-300 hover:text-red-500 transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
 
