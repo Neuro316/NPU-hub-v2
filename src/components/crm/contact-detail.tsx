@@ -863,7 +863,34 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                     phone: contact.phone || '',
                     company: (contact as any).company || '',
                   })
-                  setEditingHeader(true)
+                  setInfoForm(p => ({
+                    ...p,
+                    source: contact.source || '',
+                    address_street: contact.address_street || '',
+                    address_city: contact.address_city || '',
+                    address_state: contact.address_state || '',
+                    address_zip: contact.address_zip || '',
+                    reason_for_contact: contact.reason_for_contact || '',
+                    date_of_birth: contact.date_of_birth || '',
+                    preferred_name: contact.preferred_name || '',
+                    timezone: contact.timezone || 'America/New_York',
+                    preferred_contact_method: contact.preferred_contact_method || '',
+                    occupation: contact.occupation || '',
+                    industry: contact.industry || '',
+                    how_heard_about_us: contact.how_heard_about_us || '',
+                    instagram_handle: contact.instagram_handle || '',
+                    linkedin_url: contact.linkedin_url || '',
+                    twitter_handle: (contact as any).twitter_handle || '',
+                    tiktok_handle: (contact as any).tiktok_handle || '',
+                    youtube_url: (contact as any).youtube_url || '',
+                    facebook_url: (contact as any).facebook_url || '',
+                    website_url: (contact as any).website_url || '',
+                    emergency_contact_name: contact.emergency_contact_name || '',
+                    emergency_contact_phone: contact.emergency_contact_phone || '',
+                    referred_by_contact_id: contact.referred_by_contact_id || '',
+                    referred_by_search: '',
+                  }))
+                  setEditingInfo(true)
                 }}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                   <Pencil className="w-3 h-3" /> Edit
@@ -1215,141 +1242,233 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                       className="flex items-center gap-1 text-[9px] text-gray-400 hover:text-np-blue transition-colors">
                       <Pencil className="w-2.5 h-2.5" /> Edit all contact info
                     </button>
-                  ) : (
-                    <div className="bg-gray-50 rounded-xl p-3 space-y-2.5 border border-gray-100">
-                      <h5 className="text-[10px] font-bold text-np-dark">Edit Contact Info</h5>
-                      <div>
-                        <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Source</label>
-                        <select value={infoForm.source} onChange={e => setInfoForm(p => ({ ...p, source: e.target.value }))}
-                          className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30">
-                          <option value="">Select source...</option>
-                          {['Website','Referral','Social Media','Event','Cold Outreach','Podcast','Workshop','Mastermind Alumni','Partner','Google Search','Conference','YouTube','Other'].map(o =>
-                            <option key={o} value={o}>{o}</option>
-                          )}
-                        </select>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Preferred Name</label>
-                          <input value={infoForm.preferred_name} onChange={e => setInfoForm(p => ({ ...p, preferred_name: e.target.value }))}
-                            placeholder="Nickname" className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
-                        </div>
-                        <div>
-                          <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Date of Birth</label>
-                          <input type="date" value={infoForm.date_of_birth} onChange={e => setInfoForm(p => ({ ...p, date_of_birth: e.target.value }))}
-                            className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Timezone</label>
-                          <select value={infoForm.timezone} onChange={e => setInfoForm(p => ({ ...p, timezone: e.target.value }))}
-                            className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30">
-                            {['America/New_York','America/Chicago','America/Denver','America/Los_Angeles','America/Anchorage','Pacific/Honolulu'].map(tz =>
-                              <option key={tz} value={tz}>{tz.replace('America/','').replace('Pacific/','').replace('_',' ')}</option>
-                            )}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Prefers</label>
-                          <select value={infoForm.preferred_contact_method} onChange={e => setInfoForm(p => ({ ...p, preferred_contact_method: e.target.value }))}
-                            className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30">
-                            <option value="">No preference</option>
-                            <option value="call">Call</option><option value="text">Text</option><option value="email">Email</option>
-                          </select>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Occupation</label>
-                          <input value={infoForm.occupation} onChange={e => setInfoForm(p => ({ ...p, occupation: e.target.value }))}
-                            className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
-                        </div>
-                        <div>
-                          <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Industry</label>
-                          <input value={infoForm.industry} onChange={e => setInfoForm(p => ({ ...p, industry: e.target.value }))}
-                            className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Reason for Contact</label>
-                        <input value={infoForm.reason_for_contact} onChange={e => setInfoForm(p => ({ ...p, reason_for_contact: e.target.value }))}
-                          placeholder="e.g. Interested in Immersive Mastermind"
-                          className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
-                      </div>
-                      <div>
-                        <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">How They Heard About Us</label>
-                        <select value={infoForm.how_heard_about_us} onChange={e => setInfoForm(p => ({ ...p, how_heard_about_us: e.target.value }))}
-                          className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30">
-                          <option value="">Select...</option>
-                          {['Referral','Social Media','Podcast','Workshop','Google Search','Conference','YouTube','Other'].map(o =>
-                            <option key={o} value={o}>{o}</option>
-                          )}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Mailing Address</label>
-                        <input value={infoForm.address_street} onChange={e => setInfoForm(p => ({ ...p, address_street: e.target.value }))}
-                          placeholder="Street" className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
-                        <div className="grid grid-cols-3 gap-1.5 mt-1">
-                          <input value={infoForm.address_city} onChange={e => setInfoForm(p => ({ ...p, address_city: e.target.value }))} placeholder="City"
-                            className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
-                          <input value={infoForm.address_state} onChange={e => setInfoForm(p => ({ ...p, address_state: e.target.value }))} placeholder="State"
-                            className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
-                          <input value={infoForm.address_zip} onChange={e => setInfoForm(p => ({ ...p, address_zip: e.target.value }))} placeholder="Zip"
-                            className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400 block mb-1.5">Social Profiles</label>
-                        <div className="grid grid-cols-2 gap-2">
+                  ) : null}
+
+                  {/* Full Edit Modal */}
+                  {editingInfo && (
+                    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+                      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={() => setEditingInfo(false)} />
+                      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+                        {/* Modal header */}
+                        <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 flex items-center justify-between rounded-t-2xl z-10">
                           <div>
-                            <label className="text-[8px] text-gray-400">Instagram</label>
-                            <input value={infoForm.instagram_handle} onChange={e => setInfoForm(p => ({ ...p, instagram_handle: e.target.value }))}
-                              placeholder="@handle" className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                            <h3 className="text-sm font-bold text-np-dark">Edit Contact</h3>
+                            <p className="text-[10px] text-gray-400 mt-0.5">{contact.first_name} {contact.last_name}</p>
                           </div>
-                          <div>
-                            <label className="text-[8px] text-gray-400">LinkedIn URL</label>
-                            <input value={infoForm.linkedin_url} onChange={e => setInfoForm(p => ({ ...p, linkedin_url: e.target.value }))}
-                              placeholder="https://linkedin.com/in/..." className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
-                          </div>
-                          <div>
-                            <label className="text-[8px] text-gray-400">X / Twitter</label>
-                            <input value={infoForm.twitter_handle} onChange={e => setInfoForm(p => ({ ...p, twitter_handle: e.target.value }))}
-                              placeholder="@handle" className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
-                          </div>
-                          <div>
-                            <label className="text-[8px] text-gray-400">TikTok</label>
-                            <input value={infoForm.tiktok_handle} onChange={e => setInfoForm(p => ({ ...p, tiktok_handle: e.target.value }))}
-                              placeholder="@handle" className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
-                          </div>
-                          <div>
-                            <label className="text-[8px] text-gray-400">YouTube</label>
-                            <input value={infoForm.youtube_url} onChange={e => setInfoForm(p => ({ ...p, youtube_url: e.target.value }))}
-                              placeholder="https://youtube.com/@channel" className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
-                          </div>
-                          <div>
-                            <label className="text-[8px] text-gray-400">Website</label>
-                            <input value={infoForm.website_url} onChange={e => setInfoForm(p => ({ ...p, website_url: e.target.value }))}
-                              placeholder="https://..." className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
-                          </div>
+                          <button onClick={() => setEditingInfo(false)} className="p-1.5 rounded-lg hover:bg-gray-100">
+                            <X className="w-4 h-4 text-gray-400" />
+                          </button>
                         </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-[8px] font-semibold uppercase tracking-wider text-red-400">Emergency Name</label>
-                          <input value={infoForm.emergency_contact_name} onChange={e => setInfoForm(p => ({ ...p, emergency_contact_name: e.target.value }))}
-                            className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+
+                        <div className="px-5 py-4 space-y-5">
+
+                          {/* Section: Name & Contact */}
+                          <div>
+                            <p className="text-[9px] font-bold uppercase tracking-wider text-np-blue mb-2">Name & Contact</p>
+                            <div className="space-y-2">
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">First Name</label>
+                                  <input value={headerForm.first_name} onChange={e => setHeaderForm(p => ({ ...p, first_name: e.target.value }))}
+                                    className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                                </div>
+                                <div>
+                                  <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Last Name</label>
+                                  <input value={headerForm.last_name} onChange={e => setHeaderForm(p => ({ ...p, last_name: e.target.value }))}
+                                    className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Email</label>
+                                  <input type="email" value={headerForm.email} onChange={e => setHeaderForm(p => ({ ...p, email: e.target.value }))}
+                                    className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                                </div>
+                                <div>
+                                  <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Phone</label>
+                                  <input type="tel" value={headerForm.phone} onChange={e => setHeaderForm(p => ({ ...p, phone: e.target.value }))}
+                                    className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Company</label>
+                                  <input value={headerForm.company} onChange={e => setHeaderForm(p => ({ ...p, company: e.target.value }))}
+                                    className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                                </div>
+                                <div>
+                                  <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Preferred Name</label>
+                                  <input value={infoForm.preferred_name} onChange={e => setInfoForm(p => ({ ...p, preferred_name: e.target.value }))}
+                                    placeholder="Nickname" className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Section: Social Media & Web */}
+                          <div>
+                            <p className="text-[9px] font-bold uppercase tracking-wider text-np-blue mb-2">Social Media & Web</p>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Instagram</label>
+                                <input value={infoForm.instagram_handle} onChange={e => setInfoForm(p => ({ ...p, instagram_handle: e.target.value }))}
+                                  placeholder="@handle or URL" className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                              </div>
+                              <div>
+                                <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">X / Twitter</label>
+                                <input value={infoForm.twitter_handle} onChange={e => setInfoForm(p => ({ ...p, twitter_handle: e.target.value }))}
+                                  placeholder="@handle" className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                              </div>
+                              <div>
+                                <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">TikTok</label>
+                                <input value={infoForm.tiktok_handle} onChange={e => setInfoForm(p => ({ ...p, tiktok_handle: e.target.value }))}
+                                  placeholder="@handle" className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                              </div>
+                              <div>
+                                <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">LinkedIn</label>
+                                <input value={infoForm.linkedin_url} onChange={e => setInfoForm(p => ({ ...p, linkedin_url: e.target.value }))}
+                                  placeholder="https://linkedin.com/in/..." className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                              </div>
+                              <div>
+                                <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">YouTube</label>
+                                <input value={infoForm.youtube_url} onChange={e => setInfoForm(p => ({ ...p, youtube_url: e.target.value }))}
+                                  placeholder="https://youtube.com/@..." className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                              </div>
+                              <div>
+                                <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Website</label>
+                                <input value={infoForm.website_url} onChange={e => setInfoForm(p => ({ ...p, website_url: e.target.value }))}
+                                  placeholder="https://..." className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Section: Professional */}
+                          <div>
+                            <p className="text-[9px] font-bold uppercase tracking-wider text-np-blue mb-2">Professional</p>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Occupation</label>
+                                <input value={infoForm.occupation} onChange={e => setInfoForm(p => ({ ...p, occupation: e.target.value }))}
+                                  className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                              </div>
+                              <div>
+                                <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Industry</label>
+                                <input value={infoForm.industry} onChange={e => setInfoForm(p => ({ ...p, industry: e.target.value }))}
+                                  className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Section: Personal */}
+                          <div>
+                            <p className="text-[9px] font-bold uppercase tracking-wider text-np-blue mb-2">Personal</p>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Date of Birth</label>
+                                <input type="date" value={infoForm.date_of_birth} onChange={e => setInfoForm(p => ({ ...p, date_of_birth: e.target.value }))}
+                                  className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                              </div>
+                              <div>
+                                <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Timezone</label>
+                                <select value={infoForm.timezone} onChange={e => setInfoForm(p => ({ ...p, timezone: e.target.value }))}
+                                  className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30">
+                                  {['America/New_York','America/Chicago','America/Denver','America/Los_Angeles','America/Anchorage','Pacific/Honolulu'].map(tz =>
+                                    <option key={tz} value={tz}>{tz.replace('America/','').replace('Pacific/','').replace('_',' ')}</option>
+                                  )}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Preferred Contact</label>
+                                <select value={infoForm.preferred_contact_method} onChange={e => setInfoForm(p => ({ ...p, preferred_contact_method: e.target.value }))}
+                                  className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30">
+                                  <option value="">No preference</option>
+                                  <option value="call">Call</option><option value="text">Text</option><option value="email">Email</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Source</label>
+                                <select value={infoForm.source} onChange={e => setInfoForm(p => ({ ...p, source: e.target.value }))}
+                                  className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30">
+                                  <option value="">Select source...</option>
+                                  {['Website','Referral','Social Media','Event','Cold Outreach','Podcast','Workshop','Mastermind Alumni','Partner','Google Search','Conference','YouTube','Other'].map(o =>
+                                    <option key={o} value={o}>{o}</option>
+                                  )}
+                                </select>
+                              </div>
+                            </div>
+                            <div className="mt-2">
+                              <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">How They Heard About Us</label>
+                              <select value={infoForm.how_heard_about_us} onChange={e => setInfoForm(p => ({ ...p, how_heard_about_us: e.target.value }))}
+                                className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30">
+                                <option value="">Select...</option>
+                                {['Referral','Social Media','Podcast','Workshop','Google Search','Conference','YouTube','Other'].map(o =>
+                                  <option key={o} value={o}>{o}</option>
+                                )}
+                              </select>
+                            </div>
+                            <div className="mt-2">
+                              <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Reason for Contact</label>
+                              <input value={infoForm.reason_for_contact} onChange={e => setInfoForm(p => ({ ...p, reason_for_contact: e.target.value }))}
+                                placeholder="e.g. Interested in Immersive Mastermind"
+                                className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                            </div>
+                          </div>
+
+                          {/* Section: Address */}
+                          <div>
+                            <p className="text-[9px] font-bold uppercase tracking-wider text-np-blue mb-2">Mailing Address</p>
+                            <input value={infoForm.address_street} onChange={e => setInfoForm(p => ({ ...p, address_street: e.target.value }))}
+                              placeholder="Street" className="w-full mb-1.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                            <div className="grid grid-cols-3 gap-1.5">
+                              <input value={infoForm.address_city} onChange={e => setInfoForm(p => ({ ...p, address_city: e.target.value }))} placeholder="City"
+                                className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                              <input value={infoForm.address_state} onChange={e => setInfoForm(p => ({ ...p, address_state: e.target.value }))} placeholder="State"
+                                className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                              <input value={infoForm.address_zip} onChange={e => setInfoForm(p => ({ ...p, address_zip: e.target.value }))} placeholder="Zip"
+                                className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                            </div>
+                          </div>
+
+                          {/* Section: Emergency Contact */}
+                          <div>
+                            <p className="text-[9px] font-bold uppercase tracking-wider text-red-400 mb-2">Emergency Contact</p>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Name</label>
+                                <input value={infoForm.emergency_contact_name} onChange={e => setInfoForm(p => ({ ...p, emergency_contact_name: e.target.value }))}
+                                  className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                              </div>
+                              <div>
+                                <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Phone</label>
+                                <input value={infoForm.emergency_contact_phone} onChange={e => setInfoForm(p => ({ ...p, emergency_contact_phone: e.target.value }))}
+                                  className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                              </div>
+                            </div>
+                          </div>
+
                         </div>
-                        <div>
-                          <label className="text-[8px] font-semibold uppercase tracking-wider text-red-400">Emergency Phone</label>
-                          <input value={infoForm.emergency_contact_phone} onChange={e => setInfoForm(p => ({ ...p, emergency_contact_phone: e.target.value }))}
-                            className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+
+                        {/* Sticky footer */}
+                        <div className="sticky bottom-0 bg-white border-t border-gray-100 px-5 py-3 flex justify-end gap-2 rounded-b-2xl">
+                          <button onClick={() => setEditingInfo(false)} className="px-4 py-2 text-xs text-gray-500 hover:text-gray-700">Cancel</button>
+                          <button onClick={async () => {
+                            if (!contact) return
+                            try {
+                              // Save header fields (name/email/phone/company)
+                              await updateContact(contact.id, {
+                                first_name: headerForm.first_name || contact.first_name,
+                                last_name: headerForm.last_name,
+                                email: headerForm.email || undefined,
+                                phone: headerForm.phone || undefined,
+                                company: headerForm.company || undefined,
+                              } as any)
+                              // Save info fields
+                              await handleSaveInfo()
+                            } catch (e) { console.error(e) }
+                          }} className="px-4 py-2 bg-np-blue text-white text-xs font-semibold rounded-lg hover:bg-np-blue/90 transition-colors">
+                            Save Changes
+                          </button>
                         </div>
-                      </div>
-                      <div className="flex justify-end gap-2 pt-1">
-                        <button onClick={() => setEditingInfo(false)} className="px-2.5 py-1 text-[10px] text-gray-400">Cancel</button>
-                        <button onClick={handleSaveInfo} className="px-2.5 py-1 bg-np-blue text-white text-[10px] font-medium rounded-lg">Save</button>
                       </div>
                     </div>
                   )}
