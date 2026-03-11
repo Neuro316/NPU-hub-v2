@@ -373,6 +373,8 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
   const [showTaskCreate, setShowTaskCreate] = useState(false)
   const [selectedTask, setSelectedTask] = useState<CrmTask | null>(null)
   const [showEmailComposer, setShowEmailComposer] = useState(false)
+  const [emailInitialSubject, setEmailInitialSubject] = useState('')
+  const [emailInitialBody, setEmailInitialBody] = useState('')
   const [relationships, setRelationships] = useState<ContactRelationship[]>([])
   const [relTypes, setRelTypes] = useState<RelationshipType[]>([])
   const [showAddConnection, setShowAddConnection] = useState(false)
@@ -769,6 +771,35 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                           <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Archived</span>
                         )}
                       </div>
+                      {/* Social / contact quick links */}
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
+                        {contact.email && (
+                          <a href={`mailto:${contact.email}`} className="text-[10px] text-gray-500 hover:text-np-blue transition-colors">{contact.email}</a>
+                        )}
+                        {contact.phone && (
+                          <a href={`tel:${contact.phone}`} className="text-[10px] text-gray-500 hover:text-np-blue transition-colors">{contact.phone}</a>
+                        )}
+                        {contact.linkedin_url && (
+                          <a href={contact.linkedin_url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#0A66C2] font-medium hover:underline">LinkedIn</a>
+                        )}
+                        {contact.instagram_handle && (() => {
+                          const raw = String(contact.instagram_handle)
+                          const handle = raw.replace(/^https?:\/\/(www\.)?instagram\.com\//, '').replace(/\/$/, '').replace(/^@/, '')
+                          return <a href={`https://instagram.com/${handle}`} target="_blank" rel="noopener noreferrer" className="text-[10px] text-pink-500 font-medium hover:underline">@{handle}</a>
+                        })()}
+                        {contact.twitter_handle && (
+                          <a href={`https://x.com/${String(contact.twitter_handle).replace('@','')}`} target="_blank" rel="noopener noreferrer" className="text-[10px] text-gray-600 font-medium hover:underline">ð• {contact.twitter_handle}</a>
+                        )}
+                        {contact.tiktok_handle && (
+                          <a href={`https://tiktok.com/@${String(contact.tiktok_handle).replace('@','')}`} target="_blank" rel="noopener noreferrer" className="text-[10px] text-gray-700 font-medium hover:underline">TikTok</a>
+                        )}
+                        {contact.youtube_url && (
+                          <a href={contact.youtube_url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-red-500 font-medium hover:underline">YouTube</a>
+                        )}
+                        {contact.website_url && (
+                          <a href={contact.website_url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-np-blue font-medium hover:underline">{String(contact.website_url).replace(/https?:\/\/(www\.)?/, '')}</a>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1008,12 +1039,16 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                             <div className="flex-1">
                               <p className="text-[9px] text-gray-400 uppercase tracking-wider">Social</p>
                               <div className="flex gap-3">
-                                {contact.instagram_handle && <span className="text-[11px] text-np-dark">IG: @{contact.instagram_handle.replace('@','')}</span>}
-                                {contact.linkedin_url && <a href={contact.linkedin_url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-np-blue hover:underline">LinkedIn</a>}
-                                {(contact as any).twitter_handle && <a href={`https://x.com/${String((contact as any).twitter_handle).replace('@','')}`} target="_blank" rel="noopener noreferrer" className="text-[11px] text-gray-700 hover:underline">ð• {(contact as any).twitter_handle}</a>}
-                                {(contact as any).tiktok_handle && <a href={`https://tiktok.com/@${String((contact as any).tiktok_handle).replace('@','')}`} target="_blank" rel="noopener noreferrer" className="text-[11px] text-gray-700 hover:underline">TikTok</a>}
-                                {(contact as any).youtube_url && <a href={(contact as any).youtube_url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-red-500 hover:underline">YouTube</a>}
-                                {(contact as any).website_url && <a href={(contact as any).website_url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-np-blue hover:underline">Website</a>}
+                                {contact.instagram_handle && (() => {
+                                  const raw = String(contact.instagram_handle)
+                                  const handle = raw.replace(/^https?:\/\/(www\.)?instagram\.com\//, '').replace(/\/$/, '').replace(/^@/, '')
+                                  return <a href={`https://instagram.com/${handle}`} target="_blank" rel="noopener noreferrer" className="text-[11px] text-pink-500 hover:underline">@{handle}</a>
+                                })()}
+                                {contact.linkedin_url && <a href={contact.linkedin_url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-[#0A66C2] hover:underline">LinkedIn</a>}
+                                {contact.twitter_handle && <a href={`https://x.com/${String(contact.twitter_handle).replace('@','')}`} target="_blank" rel="noopener noreferrer" className="text-[11px] text-gray-700 hover:underline">ð• {contact.twitter_handle}</a>}
+                                {contact.tiktok_handle && <a href={`https://tiktok.com/@${String(contact.tiktok_handle).replace('@','')}`} target="_blank" rel="noopener noreferrer" className="text-[11px] text-gray-700 hover:underline">TikTok</a>}
+                                {contact.youtube_url && <a href={contact.youtube_url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-red-500 hover:underline">YouTube</a>}
+                                {contact.website_url && <a href={contact.website_url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-np-blue hover:underline">{String(contact.website_url).replace(/https?:\/\/(www\.)?/, '')}</a>}
                               </div>
                             </div>
                           </div>
@@ -1637,6 +1672,42 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                     </div>
                   )}
 
+                  {/* Offer Angle */}
+                  {(contact as any).offer_angle && (
+                    <div className="bg-purple-50 border border-purple-100 rounded-lg p-3">
+                      <p className="text-[8px] font-bold text-purple-600 uppercase mb-1 flex items-center gap-1"><Sparkles className="w-3 h-3" /> Offer Angle</p>
+                      <p className="text-[11px] text-purple-800">{(contact as any).offer_angle}</p>
+                    </div>
+                  )}
+
+                  {/* Outreach Opener */}
+                  {(contact as any).outreach_opener && (
+                    <div className="bg-white border border-gray-200 rounded-lg p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-[8px] font-bold text-gray-500 uppercase flex items-center gap-1"><MessageCircle className="w-3 h-3" /> Outreach Opener</p>
+                        <div className="flex gap-1.5">
+                          <button
+                            onClick={() => navigator.clipboard.writeText((contact as any).outreach_opener)}
+                            className="text-[8px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors">
+                            Copy
+                          </button>
+                          {contact.email && (
+                            <button
+                              onClick={() => {
+                                setEmailInitialSubject('Partnership Opportunity â€” Neuro Progeny')
+                                setEmailInitialBody((contact as any).outreach_opener)
+                                setShowEmailComposer(true)
+                              }}
+                              className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-np-blue/10 text-np-blue hover:bg-np-blue/20 transition-colors flex items-center gap-1">
+                              <Mail className="w-2.5 h-2.5" /> Send Email
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-gray-700 leading-relaxed italic whitespace-pre-wrap">{(contact as any).outreach_opener}</p>
+                    </div>
+                  )}
+
                   {/* Social Profiles */}
                   <div className="bg-white border border-gray-100 rounded-lg p-3">
                     <p className="text-[8px] font-bold text-gray-400 uppercase mb-2 flex items-center gap-1"><Globe className="w-3 h-3" /> Social Profiles</p>
@@ -1646,11 +1717,15 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                           <Linkedin className="w-3 h-3" /> {contact.linkedin_url.replace('https://linkedin.com/in/', '').replace('https://www.linkedin.com/in/', '')}
                         </a>
                       )}
-                      {contact.instagram_handle && (
-                        <a href={`https://instagram.com/${contact.instagram_handle}`} target="_blank" rel="noopener" className="flex items-center gap-2 text-[10px] text-pink-600 hover:underline">
-                          <Instagram className="w-3 h-3" /> @{contact.instagram_handle}
-                        </a>
-                      )}
+                      {contact.instagram_handle && (() => {
+                        const raw = String(contact.instagram_handle)
+                        const handle = raw.replace(/^https?:\/\/(www\.)?instagram\.com\//, '').replace(/\/$/, '').replace(/^@/, '')
+                        return (
+                          <a href={`https://instagram.com/${handle}`} target="_blank" rel="noopener" className="flex items-center gap-2 text-[10px] text-pink-600 hover:underline">
+                            <Instagram className="w-3 h-3" /> @{handle}
+                          </a>
+                        )
+                      })()}
                       {contact.twitter_handle && (
                         <a href={`https://x.com/${contact.twitter_handle}`} target="_blank" rel="noopener" className="flex items-center gap-2 text-[10px] text-gray-700 hover:underline">
                           <Twitter className="w-3 h-3" /> @{contact.twitter_handle}
@@ -1667,9 +1742,9 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                         </a>
                       )}
                       {contact.tiktok_handle && (
-                        <span className="flex items-center gap-2 text-[10px] text-gray-700">
-                          <Globe className="w-3 h-3" /> TikTok: @{contact.tiktok_handle}
-                        </span>
+                        <a href={`https://tiktok.com/@${String(contact.tiktok_handle).replace('@','')}`} target="_blank" rel="noopener" className="flex items-center gap-2 text-[10px] text-gray-700 hover:underline">
+                          <Globe className="w-3 h-3" /> @{contact.tiktok_handle}
+                        </a>
                       )}
                       {contact.website_url && (
                         <a href={contact.website_url} target="_blank" rel="noopener" className="flex items-center gap-2 text-[10px] text-np-blue hover:underline">
@@ -2168,9 +2243,11 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
       {showEmailComposer && contact && (
         <EmailComposer
           contact={contact}
-          onClose={() => { setShowEmailComposer(false); setEmailResourceAttach(null) }}
+          onClose={() => { setShowEmailComposer(false); setEmailResourceAttach(null); setEmailInitialSubject(''); setEmailInitialBody('') }}
           onSent={() => { load(); onUpdate?.() }}
           attachResource={emailResourceAttach}
+          initialSubject={emailInitialSubject}
+          initialBody={emailInitialBody}
         />
       )}
     </div>
