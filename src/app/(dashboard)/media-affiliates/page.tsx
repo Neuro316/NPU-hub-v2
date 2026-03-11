@@ -248,7 +248,7 @@ const STATUS_TASK_MAP: Record<string, Record<string, AutoTaskDef[]>> = {
       { titleTemplate: '14-day promo schedule for [Title]', dueDays: 14, priority: 'high' },
       { titleTemplate: 'Verify show notes have UTM links for [Platform]', dueDays: 1, priority: 'high' },
     ],
-    archived: [{ titleTemplate: '30-day review: Score [Title] on [Platform]', dueDays: 0, priority: 'medium' }],
+    archived: [],
   },
   interview: {
     scheduled: [{ titleTemplate: 'Prepare talking points for [Platform] interview', dueDays: 3, priority: 'medium' }],
@@ -455,21 +455,6 @@ function MediaAffiliatesContent() {
         item.air_date,
         `🚀 LIVE: ${item.title} on ${platform}`,
         `Episode goes live!\nHost: ${host}${promo}\nReminder: Post announcement and verify show notes have UTM links`,
-        [{ method: 'popup', minutes: 1440 }]
-      )
-
-      // 30-day review event (air_date + 30 days)
-      let reviewDate: string | null = null
-      if (item.air_date) {
-        const d = new Date(item.air_date)
-        d.setDate(d.getDate() + 30)
-        reviewDate = d.toISOString().split('T')[0]
-      }
-      await upsertEvent(
-        'review_30d',
-        reviewDate,
-        `📊 30-Day Review: ${item.title} on ${platform}`,
-        'Review performance metrics and assign A/B/C score',
         [{ method: 'popup', minutes: 1440 }]
       )
 
