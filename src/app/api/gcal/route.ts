@@ -180,7 +180,7 @@ export async function POST(req: NextRequest) {
 
     // ── Create Calendar Event ──
     if (action === 'create_event') {
-      const { calendarId, summary, description, start, end, allDay } = body
+      const { calendarId, summary, description, start, end, allDay, reminders } = body
       const cid = calendarId || 'primary'
       const event: any = { summary, description }
       if (allDay) {
@@ -190,7 +190,10 @@ export async function POST(req: NextRequest) {
         event.start = { dateTime: start }
         event.end = { dateTime: end }
       }
-      
+      if (reminders) {
+        event.reminders = { useDefault: false, overrides: reminders }
+      }
+
       const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(cid)}/events`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -198,6 +201,19 @@ export async function POST(req: NextRequest) {
       })
       const created = await res.json()
       return NextResponse.json({ event: created })
+    }
+
+    // ── Delete Calendar Event ──
+    if (action === 'delete_event') {
+      const { calendarId, eventId } = body
+      const cid = calendarId || 'primary'
+      const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(cid)}/events/${encodeURIComponent(eventId)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.status === 204 || res.ok) return NextResponse.json({ success: true })
+      const err = await res.json().catch(() => ({}))
+      return NextResponse.json({ error: err.error?.message || 'Failed to delete event' }, { status: res.status })
     }
 
     // ── Fetch Google Tasks ──

@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
 import {
@@ -10,7 +11,7 @@ import {
   Link2, Tag, Calendar, Share2, Bell, CheckCircle2,
   AlertCircle, ArrowRight, Phone, DollarSign, Eye,
   FileText, Send, User, Globe, Megaphone, BarChart3,
-  LayoutGrid, Table, Columns3, X,
+  LayoutGrid, Table, Columns3, X, BookOpen,
 } from 'lucide-react'
 
 // ═══════════════════════════════════════════════════════
@@ -83,6 +84,62 @@ interface ContentPiece {
 // ═══════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════
+
+// Supabase stores datetime-local values as UTC (e.g. "2026-04-01T10:31:00+00:00")
+// but the user entered them as local time. Strip the timezone suffix so we
+// treat the literal digits as the intended local time.
+const stripTZ = (d: string) => d.replace(/([+-]\d{2}:\d{2}|Z)$/, '')
+
+const pad2 = (n: number) => String(n).padStart(2, '0')
+
+// Format date/datetime string for display
+const formatDate = (d: string) => {
+  if (!d) return ''
+  const clean = stripTZ(d)
+  if (clean.length === 10) {
+    // Date-only: parse as local
+    const [y, m, day] = clean.split('-').map(Number)
+    return new Date(y, m - 1, day).toLocaleDateString('en-US')
+  }
+  // Datetime: parse the literal digits as local time
+  const dt = new Date(clean)
+  return dt.toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+}
+
+// Format datetime value for datetime-local input (YYYY-MM-DDTHH:mm)
+const toDatetimeLocal = (d: string | null) => {
+  if (!d) return ''
+  const clean = stripTZ(d)
+  // Already in YYYY-MM-DDTHH:mm format
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(clean)) return clean.slice(0, 16)
+  // Date-only
+  if (clean.length === 10) return clean + 'T00:00'
+  return clean
+}
+
+// Build a Google Calendar URL — format: YYYYMMDDTHHmmss in local time
+const gcalUrl = (title: string, date: string, description: string) => {
+  const clean = stripTZ(date)
+  let d: string, endD: string
+  if (clean.length === 10) {
+    // All-day event
+    d = clean.replace(/-/g, '')
+    const [y, m, day] = clean.split('-').map(Number)
+    const next = new Date(y, m - 1, day + 1)
+    endD = `${next.getFullYear()}${pad2(next.getMonth() + 1)}${pad2(next.getDate())}`
+  } else {
+    // Timed event: extract digits from YYYY-MM-DDTHH:mm(:ss)
+    const parts = clean.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/)
+    if (!parts) { d = ''; endD = ''; } else {
+      const [, y, mo, dy, hh, mm] = parts
+      d = `${y}${mo}${dy}T${hh}${mm}00`
+      const endHH = pad2((parseInt(hh) + 1) % 24)
+      endD = `${y}${mo}${dy}T${endHH}${mm}00`
+    }
+  }
+  const params = new URLSearchParams({ action: 'TEMPLATE', text: title, dates: `${d}/${endD}`, details: description })
+  return `https://calendar.google.com/calendar/render?${params}&add=cameron%40neuroprogeny.com&add=cameron.s.allen%40gmail.com`
+}
 
 const TYPE_FILTERS = [
   { key: 'all', label: 'All', icon: Globe },
@@ -222,8 +279,13 @@ function buildTaskTitle(template: string, appearance: Appearance): string {
 // ═══════════════════════════════════════════════════════
 
 export default function MediaAffiliatesPage() {
+  return <Suspense fallback={null}><MediaAffiliatesContent /></Suspense>
+}
+
+function MediaAffiliatesContent() {
   const supabase = createClient()
   const { currentOrg } = useWorkspace()
+  const searchParams = useSearchParams()
   const orgId = currentOrg?.id
 
   // State
@@ -283,7 +345,13 @@ export default function MediaAffiliatesPage() {
     if (appRes.error) console.error('loadData: media_appearances error', appRes.error)
     if (convRes.error) console.error('loadData: podcast_conversions error', convRes.error)
     if (contentRes.error) console.error('loadData: podcast_content_pieces error', contentRes.error)
-    if (appRes.data) setAppearances(appRes.data)
+    if (appRes.data) {
+      // Debug: log raw date format from Supabase
+      appRes.data.slice(0, 3).forEach(a => {
+        if (a.recording_date || a.air_date) console.log('Raw dates from Supabase:', { id: a.id, title: a.title, recording_date: a.recording_date, air_date: a.air_date })
+      })
+      setAppearances(appRes.data)
+    }
     if (convRes.data) setConversions(convRes.data)
     if (contentRes.data) setContentPieces(contentRes.data)
     setLoading(false)
@@ -293,6 +361,14 @@ export default function MediaAffiliatesPage() {
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  // ─── Highlight from query param (e.g. from Calendar click) ───
+  useEffect(() => {
+    const highlight = searchParams.get('highlight')
+    if (highlight && appearances.length > 0 && !expandedCard) {
+      setExpandedCard(highlight)
+    }
+  }, [searchParams, appearances.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Filtered Data ─────────────────────────────────
 
@@ -334,7 +410,125 @@ export default function MediaAffiliatesPage() {
     conversions.filter(c => c.personal_outreach_status === 'pending'),
   [conversions])
 
+  // ─── CALENDAR SYNC ─────────────────────────────────
+
+  const syncCalendarEvents = async (
+    appearanceId: string,
+    item: { title: string; platform: string | null; host: string | null; promo_code: string | null; recording_date: string | null; air_date: string | null; metadata: Record<string, unknown> }
+  ) => {
+    try {
+      const calIds = (item.metadata?.calendar_event_ids as Record<string, string>) || {}
+
+      // Helper: create or update a calendar event
+      const upsertEvent = async (key: string, date: string | null, summary: string, description: string, reminders: { method: string; minutes: number }[]) => {
+        // Delete old event if date changed or cleared
+        if (calIds[key]) {
+          try { await fetch('/api/gcal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete_event', eventId: calIds[key] }) }) } catch {}
+          delete calIds[key]
+        }
+        if (!date) return
+        const res = await fetch('/api/gcal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'create_event', summary, description, start: date, allDay: true, reminders }),
+        })
+        const data = await res.json()
+        if (data.event?.id) calIds[key] = data.event.id
+      }
+
+      const platform = item.platform || 'Unknown Show'
+      const host = item.host || 'TBD'
+      const promo = item.promo_code ? `\nPromo code: ${item.promo_code}` : ''
+
+      // Recording date event
+      await upsertEvent(
+        'recording',
+        item.recording_date,
+        `🎙️ Record: ${item.title} — ${platform}`,
+        `Recording session with ${host} for ${platform}\nTopic: ${item.title}${promo}`,
+        [{ method: 'popup', minutes: 1440 }, { method: 'popup', minutes: 60 }]
+      )
+
+      // Air date event
+      await upsertEvent(
+        'air',
+        item.air_date,
+        `🚀 LIVE: ${item.title} on ${platform}`,
+        `Episode goes live!\nHost: ${host}${promo}\nReminder: Post announcement and verify show notes have UTM links`,
+        [{ method: 'popup', minutes: 1440 }]
+      )
+
+      // 30-day review event (air_date + 30 days)
+      let reviewDate: string | null = null
+      if (item.air_date) {
+        const d = new Date(item.air_date)
+        d.setDate(d.getDate() + 30)
+        reviewDate = d.toISOString().split('T')[0]
+      }
+      await upsertEvent(
+        'review_30d',
+        reviewDate,
+        `📊 30-Day Review: ${item.title} on ${platform}`,
+        'Review performance metrics and assign A/B/C score',
+        [{ method: 'popup', minutes: 1440 }]
+      )
+
+      // Save calendar event IDs and update count
+      const eventCount = Object.keys(calIds).length
+      await supabase.from('media_appearances').update({
+        metadata: { ...item.metadata, calendar_event_ids: calIds },
+        calendar_events_count: eventCount,
+      }).eq('id', appearanceId)
+    } catch (err) {
+      console.error('syncCalendarEvents: failed (non-blocking)', err)
+    }
+  }
+
   // ─── CRUD ──────────────────────────────────────────
+
+  const linkHostContact = async (appearanceId: string, hostName: string) => {
+    if (!orgId || !hostName.trim()) return
+    const nameParts = hostName.trim().split(/\s+/)
+    const firstName = nameParts[0]
+    const lastName = nameParts.slice(1).join(' ') || ''
+
+    // Search for existing contact by name
+    const { data: existing } = await supabase
+      .from('contacts')
+      .select('id')
+      .eq('org_id', orgId)
+      .ilike('first_name', firstName)
+      .ilike('last_name', lastName)
+      .is('merged_into_id', null)
+      .limit(1)
+
+    let contactId: string | null = null
+
+    if (existing && existing.length > 0) {
+      contactId = existing[0].id
+    } else {
+      // Create new contact
+      const { data: newContact, error: createErr } = await supabase.from('contacts').insert({
+        org_id: orgId,
+        first_name: firstName,
+        last_name: lastName,
+        tags: ['podcast_host'],
+        source: 'media_appearance',
+        sms_consent: false,
+        email_consent: false,
+        do_not_contact: false,
+      }).select('id').single()
+      if (createErr) {
+        console.error('linkHostContact: failed to create contact', createErr)
+        return
+      }
+      contactId = newContact?.id || null
+    }
+
+    if (contactId) {
+      await supabase.from('media_appearances').update({ host_contact_id: contactId }).eq('id', appearanceId)
+    }
+  }
 
   const createAppearance = async () => {
     if (!orgId || !form.title) {
@@ -367,6 +561,18 @@ export default function MediaAffiliatesPage() {
       return
     }
     console.log('createAppearance: success', data)
+    // Auto-link host to CRM contact
+    if (data?.[0]?.id && form.host) {
+      await linkHostContact(data[0].id, form.host)
+    }
+    // Sync calendar events for recording/air dates
+    if (data?.[0]?.id && (form.recording_date || form.air_date)) {
+      syncCalendarEvents(data[0].id, {
+        title: form.title, platform: form.platform, host: form.host,
+        promo_code: form.promo_code || null, recording_date: form.recording_date || null,
+        air_date: form.air_date || null, metadata: {},
+      })
+    }
     setShowCreateModal(false)
     setForm({ type: 'podcast', title: '', platform: '', host: '', recording_date: '', air_date: '', affiliate_tier: 'none', promo_code: '', utm_campaign: '', description: '' })
     loadData()
@@ -453,6 +659,7 @@ export default function MediaAffiliatesPage() {
       key_topics: updated.key_topics,
       key_quotes: updated.key_quotes,
       performance_score: updated.performance_score,
+      metadata: updated.metadata,
     }).eq('id', updated.id)
     if (error) {
       console.error('saveAppearance: Supabase error', error)
@@ -461,6 +668,18 @@ export default function MediaAffiliatesPage() {
     }
     if (updated.status !== editingAppearance?.status) {
       createAutoTask(updated, updated.status)
+    }
+    // Re-link host contact if host name changed
+    if (updated.host && updated.host !== editingAppearance?.host) {
+      await linkHostContact(updated.id, updated.host)
+    }
+    // Sync calendar events if dates changed
+    if (updated.recording_date !== editingAppearance?.recording_date || updated.air_date !== editingAppearance?.air_date) {
+      syncCalendarEvents(updated.id, {
+        title: updated.title, platform: updated.platform, host: updated.host,
+        promo_code: updated.promo_code, recording_date: updated.recording_date,
+        air_date: updated.air_date, metadata: updated.metadata,
+      })
     }
     setEditingAppearance(null)
     loadData()
@@ -714,7 +933,7 @@ export default function MediaAffiliatesPage() {
                             )}
                           </td>
                           <td className="px-4 py-3 text-gray-500 text-xs">{item.promo_code || '-'}</td>
-                          <td className="px-4 py-3 text-gray-500 text-xs">{item.air_date ? new Date(item.air_date).toLocaleDateString() : '-'}</td>
+                          <td className="px-4 py-3 text-gray-500 text-xs">{item.air_date ? formatDate(item.air_date) : '-'}</td>
                         </tr>
                       )
                     })}
@@ -1021,7 +1240,7 @@ export default function MediaAffiliatesPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Recording Date</label>
                   <input
-                    type="date"
+                    type="datetime-local"
                     value={form.recording_date}
                     onChange={e => setForm(f => ({ ...f, recording_date: e.target.value }))}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
@@ -1214,8 +1433,8 @@ function EditAppearanceModal({
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Recording Date</label>
               <input
-                type="date"
-                value={draft.recording_date || ''}
+                type="datetime-local"
+                value={toDatetimeLocal(draft.recording_date)}
                 onChange={e => setDraft(d => ({ ...d, recording_date: e.target.value || null }))}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
               />
@@ -1223,8 +1442,8 @@ function EditAppearanceModal({
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Air Date</label>
               <input
-                type="date"
-                value={draft.air_date || ''}
+                type="datetime-local"
+                value={toDatetimeLocal(draft.air_date)}
                 onChange={e => setDraft(d => ({ ...d, air_date: e.target.value || null }))}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
               />
@@ -1239,6 +1458,18 @@ function EditAppearanceModal({
               value={draft.url || ''}
               onChange={e => setDraft(d => ({ ...d, url: e.target.value || null }))}
               placeholder="Episode or article link"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
+            />
+          </div>
+
+          {/* Prep Doc URL */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Prep Doc URL</label>
+            <input
+              type="url"
+              value={((draft.metadata as Record<string, unknown>)?.prep_doc_url as string) || ''}
+              onChange={e => setDraft(d => ({ ...d, metadata: { ...d.metadata, prep_doc_url: e.target.value || undefined } }))}
+              placeholder="Google Drive link for prep document"
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/20 focus:border-np-blue"
             />
           </div>
@@ -1440,7 +1671,15 @@ function AppearanceCard({
 
         {/* Integration indicators */}
         <div className="flex items-center gap-3 text-[10px] text-gray-400">
-          {item.host_contact_id && <span className="flex items-center gap-0.5"><Link2 className="w-3 h-3" /> CRM</span>}
+          {item.host_contact_id && (
+            <a
+              href={`/crm/contacts?id=${item.host_contact_id}`}
+              onClick={e => e.stopPropagation()}
+              className="flex items-center gap-0.5 text-np-blue hover:underline"
+            >
+              <Link2 className="w-3 h-3" /> CRM
+            </a>
+          )}
           {item.calendar_events_count > 0 && <span className="flex items-center gap-0.5"><Calendar className="w-3 h-3" /> {item.calendar_events_count}</span>}
           {item.social_posts_count > 0 && <span className="flex items-center gap-0.5"><Share2 className="w-3 h-3" /> {item.social_posts_count}</span>}
           {item.tasks_created > 0 && (
@@ -1473,13 +1712,27 @@ function AppearanceCard({
             {item.recording_date && (
               <div>
                 <span className="text-gray-400">Recording</span>
-                <div className="font-medium text-np-dark mt-0.5">{new Date(item.recording_date).toLocaleDateString()}</div>
+                <div className="font-medium text-np-dark mt-0.5">{formatDate(item.recording_date)}</div>
+                <a
+                  href={gcalUrl(`🎙️ Record: ${item.title} — ${item.platform || 'TBD'}`, item.recording_date, `Recording session with ${item.host || 'TBD'} for ${item.platform || 'TBD'}\nTopic: ${item.title}${item.promo_code ? `\nPromo code: ${item.promo_code}` : ''}`)}
+                  target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+                  className="text-[10px] text-np-blue hover:underline mt-0.5 inline-flex items-center gap-0.5"
+                >
+                  <Calendar className="w-2.5 h-2.5" /> Add to Cal
+                </a>
               </div>
             )}
             {item.air_date && (
               <div>
                 <span className="text-gray-400">Air Date</span>
-                <div className="font-medium text-np-dark mt-0.5">{new Date(item.air_date).toLocaleDateString()}</div>
+                <div className="font-medium text-np-dark mt-0.5">{formatDate(item.air_date)}</div>
+                <a
+                  href={gcalUrl(`🚀 LIVE: ${item.title} on ${item.platform || 'TBD'}`, item.air_date, `Episode goes live!\nHost: ${item.host || 'TBD'}${item.promo_code ? `\nPromo code: ${item.promo_code}` : ''}\nReminder: Post announcement and verify show notes have UTM links`)}
+                  target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+                  className="text-[10px] text-np-blue hover:underline mt-0.5 inline-flex items-center gap-0.5"
+                >
+                  <Calendar className="w-2.5 h-2.5" /> Add to Cal
+                </a>
               </div>
             )}
           </div>
@@ -1493,11 +1746,20 @@ function AppearanceCard({
             </div>
           )}
 
-          {item.url && (
-            <a href={item.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-sm text-np-blue hover:underline">
-              <ExternalLink className="w-3.5 h-3.5" /> View Episode
-            </a>
-          )}
+          {(item.url || (item.metadata as Record<string, string>)?.prep_doc_url) ? (
+            <div className="flex items-center gap-4">
+              {item.url && (
+                <a href={item.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-sm text-np-blue hover:underline">
+                  <ExternalLink className="w-3.5 h-3.5" /> View Episode
+                </a>
+              )}
+              {(item.metadata as Record<string, string>)?.prep_doc_url && (
+                <a href={(item.metadata as Record<string, string>).prep_doc_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-sm text-teal-600 hover:underline">
+                  <BookOpen className="w-3.5 h-3.5" /> Help Prepare
+                </a>
+              )}
+            </div>
+          ) : null}
 
           {contentPieces.length > 0 && (
             <div>
@@ -1528,6 +1790,13 @@ function AppearanceCard({
             >
               <FileText className="w-3 h-3" /> Guest Sheet
             </button>
+            <a
+              href={`/media-affiliates/repurpose/${item.id}`}
+              onClick={e => e.stopPropagation()}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-white border border-purple-200 rounded-lg hover:bg-purple-50 text-purple-600"
+            >
+              <Share2 className="w-3 h-3" /> Repurpose
+            </a>
             <button
               onClick={e => { e.stopPropagation(); onDelete(item.id) }}
               className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-white border border-red-200 rounded-lg hover:bg-red-50 text-red-500"
