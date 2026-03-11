@@ -81,6 +81,7 @@ export default function JourneysPage() {
   const [newCardTitle, setNewCardTitle] = useState('')
   const [editingCard, setEditingCard] = useState<JourneyCard | null>(null)
   const [cardMenuOpen, setCardMenuOpen] = useState<string | null>(null)
+  const [emptyRows, setEmptyRows] = useState<Record<string, number[]>>({})
   const [collapsedRows, setCollapsedRows] = useState<Set<string>>(new Set())
   const [collapsedPhases, setCollapsedPhases] = useState<Set<string>>(new Set())
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null)
@@ -194,12 +195,21 @@ export default function JourneysPage() {
     cards.filter(c => c.phase_id === phaseId && c.row_index === row).sort((a, b) => a.sort_order - b.sort_order)
   const getRowNumbers = (phaseId: string) => {
     const phaseCards = getPhaseCards(phaseId)
-    const rows = Array.from(new Set(phaseCards.map(c => c.row_index || 0))).sort((a, b) => a - b)
-    return rows.length > 0 ? rows : [0]
+    const cardRows = phaseCards.map(c => c.row_index || 0)
+    const empty = emptyRows[phaseId] || []
+    const allRows = Array.from(new Set([...cardRows, ...empty])).sort((a, b) => a - b)
+    return allRows.length > 0 ? allRows : [0]
   }
   const getNextRow = (phaseId: string) => {
     const rows = getRowNumbers(phaseId)
     return Math.max(...rows, -1) + 1
+  }
+  const addEmptyRow = (phaseId: string) => {
+    const nextRow = getNextRow(phaseId)
+    setEmptyRows(prev => ({
+      ...prev,
+      [phaseId]: [...(prev[phaseId] || []), nextRow],
+    }))
   }
 
   // ── MOUSE DRAG ──
@@ -670,6 +680,7 @@ export default function JourneysPage() {
 
                     {/* Add row / new row drop zone */}
                     <div data-newrow={phase.id}
+                      onClick={() => { if (!isDraggingActive) addEmptyRow(phase.id) }}
                       className="mt-2 px-4 py-2.5 rounded-lg flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer hover:text-gray-600 transition-colors"
                       style={{
                         border: isDraggingActive ? '2px dashed #D1D5DB' : 'none',
