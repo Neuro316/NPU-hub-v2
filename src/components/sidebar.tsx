@@ -47,9 +47,9 @@ import {
 } from 'lucide-react'
 import { NotificationBell } from '@/components/notification-bell'
 
-/* ─────────────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Category-grouped navigation
-   ───────────────────────────────────────────────────── */
+   â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 interface NavItem {
   label: string
@@ -128,6 +128,7 @@ const navCategories: NavCategory[] = [
     label: 'FINANCE',
     collapsible: true,
     items: [
+      { label: 'AI CFO', href: '/finance', icon: Brain, moduleKey: 'finance_suite' },
       { label: 'NP Financial', href: '/financial/np', icon: DollarSign, moduleKey: 'np_financial' },
     ],
   },
