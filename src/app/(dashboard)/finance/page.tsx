@@ -955,7 +955,7 @@ export default function FinancePage() {
 
 function IncomeModal({ saving = false, saveError = '', products, clients, initial, onSave, onClose }: {
   products: Product[]; clients: FinClient[]; initial: Income | null
-  onSave: (d: any) => Promise<void>; onClose: () => void
+  onSave: (d: any) => Promise<void>; onClose: () => void; saving?: boolean; saveError?: string
 }) {
   const today = new Date().toISOString().slice(0, 10)
   const [form, setForm] = useState({
@@ -1012,7 +1012,7 @@ function IncomeModal({ saving = false, saveError = '', products, clients, initia
 
 function ExpenseModal({ saving = false, saveError = '', categories, initial, onSave, onClose }: {
   categories: ExpCat[]; initial: Expense | null
-  onSave: (d: any) => Promise<void>; onClose: () => void
+  onSave: (d: any) => Promise<void>; onClose: () => void; saving?: boolean; saveError?: string
 }) {
   const today = new Date().toISOString().slice(0, 10)
   const [form, setForm] = useState({
@@ -1088,7 +1088,7 @@ function ExpenseModal({ saving = false, saveError = '', categories, initial, onS
 }
 
 function ClientModal({ saving = false, saveError = '', initial, onSave, onClose }: {
-  initial: FinClient | null; onSave: (d: any) => Promise<void>; onClose: () => void
+  initial: FinClient | null; onSave: (d: any) => Promise<void>; onClose: () => void; saving?: boolean; saveError?: string
 }) {
   const [form, setForm] = useState({
     name: initial?.name || '', email: initial?.email || '',
@@ -1118,7 +1118,7 @@ function ClientModal({ saving = false, saveError = '', initial, onSave, onClose 
 }
 
 function ProductModal({ saving = false, saveError = '', initial, onSave, onClose }: {
-  initial: Product | null; onSave: (d: any) => Promise<void>; onClose: () => void
+  initial: Product | null; onSave: (d: any) => Promise<void>; onClose: () => void; saving?: boolean; saveError?: string
 }) {
   const [form, setForm] = useState({
     name: initial?.name || '', category: initial?.category || '',
