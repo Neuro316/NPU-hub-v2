@@ -294,13 +294,36 @@ export default function FinancePage() {
   }, [filteredExpenses])
 
   // â”€â”€ CRUD operations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string>('')
+
+  async function doSave(url: string, method: string, body: Record<string, any>): Promise<boolean> {
+    setSaving(true)
+    setSaveError('')
+    try {
+      if (!selectedOrg) {
+        setSaveError('No organization selected â€” please select an org from the top menu and try again.')
+        return false
+      }
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      if (res.ok) { await loadData(); return true }
+      let msg = `HTTP ${res.status}`
+      try { const e = await res.json(); msg = e.error || msg } catch {}
+      setSaveError(msg)
+      return false
+    } catch (err: any) {
+      setSaveError(err.message || 'Network error')
+      return false
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function saveIncome(data: Record<string, any>) {
-    if (!selectedOrg) return
     const method = editIncome ? 'PUT' : 'POST'
-    const body   = editIncome ? { id: editIncome.id, org_id: selectedOrg.id, ...data } : { org_id: selectedOrg.id, ...data }
-    const res = await fetch('/api/finance/income', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-    if (res.ok) { await loadData(); setShowIncomeModal(false); setEditIncome(null) }
-    else { const e = await res.json(); alert(e.error) }
+    const body   = editIncome ? { id: editIncome.id, org_id: selectedOrg?.id, ...data } : { org_id: selectedOrg?.id, ...data }
+    const ok = await doSave('/api/finance/income', method, body)
+    if (ok) { setShowIncomeModal(false); setEditIncome(null) }
   }
 
   async function deleteIncome(id: string) {
@@ -310,12 +333,10 @@ export default function FinancePage() {
   }
 
   async function saveExpense(data: Record<string, any>) {
-    if (!selectedOrg) return
     const method = editExpense ? 'PUT' : 'POST'
-    const body   = editExpense ? { id: editExpense.id, org_id: selectedOrg.id, ...data } : { org_id: selectedOrg.id, ...data }
-    const res = await fetch('/api/finance/expenses', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-    if (res.ok) { await loadData(); setShowExpenseModal(false); setEditExpense(null) }
-    else { const e = await res.json(); alert(e.error) }
+    const body   = editExpense ? { id: editExpense.id, org_id: selectedOrg?.id, ...data } : { org_id: selectedOrg?.id, ...data }
+    const ok = await doSave('/api/finance/expenses', method, body)
+    if (ok) { setShowExpenseModal(false); setEditExpense(null) }
   }
 
   async function deleteExpense(id: string) {
@@ -325,21 +346,17 @@ export default function FinancePage() {
   }
 
   async function saveClient(data: Record<string, any>) {
-    if (!selectedOrg) return
     const method = editClient ? 'PUT' : 'POST'
-    const body   = editClient ? { id: editClient.id, org_id: selectedOrg.id, ...data } : { org_id: selectedOrg.id, ...data }
-    const res = await fetch('/api/finance/clients', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-    if (res.ok) { await loadData(); setShowClientModal(false); setEditClient(null) }
-    else { const e = await res.json(); alert(e.error) }
+    const body   = editClient ? { id: editClient.id, org_id: selectedOrg?.id, ...data } : { org_id: selectedOrg?.id, ...data }
+    const ok = await doSave('/api/finance/clients', method, body)
+    if (ok) { setShowClientModal(false); setEditClient(null) }
   }
 
   async function saveProduct(data: Record<string, any>) {
-    if (!selectedOrg) return
     const method = editProduct ? 'PUT' : 'POST'
-    const body   = editProduct ? { id: editProduct.id, org_id: selectedOrg.id, ...data } : { org_id: selectedOrg.id, ...data }
-    const res = await fetch('/api/finance/products', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-    if (res.ok) { await loadData(); setShowProductModal(false); setEditProduct(null) }
-    else { const e = await res.json(); alert(e.error) }
+    const body   = editProduct ? { id: editProduct.id, org_id: selectedOrg?.id, ...data } : { org_id: selectedOrg?.id, ...data }
+    const ok = await doSave('/api/finance/products', method, body)
+    if (ok) { setShowProductModal(false); setEditProduct(null) }
   }
 
   async function saveSettings(data: Partial<FinSettings>) {
@@ -888,7 +905,9 @@ export default function FinancePage() {
           clients={clients}
           initial={editIncome}
           onSave={saveIncome}
-          onClose={() => { setShowIncomeModal(false); setEditIncome(null) }}
+          onClose={() => { setShowIncomeModal(false); setEditIncome(null); setSaveError('') }}
+          saving={saving}
+          saveError={saveError}
         />
       )}
 
@@ -898,7 +917,9 @@ export default function FinancePage() {
           categories={categories}
           initial={editExpense}
           onSave={saveExpense}
-          onClose={() => { setShowExpenseModal(false); setEditExpense(null) }}
+          onClose={() => { setShowExpenseModal(false); setEditExpense(null); setSaveError('') }}
+          saving={saving}
+          saveError={saveError}
         />
       )}
 
@@ -907,7 +928,9 @@ export default function FinancePage() {
         <ClientModal
           initial={editClient}
           onSave={saveClient}
-          onClose={() => { setShowClientModal(false); setEditClient(null) }}
+          onClose={() => { setShowClientModal(false); setEditClient(null); setSaveError('') }}
+          saving={saving}
+          saveError={saveError}
         />
       )}
 
@@ -916,7 +939,9 @@ export default function FinancePage() {
         <ProductModal
           initial={editProduct}
           onSave={saveProduct}
-          onClose={() => { setShowProductModal(false); setEditProduct(null) }}
+          onClose={() => { setShowProductModal(false); setEditProduct(null); setSaveError('') }}
+          saving={saving}
+          saveError={saveError}
         />
       )}
 
@@ -928,7 +953,7 @@ export default function FinancePage() {
 // Modal Components
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-function IncomeModal({ products, clients, initial, onSave, onClose }: {
+function IncomeModal({ saving = false, saveError = '', products, clients, initial, onSave, onClose }: {
   products: Product[]; clients: FinClient[]; initial: Income | null
   onSave: (d: any) => Promise<void>; onClose: () => void
 }) {
@@ -972,16 +997,20 @@ function IncomeModal({ products, clients, initial, onSave, onClose }: {
           <option value="disputed">Disputed</option>
         </FSelect>
         <FInput label="Notes" value={form.notes} onChange={set('notes')} placeholder="Optional" />
+        {saveError && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{saveError}</p>}
         <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-500 hover:text-np-dark rounded-lg hover:bg-gray-100 transition-colors">Cancel</button>
-          <button onClick={submit} className="px-4 py-2 text-sm font-semibold text-white bg-np-blue hover:bg-np-blue/90 rounded-lg transition-colors">Save</button>
+          <button onClick={onClose} disabled={saving} className="px-4 py-2 text-sm text-gray-500 hover:text-np-dark rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50">Cancel</button>
+          <button onClick={submit} disabled={saving} className="px-4 py-2 text-sm font-semibold text-white bg-np-blue hover:bg-np-blue/90 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2">
+            {saving && <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
+            {saving ? 'Savingâ€¦' : 'Save'}
+          </button>
         </div>
       </div>
     </Modal>
   )
 }
 
-function ExpenseModal({ categories, initial, onSave, onClose }: {
+function ExpenseModal({ saving = false, saveError = '', categories, initial, onSave, onClose }: {
   categories: ExpCat[]; initial: Expense | null
   onSave: (d: any) => Promise<void>; onClose: () => void
 }) {
@@ -1045,16 +1074,20 @@ function ExpenseModal({ categories, initial, onSave, onClose }: {
           </label>
         </div>
         <FInput label="Notes" value={form.notes} onChange={set('notes')} placeholder="Optional" />
+        {saveError && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{saveError}</p>}
         <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-500 hover:text-np-dark rounded-lg hover:bg-gray-100">Cancel</button>
-          <button onClick={submit} className="px-4 py-2 text-sm font-semibold text-white bg-np-blue hover:bg-np-blue/90 rounded-lg">Save</button>
+          <button onClick={onClose} disabled={saving} className="px-4 py-2 text-sm text-gray-500 hover:text-np-dark rounded-lg hover:bg-gray-100 disabled:opacity-50">Cancel</button>
+          <button onClick={submit} disabled={saving} className="px-4 py-2 text-sm font-semibold text-white bg-np-blue hover:bg-np-blue/90 rounded-lg disabled:opacity-50 flex items-center gap-2">
+            {saving && <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
+            {saving ? 'Savingâ€¦' : 'Save'}
+          </button>
         </div>
       </div>
     </Modal>
   )
 }
 
-function ClientModal({ initial, onSave, onClose }: {
+function ClientModal({ saving = false, saveError = '', initial, onSave, onClose }: {
   initial: FinClient | null; onSave: (d: any) => Promise<void>; onClose: () => void
 }) {
   const [form, setForm] = useState({
@@ -1071,16 +1104,20 @@ function ClientModal({ initial, onSave, onClose }: {
         <FInput label="Phone" type="tel" value={form.phone} onChange={set('phone')} />
         <FInput label="Contract Value ($)" type="number" min="0" step="0.01" value={form.contract_value} onChange={set('contract_value')} />
         <FInput label="Notes" value={form.notes} onChange={set('notes')} />
+        {saveError && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{saveError}</p>}
         <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-500 hover:text-np-dark rounded-lg hover:bg-gray-100">Cancel</button>
-          <button onClick={async () => { if (!form.name) { alert('Name required'); return }; await onSave(form) }} className="px-4 py-2 text-sm font-semibold text-white bg-np-blue hover:bg-np-blue/90 rounded-lg">Save</button>
+          <button onClick={onClose} disabled={saving} className="px-4 py-2 text-sm text-gray-500 hover:text-np-dark rounded-lg hover:bg-gray-100 disabled:opacity-50">Cancel</button>
+          <button onClick={async () => { if (!form.name) { alert('Name required'); return }; await onSave(form) }} disabled={saving} className="px-4 py-2 text-sm font-semibold text-white bg-np-blue hover:bg-np-blue/90 rounded-lg disabled:opacity-50 flex items-center gap-2">
+            {saving && <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
+            {saving ? 'Savingâ€¦' : 'Save'}
+          </button>
         </div>
       </div>
     </Modal>
   )
 }
 
-function ProductModal({ initial, onSave, onClose }: {
+function ProductModal({ saving = false, saveError = '', initial, onSave, onClose }: {
   initial: Product | null; onSave: (d: any) => Promise<void>; onClose: () => void
 }) {
   const [form, setForm] = useState({
@@ -1094,9 +1131,13 @@ function ProductModal({ initial, onSave, onClose }: {
         <FInput label="Product Name *" value={form.name} onChange={set('name')} />
         <FInput label="Category" value={form.category} onChange={set('category')} placeholder="e.g. Program, Session, Subscription" />
         <FInput label="Default Price ($)" type="number" min="0" step="0.01" value={form.price} onChange={set('price')} />
+        {saveError && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{saveError}</p>}
         <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-500 hover:text-np-dark rounded-lg hover:bg-gray-100">Cancel</button>
-          <button onClick={async () => { if (!form.name) { alert('Name required'); return }; await onSave(form) }} className="px-4 py-2 text-sm font-semibold text-white bg-np-blue hover:bg-np-blue/90 rounded-lg">Save</button>
+          <button onClick={onClose} disabled={saving} className="px-4 py-2 text-sm text-gray-500 hover:text-np-dark rounded-lg hover:bg-gray-100 disabled:opacity-50">Cancel</button>
+          <button onClick={async () => { if (!form.name) { alert('Name required'); return }; await onSave(form) }} disabled={saving} className="px-4 py-2 text-sm font-semibold text-white bg-np-blue hover:bg-np-blue/90 rounded-lg disabled:opacity-50 flex items-center gap-2">
+            {saving && <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
+            {saving ? 'Savingâ€¦' : 'Save'}
+          </button>
         </div>
       </div>
     </Modal>
