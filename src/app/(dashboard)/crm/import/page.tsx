@@ -279,6 +279,17 @@ type Step = 'upload' | 'map' | 'preview' | 'importing' | 'done'
 // MAIN COMPONENT
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 export default function ImportPage() {
+
+  // Load SheetJS via CDN for xlsx parsing
+  useEffect(() => {
+    if (typeof window !== 'undefined' && !(window as any).XLSX) {
+      const script = document.createElement('script')
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
+      script.async = true
+      document.head.appendChild(script)
+    }
+  }, [])
+
   const { currentOrg, user, loading: orgLoading } = useWorkspace()
 
   // Steps
@@ -387,7 +398,8 @@ export default function ImportPage() {
   }
 
   const parseXLSX = async (buffer: ArrayBuffer) => {
-    const XLSX = await import('xlsx')
+    const XLSX = (window as any).XLSX
+    if (!XLSX) { alert('Parser still loading, please try again in a moment'); return }
     const wb = XLSX.read(buffer, { type: 'array' })
     // Prefer 'Master Contact DB' sheet, otherwise first sheet
     const sheetName = wb.SheetNames.includes('Master Contact DB')
