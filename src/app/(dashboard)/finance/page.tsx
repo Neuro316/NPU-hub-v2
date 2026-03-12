@@ -60,12 +60,12 @@ const moLabel = (m: string) => {
 }
 
 // â”€â”€â”€ Sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function Stat({ label, value, sub, color = 'text-np-dark', up }: {
-  label: string; value: string; sub?: string; color?: string; up?: boolean | null
+function Stat({ label, value, sub, color = 'text-np-dark', up, tip }: {
+  label: string; value: string; sub?: string; color?: string; up?: boolean | null; tip?: string
 }) {
   return (
     <div className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
-      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">{label}</p>
+      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1 flex items-center">{label}{tip && <InfoTip text={tip} />}</p>
       <p className={`text-xl font-bold ${color}`}>{value}</p>
       {sub && (
         <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1">
@@ -94,6 +94,21 @@ function MBar({ label, actual, target, color }: { label: string; actual: number;
         <div className="absolute top-0 bottom-0 border-l-2 border-dashed border-gray-400 z-10" style={{ left: `${Math.min(99, target)}%` }} />
       </div>
     </div>
+  )
+}
+
+function InfoTip({ text }: { text: string }) {
+  const [show, setShow] = useState(false)
+  return (
+    <span className="relative inline-flex items-center ml-1" onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
+      <span className="w-3.5 h-3.5 rounded-full border border-gray-300 text-gray-400 flex items-center justify-center text-[9px] font-bold cursor-help leading-none hover:border-np-blue hover:text-np-blue transition-colors select-none">i</span>
+      {show && (
+        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-52 bg-np-dark text-white text-[11px] leading-relaxed rounded-lg px-3 py-2 shadow-xl z-50 pointer-events-none">
+          {text}
+          <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-np-dark" />
+        </span>
+      )}
+    </span>
   )
 }
 
@@ -480,29 +495,29 @@ export default function FinancePage() {
       {!loading && tab === 'dashboard' && (
         <div className="space-y-4">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <Stat label="Gross Revenue" value={$$(metrics.paidIncome)} color="text-emerald-700" />
-            <Stat label="Pending / Uncollected" value={$$(metrics.pendingIncome)} color="text-amber-600" />
-            <Stat label="Total Expenses" value={$$(metrics.totalExp)} color="text-red-600" />
-            <Stat label="Net Income" value={$$(metrics.netIncome)} color={metrics.netIncome >= 0 ? 'text-emerald-700' : 'text-red-600'} />
+            <Stat tip="Total paid & collected income for this period. Excludes pending and refunded transactions." label="Gross Revenue" value={$$(metrics.paidIncome)} color="text-emerald-700" />
+            <Stat tip="Income recorded but not yet received â€” invoices sent, payments in process, or future-dated charges." label="Pending / Uncollected" value={$$(metrics.pendingIncome)} color="text-amber-600" />
+            <Stat tip="All costs for this period including COGS (direct service costs) and operating expenses." label="Total Expenses" value={$$(metrics.totalExp)} color="text-red-600" />
+            <Stat tip="What remains after all expenses. Gross Revenue minus Total Expenses. Negative = operating at a loss." label="Net Income" value={$$(metrics.netIncome)} color={metrics.netIncome >= 0 ? 'text-emerald-700' : 'text-red-600'} />
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <Stat label="COGS" value={$$(metrics.cogsTotal)} />
-            <Stat label="Gross Profit" value={$$(metrics.grossProfit)} color="text-np-blue" />
-            <Stat label="Gross Margin" value={fmtP(metrics.grossMargin)} color={metrics.grossMargin >= settings.target_gross_margin ? 'text-emerald-600' : 'text-amber-600'} />
-            <Stat label="Net Margin" value={fmtP(metrics.netMargin)} color={metrics.netMargin >= settings.target_net_margin ? 'text-emerald-600' : 'text-amber-600'} />
+            <Stat tip="Cost of Goods Sold â€” direct costs tied to delivering your services (e.g. platform fees, contractor pay, supplies)." label="COGS" value={$$(metrics.cogsTotal)} />
+            <Stat tip="Revenue minus COGS only. Shows how profitable your core services are before overhead is factored in." label="Gross Profit" value={$$(metrics.grossProfit)} color="text-np-blue" />
+            <Stat tip="Gross Profit as a % of Revenue. Measures service profitability. Your target is set in Settings." label="Gross Margin" value={fmtP(metrics.grossMargin)} color={metrics.grossMargin >= settings.target_gross_margin ? 'text-emerald-600' : 'text-amber-600'} />
+            <Stat tip="Net Income as a % of Revenue. The bottom line â€” how much of every dollar earned you actually keep. Your target is set in Settings." label="Net Margin" value={fmtP(metrics.netMargin)} color={metrics.netMargin >= settings.target_net_margin ? 'text-emerald-600' : 'text-amber-600'} />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Margin targets */}
             <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
-              <h3 className="text-sm font-semibold text-np-dark mb-4">Margin Performance</h3>
+              <h3 className="text-sm font-semibold text-np-dark mb-4 flex items-center">Margin Performance<InfoTip text="Shows your actual gross and net margins vs. your targets. Green = on track, amber = below target. Targets are configured in Settings." /></h3>
               <MBar label="Gross Margin" actual={metrics.grossMargin} target={settings.target_gross_margin} color={orgColor} />
               <MBar label="Net Margin"   actual={metrics.netMargin}   target={settings.target_net_margin}   color={isNP ? '#34A853' : '#1e7a6f'} />
             </div>
 
             {/* Top revenue */}
             <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
-              <h3 className="text-sm font-semibold text-np-dark mb-3">Top Revenue Sources</h3>
+              <h3 className="text-sm font-semibold text-np-dark mb-3 flex items-center">Top Revenue Sources<InfoTip text="Your highest-earning products or services this period, ranked by paid revenue. Only includes collected (paid) transactions." /></h3>
               {metrics.topProducts.slice(0, 5).length === 0
                 ? <p className="text-xs text-gray-400">No paid income this period</p>
                 : metrics.topProducts.slice(0, 5).map((p, i) => (
@@ -516,7 +531,7 @@ export default function FinancePage() {
 
             {/* Expense breakdown */}
             <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
-              <h3 className="text-sm font-semibold text-np-dark mb-3">Expense Breakdown</h3>
+              <h3 className="text-sm font-semibold text-np-dark mb-3 flex items-center">Expense Breakdown<InfoTip text="Total spending by expense group (e.g. Payroll, Software, Marketing). Helps identify where money is going each month." /></h3>
               {metrics.topGroups.length === 0
                 ? <p className="text-xs text-gray-400">No expenses this period</p>
                 : metrics.topGroups.slice(0, 6).map((g, i) => (
@@ -530,7 +545,7 @@ export default function FinancePage() {
 
             {/* Income statement summary */}
             <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
-              <h3 className="text-sm font-semibold text-np-dark mb-3">Income Statement</h3>
+              <h3 className="text-sm font-semibold text-np-dark mb-3 flex items-center">Income Statement<InfoTip text="Standard P&L summary: Revenue â†’ minus COGS â†’ Gross Profit â†’ minus Operating Expenses â†’ Net Income." /></h3>
               <div className="space-y-1.5 text-xs">
                 <div className="flex justify-between"><span className="text-gray-600">Gross Revenue</span><span className="font-semibold text-emerald-700">{$$(metrics.paidIncome)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-600 pl-3">â€” Cost of Goods Sold</span><span className="text-red-500">({$$(metrics.cogsTotal)})</span></div>
