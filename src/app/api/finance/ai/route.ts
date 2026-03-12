@@ -1,5 +1,5 @@
 // src/app/api/finance/ai/route.ts
-// Streaming AI â€” supports both CFO monthly analysis and Scenario Coach mode
+// Streaming AI — supports both CFO monthly analysis and Scenario Coach mode
 
 import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
@@ -14,7 +14,7 @@ const fmtP = (n: number) => `${(n || 0).toFixed(1)}%`
 export async function POST(req: Request) {
   const payload = await req.json()
 
-  // â”€â”€ Scenario Coach mode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Scenario Coach mode ───────────────────────────────────────────
   if (payload.coach_mode) {
     const { system_prompt, messages } = payload
     const encoder = new TextEncoder()
@@ -46,7 +46,7 @@ export async function POST(req: Request) {
     })
   }
 
-  // â”€â”€ Monthly CFO analysis mode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Monthly CFO analysis mode ─────────────────────────────────────
   const {
     org_id, org_name, period_month,
     total_income, pending_income, total_expenses, cogs,
@@ -56,14 +56,14 @@ export async function POST(req: Request) {
   } = payload
 
   const productLines = (top_products || []).slice(0, 6)
-    .map((p: any) => `  â€¢ ${p.name}: ${fmt(p.total)} (${p.count} txns)`).join('\n')
+    .map((p: any) => `  • ${p.name}: ${fmt(p.total)} (${p.count} txns)`).join('\n')
   const expenseLines = (top_expense_groups || []).slice(0, 6)
-    .map((g: any) => `  â€¢ ${g.group}: ${fmt(g.total)}`).join('\n')
+    .map((g: any) => `  • ${g.group}: ${fmt(g.total)}`).join('\n')
   const gmGap = gross_margin_pct - target_gross_margin
   const nmGap = net_margin_pct - target_net_margin
 
-  const systemPrompt = `You are the CFO advisor for ${org_name}, a neuroscience wellness company. Be direct, specific, and dollar-precise. No fluff. Think like a seasoned CFO reviewing month-end numbers. Use bullet points only â€” no prose paragraphs. Max 4 bullets per section.`
-  const userPrompt = `MONTHLY FINANCIALS â€” ${period_month}
+  const systemPrompt = `You are the CFO advisor for ${org_name}, a neuroscience wellness company. Be direct, specific, and dollar-precise. No fluff. Think like a seasoned CFO reviewing month-end numbers. Use bullet points only — no prose paragraphs. Max 4 bullets per section.`
+  const userPrompt = `MONTHLY FINANCIALS — ${period_month}
 Organization: ${org_name}
 
 INCOME STATEMENT
@@ -75,8 +75,8 @@ INCOME STATEMENT
   Net Income:               ${fmt(net_income)}  (${fmtP(net_margin_pct)} net margin)
 
 MARGIN TARGETS
-  Gross Margin: ${fmtP(gross_margin_pct)} vs ${fmtP(target_gross_margin)} target â†’ ${gmGap >= 0 ? `âœ“ beat by ${fmtP(gmGap)}` : `âš  miss by ${fmtP(Math.abs(gmGap))}`}
-  Net Margin:   ${fmtP(net_margin_pct)} vs ${fmtP(target_net_margin)} target â†’ ${nmGap >= 0 ? `âœ“ beat by ${fmtP(nmGap)}` : `âš  miss by ${fmtP(Math.abs(nmGap))}`}
+  Gross Margin: ${fmtP(gross_margin_pct)} vs ${fmtP(target_gross_margin)} target → ${gmGap >= 0 ? `✓ beat by ${fmtP(gmGap)}` : `⚠ miss by ${fmtP(Math.abs(gmGap))}`}
+  Net Margin:   ${fmtP(net_margin_pct)} vs ${fmtP(target_net_margin)} target → ${nmGap >= 0 ? `✓ beat by ${fmtP(nmGap)}` : `⚠ miss by ${fmtP(Math.abs(nmGap))}`}
 
 TOP REVENUE SOURCES
 ${productLines || '  (no data)'}

@@ -13,7 +13,7 @@ import {
   Target, MessageSquare, Lightbulb, TrendingUp as TrendUp, Calendar, Send, Flame, LifeBuoy,
 } from 'lucide-react'
 
-// â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Types ────────────────────────────────────────────────────────────
 interface OrgSummary  { id: string; name: string; slug: string }
 interface FinSettings {
   target_gross_margin: number; target_net_margin: number
@@ -46,7 +46,7 @@ interface Expense {
   amount: number; status: 'paid'|'pending'|'overdue'; recurring: boolean; notes: string | null
 }
 
-// â”€â”€â”€ Utils â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Utils ────────────────────────────────────────────────────────────
 const $$ = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(n || 0)
 const $c = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n || 0)
 const fmtP  = (n: number) => `${(n || 0).toFixed(1)}%`
@@ -74,7 +74,7 @@ const moLabel = (m: string) => {
   return new Date(parseInt(yr), parseInt(mo) - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 }
 
-// â”€â”€â”€ Sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Sub-components ──────────────────────────────────────────────────
 function Stat({ label, value, sub, color = 'text-np-dark', up, tip }: {
   label: string; value: string; sub?: string; color?: string; up?: boolean | null; tip?: string
 }) {
@@ -168,7 +168,7 @@ function Btn({ children, variant = 'primary', size = 'sm', className = '', ...p 
   return <button {...p} className={`${base} ${sz} ${v} ${className}`}>{children}</button>
 }
 
-// â”€â”€â”€ Main Page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Main Page ────────────────────────────────────────────────────────
 export default function FinancePage() {
   const { role } = usePermissions()
   const { currentOrg } = useWorkspace()
@@ -176,12 +176,12 @@ export default function FinancePage() {
 
   const isSuperAdmin = role === 'super_admin'
 
-  // â”€â”€ Org resolution: follows master org switcher in sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Org resolution: follows master org switcher in sidebar ─────────
   const selectedOrg = currentOrg as OrgSummary | null
   const isNP = useMemo(() => selectedOrg?.slug?.toLowerCase().includes('neuro') || selectedOrg?.slug?.toLowerCase().includes('progeny'), [selectedOrg])
   const orgColor = isNP ? '#386797' : '#2A9D8F'
 
-  // â”€â”€ State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── State ─────────────────────────────────────────────────────────
   const [tab,      setTab]     = useState<'dashboard'|'income'|'expenses'|'clients'|'products'|'reports'|'settings'|'ai-cfo'|'goals'|'coach'|'projections'|'metrics'|'balance-sheet'|'unit-economics'>('ai-cfo')
   const [month,    setMonth]   = useState(curMonth)
   const [loading,  setLoading] = useState(false)
@@ -212,7 +212,7 @@ export default function FinancePage() {
   const [editClient,       setEditClient]        = useState<FinClient | null>(null)
   const [editProduct,      setEditProduct]       = useState<Product | null>(null)
 
-  // â”€â”€ Load data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Load data ──────────────────────────────────────────────────────
   const loadData = useCallback(async () => {
     if (!selectedOrg) return
     setLoading(true)
@@ -248,7 +248,7 @@ export default function FinancePage() {
 
   useEffect(() => { loadData() }, [loadData])
 
-  // â”€â”€ Sync NP platform payments â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Sync NP platform payments ──────────────────────────────────────
   const syncNP = useCallback(async () => {
     if (!selectedOrg || !isNP) return
     setSyncing(true)
@@ -268,7 +268,7 @@ export default function FinancePage() {
     }
   }, [selectedOrg, isNP, month, loadData])
 
-  // â”€â”€ Derived metrics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Derived metrics ────────────────────────────────────────────────
   const metrics = useMemo(() => {
     const paidIncome    = income.filter(i => i.status === 'paid').reduce((s, i) => s + i.amount, 0)
     const pendingIncome = income.filter(i => i.status === 'pending').reduce((s, i) => s + i.amount, 0)
@@ -306,19 +306,19 @@ export default function FinancePage() {
     return { paidIncome, pendingIncome, cogsTotal, totalExp, grossProfit, netIncome, grossMargin, netMargin, topGroups, topProducts, contribMargin, contribMarginPct }
   }, [income, expenses])
 
-  // â”€â”€ Filtered views â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Filtered views ─────────────────────────────────────────────────
   const filteredIncome   = useMemo(() => income.filter(i => !search || [i.client_name, i.product_name, i.notes].join(' ').toLowerCase().includes(search.toLowerCase())), [income, search])
   const filteredExpenses = useMemo(() => expenses.filter(e => !search || [e.vendor, e.category_name, e.notes].join(' ').toLowerCase().includes(search.toLowerCase())), [expenses, search])
   const filteredClients  = useMemo(() => clients.filter(c => !search || c.name.toLowerCase().includes(search.toLowerCase())), [clients, search])
 
-  // â”€â”€ Group expenses for display â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Group expenses for display ─────────────────────────────────────
   const expensesByGroup = useMemo(() => {
     const grps: Record<string, Expense[]> = {}
     filteredExpenses.forEach(e => { const g = e.group_name || 'Other'; if (!grps[g]) grps[g] = []; grps[g].push(e) })
     return Object.entries(grps).sort((a, b) => b[1].reduce((s, e) => s + e.amount, 0) - a[1].reduce((s, e) => s + e.amount, 0))
   }, [filteredExpenses])
 
-  // â”€â”€ CRUD operations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── CRUD operations ───────────────────────────────────────────────
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string>('')
 
@@ -327,7 +327,7 @@ export default function FinancePage() {
     setSaveError('')
     try {
       if (!selectedOrg) {
-        setSaveError('No organization selected â€” please select an org from the top menu and try again.')
+        setSaveError('No organization selected — please select an org from the top menu and try again.')
         return false
       }
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -393,9 +393,9 @@ export default function FinancePage() {
     if (res.ok) { const d = await res.json(); setSettings(d.settings) }
   }
 
-  // â”€â”€ AI CFO stream â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── AI CFO stream ──────────────────────────────────────────────────
 
-  // â”€â”€ Scenario Coach â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Scenario Coach ─────────────────────────────────────────────────
   async function sendCoachMessage() {
     if (!coachInput.trim() || coachLoading) return
     const userMsg: CoachMessage = { role: 'user', content: coachInput.trim() }
@@ -516,7 +516,7 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
     finally { setAiStreaming(false) }
   }
 
-  // â”€â”€ CSV Export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── CSV Export ─────────────────────────────────────────────────────
   function exportIncome() {
     const rows = [['Date', 'Client', 'Product', 'Amount', 'Status', 'Source', 'Notes'],
       ...income.map(i => [i.txn_date, i.client_name || '', i.product_name || '', $c(i.amount), i.status, i.source, i.notes || ''])]
@@ -536,7 +536,7 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
     link.click()
   }
 
-  // â”€â”€ Guard: super admin only â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Guard: super admin only ────────────────────────────────────────
   if (!isSuperAdmin) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4 text-center">
@@ -551,7 +551,7 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
     )
   }
 
-  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Render ────────────────────────────────────────────────────────
   return (
     <div className="max-w-[1200px] mx-auto space-y-4">
 
@@ -559,7 +559,7 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-np-dark">Financial Intelligence</h1>
-          <p className="text-sm text-gray-500 mt-0.5">P&amp;L Â· Income Â· Expenses Â· AI CFO Analysis</p>
+          <p className="text-sm text-gray-500 mt-0.5">P&amp;L · Income · Expenses · AI CFO Analysis</p>
         </div>
 
 
@@ -589,7 +589,7 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
       <div className="flex gap-0.5 bg-white border border-gray-100 rounded-xl p-1 overflow-x-auto">
         {(['dashboard','income','expenses','clients','products','reports','settings','ai-cfo','goals','coach','projections','metrics','balance-sheet','unit-economics'] as const).map(t => {
           const icons: Record<string, any> = { dashboard: BarChart3, income: TrendingUp, expenses: TrendingDown, clients: Users, products: Tag, reports: FileText, settings: Settings, 'ai-cfo': Brain, goals: Target, coach: MessageSquare, projections: TrendingDown, metrics: Flame, 'balance-sheet': Wallet, 'unit-economics': PieChart }
-          const labels: Record<string, string> = { dashboard: 'Dashboard', income: 'Income', expenses: 'Expenses', clients: 'Clients', products: 'Products', reports: 'Reports', settings: 'Settings', 'ai-cfo': 'ðŸ§  AI CFO', goals: 'Goals', coach: 'Scenario Coach', projections: 'Projections', metrics: 'Founder Metrics' }
+          const labels: Record<string, string> = { dashboard: 'Dashboard', income: 'Income', expenses: 'Expenses', clients: 'Clients', products: 'Products', reports: 'Reports', settings: 'Settings', 'ai-cfo': '🧠 AI CFO', goals: 'Goals', coach: 'Scenario Coach', projections: 'Projections', metrics: 'Founder Metrics' }
           const Icon = icons[t]
           const sel  = tab === t
           return (
@@ -609,20 +609,20 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
         </div>
       )}
 
-      {/* â”€â”€â”€â”€ DASHBOARD TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ──── DASHBOARD TAB ────────────────────────────────────────── */}
       {!loading && tab === 'dashboard' && (
         <div className="space-y-4">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <Stat tip="Total paid & collected income for this period. Excludes pending and refunded transactions." label="Gross Revenue" value={$$(metrics.paidIncome)} color="text-emerald-700" />
-            <Stat tip="Income recorded but not yet received â€” invoices sent, payments in process, or future-dated charges." label="Pending / Uncollected" value={$$(metrics.pendingIncome)} color="text-amber-600" />
+            <Stat tip="Income recorded but not yet received — invoices sent, payments in process, or future-dated charges." label="Pending / Uncollected" value={$$(metrics.pendingIncome)} color="text-amber-600" />
             <Stat tip="All costs for this period including COGS (direct service costs) and operating expenses." label="Total Expenses" value={$$(metrics.totalExp)} color="text-red-600" />
             <Stat tip="What remains after all expenses. Gross Revenue minus Total Expenses. Negative = operating at a loss." label="Net Income" value={$$(metrics.netIncome)} color={metrics.netIncome >= 0 ? 'text-emerald-700' : 'text-red-600'} />
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <Stat tip="Cost of Goods Sold â€” direct costs tied to delivering your services (e.g. platform fees, contractor pay, supplies)." label="COGS" value={$$(metrics.cogsTotal)} />
+            <Stat tip="Cost of Goods Sold — direct costs tied to delivering your services (e.g. platform fees, contractor pay, supplies)." label="COGS" value={$$(metrics.cogsTotal)} />
             <Stat tip="Revenue minus COGS only. Shows how profitable your core services are before overhead is factored in." label="Gross Profit" value={$$(metrics.grossProfit)} color="text-np-blue" />
             <Stat tip="Gross Profit as a % of Revenue. Measures service profitability. Your target is set in Settings." label="Gross Margin" value={fmtP(metrics.grossMargin)} color={metrics.grossMargin >= settings.target_gross_margin ? 'text-emerald-600' : 'text-amber-600'} />
-            <Stat tip="Net Income as a % of Revenue. The bottom line â€” how much of every dollar earned you actually keep. Your target is set in Settings." label="Net Margin" value={fmtP(metrics.netMargin)} color={metrics.netMargin >= settings.target_net_margin ? 'text-emerald-600' : 'text-amber-600'} />
+            <Stat tip="Net Income as a % of Revenue. The bottom line — how much of every dollar earned you actually keep. Your target is set in Settings." label="Net Margin" value={fmtP(metrics.netMargin)} color={metrics.netMargin >= settings.target_net_margin ? 'text-emerald-600' : 'text-amber-600'} />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -663,12 +663,12 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
 
             {/* Income statement summary */}
             <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
-              <h3 className="text-sm font-semibold text-np-dark mb-3 flex items-center">Income Statement<InfoTip text="Standard P&L summary: Revenue â†’ minus COGS â†’ Gross Profit â†’ minus Operating Expenses â†’ Net Income." /></h3>
+              <h3 className="text-sm font-semibold text-np-dark mb-3 flex items-center">Income Statement<InfoTip text="Standard P&L summary: Revenue → minus COGS → Gross Profit → minus Operating Expenses → Net Income." /></h3>
               <div className="space-y-1.5 text-xs">
                 <div className="flex justify-between"><span className="text-gray-600">Gross Revenue</span><span className="font-semibold text-emerald-700">{$$(metrics.paidIncome)}</span></div>
-                <div className="flex justify-between"><span className="text-gray-600 pl-3">â€” Cost of Goods Sold</span><span className="text-red-500">({$$(metrics.cogsTotal)})</span></div>
+                <div className="flex justify-between"><span className="text-gray-600 pl-3">— Cost of Goods Sold</span><span className="text-red-500">({$$(metrics.cogsTotal)})</span></div>
                 <div className="flex justify-between border-t border-gray-100 pt-1.5 mt-1.5"><span className="font-semibold text-np-dark">Gross Profit</span><span className="font-bold" style={{ color: orgColor }}>{$$(metrics.grossProfit)} <span className="text-gray-400 font-normal">({fmtP(metrics.grossMargin)})</span></span></div>
-                <div className="flex justify-between mt-1"><span className="text-gray-600 pl-3">â€” Operating Expenses</span><span className="text-red-500">({$$(metrics.totalExp - metrics.cogsTotal)})</span></div>
+                <div className="flex justify-between mt-1"><span className="text-gray-600 pl-3">— Operating Expenses</span><span className="text-red-500">({$$(metrics.totalExp - metrics.cogsTotal)})</span></div>
                 <div className="flex justify-between border-t border-gray-100 pt-1.5 mt-1.5"><span className="font-bold text-np-dark">Net Income</span><span className={`font-bold ${metrics.netIncome >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{$$(metrics.netIncome)} <span className="text-gray-400 font-normal">({fmtP(metrics.netMargin)})</span></span></div>
               </div>
             </div>
@@ -676,13 +676,13 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
         </div>
       )}
 
-      {/* â”€â”€â”€â”€ INCOME TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ──── INCOME TAB ───────────────────────────────────────────── */}
       {!loading && tab === 'income' && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search incomeâ€¦" className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/30" />
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search income…" className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/30" />
             </div>
             <Btn onClick={exportIncome} variant="secondary" size="xs"><Download className="w-3.5 h-3.5" />CSV</Btn>
             <Btn onClick={() => { setEditIncome(null); setShowIncomeModal(true) }} size="xs"><Plus className="w-3.5 h-3.5" />Add Income</Btn>
@@ -707,8 +707,8 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
                   : filteredIncome.map(i => (
                     <tr key={i.id} className="hover:bg-gray-50/50 transition-colors">
                       <td className="px-4 py-2.5 text-xs text-gray-600 whitespace-nowrap">{fmtDate(i.txn_date)}</td>
-                      <td className="px-4 py-2.5 text-xs font-medium text-np-dark max-w-[140px] truncate">{i.client_name || 'â€”'}</td>
-                      <td className="px-4 py-2.5 text-xs text-gray-600 max-w-[140px] truncate">{i.product_name || 'â€”'}</td>
+                      <td className="px-4 py-2.5 text-xs font-medium text-np-dark max-w-[140px] truncate">{i.client_name || '—'}</td>
+                      <td className="px-4 py-2.5 text-xs text-gray-600 max-w-[140px] truncate">{i.product_name || '—'}</td>
                       <td className="px-4 py-2.5 text-xs font-bold text-right text-emerald-700">{$c(i.amount)}</td>
                       <td className="px-4 py-2.5">
                         <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${({ paid: 'bg-emerald-50 text-emerald-700', pending: 'bg-amber-50 text-amber-700', refunded: 'bg-gray-100 text-gray-500', disputed: 'bg-orange-50 text-orange-600' } as any)[i.status] || ''}`}>{i.status}</span>
@@ -746,13 +746,13 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
         </div>
       )}
 
-      {/* â”€â”€â”€â”€ EXPENSES TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ──── EXPENSES TAB ─────────────────────────────────────────── */}
       {!loading && tab === 'expenses' && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search expensesâ€¦" className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/30" />
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search expenses…" className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/30" />
             </div>
             <Btn onClick={exportExpenses} variant="secondary" size="xs"><Download className="w-3.5 h-3.5" />CSV</Btn>
             <Btn onClick={() => { setEditExpense(null); setShowExpenseModal(true) }} size="xs"><Plus className="w-3.5 h-3.5" />Add Expense</Btn>
@@ -773,7 +773,7 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
                         <tr key={e.id} className="hover:bg-gray-50/50 transition-colors">
                           <td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap w-24">{fmtDate(e.txn_date)}</td>
                           <td className="px-4 py-2 text-xs font-medium text-np-dark">{e.vendor}</td>
-                          <td className="px-4 py-2 text-xs text-gray-500 hidden md:table-cell">{e.category_name || 'â€”'}</td>
+                          <td className="px-4 py-2 text-xs text-gray-500 hidden md:table-cell">{e.category_name || '—'}</td>
                           <td className="px-4 py-2">
                             {e.is_cogs && <span className="text-[9px] font-bold bg-orange-50 text-orange-600 border border-orange-100 px-1.5 py-0.5 rounded-full mr-1">COGS</span>}
                             {e.recurring && <span className="text-[9px] font-bold bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded-full">Recurring</span>}
@@ -796,13 +796,13 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
         </div>
       )}
 
-      {/* â”€â”€â”€â”€ CLIENTS TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ──── CLIENTS TAB ──────────────────────────────────────────── */}
       {!loading && tab === 'clients' && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search clientsâ€¦" className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/30" />
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search clients…" className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/30" />
             </div>
             <Btn onClick={() => { setEditClient(null); setShowClientModal(true) }} size="xs"><Plus className="w-3.5 h-3.5" />Add Client</Btn>
           </div>
@@ -833,11 +833,11 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
         </div>
       )}
 
-      {/* â”€â”€â”€â”€ PRODUCTS TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ──── PRODUCTS TAB ─────────────────────────────────────────── */}
       {!loading && tab === 'products' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <p className="text-xs text-gray-500">Products and services for {selectedOrg?.name} â€” used when recording income.</p>
+            <p className="text-xs text-gray-500">Products and services for {selectedOrg?.name} — used when recording income.</p>
             <Btn onClick={() => { setEditProduct(null); setShowProductModal(true) }} size="xs"><Plus className="w-3.5 h-3.5" />Add Product</Btn>
           </div>
 
@@ -855,7 +855,7 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
                     <div key={p.id} className="flex items-center justify-between px-4 py-2.5">
                       <span className="text-sm font-medium text-np-dark">{p.name}</span>
                       <div className="flex items-center gap-3">
-                        <span className="text-sm font-bold text-np-blue">{p.price > 0 ? $c(p.price) : 'â€”'}</span>
+                        <span className="text-sm font-bold text-np-blue">{p.price > 0 ? $c(p.price) : '—'}</span>
                         <button onClick={() => { setEditProduct(p); setShowProductModal(true) }} className="p-1 hover:bg-gray-100 rounded text-gray-400 hover:text-np-blue transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
                       </div>
                     </div>
@@ -868,12 +868,12 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
         </div>
       )}
 
-      {/* â”€â”€â”€â”€ REPORTS TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ──── REPORTS TAB ──────────────────────────────────────────── */}
       {!loading && tab === 'reports' && (
         <div className="space-y-4">
           <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-np-dark">P&amp;L Statement â€” {moLabel(month)}</h3>
+              <h3 className="font-semibold text-np-dark">P&amp;L Statement — {moLabel(month)}</h3>
               <div className="flex gap-2">
                 <Btn onClick={exportIncome}   variant="secondary" size="xs"><Download className="w-3.5 h-3.5" />Income CSV</Btn>
                 <Btn onClick={exportExpenses} variant="secondary" size="xs"><Download className="w-3.5 h-3.5" />Expenses CSV</Btn>
@@ -917,7 +917,7 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
         </div>
       )}
 
-      {/* â”€â”€â”€â”€ SETTINGS TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ──── SETTINGS TAB ─────────────────────────────────────────── */}
       {!loading && tab === 'settings' && (
         <div className="max-w-lg space-y-4">
           <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
@@ -960,23 +960,23 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
             <div className="text-xs bg-gray-50 rounded-lg p-3 font-mono text-gray-600 mb-1 break-all">
               https://hub.neuroprogeny.com/api/finance/stripe
             </div>
-            <p className="text-[10px] text-gray-400">Events: checkout.session.completed Â· payment_intent.succeeded Â· invoice.payment_succeeded Â· charge.refunded Â· payment_intent.payment_failed</p>
+            <p className="text-[10px] text-gray-400">Events: checkout.session.completed · payment_intent.succeeded · invoice.payment_succeeded · charge.refunded · payment_intent.payment_failed</p>
             <p className="text-[10px] text-gray-400 mt-1">Set <code className="bg-gray-100 px-1 rounded">{isNP ? 'STRIPE_WEBHOOK_SECRET' : 'SENSORIUM_STRIPE_WEBHOOK_SECRET'}</code> in Vercel env vars.</p>
           </div>
         </div>
       )}
 
-      {/* â”€â”€â”€â”€ AI CFO TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ──── AI CFO TAB ───────────────────────────────────────────── */}
       {!loading && tab === 'ai-cfo' && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="font-semibold text-np-dark flex items-center gap-2"><Brain className="w-4 h-4 text-np-blue" /> AI CFO â€” Monthly Analysis</h3>
-              <p className="text-xs text-gray-500">Claude acts as your CFO â€” reviews P&L, flags margin risks, and gives you one priority action for the month.</p>
+              <h3 className="font-semibold text-np-dark flex items-center gap-2"><Brain className="w-4 h-4 text-np-blue" /> AI CFO — Monthly Analysis</h3>
+              <p className="text-xs text-gray-500">Claude acts as your CFO — reviews P&L, flags margin risks, and gives you one priority action for the month.</p>
             </div>
             <Btn onClick={runAiCfo} disabled={aiStreaming || metrics.paidIncome === 0}>
               <Zap className={`w-3.5 h-3.5 ${aiStreaming ? 'animate-pulse' : ''}`} />
-              {aiStreaming ? 'Analyzingâ€¦' : aiText ? 'Re-run Analysis' : 'Run Analysis'}
+              {aiStreaming ? 'Analyzing…' : aiText ? 'Re-run Analysis' : 'Run Analysis'}
             </Btn>
           </div>
 
@@ -996,7 +996,7 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
       )}
 
 
-      {/* â”€â”€â”€â”€ GOALS TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ──── GOALS TAB ──────────────────────────────────────────── */}
       {!loading && tab === 'goals' && (
         <div className="space-y-5 max-w-2xl">
           <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
@@ -1062,7 +1062,7 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
             {settings.avg_cac > 0 && settings.avg_ltv > 0 && (
               <div className={`mt-3 rounded-lg px-4 py-3 text-sm font-semibold flex items-center justify-between ${settings.avg_ltv / settings.avg_cac >= 3 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
                 <span>LTV:CAC Ratio</span>
-                <span>{(settings.avg_ltv / settings.avg_cac).toFixed(1)}x {settings.avg_ltv / settings.avg_cac >= 3 ? 'âœ“ Healthy' : 'âš  Below 3x target'}</span>
+                <span>{(settings.avg_ltv / settings.avg_cac).toFixed(1)}x {settings.avg_ltv / settings.avg_cac >= 3 ? '✓ Healthy' : '⚠ Below 3x target'}</span>
               </div>
             )}
           </div>
@@ -1091,12 +1091,12 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
         </div>
       )}
 
-      {/* â”€â”€â”€â”€ SCENARIO COACH TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ──── SCENARIO COACH TAB ─────────────────────────────────── */}
       {!loading && tab === 'coach' && (
         <div className="flex flex-col h-[calc(100vh-280px)] min-h-[500px]">
           <div className="bg-gradient-to-r from-np-blue/5 to-purple-50 border border-np-blue/10 rounded-xl p-4 mb-3 flex-shrink-0">
             <p className="text-xs text-np-dark font-medium flex items-center gap-2"><Brain className="w-3.5 h-3.5 text-np-blue" />Scenario Coach is pre-loaded with your current P&L, goals, product catalog, and upcoming obligations. Ask anything.</p>
-            <p className="text-[11px] text-gray-500 mt-1">Try: "What does my product mix need to look like to hit my revenue goal?" Â· "What price does my Mastermind need to be at 40% net margin?" Â· "How many clients do I need to break even?"</p>
+            <p className="text-[11px] text-gray-500 mt-1">Try: "What does my product mix need to look like to hit my revenue goal?" · "What price does my Mastermind need to be at 40% net margin?" · "How many clients do I need to break even?"</p>
           </div>
 
           <div className="flex-1 overflow-y-auto bg-white border border-gray-100 rounded-xl p-4 space-y-3 mb-3" ref={coachEndRef}>
@@ -1137,7 +1137,7 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
         </div>
       )}
 
-      {/* â”€â”€â”€â”€ PROJECTIONS TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ──── PROJECTIONS TAB ────────────────────────────────────── */}
       {!loading && tab === 'projections' && (() => {
         const targetRev = settings.target_monthly_revenue || 0
         const targetGM  = settings.target_gross_margin / 100
@@ -1158,7 +1158,7 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
           <div className="space-y-4">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <Stat label="Revenue Target" value={$$(targetRev)} tip="Your monthly revenue goal set in Goals." color="text-np-blue" />
-              <Stat label="Revenue Gap" value={gap > 0 ? `${$$(gap)} short` : 'On Target âœ“'} color={gap > 0 ? 'text-red-600' : 'text-emerald-600'} tip="How far current paid revenue is from your monthly target." />
+              <Stat label="Revenue Gap" value={gap > 0 ? `${$$(gap)} short` : 'On Target ✓'} color={gap > 0 ? 'text-red-600' : 'text-emerald-600'} tip="How far current paid revenue is from your monthly target." />
               <Stat label="Break-Even Revenue" value={$$(breakEven)} tip="Minimum revenue to cover all costs at your current gross margin. Below this = operating at a loss." />
               <Stat label="Revenue for Target NM" value={$$(revenueForTargetNM)} tip={`Revenue needed to hit your ${fmtP(settings.target_net_margin)} net margin target given current fixed costs.`} />
             </div>
@@ -1203,7 +1203,7 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
                         <div key={p.id} className="text-xs">
                           <div className="flex justify-between mb-1">
                             <span className="font-medium text-np-dark truncate max-w-[160px]">{p.name}</span>
-                            <span className="text-gray-500">{fmtP(cmPct)} CM Â· {$$(cm)}/unit</span>
+                            <span className="text-gray-500">{fmtP(cmPct)} CM · {$$(cm)}/unit</span>
                           </div>
                           <div className="h-2 bg-gray-100 rounded-full"><div className="h-full rounded-full bg-np-blue" style={{ width: `${Math.max(0, Math.min(cmPct, 100))}%` }} /></div>
                         </div>
@@ -1220,7 +1220,7 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
                   : <div className="space-y-2">
                     {obligations.sort((a,b) => a.due_date.localeCompare(b.due_date)).map(ob => (
                       <div key={ob.id} className="flex items-center justify-between text-xs bg-red-50 border border-red-100 rounded-lg px-3 py-2">
-                        <div><span className="font-semibold text-red-700">{ob.label}</span>{ob.notes && <span className="text-red-400 ml-2">Â· {ob.notes}</span>}</div>
+                        <div><span className="font-semibold text-red-700">{ob.label}</span>{ob.notes && <span className="text-red-400 ml-2">· {ob.notes}</span>}</div>
                         <div className="text-right ml-4"><div className="font-bold text-red-700">{$$(ob.amount)}</div><div className="text-red-400">{ob.due_date}</div></div>
                       </div>
                     ))}
@@ -1255,7 +1255,7 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
         )
       })()}
 
-      {/* â”€â”€â”€â”€ FOUNDER METRICS TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ──── FOUNDER METRICS TAB ────────────────────────────────── */}
       {!loading && tab === 'metrics' && (() => {
         const burnRate  = settings.monthly_burn_rate || metrics.totalExp
         const runway    = burnRate > 0 ? settings.cash_on_hand / burnRate : 0
@@ -1288,8 +1288,8 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 <MetricCard label="Gross Margin" value={fmtP(metrics.grossMargin)} tip="Gross profit as % of revenue. Measures service profitability before overhead." status={metrics.grossMargin >= settings.target_gross_margin ? 'good' : 'warn'} />
                 <MetricCard label="Contribution Margin" value={fmtP(contribMarginPct)} sub={`${$$(contribMargin)} absolute`} tip="Revenue minus variable costs. How much each dollar of revenue contributes toward overhead and profit." status={contribMarginPct >= 40 ? 'good' : contribMarginPct >= 20 ? 'warn' : 'bad'} />
-                <MetricCard label="Net Margin" value={fmtP(metrics.netMargin)} tip="Bottom line â€” what % of every dollar earned you keep." status={metrics.netMargin >= settings.target_net_margin ? 'good' : metrics.netMargin >= 0 ? 'warn' : 'bad'} />
-                <MetricCard label="Break-Even Revenue" value={$$(breakEven)} sub={unitsToBreakEven > 0 ? `â‰ˆ${Math.ceil(unitsToBreakEven)} units of top product` : undefined} tip="Minimum monthly revenue to cover all costs at current gross margin." />
+                <MetricCard label="Net Margin" value={fmtP(metrics.netMargin)} tip="Bottom line — what % of every dollar earned you keep." status={metrics.netMargin >= settings.target_net_margin ? 'good' : metrics.netMargin >= 0 ? 'warn' : 'bad'} />
+                <MetricCard label="Break-Even Revenue" value={$$(breakEven)} sub={unitsToBreakEven > 0 ? `≈${Math.ceil(unitsToBreakEven)} units of top product` : undefined} tip="Minimum monthly revenue to cover all costs at current gross margin." />
               </div>
             </div>
 
@@ -1297,7 +1297,7 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Can I survive long enough to scale?</p>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 <MetricCard label="Burn Rate" value={$$(burnRate)} sub="per month" tip="How much cash leaves the business each month. Uses actual expenses if no target set." status={burnRate > metrics.paidIncome ? 'bad' : burnRate > metrics.paidIncome * 0.8 ? 'warn' : 'good'} />
-                <MetricCard label="Runway" value={runway > 0 ? `${runway.toFixed(1)} mo` : 'â€”'} tip="Months of cash remaining at current burn rate. Set Cash on Hand in Goals." status={runway <= 0 ? null : runway < 3 ? 'bad' : runway < 6 ? 'warn' : 'good'} sub={runway > 0 ? (runway < 3 ? 'ðŸš¨ Critical' : runway < 6 ? 'âš  Low' : 'âœ“ Healthy') : 'Set cash on hand in Goals'} />
+                <MetricCard label="Runway" value={runway > 0 ? `${runway.toFixed(1)} mo` : '—'} tip="Months of cash remaining at current burn rate. Set Cash on Hand in Goals." status={runway <= 0 ? null : runway < 3 ? 'bad' : runway < 6 ? 'warn' : 'good'} sub={runway > 0 ? (runway < 3 ? '🚨 Critical' : runway < 6 ? '⚠ Low' : '✓ Healthy') : 'Set cash on hand in Goals'} />
                 <MetricCard label="Net Income" value={$$(metrics.netIncome)} tip="What remains after all expenses. Negative = burning cash." status={metrics.netIncome >= 0 ? 'good' : 'bad'} />
                 <MetricCard label="Cash Flow Signal" value={metrics.pendingIncome > metrics.paidIncome * 0.3 ? 'Watch AR' : 'OK'} sub={`${$$(metrics.pendingIncome)} uncollected`} tip="High pending income vs paid can signal cash flow risk even if revenue looks good." status={metrics.pendingIncome > metrics.paidIncome * 0.3 ? 'warn' : 'good'} />
               </div>
@@ -1306,10 +1306,10 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
             <div>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Can I sell it efficiently?</p>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                <MetricCard label="LTV:CAC Ratio" value={ltvcac > 0 ? `${ltvcac.toFixed(1)}x` : 'â€”'} tip="Lifetime value vs cost to acquire. 3x+ is healthy. Below 1x means you lose money on each customer." status={ltvcac <= 0 ? null : ltvcac >= 3 ? 'good' : ltvcac >= 1 ? 'warn' : 'bad'} sub={ltvcac >= 3 ? 'âœ“ Healthy' : ltvcac > 0 ? 'âš  Below 3x target' : 'Set CAC + LTV in Goals'} />
-                <MetricCard label="Payback Period" value={payback > 0 ? `${payback.toFixed(1)} mo` : 'â€”'} tip="How long to recover your customer acquisition cost from their revenue." sub={payback > 0 ? (payback <= 12 ? 'âœ“ Good' : 'âš  Long payback') : 'Set CAC + LTV in Goals'} status={payback <= 0 ? null : payback <= 12 ? 'good' : 'warn'} />
-                <MetricCard label="ARPU" value={arpu > 0 ? $$(arpu) : 'â€”'} sub="per client this period" tip="Average Revenue Per User â€” total paid revenue divided by number of clients on record." />
-                <MetricCard label="Churn Rate" value={settings.avg_churn_pct > 0 ? fmtP(settings.avg_churn_pct) : 'â€”'} tip="Monthly percentage of customers who cancel or drop off." status={settings.avg_churn_pct <= 0 ? null : settings.avg_churn_pct <= 5 ? 'good' : settings.avg_churn_pct <= 10 ? 'warn' : 'bad'} sub={'Set in Goals tab'} />
+                <MetricCard label="LTV:CAC Ratio" value={ltvcac > 0 ? `${ltvcac.toFixed(1)}x` : '—'} tip="Lifetime value vs cost to acquire. 3x+ is healthy. Below 1x means you lose money on each customer." status={ltvcac <= 0 ? null : ltvcac >= 3 ? 'good' : ltvcac >= 1 ? 'warn' : 'bad'} sub={ltvcac >= 3 ? '✓ Healthy' : ltvcac > 0 ? '⚠ Below 3x target' : 'Set CAC + LTV in Goals'} />
+                <MetricCard label="Payback Period" value={payback > 0 ? `${payback.toFixed(1)} mo` : '—'} tip="How long to recover your customer acquisition cost from their revenue." sub={payback > 0 ? (payback <= 12 ? '✓ Good' : '⚠ Long payback') : 'Set CAC + LTV in Goals'} status={payback <= 0 ? null : payback <= 12 ? 'good' : 'warn'} />
+                <MetricCard label="ARPU" value={arpu > 0 ? $$(arpu) : '—'} sub="per client this period" tip="Average Revenue Per User — total paid revenue divided by number of clients on record." />
+                <MetricCard label="Churn Rate" value={settings.avg_churn_pct > 0 ? fmtP(settings.avg_churn_pct) : '—'} tip="Monthly percentage of customers who cancel or drop off." status={settings.avg_churn_pct <= 0 ? null : settings.avg_churn_pct <= 5 ? 'good' : settings.avg_churn_pct <= 10 ? 'warn' : 'bad'} sub={'Set in Goals tab'} />
               </div>
             </div>
 
@@ -1340,7 +1340,7 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
       })()}
 
 
-      {/* â”€â”€â”€â”€ BALANCE SHEET TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ──── BALANCE SHEET TAB ─────────────────────────────────── */}
       {!loading && tab === 'balance-sheet' && (() => {
         const totalCurrentAssets  = (settings.cash_on_hand || 0) + (settings.accounts_receivable || 0)
         const totalFixedAssets    = settings.equipment_value || 0
@@ -1355,7 +1355,7 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
         return (
           <div className="space-y-5 max-w-3xl">
             <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 text-xs text-amber-700">
-              <strong>Manual inputs:</strong> Enter your current balance sheet figures below. These are point-in-time snapshots â€” update monthly. Cash on Hand syncs from the Goals tab.
+              <strong>Manual inputs:</strong> Enter your current balance sheet figures below. These are point-in-time snapshots — update monthly. Cash on Hand syncs from the Goals tab.
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -1363,17 +1363,17 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
               <div className={`rounded-xl p-4 border ${workingCapital >= 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1 flex items-center">Working Capital<InfoTip text="Current Assets minus Current Liabilities. Positive = you can cover short-term obligations. Negative = liquidity risk." /></p>
                 <p className={`text-2xl font-bold ${workingCapital >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{$$(workingCapital)}</p>
-                <p className="text-xs text-gray-500 mt-1">{workingCapital >= 0 ? 'âœ“ Positive' : 'âš  Negative â€” short-term risk'}</p>
+                <p className="text-xs text-gray-500 mt-1">{workingCapital >= 0 ? '✓ Positive' : '⚠ Negative — short-term risk'}</p>
               </div>
               <div className="rounded-xl p-4 border border-gray-100 bg-white">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1 flex items-center">Net Equity (Est.)<InfoTip text="Total Assets minus Total Liabilities. A rough estimate of book value. Not a valuation." /></p>
                 <p className={`text-2xl font-bold ${netEquity >= 0 ? 'text-np-dark' : 'text-red-700'}`}>{$$(netEquity)}</p>
-                <p className="text-xs text-gray-500 mt-1">Total assets âˆ’ total liabilities</p>
+                <p className="text-xs text-gray-500 mt-1">Total assets − total liabilities</p>
               </div>
               <div className="rounded-xl p-4 border border-gray-100 bg-white">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1 flex items-center">Debt-to-Equity<InfoTip text="Total liabilities divided by net equity. Below 1 is generally healthy. Very high ratios signal financial risk." /></p>
-                <p className={`text-2xl font-bold ${debtToEquity <= 1 ? 'text-emerald-700' : debtToEquity <= 2 ? 'text-amber-600' : 'text-red-700'}`}>{netEquity > 0 ? `${debtToEquity.toFixed(2)}x` : 'â€”'}</p>
-                <p className="text-xs text-gray-500 mt-1">{debtToEquity <= 1 ? 'âœ“ Healthy' : debtToEquity <= 2 ? 'âš  Moderate' : 'âš  High'}</p>
+                <p className={`text-2xl font-bold ${debtToEquity <= 1 ? 'text-emerald-700' : debtToEquity <= 2 ? 'text-amber-600' : 'text-red-700'}`}>{netEquity > 0 ? `${debtToEquity.toFixed(2)}x` : '—'}</p>
+                <p className="text-xs text-gray-500 mt-1">{debtToEquity <= 1 ? '✓ Healthy' : debtToEquity <= 2 ? '⚠ Moderate' : '⚠ High'}</p>
               </div>
             </div>
 
@@ -1462,14 +1462,14 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
             {/* Deferred Revenue note */}
             {(settings.deferred_revenue || 0) > 0 && (
               <div className="bg-purple-50 border border-purple-100 rounded-xl px-4 py-3 text-xs text-purple-700">
-                <strong>Deferred Revenue note:</strong> You have {$$(settings.deferred_revenue)} in deferred revenue â€” cash collected but service not yet fully delivered. This is a liability until earned. Common with Mastermind cohorts, memberships, and prepaid programs.
+                <strong>Deferred Revenue note:</strong> You have {$$(settings.deferred_revenue)} in deferred revenue — cash collected but service not yet fully delivered. This is a liability until earned. Common with Mastermind cohorts, memberships, and prepaid programs.
               </div>
             )}
           </div>
         )
       })()}
 
-      {/* â”€â”€â”€â”€ UNIT ECONOMICS TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ──── UNIT ECONOMICS TAB ─────────────────────────────────── */}
       {!loading && tab === 'unit-economics' && (() => {
         const cogsRate    = metrics.paidIncome > 0 ? metrics.cogsTotal / metrics.paidIncome : 0
         const fixedCosts  = expenses.filter(e => !e.is_cogs).reduce((s, e) => s + e.amount, 0)
@@ -1478,8 +1478,8 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
         return (
           <div className="space-y-5">
             <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
-              <h3 className="text-sm font-semibold text-np-dark mb-1 flex items-center gap-2"><PieChart className="w-4 h-4 text-np-blue" />Unit Economics â€” What does one sale actually net?</h3>
-              <p className="text-xs text-gray-400 mb-4">Based on your current product catalog and this month's COGS rate. COGS rate = total COGS Ã· total revenue.</p>
+              <h3 className="text-sm font-semibold text-np-dark mb-1 flex items-center gap-2"><PieChart className="w-4 h-4 text-np-blue" />Unit Economics — What does one sale actually net?</h3>
+              <p className="text-xs text-gray-400 mb-4">Based on your current product catalog and this month's COGS rate. COGS rate = total COGS ÷ total revenue.</p>
               {products.filter(p => p.price > 0).length === 0
                 ? <p className="text-xs text-gray-400">Add products with prices in the Products tab to see unit economics.</p>
                 : (
@@ -1513,7 +1513,7 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
                                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${unitGM >= 60 ? 'bg-emerald-100 text-emerald-700' : unitGM >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>{fmtP(unitGM)}</span>
                               </td>
                               <td className="py-3 px-3 text-right text-np-blue font-semibold">{$$(unitCM)}</td>
-                              <td className="py-3 px-3 text-right text-gray-600">{beUnits !== null ? `${beUnits} units` : 'â€”'}</td>
+                              <td className="py-3 px-3 text-right text-gray-600">{beUnits !== null ? `${beUnits} units` : '—'}</td>
                             </tr>
                           )
                         })}
@@ -1529,11 +1529,11 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
                 <h3 className="text-sm font-semibold text-np-dark mb-4 flex items-center gap-2"><Users className="w-4 h-4 text-purple-600" />Customer Unit Economics</h3>
                 <div className="space-y-3 text-xs">
                   {[
-                    { label: 'Avg Revenue Per Client (ARPU)', val: clients.length > 0 ? $$(metrics.paidIncome / clients.length) : 'â€”', tip: 'Paid revenue Ã· total clients on record this period.' },
+                    { label: 'Avg Revenue Per Client (ARPU)', val: clients.length > 0 ? $$(metrics.paidIncome / clients.length) : '—', tip: 'Paid revenue ÷ total clients on record this period.' },
                     { label: 'Customer Acquisition Cost (CAC)', val: settings.avg_cac > 0 ? $$(settings.avg_cac) : 'Set in Goals', tip: 'How much it costs to acquire one new customer.' },
                     { label: 'Customer Lifetime Value (LTV)', val: settings.avg_ltv > 0 ? $$(settings.avg_ltv) : 'Set in Goals', tip: 'Total expected revenue from one customer relationship.' },
-                    { label: 'LTV:CAC Ratio', val: settings.avg_cac > 0 && settings.avg_ltv > 0 ? `${(settings.avg_ltv / settings.avg_cac).toFixed(1)}x` : 'â€”', tip: '3x+ is healthy. Below 1x means each customer costs more to acquire than they generate.' },
-                    { label: 'Payback Period', val: settings.avg_ltv > 0 && settings.avg_cac > 0 ? `${(settings.avg_cac / (settings.avg_ltv / 12)).toFixed(1)} months` : 'â€”', tip: 'How long until you recover your cost to acquire this customer.' },
+                    { label: 'LTV:CAC Ratio', val: settings.avg_cac > 0 && settings.avg_ltv > 0 ? `${(settings.avg_ltv / settings.avg_cac).toFixed(1)}x` : '—', tip: '3x+ is healthy. Below 1x means each customer costs more to acquire than they generate.' },
+                    { label: 'Payback Period', val: settings.avg_ltv > 0 && settings.avg_cac > 0 ? `${(settings.avg_cac / (settings.avg_ltv / 12)).toFixed(1)} months` : '—', tip: 'How long until you recover your cost to acquire this customer.' },
                     { label: 'Monthly Churn', val: settings.avg_churn_pct > 0 ? fmtP(settings.avg_churn_pct) : 'Set in Goals', tip: '% of customers who cancel or drop off each month.' },
                   ].map(({ label, val, tip }) => (
                     <div key={label} className="flex items-center justify-between py-1.5 border-b border-gray-50">
@@ -1545,12 +1545,12 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
               </div>
 
               <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
-                <h3 className="text-sm font-semibold text-np-dark mb-4 flex items-center gap-2"><Activity className="w-4 h-4 text-np-blue" />This Month â€” Aggregate</h3>
+                <h3 className="text-sm font-semibold text-np-dark mb-4 flex items-center gap-2"><Activity className="w-4 h-4 text-np-blue" />This Month — Aggregate</h3>
                 <div className="space-y-3 text-xs">
                   {[
                     { label: 'Total Paid Revenue', val: $$(metrics.paidIncome) },
                     { label: 'Total Transactions', val: `${income.filter(i=>i.status==='paid').length}` },
-                    { label: 'Avg Transaction Value', val: income.filter(i=>i.status==='paid').length > 0 ? $$(metrics.paidIncome / income.filter(i=>i.status==='paid').length) : 'â€”' },
+                    { label: 'Avg Transaction Value', val: income.filter(i=>i.status==='paid').length > 0 ? $$(metrics.paidIncome / income.filter(i=>i.status==='paid').length) : '—' },
                     { label: 'Total COGS', val: `(${$$(metrics.cogsTotal)})` },
                     { label: 'Gross Profit', val: $$(metrics.grossProfit) },
                     { label: 'Gross Margin', val: fmtP(metrics.grossMargin) },
@@ -1585,15 +1585,15 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
                   <p>Valuation, dilution, cap table, financing terms</p>
                 </div>
               </div>
-              <p className="text-xs text-gray-500 mt-3 border-t border-np-blue/10 pt-3">Revenue tells you demand Â· Margin tells you efficiency Â· Cash flow tells you survival Â· Runway tells you time Â· Unit economics tells you whether scale helps or hurts</p>
+              <p className="text-xs text-gray-500 mt-3 border-t border-np-blue/10 pt-3">Revenue tells you demand · Margin tells you efficiency · Cash flow tells you survival · Runway tells you time · Unit economics tells you whether scale helps or hurts</p>
             </div>
           </div>
         )
       })()}
 
-      {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+      {/* ══════════════════════════════════════════════════════════
           MODALS
-      â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+      ══════════════════════════════════════════════════════════ */}
 
       {/* Income modal */}
       {showIncomeModal && (
@@ -1646,9 +1646,9 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
   )
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════
 // Modal Components
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════
 
 function IncomeModal({ saving = false, saveError = '', products, clients, initial, onSave, onClose }: {
   products: Product[]; clients: FinClient[]; initial: Income | null
@@ -1674,7 +1674,7 @@ function IncomeModal({ saving = false, saveError = '', products, clients, initia
       <div className="space-y-3">
         <FInput label="Date" type="date" value={form.txn_date} onChange={set('txn_date')} />
         <FSelect label="Client" value={form.client_name} onChange={set('client_name')}>
-          <option value="">â€” select or type below â€”</option>
+          <option value="">— select or type below —</option>
           {clients.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
         </FSelect>
         <FInput label="Client Name (if not in list)" value={form.client_name} onChange={set('client_name')} placeholder="Or type a name" />
@@ -1682,7 +1682,7 @@ function IncomeModal({ saving = false, saveError = '', products, clients, initia
           const p = products.find(p => p.id === e.target.value)
           setForm(f => ({ ...f, product_id: e.target.value, product_name: p?.name || f.product_name, amount: p?.price ? String(p.price) : f.amount }))
         }}>
-          <option value="">â€” select product â€”</option>
+          <option value="">— select product —</option>
           {products.map(p => <option key={p.id} value={p.id}>{p.name} {p.price > 0 ? `($${p.price})` : ''}</option>)}
         </FSelect>
         <FInput label="Product / Description" value={form.product_name} onChange={set('product_name')} placeholder="Or describe manually" />
@@ -1699,7 +1699,7 @@ function IncomeModal({ saving = false, saveError = '', products, clients, initia
           <button onClick={onClose} disabled={saving} className="px-4 py-2 text-sm text-gray-500 hover:text-np-dark rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50">Cancel</button>
           <button onClick={submit} disabled={saving} className="px-4 py-2 text-sm font-semibold text-white bg-np-blue hover:bg-np-blue/90 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2">
             {saving && <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
-            {saving ? 'Savingâ€¦' : 'Save'}
+            {saving ? 'Saving…' : 'Save'}
           </button>
         </div>
       </div>
@@ -1747,7 +1747,7 @@ function ExpenseModal({ saving = false, saveError = '', categories, initial, onS
           const cat = categories.find(c => c.id === e.target.value)
           setForm(f => ({ ...f, category_id: e.target.value, category_name: cat?.name || '', group_name: cat?.group_name || '', is_cogs: cat?.is_cogs || false }))
         }}>
-          <option value="">â€” select category â€”</option>
+          <option value="">— select category —</option>
           {Object.entries(catGroups).map(([grp, cats]) => (
             <optgroup key={grp} label={grp}>
               {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -1776,7 +1776,7 @@ function ExpenseModal({ saving = false, saveError = '', categories, initial, onS
           <button onClick={onClose} disabled={saving} className="px-4 py-2 text-sm text-gray-500 hover:text-np-dark rounded-lg hover:bg-gray-100 disabled:opacity-50">Cancel</button>
           <button onClick={submit} disabled={saving} className="px-4 py-2 text-sm font-semibold text-white bg-np-blue hover:bg-np-blue/90 rounded-lg disabled:opacity-50 flex items-center gap-2">
             {saving && <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
-            {saving ? 'Savingâ€¦' : 'Save'}
+            {saving ? 'Saving…' : 'Save'}
           </button>
         </div>
       </div>
@@ -1806,7 +1806,7 @@ function ClientModal({ saving = false, saveError = '', initial, onSave, onClose 
           <button onClick={onClose} disabled={saving} className="px-4 py-2 text-sm text-gray-500 hover:text-np-dark rounded-lg hover:bg-gray-100 disabled:opacity-50">Cancel</button>
           <button onClick={async () => { if (!form.name) { alert('Name required'); return }; await onSave(form) }} disabled={saving} className="px-4 py-2 text-sm font-semibold text-white bg-np-blue hover:bg-np-blue/90 rounded-lg disabled:opacity-50 flex items-center gap-2">
             {saving && <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
-            {saving ? 'Savingâ€¦' : 'Save'}
+            {saving ? 'Saving…' : 'Save'}
           </button>
         </div>
       </div>
@@ -1833,7 +1833,7 @@ function ProductModal({ saving = false, saveError = '', initial, onSave, onClose
           <button onClick={onClose} disabled={saving} className="px-4 py-2 text-sm text-gray-500 hover:text-np-dark rounded-lg hover:bg-gray-100 disabled:opacity-50">Cancel</button>
           <button onClick={async () => { if (!form.name) { alert('Name required'); return }; await onSave(form) }} disabled={saving} className="px-4 py-2 text-sm font-semibold text-white bg-np-blue hover:bg-np-blue/90 rounded-lg disabled:opacity-50 flex items-center gap-2">
             {saving && <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
-            {saving ? 'Savingâ€¦' : 'Save'}
+            {saving ? 'Saving…' : 'Save'}
           </button>
         </div>
       </div>

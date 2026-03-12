@@ -44,7 +44,7 @@ export async function PUT(req: Request) {
 
   const sb = createAdminSupabase()
 
-  // Numeric fields â€” parse all
+  // Numeric fields — parse all
   const numericFields = Object.keys(DEFAULTS).filter(k => k !== 'currency')
   const upsertPayload: Record<string, any> = { org_id }
   numericFields.forEach(k => {
