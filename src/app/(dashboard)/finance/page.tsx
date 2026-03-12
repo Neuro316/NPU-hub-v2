@@ -141,29 +141,15 @@ function Btn({ children, variant = 'primary', size = 'sm', className = '', ...p 
 // â”€â”€â”€ Main Page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export default function FinancePage() {
   const { role } = usePermissions()
-  const { organizations, currentOrg } = useWorkspace()
+  const { currentOrg } = useWorkspace()
   const supabase = createClient()
 
   const isSuperAdmin = role === 'super_admin'
 
-  // â”€â”€ Org resolution: find NP + Sensorium orgs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const npOrg  = useMemo(() => organizations.find(o => o.slug.includes('neuro') || o.slug.includes('progeny')) || null, [organizations])
-  const snsOrg = useMemo(() => organizations.find(o => o.slug.includes('sensorium')) || null, [organizations])
-  const allOrgs = useMemo(() => {
-    const orgs: OrgSummary[] = []
-    if (npOrg)  orgs.push(npOrg)
-    if (snsOrg) orgs.push(snsOrg)
-    // If only one org visible, include it
-    if (!orgs.length && currentOrg) orgs.push(currentOrg)
-    return orgs
-  }, [npOrg, snsOrg, currentOrg])
-
-  const [selectedOrgId, setSelectedOrgId] = useState<string>('')
-  const selectedOrg = useMemo(() => allOrgs.find(o => o.id === selectedOrgId) || allOrgs[0] || null, [allOrgs, selectedOrgId])
+  // â”€â”€ Org resolution: follows master org switcher in sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const selectedOrg = currentOrg as OrgSummary | null
   const isNP = useMemo(() => selectedOrg?.slug?.toLowerCase().includes('neuro') || selectedOrg?.slug?.toLowerCase().includes('progeny'), [selectedOrg])
   const orgColor = isNP ? '#386797' : '#2A9D8F'
-
-  useEffect(() => { if (allOrgs.length && !selectedOrgId) setSelectedOrgId(allOrgs[0].id) }, [allOrgs])
 
   // â”€â”€ State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [tab,      setTab]     = useState<'dashboard'|'income'|'expenses'|'clients'|'products'|'reports'|'settings'|'ai-cfo'>('ai-cfo')
@@ -443,25 +429,7 @@ export default function FinancePage() {
           <p className="text-sm text-gray-500 mt-0.5">P&amp;L Â· Income Â· Expenses Â· AI CFO Analysis</p>
         </div>
 
-        {/* Org switcher */}
-        {allOrgs.length > 1 && (
-          <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl p-1">
-            {allOrgs.map(org => {
-              const isSel = org.id === selectedOrg?.id
-              const col   = org.slug.includes('sensorium') ? '#2A9D8F' : '#386797'
-              return (
-                <button
-                  key={org.id}
-                  onClick={() => { setSelectedOrgId(org.id); setTab('dashboard') }}
-                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${isSel ? 'text-white shadow-sm' : 'text-gray-500 hover:text-np-dark'}`}
-                  style={isSel ? { backgroundColor: col } : {}}
-                >
-                  {org.slug.includes('sensorium') ? 'Sensorium' : 'Neuro Progeny'}
-                </button>
-              )
-            })}
-          </div>
-        )}
+
       </div>
 
       {/* Month navigator */}
