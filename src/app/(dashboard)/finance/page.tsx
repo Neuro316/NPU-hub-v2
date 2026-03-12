@@ -10,11 +10,26 @@ import {
   RefreshCw, ChevronLeft, ChevronRight, Search, CheckCircle2,
   Clock, AlertTriangle, FileText, Settings, Zap, Building,
   ArrowUpRight, ArrowDownRight, Brain, Activity, Filter, Tag, Lock,
+  Target, MessageSquare, Lightbulb, TrendingUp as TrendUp, Calendar, Send, Flame, LifeBuoy,
 } from 'lucide-react'
 
 // â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 interface OrgSummary  { id: string; name: string; slug: string }
-interface FinSettings { target_gross_margin: number; target_net_margin: number; fiscal_year_start_month: number; currency: string }
+interface FinSettings {
+  target_gross_margin: number; target_net_margin: number
+  fiscal_year_start_month: number; currency: string
+  target_monthly_revenue: number; target_net_margin_pct: number
+  avg_cac: number; avg_ltv: number; avg_churn_pct: number
+  monthly_burn_rate: number; cash_on_hand: number
+  // Balance sheet inputs
+  accounts_receivable: number; accounts_payable: number
+  deferred_revenue: number; short_term_debt: number
+  long_term_debt: number; equipment_value: number
+  // EBITDA adjustments
+  monthly_depreciation: number; monthly_interest: number; monthly_amortization: number
+}
+interface GoalObligation { id: string; label: string; amount: number; due_date: string; notes: string }
+interface CoachMessage { role: 'user' | 'assistant'; content: string }
 interface Product     { id: string; name: string; category: string; price: number; sort_order: number }
 interface ExpCat      { id: string; group_name: string; name: string; is_cogs: boolean; sort_order: number }
 interface FinClient   { id: string; name: string; email: string; phone: string; notes: string; contract_value: number }
@@ -167,7 +182,7 @@ export default function FinancePage() {
   const orgColor = isNP ? '#386797' : '#2A9D8F'
 
   // â”€â”€ State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const [tab,      setTab]     = useState<'dashboard'|'income'|'expenses'|'clients'|'products'|'reports'|'settings'|'ai-cfo'>('ai-cfo')
+  const [tab,      setTab]     = useState<'dashboard'|'income'|'expenses'|'clients'|'products'|'reports'|'settings'|'ai-cfo'|'goals'|'coach'|'projections'|'metrics'|'balance-sheet'|'unit-economics'>('ai-cfo')
   const [month,    setMonth]   = useState(curMonth)
   const [loading,  setLoading] = useState(false)
   const [syncing,  setSyncing] = useState(false)
@@ -178,9 +193,14 @@ export default function FinancePage() {
   const [clients,    setClients]    = useState<FinClient[]>([])
   const [products,   setProducts]   = useState<Product[]>([])
   const [categories, setCategories] = useState<ExpCat[]>([])
-  const [settings,   setSettings]   = useState<FinSettings>({ target_gross_margin: 60, target_net_margin: 30, fiscal_year_start_month: 1, currency: 'usd' })
+  const [settings,   setSettings]   = useState<FinSettings>({ target_gross_margin: 60, target_net_margin: 30, fiscal_year_start_month: 1, currency: 'usd', target_monthly_revenue: 0, target_net_margin_pct: 30, avg_cac: 0, avg_ltv: 0, avg_churn_pct: 0, monthly_burn_rate: 0, cash_on_hand: 0, accounts_receivable: 0, accounts_payable: 0, deferred_revenue: 0, short_term_debt: 0, long_term_debt: 0, equipment_value: 0, monthly_depreciation: 0, monthly_interest: 0, monthly_amortization: 0 })
   const [aiText,     setAiText]     = useState('')
   const [aiStreaming, setAiStreaming] = useState(false)
+  const [obligations,   setObligations]   = useState<GoalObligation[]>([])
+  const [coachMsgs,     setCoachMsgs]     = useState<CoachMessage[]>([])
+  const [coachInput,    setCoachInput]    = useState('')
+  const [coachLoading,  setCoachLoading]  = useState(false)
+  const coachEndRef = useRef<HTMLDivElement>(null)
 
   // Modal states
   const [showIncomeModal,  setShowIncomeModal]  = useState(false)
@@ -278,7 +298,12 @@ export default function FinancePage() {
       .sort((a, b) => b[1].total - a[1].total)
       .map(([name, d]) => ({ name, ...d }))
 
-    return { paidIncome, pendingIncome, cogsTotal, totalExp, grossProfit, netIncome, grossMargin, netMargin, topGroups, topProducts }
+    // EBITDA = Net Income + Interest + Taxes (0) + Depreciation + Amortization
+    // We use settings for D&A and interest since they're non-cash or financing items
+    const contribMargin    = paidIncome - cogsTotal  // same as gross profit here (variable = cogs)
+    const contribMarginPct = paidIncome > 0 ? (contribMargin / paidIncome) * 100 : 0
+
+    return { paidIncome, pendingIncome, cogsTotal, totalExp, grossProfit, netIncome, grossMargin, netMargin, topGroups, topProducts, contribMargin, contribMarginPct }
   }, [income, expenses])
 
   // â”€â”€ Filtered views â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -369,6 +394,82 @@ export default function FinancePage() {
   }
 
   // â”€â”€ AI CFO stream â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+  // â”€â”€ Scenario Coach â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  async function sendCoachMessage() {
+    if (!coachInput.trim() || coachLoading) return
+    const userMsg: CoachMessage = { role: 'user', content: coachInput.trim() }
+    const newMsgs = [...coachMsgs, userMsg]
+    setCoachMsgs(newMsgs)
+    setCoachInput('')
+    setCoachLoading(true)
+
+    // Build context from current financial data
+    const obligationText = obligations.length > 0
+      ? obligations.map(o => `- ${o.label}: ${$$(o.amount)} due ${o.due_date}${o.notes ? ' ('+o.notes+')' : ''}`).join('\n')
+      : 'None entered'
+
+    const systemPrompt = `You are a CFO and financial scenario coach for ${selectedOrg?.name || 'this organization'}, a neuroscience wellness company.
+
+CURRENT FINANCIAL SNAPSHOT (${moLabel(month)}):
+- Gross Revenue (paid): ${$$(metrics.paidIncome)}
+- Pending/Uncollected: ${$$(metrics.pendingIncome)}
+- COGS: ${$$(metrics.cogsTotal)}
+- Gross Profit: ${$$(metrics.grossProfit)} (${fmtP(metrics.grossMargin)} margin)
+- Total Expenses: ${$$(metrics.totalExp)}
+- Net Income: ${$$(metrics.netIncome)} (${fmtP(metrics.netMargin)} margin)
+
+GOALS:
+- Monthly Revenue Target: ${$$(settings.target_monthly_revenue)}
+- Target Gross Margin: ${fmtP(settings.target_gross_margin)}
+- Target Net Margin: ${fmtP(settings.target_net_margin)}
+- Cash on Hand: ${$$(settings.cash_on_hand)}
+- Monthly Burn Rate: ${$$(settings.monthly_burn_rate)}
+- Avg CAC: ${$$(settings.avg_cac)} | Avg LTV: ${$$(settings.avg_ltv)} | Monthly Churn: ${fmtP(settings.avg_churn_pct)}
+
+PRODUCT CATALOG:
+${products.map(p => `- ${p.name}: $${p.price} (${p.category})`).join('\n') || 'No products configured'}
+
+UPCOMING OBLIGATIONS:
+${obligationText}
+
+TOP EXPENSE GROUPS:
+${metrics.topGroups.slice(0,5).map(g => `- ${g.group}: ${$$(g.total)}`).join('\n')}
+
+Be direct, specific, and dollar-precise. Give actionable recommendations. When asked for scenarios, show the math. When asked for a spreadsheet or export, describe the structure clearly in a formatted table.`
+
+    const messages = newMsgs.map(m => ({ role: m.role, content: m.content }))
+    const assistantMsg: CoachMessage = { role: 'assistant', content: '' }
+    setCoachMsgs(m => [...m, assistantMsg])
+
+    try {
+      const res = await fetch('/api/finance/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ coach_mode: true, system_prompt: systemPrompt, messages }),
+      })
+      if (!res.body) throw new Error('No stream')
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let text = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        const chunk = decoder.decode(value)
+        for (const line of chunk.split('\n')) {
+          if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+            try { const d = JSON.parse(line.slice(6)); if (d.text) { text += d.text; setCoachMsgs(m => [...m.slice(0, -1), { role: 'assistant', content: text }]) } } catch {}
+          }
+        }
+      }
+    } catch (err: any) {
+      setCoachMsgs(m => [...m.slice(0, -1), { role: 'assistant', content: 'Error: ' + err.message }])
+    } finally {
+      setCoachLoading(false)
+      setTimeout(() => coachEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
+    }
+  }
+
   async function runAiCfo() {
     if (!selectedOrg || aiStreaming) return
     setAiStreaming(true)
@@ -486,9 +587,9 @@ export default function FinancePage() {
 
       {/* Tab nav */}
       <div className="flex gap-0.5 bg-white border border-gray-100 rounded-xl p-1 overflow-x-auto">
-        {(['dashboard','income','expenses','clients','products','reports','settings','ai-cfo'] as const).map(t => {
-          const icons: Record<string, any> = { dashboard: BarChart3, income: TrendingUp, expenses: TrendingDown, clients: Users, products: Tag, reports: FileText, settings: Settings, 'ai-cfo': Brain }
-          const labels: Record<string, string> = { dashboard: 'Dashboard', income: 'Income', expenses: 'Expenses', clients: 'Clients', products: 'Products', reports: 'Reports', settings: 'Settings', 'ai-cfo': 'ðŸ§  AI CFO' }
+        {(['dashboard','income','expenses','clients','products','reports','settings','ai-cfo','goals','coach','projections','metrics','balance-sheet','unit-economics'] as const).map(t => {
+          const icons: Record<string, any> = { dashboard: BarChart3, income: TrendingUp, expenses: TrendingDown, clients: Users, products: Tag, reports: FileText, settings: Settings, 'ai-cfo': Brain, goals: Target, coach: MessageSquare, projections: TrendingDown, metrics: Flame, 'balance-sheet': Wallet, 'unit-economics': PieChart }
+          const labels: Record<string, string> = { dashboard: 'Dashboard', income: 'Income', expenses: 'Expenses', clients: 'Clients', products: 'Products', reports: 'Reports', settings: 'Settings', 'ai-cfo': 'ðŸ§  AI CFO', goals: 'Goals', coach: 'Scenario Coach', projections: 'Projections', metrics: 'Founder Metrics' }
           const Icon = icons[t]
           const sel  = tab === t
           return (
@@ -893,6 +994,602 @@ export default function FinancePage() {
           )}
         </div>
       )}
+
+
+      {/* â”€â”€â”€â”€ GOALS TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {!loading && tab === 'goals' && (
+        <div className="space-y-5 max-w-2xl">
+          <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
+            <h3 className="font-semibold text-np-dark mb-1 flex items-center gap-2"><Target className="w-4 h-4 text-np-blue" />Revenue & Margin Goals</h3>
+            <p className="text-xs text-gray-400 mb-4">These targets power the Projections tab and Scenario Coach context.</p>
+            <div className="grid grid-cols-2 gap-4">
+              <FInput label="Monthly Revenue Target ($)" type="number" min="0"
+                defaultValue={settings.target_monthly_revenue || ''}
+                key={`tmr-${settings.target_monthly_revenue}`}
+                onBlur={e => saveSettings({ ...settings, target_monthly_revenue: parseFloat(e.target.value) || 0 })} />
+              <FInput label="Target Gross Margin (%)" type="number" min="0" max="100"
+                defaultValue={settings.target_gross_margin}
+                key={`tgm-${settings.target_gross_margin}`}
+                onBlur={e => saveSettings({ ...settings, target_gross_margin: parseFloat(e.target.value) || 60 })} />
+              <FInput label="Target Net Margin (%)" type="number" min="0" max="100"
+                defaultValue={settings.target_net_margin}
+                key={`tnm-${settings.target_net_margin}`}
+                onBlur={e => saveSettings({ ...settings, target_net_margin: parseFloat(e.target.value) || 30 })} />
+              <FInput label="Target Monthly Expenses ($)" type="number" min="0"
+                defaultValue={settings.monthly_burn_rate || ''}
+                key={`mbr-${settings.monthly_burn_rate}`}
+                onBlur={e => saveSettings({ ...settings, monthly_burn_rate: parseFloat(e.target.value) || 0 })} />
+            </div>
+          </div>
+
+          <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
+            <h3 className="font-semibold text-np-dark mb-1 flex items-center gap-2"><LifeBuoy className="w-4 h-4 text-teal-600" />Cash & Runway</h3>
+            <p className="text-xs text-gray-400 mb-4">Used to calculate runway and survival metrics.</p>
+            <div className="grid grid-cols-2 gap-4">
+              <FInput label="Cash on Hand ($)" type="number" min="0"
+                defaultValue={settings.cash_on_hand || ''}
+                key={`coh-${settings.cash_on_hand}`}
+                onBlur={e => saveSettings({ ...settings, cash_on_hand: parseFloat(e.target.value) || 0 })} />
+              <FInput label="Monthly Burn Rate ($)" type="number" min="0"
+                defaultValue={settings.monthly_burn_rate || ''}
+                key={`mbr2-${settings.monthly_burn_rate}`}
+                onBlur={e => saveSettings({ ...settings, monthly_burn_rate: parseFloat(e.target.value) || 0 })} />
+            </div>
+            {settings.cash_on_hand > 0 && settings.monthly_burn_rate > 0 && (
+              <div className={`mt-3 rounded-lg px-4 py-3 text-sm font-semibold ${(settings.cash_on_hand / settings.monthly_burn_rate) < 3 ? 'bg-red-50 text-red-700' : (settings.cash_on_hand / settings.monthly_burn_rate) < 6 ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                Runway: {(settings.cash_on_hand / settings.monthly_burn_rate).toFixed(1)} months
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
+            <h3 className="font-semibold text-np-dark mb-1 flex items-center gap-2"><Users className="w-4 h-4 text-purple-600" />Customer Economics</h3>
+            <p className="text-xs text-gray-400 mb-4">CAC, LTV and churn power the Founder Metrics tab.</p>
+            <div className="grid grid-cols-3 gap-4">
+              <FInput label="Avg CAC ($)" type="number" min="0"
+                defaultValue={settings.avg_cac || ''}
+                key={`cac-${settings.avg_cac}`}
+                onBlur={e => saveSettings({ ...settings, avg_cac: parseFloat(e.target.value) || 0 })} />
+              <FInput label="Avg LTV ($)" type="number" min="0"
+                defaultValue={settings.avg_ltv || ''}
+                key={`ltv-${settings.avg_ltv}`}
+                onBlur={e => saveSettings({ ...settings, avg_ltv: parseFloat(e.target.value) || 0 })} />
+              <FInput label="Monthly Churn (%)" type="number" min="0" max="100" step="0.1"
+                defaultValue={settings.avg_churn_pct || ''}
+                key={`churn-${settings.avg_churn_pct}`}
+                onBlur={e => saveSettings({ ...settings, avg_churn_pct: parseFloat(e.target.value) || 0 })} />
+            </div>
+            {settings.avg_cac > 0 && settings.avg_ltv > 0 && (
+              <div className={`mt-3 rounded-lg px-4 py-3 text-sm font-semibold flex items-center justify-between ${settings.avg_ltv / settings.avg_cac >= 3 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                <span>LTV:CAC Ratio</span>
+                <span>{(settings.avg_ltv / settings.avg_cac).toFixed(1)}x {settings.avg_ltv / settings.avg_cac >= 3 ? 'âœ“ Healthy' : 'âš  Below 3x target'}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-np-dark flex items-center gap-2"><Calendar className="w-4 h-4 text-red-500" />Upcoming Obligations</h3>
+              <Btn size="xs" onClick={() => setObligations(o => [...o, { id: crypto.randomUUID(), label: '', amount: 0, due_date: '', notes: '' }])}>
+                <Plus className="w-3.5 h-3.5" />Add
+              </Btn>
+            </div>
+            <p className="text-xs text-gray-400 mb-3">Balloon payments, loan payments, big upcoming expenses. The Scenario Coach uses these.</p>
+            {obligations.length === 0 && <p className="text-xs text-gray-400">No obligations added yet.</p>}
+            <div className="space-y-2">
+              {obligations.map((ob, i) => (
+                <div key={ob.id} className="grid grid-cols-12 gap-2 items-center">
+                  <div className="col-span-4"><FInput label="" placeholder="Label (e.g. Loan payment)" value={ob.label} onChange={e => setObligations(o => o.map((x,j) => j===i ? {...x, label: e.target.value} : x))} /></div>
+                  <div className="col-span-2"><FInput label="" type="number" placeholder="Amount" value={String(ob.amount||'')} onChange={e => setObligations(o => o.map((x,j) => j===i ? {...x, amount: parseFloat(e.target.value)||0} : x))} /></div>
+                  <div className="col-span-3"><FInput label="" type="date" value={ob.due_date} onChange={e => setObligations(o => o.map((x,j) => j===i ? {...x, due_date: e.target.value} : x))} /></div>
+                  <div className="col-span-2"><FInput label="" placeholder="Notes" value={ob.notes} onChange={e => setObligations(o => o.map((x,j) => j===i ? {...x, notes: e.target.value} : x))} /></div>
+                  <div className="col-span-1 flex justify-end"><button onClick={() => setObligations(o => o.filter((_,j) => j!==i))} className="p-1 text-red-400 hover:text-red-600"><X className="w-3.5 h-3.5" /></button></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* â”€â”€â”€â”€ SCENARIO COACH TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {!loading && tab === 'coach' && (
+        <div className="flex flex-col h-[calc(100vh-280px)] min-h-[500px]">
+          <div className="bg-gradient-to-r from-np-blue/5 to-purple-50 border border-np-blue/10 rounded-xl p-4 mb-3 flex-shrink-0">
+            <p className="text-xs text-np-dark font-medium flex items-center gap-2"><Brain className="w-3.5 h-3.5 text-np-blue" />Scenario Coach is pre-loaded with your current P&L, goals, product catalog, and upcoming obligations. Ask anything.</p>
+            <p className="text-[11px] text-gray-500 mt-1">Try: "What does my product mix need to look like to hit my revenue goal?" Â· "What price does my Mastermind need to be at 40% net margin?" Â· "How many clients do I need to break even?"</p>
+          </div>
+
+          <div className="flex-1 overflow-y-auto bg-white border border-gray-100 rounded-xl p-4 space-y-3 mb-3" ref={coachEndRef}>
+            {coachMsgs.length === 0 && (
+              <div className="flex flex-col items-center justify-center h-full text-center py-8">
+                <MessageSquare className="w-8 h-8 text-gray-200 mb-3" />
+                <p className="text-sm text-gray-400">Start by describing your situation or goal.</p>
+                <div className="mt-4 grid grid-cols-1 gap-2 w-full max-w-md">
+                  {["What combination of products and prices hits my revenue target?","How many months of runway do I have if revenue drops 30%?","What needs to change to reach profitability this quarter?","Build me a break-even analysis for my Mastermind program"].map(q => (
+                    <button key={q} onClick={() => setCoachInput(q)} className="text-left text-xs text-np-blue bg-np-blue/5 hover:bg-np-blue/10 border border-np-blue/10 rounded-lg px-3 py-2 transition-colors">{q}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {coachMsgs.map((m, i) => (
+              <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[85%] rounded-xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-np-blue text-white' : 'bg-gray-50 border border-gray-100 text-np-dark'}`}>
+                  {m.content}
+                  {i === coachMsgs.length - 1 && coachLoading && m.role === 'assistant' && <span className="inline-block w-1.5 h-4 bg-np-blue/40 animate-pulse ml-1 rounded-sm align-text-bottom" />}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex gap-2 flex-shrink-0">
+            <input
+              value={coachInput}
+              onChange={e => setCoachInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && coachInput.trim()) { e.preventDefault(); sendCoachMessage() } }}
+              placeholder="Ask about pricing, break-even, runway, product mix..."
+              className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/30 focus:border-np-blue"
+              disabled={coachLoading}
+            />
+            <button onClick={sendCoachMessage} disabled={coachLoading || !coachInput.trim()} className="px-4 py-2.5 bg-np-blue text-white rounded-xl hover:bg-np-blue/90 disabled:opacity-50 transition-colors flex items-center gap-2">
+              <Send className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* â”€â”€â”€â”€ PROJECTIONS TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {!loading && tab === 'projections' && (() => {
+        const targetRev = settings.target_monthly_revenue || 0
+        const targetGM  = settings.target_gross_margin / 100
+        const targetNM  = settings.target_net_margin / 100
+        const actualRev = metrics.paidIncome
+        const gap       = targetRev - actualRev
+        const revenueGapPct = targetRev > 0 ? (actualRev / targetRev) * 100 : 0
+
+        // Break-even: fixed costs / gross margin %
+        const fixedCosts = expenses.filter(e => !e.is_cogs).reduce((s, e) => s + e.amount, 0)
+        const breakEven  = metrics.grossMargin > 0 ? fixedCosts / (metrics.grossMargin / 100) : 0
+
+        // What revenue is needed to hit target net margin
+        const revenueForTargetNM = fixedCosts > 0 && targetNM < 1 ? fixedCosts / (targetNM + (1 - targetGM)) : 0
+
+        // Product mix: how many of each product to hit target
+        return (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <Stat label="Revenue Target" value={$$(targetRev)} tip="Your monthly revenue goal set in Goals." color="text-np-blue" />
+              <Stat label="Revenue Gap" value={gap > 0 ? `${$$(gap)} short` : 'On Target âœ“'} color={gap > 0 ? 'text-red-600' : 'text-emerald-600'} tip="How far current paid revenue is from your monthly target." />
+              <Stat label="Break-Even Revenue" value={$$(breakEven)} tip="Minimum revenue to cover all costs at your current gross margin. Below this = operating at a loss." />
+              <Stat label="Revenue for Target NM" value={$$(revenueForTargetNM)} tip={`Revenue needed to hit your ${fmtP(settings.target_net_margin)} net margin target given current fixed costs.`} />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
+                <h3 className="text-sm font-semibold text-np-dark mb-4 flex items-center gap-2"><Target className="w-4 h-4 text-np-blue" />Revenue Progress</h3>
+                <div className="mb-2 flex justify-between text-xs text-gray-500">
+                  <span>{$$(actualRev)} actual</span>
+                  <span>{$$(targetRev)} target</span>
+                </div>
+                <div className="h-4 bg-gray-100 rounded-full overflow-hidden">
+                  <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(revenueGapPct, 100)}%`, backgroundColor: revenueGapPct >= 100 ? '#10b981' : revenueGapPct >= 70 ? '#f59e0b' : '#ef4444' }} />
+                </div>
+                <p className="text-xs text-gray-500 mt-2">{revenueGapPct.toFixed(0)}% of monthly target</p>
+
+                {gap > 0 && products.length > 0 && (
+                  <div className="mt-4">
+                    <p className="text-xs font-semibold text-gray-600 mb-2">Units needed to close gap:</p>
+                    <div className="space-y-1.5">
+                      {products.filter(p => p.price > 0).slice(0, 5).map(p => (
+                        <div key={p.id} className="flex items-center justify-between text-xs bg-gray-50 rounded-lg px-3 py-2">
+                          <span className="text-np-dark font-medium truncate max-w-[160px]">{p.name}</span>
+                          <span className="text-np-blue font-bold ml-2">{Math.ceil(gap / p.price)} units @ {$$(p.price)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
+                <h3 className="text-sm font-semibold text-np-dark mb-4 flex items-center gap-2"><Lightbulb className="w-4 h-4 text-amber-500" />Contribution Margin by Product</h3>
+                {products.filter(p => p.price > 0).length === 0
+                  ? <p className="text-xs text-gray-400">Add products with prices in the Products tab.</p>
+                  : <div className="space-y-2">
+                    {products.filter(p => p.price > 0).map(p => {
+                      const cogs = metrics.cogsTotal > 0 && metrics.paidIncome > 0 ? (metrics.cogsTotal / metrics.paidIncome) * p.price : 0
+                      const cm   = p.price - cogs
+                      const cmPct = p.price > 0 ? (cm / p.price) * 100 : 0
+                      return (
+                        <div key={p.id} className="text-xs">
+                          <div className="flex justify-between mb-1">
+                            <span className="font-medium text-np-dark truncate max-w-[160px]">{p.name}</span>
+                            <span className="text-gray-500">{fmtP(cmPct)} CM Â· {$$(cm)}/unit</span>
+                          </div>
+                          <div className="h-2 bg-gray-100 rounded-full"><div className="h-full rounded-full bg-np-blue" style={{ width: `${Math.max(0, Math.min(cmPct, 100))}%` }} /></div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                }
+              </div>
+
+              <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
+                <h3 className="text-sm font-semibold text-np-dark mb-3 flex items-center gap-2"><Calendar className="w-4 h-4 text-red-500" />Upcoming Obligations</h3>
+                {obligations.length === 0
+                  ? <p className="text-xs text-gray-400">Add balloon payments and obligations in the Goals tab.</p>
+                  : <div className="space-y-2">
+                    {obligations.sort((a,b) => a.due_date.localeCompare(b.due_date)).map(ob => (
+                      <div key={ob.id} className="flex items-center justify-between text-xs bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                        <div><span className="font-semibold text-red-700">{ob.label}</span>{ob.notes && <span className="text-red-400 ml-2">Â· {ob.notes}</span>}</div>
+                        <div className="text-right ml-4"><div className="font-bold text-red-700">{$$(ob.amount)}</div><div className="text-red-400">{ob.due_date}</div></div>
+                      </div>
+                    ))}
+                    <div className="flex justify-between text-xs font-bold border-t border-gray-100 pt-2 mt-2">
+                      <span>Total obligations</span>
+                      <span className="text-red-700">{$$(obligations.reduce((s,o) => s + o.amount, 0))}</span>
+                    </div>
+                  </div>
+                }
+              </div>
+
+              <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
+                <h3 className="text-sm font-semibold text-np-dark mb-3 flex items-center gap-2"><FileText className="w-4 h-4 text-gray-500" />P&L Summary</h3>
+                <div className="space-y-1.5 text-xs">
+                  {[
+                    ['Gross Revenue', $$(metrics.paidIncome), 'text-emerald-700'],
+                    ['Pending', $$(metrics.pendingIncome), 'text-amber-600'],
+                    ['COGS', `(${$$(metrics.cogsTotal)})`, 'text-red-500'],
+                    ['Gross Profit', $$(metrics.grossProfit), 'text-np-blue font-bold'],
+                    ['Operating Expenses', `(${$$(metrics.totalExp - metrics.cogsTotal)})`, 'text-red-500'],
+                    ['Net Income', $$(metrics.netIncome), metrics.netIncome >= 0 ? 'text-emerald-700 font-bold' : 'text-red-700 font-bold'],
+                  ].map(([label, val, cls]) => (
+                    <div key={label} className="flex justify-between">
+                      <span className="text-gray-500">{label}</span>
+                      <span className={cls}>{val}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* â”€â”€â”€â”€ FOUNDER METRICS TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {!loading && tab === 'metrics' && (() => {
+        const burnRate  = settings.monthly_burn_rate || metrics.totalExp
+        const runway    = burnRate > 0 ? settings.cash_on_hand / burnRate : 0
+        const ltvcac    = settings.avg_cac > 0 ? settings.avg_ltv / settings.avg_cac : 0
+        const payback   = settings.avg_ltv > 0 && settings.avg_cac > 0 ? settings.avg_cac / (settings.avg_ltv / 12) : 0
+        const arpu      = clients.length > 0 ? metrics.paidIncome / clients.length : 0
+        const fixedCosts = expenses.filter(e => !e.is_cogs).reduce((s, e) => s + e.amount, 0)
+        const variableCosts = metrics.cogsTotal
+        const contribMargin = metrics.contribMargin
+        const contribMarginPct = metrics.contribMarginPct
+        const breakEven = contribMarginPct > 0 ? fixedCosts / (contribMarginPct / 100) : 0
+        const ebitda = metrics.netIncome + (settings.monthly_interest || 0) + (settings.monthly_depreciation || 0) + (settings.monthly_amortization || 0)
+        const unitsToBreakEven = products.length > 0 && products[0].price > 0 ? breakEven / products[0].price : 0
+
+        const MetricCard = ({ label, value, sub, tip, status }: { label: string; value: string; sub?: string; tip: string; status?: 'good'|'warn'|'bad'|null }) => (
+          <div className={`bg-white border rounded-xl p-4 shadow-sm ${status === 'good' ? 'border-emerald-200' : status === 'warn' ? 'border-amber-200' : status === 'bad' ? 'border-red-200' : 'border-gray-100'}`}>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1 flex items-center">{label}<InfoTip text={tip} /></p>
+            <p className={`text-xl font-bold ${status === 'good' ? 'text-emerald-700' : status === 'warn' ? 'text-amber-600' : status === 'bad' ? 'text-red-600' : 'text-np-dark'}`}>{value}</p>
+            {sub && <p className="text-xs text-gray-500 mt-0.5">{sub}</p>}
+          </div>
+        )
+
+        return (
+          <div className="space-y-5">
+            <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 text-xs text-amber-700">
+              <strong>Setup tip:</strong> Set your Cash on Hand, Burn Rate, CAC, LTV and Churn in the <button onClick={() => setTab('goals')} className="underline font-semibold">Goals tab</button> to unlock all metrics below.
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Can I deliver it profitably?</p>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <MetricCard label="Gross Margin" value={fmtP(metrics.grossMargin)} tip="Gross profit as % of revenue. Measures service profitability before overhead." status={metrics.grossMargin >= settings.target_gross_margin ? 'good' : 'warn'} />
+                <MetricCard label="Contribution Margin" value={fmtP(contribMarginPct)} sub={`${$$(contribMargin)} absolute`} tip="Revenue minus variable costs. How much each dollar of revenue contributes toward overhead and profit." status={contribMarginPct >= 40 ? 'good' : contribMarginPct >= 20 ? 'warn' : 'bad'} />
+                <MetricCard label="Net Margin" value={fmtP(metrics.netMargin)} tip="Bottom line â€” what % of every dollar earned you keep." status={metrics.netMargin >= settings.target_net_margin ? 'good' : metrics.netMargin >= 0 ? 'warn' : 'bad'} />
+                <MetricCard label="Break-Even Revenue" value={$$(breakEven)} sub={unitsToBreakEven > 0 ? `â‰ˆ${Math.ceil(unitsToBreakEven)} units of top product` : undefined} tip="Minimum monthly revenue to cover all costs at current gross margin." />
+              </div>
+            </div>
+
+            <div>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Can I survive long enough to scale?</p>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <MetricCard label="Burn Rate" value={$$(burnRate)} sub="per month" tip="How much cash leaves the business each month. Uses actual expenses if no target set." status={burnRate > metrics.paidIncome ? 'bad' : burnRate > metrics.paidIncome * 0.8 ? 'warn' : 'good'} />
+                <MetricCard label="Runway" value={runway > 0 ? `${runway.toFixed(1)} mo` : 'â€”'} tip="Months of cash remaining at current burn rate. Set Cash on Hand in Goals." status={runway <= 0 ? null : runway < 3 ? 'bad' : runway < 6 ? 'warn' : 'good'} sub={runway > 0 ? (runway < 3 ? 'ðŸš¨ Critical' : runway < 6 ? 'âš  Low' : 'âœ“ Healthy') : 'Set cash on hand in Goals'} />
+                <MetricCard label="Net Income" value={$$(metrics.netIncome)} tip="What remains after all expenses. Negative = burning cash." status={metrics.netIncome >= 0 ? 'good' : 'bad'} />
+                <MetricCard label="Cash Flow Signal" value={metrics.pendingIncome > metrics.paidIncome * 0.3 ? 'Watch AR' : 'OK'} sub={`${$$(metrics.pendingIncome)} uncollected`} tip="High pending income vs paid can signal cash flow risk even if revenue looks good." status={metrics.pendingIncome > metrics.paidIncome * 0.3 ? 'warn' : 'good'} />
+              </div>
+            </div>
+
+            <div>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Can I sell it efficiently?</p>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <MetricCard label="LTV:CAC Ratio" value={ltvcac > 0 ? `${ltvcac.toFixed(1)}x` : 'â€”'} tip="Lifetime value vs cost to acquire. 3x+ is healthy. Below 1x means you lose money on each customer." status={ltvcac <= 0 ? null : ltvcac >= 3 ? 'good' : ltvcac >= 1 ? 'warn' : 'bad'} sub={ltvcac >= 3 ? 'âœ“ Healthy' : ltvcac > 0 ? 'âš  Below 3x target' : 'Set CAC + LTV in Goals'} />
+                <MetricCard label="Payback Period" value={payback > 0 ? `${payback.toFixed(1)} mo` : 'â€”'} tip="How long to recover your customer acquisition cost from their revenue." sub={payback > 0 ? (payback <= 12 ? 'âœ“ Good' : 'âš  Long payback') : 'Set CAC + LTV in Goals'} status={payback <= 0 ? null : payback <= 12 ? 'good' : 'warn'} />
+                <MetricCard label="ARPU" value={arpu > 0 ? $$(arpu) : 'â€”'} sub="per client this period" tip="Average Revenue Per User â€” total paid revenue divided by number of clients on record." />
+                <MetricCard label="Churn Rate" value={settings.avg_churn_pct > 0 ? fmtP(settings.avg_churn_pct) : 'â€”'} tip="Monthly percentage of customers who cancel or drop off." status={settings.avg_churn_pct <= 0 ? null : settings.avg_churn_pct <= 5 ? 'good' : settings.avg_churn_pct <= 10 ? 'warn' : 'bad'} sub={'Set in Goals tab'} />
+              </div>
+            </div>
+
+            <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
+              <h3 className="text-sm font-semibold text-np-dark mb-3 flex items-center gap-2"><FileText className="w-4 h-4" />Full P&L Statement</h3>
+              <div className="space-y-1 text-xs max-w-md">
+                {[
+                  { label: 'Gross Revenue', val: $$(metrics.paidIncome), cls: 'text-emerald-700 font-semibold', indent: 0 },
+                  { label: 'Pending / Uncollected', val: $$(metrics.pendingIncome), cls: 'text-amber-600', indent: 1 },
+                  { label: 'Cost of Goods Sold (COGS)', val: `(${$$(metrics.cogsTotal)})`, cls: 'text-red-500', indent: 1 },
+                  { label: 'Gross Profit', val: $$(metrics.grossProfit), cls: 'text-np-blue font-bold', indent: 0, border: true },
+                  { label: `Gross Margin`, val: fmtP(metrics.grossMargin), cls: 'text-gray-400', indent: 1 },
+                  { label: 'Fixed Operating Expenses', val: `(${$$(fixedCosts)})`, cls: 'text-red-500', indent: 1 },
+                  { label: 'Variable Costs (COGS)', val: `(${$$(variableCosts)})`, cls: 'text-red-500', indent: 1 },
+                  { label: 'EBITDA', val: $$(ebitda), cls: ebitda >= 0 ? 'text-emerald-700' : 'text-red-600', indent: 0, border: true },
+                  { label: 'Net Income', val: $$(metrics.netIncome), cls: metrics.netIncome >= 0 ? 'text-emerald-700 font-bold text-sm' : 'text-red-700 font-bold text-sm', indent: 0, border: true },
+                  { label: 'Net Margin', val: fmtP(metrics.netMargin), cls: 'text-gray-400', indent: 1 },
+                ].map(({ label, val, cls, indent, border }) => (
+                  <div key={label} className={`flex justify-between py-1 ${border ? 'border-t border-gray-200 mt-1 pt-2' : ''}`}>
+                    <span className={`text-gray-500 ${indent ? 'pl-4' : 'font-semibold text-np-dark'}`}>{label}</span>
+                    <span className={cls}>{val}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+
+      {/* â”€â”€â”€â”€ BALANCE SHEET TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {!loading && tab === 'balance-sheet' && (() => {
+        const totalCurrentAssets  = (settings.cash_on_hand || 0) + (settings.accounts_receivable || 0)
+        const totalFixedAssets    = settings.equipment_value || 0
+        const totalAssets         = totalCurrentAssets + totalFixedAssets
+        const totalCurrentLiab    = (settings.accounts_payable || 0) + (settings.deferred_revenue || 0) + (settings.short_term_debt || 0)
+        const totalLongTermLiab   = settings.long_term_debt || 0
+        const totalLiabilities    = totalCurrentLiab + totalLongTermLiab
+        const workingCapital      = totalCurrentAssets - totalCurrentLiab
+        const netEquity           = totalAssets - totalLiabilities
+        const debtToEquity        = netEquity > 0 ? totalLiabilities / netEquity : 0
+
+        return (
+          <div className="space-y-5 max-w-3xl">
+            <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 text-xs text-amber-700">
+              <strong>Manual inputs:</strong> Enter your current balance sheet figures below. These are point-in-time snapshots â€” update monthly. Cash on Hand syncs from the Goals tab.
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              {/* Summary cards */}
+              <div className={`rounded-xl p-4 border ${workingCapital >= 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1 flex items-center">Working Capital<InfoTip text="Current Assets minus Current Liabilities. Positive = you can cover short-term obligations. Negative = liquidity risk." /></p>
+                <p className={`text-2xl font-bold ${workingCapital >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{$$(workingCapital)}</p>
+                <p className="text-xs text-gray-500 mt-1">{workingCapital >= 0 ? 'âœ“ Positive' : 'âš  Negative â€” short-term risk'}</p>
+              </div>
+              <div className="rounded-xl p-4 border border-gray-100 bg-white">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1 flex items-center">Net Equity (Est.)<InfoTip text="Total Assets minus Total Liabilities. A rough estimate of book value. Not a valuation." /></p>
+                <p className={`text-2xl font-bold ${netEquity >= 0 ? 'text-np-dark' : 'text-red-700'}`}>{$$(netEquity)}</p>
+                <p className="text-xs text-gray-500 mt-1">Total assets âˆ’ total liabilities</p>
+              </div>
+              <div className="rounded-xl p-4 border border-gray-100 bg-white">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1 flex items-center">Debt-to-Equity<InfoTip text="Total liabilities divided by net equity. Below 1 is generally healthy. Very high ratios signal financial risk." /></p>
+                <p className={`text-2xl font-bold ${debtToEquity <= 1 ? 'text-emerald-700' : debtToEquity <= 2 ? 'text-amber-600' : 'text-red-700'}`}>{netEquity > 0 ? `${debtToEquity.toFixed(2)}x` : 'â€”'}</p>
+                <p className="text-xs text-gray-500 mt-1">{debtToEquity <= 1 ? 'âœ“ Healthy' : debtToEquity <= 2 ? 'âš  Moderate' : 'âš  High'}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              {/* ASSETS */}
+              <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
+                <h3 className="font-semibold text-np-dark mb-4 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-emerald-600" />Assets</h3>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3">Current Assets</p>
+                <div className="space-y-3 mb-4">
+                  <FInput label="Cash on Hand ($)" type="number" min="0"
+                    defaultValue={settings.cash_on_hand || ''}
+                    key={`coh-bs-${settings.cash_on_hand}`}
+                    onBlur={e => saveSettings({ ...settings, cash_on_hand: parseFloat(e.target.value) || 0 })} />
+                  <FInput label="Accounts Receivable ($)" type="number" min="0"
+                    defaultValue={settings.accounts_receivable || ''}
+                    key={`ar-${settings.accounts_receivable}`}
+                    onBlur={e => saveSettings({ ...settings, accounts_receivable: parseFloat(e.target.value) || 0 })} />
+                </div>
+                <div className="flex justify-between text-xs font-semibold border-t border-gray-100 pt-2 mb-4">
+                  <span>Total Current Assets</span><span className="text-emerald-700">{$$(totalCurrentAssets)}</span>
+                </div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3">Fixed Assets</p>
+                <div className="space-y-3 mb-4">
+                  <FInput label="Equipment / Hardware Value ($)" type="number" min="0"
+                    defaultValue={settings.equipment_value || ''}
+                    key={`eq-${settings.equipment_value}`}
+                    onBlur={e => saveSettings({ ...settings, equipment_value: parseFloat(e.target.value) || 0 })} />
+                  <FInput label="Monthly Depreciation ($)" type="number" min="0"
+                    defaultValue={settings.monthly_depreciation || ''}
+                    key={`dep-${settings.monthly_depreciation}`}
+                    onBlur={e => saveSettings({ ...settings, monthly_depreciation: parseFloat(e.target.value) || 0 })} />
+                  <FInput label="Monthly Amortization ($)" type="number" min="0"
+                    defaultValue={settings.monthly_amortization || ''}
+                    key={`amor-${settings.monthly_amortization}`}
+                    onBlur={e => saveSettings({ ...settings, monthly_amortization: parseFloat(e.target.value) || 0 })} />
+                </div>
+                <div className="flex justify-between text-xs font-semibold border-t border-gray-100 pt-2 mb-4">
+                  <span>Total Fixed Assets</span><span className="text-emerald-700">{$$(totalFixedAssets)}</span>
+                </div>
+                <div className="flex justify-between text-sm font-bold border-t-2 border-gray-200 pt-2">
+                  <span>TOTAL ASSETS</span><span className="text-emerald-700">{$$(totalAssets)}</span>
+                </div>
+              </div>
+
+              {/* LIABILITIES */}
+              <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
+                <h3 className="font-semibold text-np-dark mb-4 flex items-center gap-2"><TrendingDown className="w-4 h-4 text-red-500" />Liabilities</h3>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3">Current Liabilities</p>
+                <div className="space-y-3 mb-4">
+                  <FInput label="Accounts Payable ($)" type="number" min="0"
+                    defaultValue={settings.accounts_payable || ''}
+                    key={`ap-${settings.accounts_payable}`}
+                    onBlur={e => saveSettings({ ...settings, accounts_payable: parseFloat(e.target.value) || 0 })} />
+                  <FInput label="Deferred Revenue ($)" type="number" min="0"
+                    defaultValue={settings.deferred_revenue || ''}
+                    key={`dr-${settings.deferred_revenue}`}
+                    onBlur={e => saveSettings({ ...settings, deferred_revenue: parseFloat(e.target.value) || 0 })} />
+                  <FInput label="Short-Term Debt ($)" type="number" min="0"
+                    defaultValue={settings.short_term_debt || ''}
+                    key={`std-${settings.short_term_debt}`}
+                    onBlur={e => saveSettings({ ...settings, short_term_debt: parseFloat(e.target.value) || 0 })} />
+                  <FInput label="Monthly Interest ($)" type="number" min="0"
+                    defaultValue={settings.monthly_interest || ''}
+                    key={`int-${settings.monthly_interest}`}
+                    onBlur={e => saveSettings({ ...settings, monthly_interest: parseFloat(e.target.value) || 0 })} />
+                </div>
+                <div className="flex justify-between text-xs font-semibold border-t border-gray-100 pt-2 mb-4">
+                  <span>Total Current Liabilities</span><span className="text-red-600">{$$(totalCurrentLiab)}</span>
+                </div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3">Long-Term Liabilities</p>
+                <div className="space-y-3 mb-4">
+                  <FInput label="Long-Term Debt / Loans ($)" type="number" min="0"
+                    defaultValue={settings.long_term_debt || ''}
+                    key={`ltd-${settings.long_term_debt}`}
+                    onBlur={e => saveSettings({ ...settings, long_term_debt: parseFloat(e.target.value) || 0 })} />
+                </div>
+                <div className="flex justify-between text-xs font-semibold border-t border-gray-100 pt-2 mb-4">
+                  <span>Total Long-Term Liabilities</span><span className="text-red-600">{$$(totalLongTermLiab)}</span>
+                </div>
+                <div className="flex justify-between text-sm font-bold border-t-2 border-gray-200 pt-2">
+                  <span>TOTAL LIABILITIES</span><span className="text-red-600">{$$(totalLiabilities)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Deferred Revenue note */}
+            {(settings.deferred_revenue || 0) > 0 && (
+              <div className="bg-purple-50 border border-purple-100 rounded-xl px-4 py-3 text-xs text-purple-700">
+                <strong>Deferred Revenue note:</strong> You have {$$(settings.deferred_revenue)} in deferred revenue â€” cash collected but service not yet fully delivered. This is a liability until earned. Common with Mastermind cohorts, memberships, and prepaid programs.
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
+      {/* â”€â”€â”€â”€ UNIT ECONOMICS TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {!loading && tab === 'unit-economics' && (() => {
+        const cogsRate    = metrics.paidIncome > 0 ? metrics.cogsTotal / metrics.paidIncome : 0
+        const fixedCosts  = expenses.filter(e => !e.is_cogs).reduce((s, e) => s + e.amount, 0)
+        const totalUnits  = income.filter(i => i.status === 'paid').length || 1
+
+        return (
+          <div className="space-y-5">
+            <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
+              <h3 className="text-sm font-semibold text-np-dark mb-1 flex items-center gap-2"><PieChart className="w-4 h-4 text-np-blue" />Unit Economics â€” What does one sale actually net?</h3>
+              <p className="text-xs text-gray-400 mb-4">Based on your current product catalog and this month's COGS rate. COGS rate = total COGS Ã· total revenue.</p>
+              {products.filter(p => p.price > 0).length === 0
+                ? <p className="text-xs text-gray-400">Add products with prices in the Products tab to see unit economics.</p>
+                : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-gray-100">
+                          <th className="text-left py-2 px-3 text-gray-500 font-semibold">Product</th>
+                          <th className="text-right py-2 px-3 text-gray-500 font-semibold">Price</th>
+                          <th className="text-right py-2 px-3 text-gray-500 font-semibold">Est. COGS</th>
+                          <th className="text-right py-2 px-3 text-gray-500 font-semibold">Gross Profit</th>
+                          <th className="text-right py-2 px-3 text-gray-500 font-semibold">Gross Margin</th>
+                          <th className="text-right py-2 px-3 text-gray-500 font-semibold">Contrib. Margin</th>
+                          <th className="text-right py-2 px-3 text-gray-500 font-semibold">Break-Even Units</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {products.filter(p => p.price > 0).map(p => {
+                          const unitCogs    = p.price * cogsRate
+                          const unitGP      = p.price - unitCogs
+                          const unitGM      = p.price > 0 ? (unitGP / p.price) * 100 : 0
+                          const unitCM      = unitGP  // contribution margin = gross profit for service businesses
+                          const beUnits     = unitCM > 0 ? Math.ceil(fixedCosts / unitCM) : null
+                          return (
+                            <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50">
+                              <td className="py-3 px-3 font-medium text-np-dark">{p.name}<span className="text-gray-400 font-normal ml-1">({p.category})</span></td>
+                              <td className="py-3 px-3 text-right text-np-dark font-semibold">{$$(p.price)}</td>
+                              <td className="py-3 px-3 text-right text-red-500">({$$(unitCogs)})</td>
+                              <td className="py-3 px-3 text-right text-emerald-700">{$$(unitGP)}</td>
+                              <td className="py-3 px-3 text-right">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${unitGM >= 60 ? 'bg-emerald-100 text-emerald-700' : unitGM >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>{fmtP(unitGM)}</span>
+                              </td>
+                              <td className="py-3 px-3 text-right text-np-blue font-semibold">{$$(unitCM)}</td>
+                              <td className="py-3 px-3 text-right text-gray-600">{beUnits !== null ? `${beUnits} units` : 'â€”'}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              }
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
+                <h3 className="text-sm font-semibold text-np-dark mb-4 flex items-center gap-2"><Users className="w-4 h-4 text-purple-600" />Customer Unit Economics</h3>
+                <div className="space-y-3 text-xs">
+                  {[
+                    { label: 'Avg Revenue Per Client (ARPU)', val: clients.length > 0 ? $$(metrics.paidIncome / clients.length) : 'â€”', tip: 'Paid revenue Ã· total clients on record this period.' },
+                    { label: 'Customer Acquisition Cost (CAC)', val: settings.avg_cac > 0 ? $$(settings.avg_cac) : 'Set in Goals', tip: 'How much it costs to acquire one new customer.' },
+                    { label: 'Customer Lifetime Value (LTV)', val: settings.avg_ltv > 0 ? $$(settings.avg_ltv) : 'Set in Goals', tip: 'Total expected revenue from one customer relationship.' },
+                    { label: 'LTV:CAC Ratio', val: settings.avg_cac > 0 && settings.avg_ltv > 0 ? `${(settings.avg_ltv / settings.avg_cac).toFixed(1)}x` : 'â€”', tip: '3x+ is healthy. Below 1x means each customer costs more to acquire than they generate.' },
+                    { label: 'Payback Period', val: settings.avg_ltv > 0 && settings.avg_cac > 0 ? `${(settings.avg_cac / (settings.avg_ltv / 12)).toFixed(1)} months` : 'â€”', tip: 'How long until you recover your cost to acquire this customer.' },
+                    { label: 'Monthly Churn', val: settings.avg_churn_pct > 0 ? fmtP(settings.avg_churn_pct) : 'Set in Goals', tip: '% of customers who cancel or drop off each month.' },
+                  ].map(({ label, val, tip }) => (
+                    <div key={label} className="flex items-center justify-between py-1.5 border-b border-gray-50">
+                      <span className="text-gray-500 flex items-center">{label}<InfoTip text={tip} /></span>
+                      <span className="font-semibold text-np-dark">{val}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
+                <h3 className="text-sm font-semibold text-np-dark mb-4 flex items-center gap-2"><Activity className="w-4 h-4 text-np-blue" />This Month â€” Aggregate</h3>
+                <div className="space-y-3 text-xs">
+                  {[
+                    { label: 'Total Paid Revenue', val: $$(metrics.paidIncome) },
+                    { label: 'Total Transactions', val: `${income.filter(i=>i.status==='paid').length}` },
+                    { label: 'Avg Transaction Value', val: income.filter(i=>i.status==='paid').length > 0 ? $$(metrics.paidIncome / income.filter(i=>i.status==='paid').length) : 'â€”' },
+                    { label: 'Total COGS', val: `(${$$(metrics.cogsTotal)})` },
+                    { label: 'Gross Profit', val: $$(metrics.grossProfit) },
+                    { label: 'Gross Margin', val: fmtP(metrics.grossMargin) },
+                    { label: 'Contribution Margin (total)', val: $$(metrics.contribMargin) },
+                    { label: 'Contribution Margin %', val: fmtP(metrics.contribMarginPct) },
+                    { label: 'Fixed Costs', val: `(${$$(fixedCosts)})` },
+                    { label: 'Net Income', val: $$(metrics.netIncome) },
+                  ].map(({ label, val }) => (
+                    <div key={label} className="flex justify-between py-1.5 border-b border-gray-50">
+                      <span className="text-gray-500">{label}</span>
+                      <span className="font-semibold text-np-dark">{val}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Cheat Sheet Reference */}
+            <div className="bg-np-blue/5 border border-np-blue/10 rounded-xl p-5">
+              <h3 className="text-sm font-semibold text-np-dark mb-3 flex items-center gap-2"><Lightbulb className="w-4 h-4 text-amber-500" />The Founder Financial Hierarchy</h3>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs text-gray-600">
+                <div>
+                  <p className="font-bold text-np-dark mb-2">Can I sell it?</p>
+                  <p>Revenue, CAC, conversion rate</p>
+                  <p className="font-bold text-np-dark mt-3 mb-2">Can I deliver it profitably?</p>
+                  <p>COGS, gross margin, contribution margin, unit economics</p>
+                </div>
+                <div>
+                  <p className="font-bold text-np-dark mb-2">Can I survive long enough to scale?</p>
+                  <p>Cash flow, burn rate, runway, working capital</p>
+                  <p className="font-bold text-np-dark mt-3 mb-2">Can I grow without losing the company?</p>
+                  <p>Valuation, dilution, cap table, financing terms</p>
+                </div>
+              </div>
+              <p className="text-xs text-gray-500 mt-3 border-t border-np-blue/10 pt-3">Revenue tells you demand Â· Margin tells you efficiency Â· Cash flow tells you survival Â· Runway tells you time Â· Unit economics tells you whether scale helps or hurts</p>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
           MODALS
