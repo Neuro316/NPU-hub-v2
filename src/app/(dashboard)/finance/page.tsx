@@ -29,6 +29,20 @@ interface FinSettings {
   monthly_depreciation: number; monthly_interest: number; monthly_amortization: number
 }
 interface GoalObligation { id: string; label: string; amount: number; due_date: string; notes: string }
+interface CapTableEntry {
+  id: string
+  name: string
+  role: 'founder'|'investor'|'employee'|'advisor'|'safe'|'note'
+  share_class: 'common'|'preferred'|'option'|'safe'|'convertible_note'|'warrant'
+  shares: number
+  ownership_pct: number
+  investment: number
+  instrument: string
+  conversion_discount: number
+  conversion_cap: number
+  monthly_payment: number
+  notes: string
+}
 interface CoachMessage { role: 'user' | 'assistant'; content: string }
 interface Product     { id: string; name: string; category: string; price: number; sort_order: number }
 interface ExpCat      { id: string; group_name: string; name: string; is_cogs: boolean; sort_order: number }
@@ -37,7 +51,8 @@ interface Income      {
   id: string; txn_date: string; period_month: string
   client_name: string | null; product_name: string | null
   amount: number; status: 'paid'|'pending'|'refunded'|'disputed'
-  source: 'manual'|'stripe'|'np_platform'; stripe_payment_id: string | null
+  source: 'manual'|'stripe'|'np_platform'|'investment'; stripe_payment_id: string | null
+  income_category: string | null
   notes: string | null
 }
 interface Expense {
@@ -182,7 +197,7 @@ export default function FinancePage() {
   const orgColor = isNP ? '#386797' : '#2A9D8F'
 
   // ── State ─────────────────────────────────────────────────────────
-  const [tab,      setTab]     = useState<'dashboard'|'income'|'expenses'|'clients'|'products'|'reports'|'settings'|'ai-cfo'|'goals'|'coach'|'projections'|'metrics'|'balance-sheet'|'unit-economics'>('ai-cfo')
+  const [tab,      setTab]     = useState<'dashboard'|'income'|'expenses'|'clients'|'products'|'reports'|'settings'|'ai-cfo'|'goals'|'coach'|'projections'|'metrics'|'balance-sheet'|'unit-economics'|'cap-table'>('ai-cfo')
   const [month,    setMonth]   = useState(curMonth)
   const [loading,  setLoading] = useState(false)
   const [syncing,  setSyncing] = useState(false)
@@ -201,6 +216,8 @@ export default function FinancePage() {
   const [coachInput,    setCoachInput]    = useState('')
   const [coachLoading,  setCoachLoading]  = useState(false)
   const coachEndRef = useRef<HTMLDivElement>(null)
+  const [capTable, setCapTable] = useState<CapTableEntry[]>([])
+  const [capEditing, setCapEditing] = useState<string | null>(null)
 
   // Modal states
   const [showIncomeModal,  setShowIncomeModal]  = useState(false)
@@ -234,7 +251,12 @@ export default function FinancePage() {
       setClients(cliData.clients || [])
       setProducts(prodData.products || [])
       setCategories(catData.categories || [])
-      if (setData.settings) setSettings(setData.settings)
+      if (setData.settings) {
+        setSettings(setData.settings)
+        if (setData.settings.cap_table_json) {
+          try { setCapTable(JSON.parse(setData.settings.cap_table_json)) } catch {}
+        }
+      }
 
       // Load cached AI insight
       const aiRes = await fetch(`/api/finance/ai?org_id=${orgId}&period_month=${month}`)
@@ -303,7 +325,11 @@ export default function FinancePage() {
     const contribMargin    = paidIncome - cogsTotal  // same as gross profit here (variable = cogs)
     const contribMarginPct = paidIncome > 0 ? (contribMargin / paidIncome) * 100 : 0
 
-    return { paidIncome, pendingIncome, cogsTotal, totalExp, grossProfit, netIncome, grossMargin, netMargin, topGroups, topProducts, contribMargin, contribMarginPct }
+    // Separate operating vs investment income
+    const investmentIncome = income.filter(i => (i as any).income_category === 'investment' && i.status === 'paid').reduce((s, i) => s + i.amount, 0)
+    const operatingIncome  = paidIncome - investmentIncome
+
+    return { paidIncome, pendingIncome, cogsTotal, totalExp, grossProfit, netIncome, grossMargin, netMargin, topGroups, topProducts, contribMargin, contribMarginPct, investmentIncome, operatingIncome }
   }, [income, expenses])
 
   // ── Filtered views ─────────────────────────────────────────────────
@@ -587,8 +613,8 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
 
       {/* Tab nav */}
       <div className="flex gap-0.5 bg-white border border-gray-100 rounded-xl p-1 overflow-x-auto">
-        {(['dashboard','income','expenses','clients','products','reports','settings','ai-cfo','goals','coach','projections','metrics','balance-sheet','unit-economics'] as const).map(t => {
-          const icons: Record<string, any> = { dashboard: BarChart3, income: TrendingUp, expenses: TrendingDown, clients: Users, products: Tag, reports: FileText, settings: Settings, 'ai-cfo': Brain, goals: Target, coach: MessageSquare, projections: TrendingDown, metrics: Flame, 'balance-sheet': Wallet, 'unit-economics': PieChart }
+        {(['dashboard','income','expenses','clients','products','reports','settings','ai-cfo','goals','coach','projections','metrics','balance-sheet','unit-economics','cap-table'] as const).map(t => {
+          const icons: Record<string, any> = { dashboard: BarChart3, income: TrendingUp, expenses: TrendingDown, clients: Users, products: Tag, reports: FileText, settings: Settings, 'ai-cfo': Brain, goals: Target, coach: MessageSquare, projections: TrendingDown, metrics: Flame, 'balance-sheet': Wallet, 'unit-economics': PieChart, 'cap-table': Shield }
           const labels: Record<string, string> = { dashboard: 'Dashboard', income: 'Income', expenses: 'Expenses', clients: 'Clients', products: 'Products', reports: 'Reports', settings: 'Settings', 'ai-cfo': '🧠 AI CFO', goals: 'Goals', coach: 'Scenario Coach', projections: 'Projections', metrics: 'Founder Metrics' }
           const Icon = icons[t]
           const sel  = tab === t
@@ -720,6 +746,9 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
                       </td>
                       <td className="px-4 py-2.5">
                         <div className="flex items-center justify-end gap-1">
+                          {(i as any).income_category === 'investment' && (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">INVEST</span>
+                            )}
                           {i.source !== 'np_platform' && (
                             <>
                               <button onClick={() => { setEditIncome(i); setShowIncomeModal(true) }} className="p-1 hover:bg-gray-100 rounded text-gray-400 hover:text-np-blue transition-colors"><Pencil className="w-3 h-3" /></button>
@@ -1318,6 +1347,8 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
               <div className="space-y-1 text-xs max-w-md">
                 {[
                   { label: 'Gross Revenue', val: $$(metrics.paidIncome), cls: 'text-emerald-700 font-semibold', indent: 0 },
+                  { label: 'Operating Revenue', val: $$(metrics.operatingIncome), cls: 'text-emerald-600', indent: 1 },
+                  { label: 'Investment Income', val: $$(metrics.investmentIncome), cls: 'text-purple-600', indent: 1 },
                   { label: 'Pending / Uncollected', val: $$(metrics.pendingIncome), cls: 'text-amber-600', indent: 1 },
                   { label: 'Cost of Goods Sold (COGS)', val: `(${$$(metrics.cogsTotal)})`, cls: 'text-red-500', indent: 1 },
                   { label: 'Gross Profit', val: $$(metrics.grossProfit), cls: 'text-np-blue font-bold', indent: 0, border: true },
@@ -1591,6 +1622,202 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
         )
       })()}
 
+
+      {/* ──── CAP TABLE TAB ──────────────────────────────────────── */}
+      {!loading && tab === 'cap-table' && (() => {
+        const totalShares     = capTable.filter(e => ['common','preferred','option'].includes(e.share_class)).reduce((s, e) => s + (e.shares || 0), 0)
+        const totalInvested   = capTable.filter(e => e.investment > 0).reduce((s, e) => s + e.investment, 0)
+        const monthlyFromCap  = capTable.filter(e => e.monthly_payment > 0).reduce((s, e) => s + e.monthly_payment, 0)
+        const founderPct      = capTable.filter(e => e.role === 'founder').reduce((s, e) => s + (e.ownership_pct || 0), 0)
+        const investorPct     = capTable.filter(e => ['investor','safe','note'].includes(e.role)).reduce((s, e) => s + (e.ownership_pct || 0), 0)
+
+        const roleColors: Record<string, string> = {
+          founder: 'bg-np-blue/10 text-np-blue border-np-blue/20',
+          investor: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+          employee: 'bg-purple-50 text-purple-700 border-purple-200',
+          advisor: 'bg-amber-50 text-amber-700 border-amber-200',
+          safe: 'bg-orange-50 text-orange-700 border-orange-200',
+          note: 'bg-red-50 text-red-700 border-red-200',
+        }
+
+        function newEntry(): CapTableEntry {
+          return { id: crypto.randomUUID(), name: '', role: 'investor', share_class: 'preferred', shares: 0, ownership_pct: 0, investment: 0, instrument: '', conversion_discount: 0, conversion_cap: 0, monthly_payment: 0, notes: '' }
+        }
+
+        function updateEntry(id: string, field: keyof CapTableEntry, value: any) {
+          const updated = capTable.map(e => e.id === id ? { ...e, [field]: value } : e)
+          setCapTable(updated)
+        }
+
+        function removeEntry(id: string) {
+          const updated = capTable.filter(e => e.id !== id)
+          setCapTable(updated)
+          saveCapTable(updated)
+        }
+
+        return (
+          <div className="space-y-5">
+            {/* Summary bar */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1 flex items-center">Founder Ownership<InfoTip text="Combined ownership % of all founder entries." /></p>
+                <p className="text-2xl font-bold text-np-blue">{founderPct.toFixed(1)}%</p>
+              </div>
+              <div className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1 flex items-center">Investor Ownership<InfoTip text="Combined ownership % of investors, SAFEs, and convertible notes (post-conversion estimate)." /></p>
+                <p className="text-2xl font-bold text-emerald-700">{investorPct.toFixed(1)}%</p>
+              </div>
+              <div className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1 flex items-center">Total Raised<InfoTip text="Sum of all investment amounts across all instruments." /></p>
+                <p className="text-2xl font-bold text-np-dark">{$$(totalInvested)}</p>
+              </div>
+              <div className={`rounded-xl p-4 border shadow-sm ${monthlyFromCap > 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-gray-100'}`}>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1 flex items-center">Monthly Investment Income<InfoTip text="Total recurring monthly payments from investors. These flow into your income ledger automatically when you mark them paid." /></p>
+                <p className={`text-2xl font-bold ${monthlyFromCap > 0 ? 'text-emerald-700' : 'text-gray-400'}`}>{monthlyFromCap > 0 ? $$(monthlyFromCap) : '—'}</p>
+                <p className="text-xs text-gray-500 mt-1">per month</p>
+              </div>
+            </div>
+
+            {/* Ownership visual bar */}
+            {capTable.length > 0 && (
+              <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
+                <h3 className="text-sm font-semibold text-np-dark mb-3">Ownership Breakdown</h3>
+                <div className="h-6 rounded-full overflow-hidden flex mb-3">
+                  {capTable.filter(e => e.ownership_pct > 0).sort((a,b) => b.ownership_pct - a.ownership_pct).map((e, i) => {
+                    const colors = ['#386797','#2A9D8F','#8B5CF6','#F59E0B','#EF4444','#10B981','#6366F1','#EC4899']
+                    return <div key={e.id} title={`${e.name}: ${e.ownership_pct}%`} style={{ width: `${Math.min(e.ownership_pct, 100)}%`, backgroundColor: colors[i % colors.length] }} />
+                  })}
+                  {100 - capTable.reduce((s,e) => s + (e.ownership_pct||0), 0) > 0 && (
+                    <div className="flex-1 bg-gray-100" title="Unallocated" />
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  {capTable.filter(e => e.ownership_pct > 0).map((e, i) => {
+                    const colors = ['#386797','#2A9D8F','#8B5CF6','#F59E0B','#EF4444','#10B981','#6366F1','#EC4899']
+                    return (
+                      <div key={e.id} className="flex items-center gap-1.5 text-xs">
+                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: colors[i % colors.length] }} />
+                        <span className="font-medium text-np-dark">{e.name || 'Unnamed'}</span>
+                        <span className="text-gray-400">{e.ownership_pct}%</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Cap table entries */}
+            <div className="bg-white border border-gray-100 rounded-xl shadow-sm overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                <h3 className="font-semibold text-np-dark flex items-center gap-2"><Shield className="w-4 h-4 text-np-blue" />Cap Table Entries</h3>
+                <Btn size="xs" onClick={() => {
+                  const e = newEntry()
+                  const updated = [...capTable, e]
+                  setCapTable(updated)
+                  setCapEditing(e.id)
+                }}>
+                  <Plus className="w-3.5 h-3.5" />Add Entry
+                </Btn>
+              </div>
+
+              {capTable.length === 0 && (
+                <div className="py-10 text-center text-sm text-gray-400">
+                  No cap table entries yet. Add founders, investors, SAFEs, and convertible notes.
+                </div>
+              )}
+
+              <div className="divide-y divide-gray-50">
+                {capTable.map(entry => (
+                  <div key={entry.id} className="px-5 py-4">
+                    {capEditing === entry.id ? (
+                      // Edit mode
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                          <FInput label="Name" value={entry.name} onChange={e => updateEntry(entry.id, 'name', e.target.value)} placeholder="e.g. Cameron Allen" />
+                          <FSelect label="Role" value={entry.role} onChange={e => updateEntry(entry.id, 'role', e.target.value)}>
+                            <option value="founder">Founder</option>
+                            <option value="investor">Investor</option>
+                            <option value="safe">SAFE</option>
+                            <option value="note">Convertible Note</option>
+                            <option value="employee">Employee (Option)</option>
+                            <option value="advisor">Advisor</option>
+                          </FSelect>
+                          <FSelect label="Instrument / Share Class" value={entry.share_class} onChange={e => updateEntry(entry.id, 'share_class', e.target.value)}>
+                            <option value="common">Common Stock</option>
+                            <option value="preferred">Preferred Stock</option>
+                            <option value="option">Stock Option</option>
+                            <option value="safe">SAFE</option>
+                            <option value="convertible_note">Convertible Note</option>
+                            <option value="warrant">Warrant</option>
+                          </FSelect>
+                          <FInput label="Shares" type="number" min="0" value={String(entry.shares || '')} onChange={e => updateEntry(entry.id, 'shares', parseFloat(e.target.value) || 0)} />
+                        </div>
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                          <FInput label="Ownership %" type="number" min="0" max="100" step="0.01" value={String(entry.ownership_pct || '')} onChange={e => updateEntry(entry.id, 'ownership_pct', parseFloat(e.target.value) || 0)} />
+                          <FInput label="Investment Amount ($)" type="number" min="0" value={String(entry.investment || '')} onChange={e => updateEntry(entry.id, 'investment', parseFloat(e.target.value) || 0)} />
+                          <FInput label="Conversion Discount (%)" type="number" min="0" max="100" value={String(entry.conversion_discount || '')} onChange={e => updateEntry(entry.id, 'conversion_discount', parseFloat(e.target.value) || 0)} placeholder="e.g. 20" />
+                          <FInput label="Valuation Cap ($)" type="number" min="0" value={String(entry.conversion_cap || '')} onChange={e => updateEntry(entry.id, 'conversion_cap', parseFloat(e.target.value) || 0)} placeholder="e.g. 1000000" />
+                        </div>
+                        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                          <FInput label="Monthly Payment ($)" type="number" min="0" step="0.01" value={String(entry.monthly_payment || '')} onChange={e => updateEntry(entry.id, 'monthly_payment', parseFloat(e.target.value) || 0)} placeholder="0 if none" />
+                          <FInput label="Instrument Label" value={entry.instrument} onChange={e => updateEntry(entry.id, 'instrument', e.target.value)} placeholder="e.g. YC-style SAFE, Seed Round" />
+                          <FInput label="Notes" value={entry.notes} onChange={e => updateEntry(entry.id, 'notes', e.target.value)} placeholder="Optional" />
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <Btn variant="secondary" size="xs" onClick={() => setCapEditing(null)}>Cancel</Btn>
+                          <Btn size="xs" onClick={() => { saveCapTable(capTable); setCapEditing(null) }}>Save Entry</Btn>
+                        </div>
+                      </div>
+                    ) : (
+                      // View mode
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4 flex-1 min-w-0">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 mb-0.5">
+                              <span className="font-semibold text-np-dark text-sm">{entry.name || '(unnamed)'}</span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${roleColors[entry.role] || 'bg-gray-100 text-gray-600 border-gray-200'}`}>{entry.role.toUpperCase()}</span>
+                              {entry.share_class && <span className="text-[10px] text-gray-400">{entry.share_class.replace('_',' ')}</span>}
+                            </div>
+                            <div className="flex items-center gap-4 text-xs text-gray-500">
+                              {entry.ownership_pct > 0 && <span className="font-semibold text-np-dark">{entry.ownership_pct}%</span>}
+                              {entry.shares > 0 && <span>{entry.shares.toLocaleString()} shares</span>}
+                              {entry.investment > 0 && <span className="text-emerald-700">{$$(entry.investment)} invested</span>}
+                              {entry.conversion_discount > 0 && <span className="text-orange-600">{entry.conversion_discount}% discount</span>}
+                              {entry.conversion_cap > 0 && <span className="text-orange-600">{$$(entry.conversion_cap)} cap</span>}
+                              {entry.monthly_payment > 0 && <span className="text-emerald-700 font-semibold">{$$(entry.monthly_payment)}/mo</span>}
+                              {entry.instrument && <span className="text-gray-400">· {entry.instrument}</span>}
+                            </div>
+                            {entry.notes && <p className="text-xs text-gray-400 mt-0.5">{entry.notes}</p>}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 ml-4">
+                          <button onClick={() => setCapEditing(entry.id)} className="p-1.5 text-gray-400 hover:text-np-blue hover:bg-np-blue/5 rounded-lg transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => removeEntry(entry.id)} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Dilution context */}
+            {capTable.some(e => ['safe','note'].includes(e.role)) && (
+              <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 text-xs text-amber-700">
+                <strong>SAFE / Note dilution:</strong> The ownership percentages above are your estimates. SAFEs and convertible notes convert into equity at a future priced round — typically at a discount to the round price or at the valuation cap (whichever gives the investor more shares). The Scenario Coach can model your dilution across conversion scenarios.
+              </div>
+            )}
+
+            {/* Monthly investment income summary */}
+            {monthlyFromCap > 0 && (
+              <div className="bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3 text-xs text-emerald-700">
+                <strong>{$$(monthlyFromCap)}/month in investor payments</strong> — add these each month using Add Income → Income Category: Investment. They will appear separately from client revenue in your P&L so you can see true operating revenue vs. capital-sourced cash.
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
       {/* ══════════════════════════════════════════════════════════
           MODALS
       ══════════════════════════════════════════════════════════ */}
@@ -1663,11 +1890,12 @@ function IncomeModal({ saving = false, saveError = '', products, clients, initia
     amount:       String(initial?.amount  || ''),
     status:       initial?.status        || 'paid',
     notes:        initial?.notes         || '',
+    income_category: (initial as any)?.income_category || '',
   })
   const set = (k: string) => (e: React.ChangeEvent<any>) => setForm(p => ({ ...p, [k]: e.target.value }))
   async function submit() {
     if (!form.amount || !form.txn_date) { alert('Date and amount are required'); return }
-    await onSave(form)
+    await onSave({ ...form, source: form.income_category === 'investment' ? 'investment' : 'manual' })
   }
   return (
     <Modal title={initial ? 'Edit Income' : 'Add Income'} onClose={onClose}>
@@ -1687,6 +1915,13 @@ function IncomeModal({ saving = false, saveError = '', products, clients, initia
         </FSelect>
         <FInput label="Product / Description" value={form.product_name} onChange={set('product_name')} placeholder="Or describe manually" />
         <FInput label="Amount ($)" type="number" min="0" step="0.01" value={form.amount} onChange={set('amount')} />
+        <FSelect label="Income Category" value={form.income_category || ''} onChange={set('income_category')}>
+          <option value="">— Client / Service Revenue —</option>
+          <option value="investment">Investment — Monthly Payment</option>
+          <option value="grant">Grant</option>
+          <option value="loan_proceeds">Loan Proceeds</option>
+          <option value="other">Other</option>
+        </FSelect>
         <FSelect label="Status" value={form.status} onChange={set('status')}>
           <option value="paid">Paid</option>
           <option value="pending">Pending</option>
