@@ -44,12 +44,10 @@ export async function PUT(req: Request) {
 
   const sb = createAdminSupabase()
 
-  // Numeric fields — parse all
-  // Pass cap_table_json through directly if present
-  if (fields.cap_table_json !== undefined) upsertPayload.cap_table_json = fields.cap_table_json
-
   const numericFields = Object.keys(DEFAULTS).filter(k => k !== 'currency')
   const upsertPayload: Record<string, any> = { org_id }
+  // Pass cap_table_json through directly if present
+  if (fields.cap_table_json !== undefined) upsertPayload.cap_table_json = fields.cap_table_json
   numericFields.forEach(k => {
     if (fields[k] !== undefined) upsertPayload[k] = parseFloat(fields[k]) || 0
   })
