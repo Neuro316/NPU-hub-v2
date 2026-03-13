@@ -410,6 +410,16 @@ export default function FinancePage() {
     if (ok) { setShowProductModal(false); setEditProduct(null) }
   }
 
+  async function saveCapTable(entries: CapTableEntry[]) {
+    if (!selectedOrg) return
+    setCapTable(entries)
+    await fetch('/api/finance/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ org_id: selectedOrg.id, cap_table_json: JSON.stringify(entries) }),
+    })
+  }
+
   async function saveSettings(data: Partial<FinSettings>) {
     if (!selectedOrg) return
     const res = await fetch('/api/finance/settings', {
