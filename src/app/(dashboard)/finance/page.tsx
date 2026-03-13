@@ -740,8 +740,8 @@ Be direct, specific, and dollar-precise. Give actionable recommendations. When a
                         <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${({ paid: 'bg-emerald-50 text-emerald-700', pending: 'bg-amber-50 text-amber-700', refunded: 'bg-gray-100 text-gray-500', disputed: 'bg-orange-50 text-orange-600' } as any)[i.status] || ''}`}>{i.status}</span>
                       </td>
                       <td className="px-4 py-2.5 hidden md:table-cell">
-                        <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${{ manual: 'bg-blue-50 text-blue-700', stripe: 'bg-violet-50 text-violet-700', np_platform: 'bg-teal-50 text-teal-700' }[i.source] || ''}`}>
-                          {{ manual: 'Manual', stripe: 'Stripe', np_platform: 'NPU Platform' }[i.source]}
+                        <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${({ manual: 'bg-blue-50 text-blue-700', stripe: 'bg-violet-50 text-violet-700', np_platform: 'bg-teal-50 text-teal-700', investment: 'bg-emerald-50 text-emerald-700' } as Record<string,string>)[i.source] || ''}`}>
+                          {({ manual: 'Manual', stripe: 'Stripe', np_platform: 'NPU Platform', investment: 'Investment' } as Record<string,string>)[i.source]}
                         </span>
                       </td>
                       <td className="px-4 py-2.5">
