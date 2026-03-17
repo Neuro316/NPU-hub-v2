@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase-browser'
 import Link from 'next/link'
@@ -12,6 +12,14 @@ interface Org {
 }
 
 export default function SignupPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-np-light"><div className="text-gray-400">Loading...</div></div>}>
+      <SignupContent />
+    </Suspense>
+  )
+}
+
+function SignupContent() {
   const searchParams = useSearchParams()
   const orgParam = searchParams.get('org') // slug or id
 
