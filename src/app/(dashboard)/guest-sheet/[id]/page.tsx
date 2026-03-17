@@ -279,7 +279,18 @@ export default function GuestSheetPage() {
           </div>
         </div>
 
+        {/* ═══════ PREFERRED INTRO ═══════ */}
+        <div className="bg-purple-50 border border-purple-200 rounded-xl p-6 mb-6 print-avoid-break">
+          <h2 className="text-sm font-bold text-purple-700 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <MessageSquare className="w-4 h-4" /> Preferred Introduction
+          </h2>
+          <blockquote className="text-sm text-purple-900 leading-relaxed italic border-l-4 border-purple-300 pl-4">
+            &ldquo;{guestProfile.preferred_intro}&rdquo;
+          </blockquote>
+        </div>
+
         {/* ═══════ LINKS ═══════ */}
+        <div className="print-page-break"></div>
         <div className="bg-white border border-gray-100 rounded-xl p-6 mb-6 print-avoid-break">
           <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wider mb-4 flex items-center gap-2">
             <Link2 className="w-4 h-4" /> Links for Show Notes
@@ -323,17 +334,6 @@ export default function GuestSheetPage() {
               <span className="text-sm text-amber-700 ml-2">{appearance.affiliate_tier.replace('tier', 'Tier ')}</span>
             </div>
           )}
-        </div>
-
-        {/* ═══════ PREFERRED INTRO ═══════ */}
-        <div className="print-page-break"></div>
-        <div className="bg-purple-50 border border-purple-200 rounded-xl p-6 mb-6 print-avoid-break">
-          <h2 className="text-sm font-bold text-purple-700 uppercase tracking-wider mb-3 flex items-center gap-2">
-            <MessageSquare className="w-4 h-4" /> Preferred Introduction
-          </h2>
-          <blockquote className="text-sm text-purple-900 leading-relaxed italic border-l-4 border-purple-300 pl-4">
-            &ldquo;{guestProfile.preferred_intro}&rdquo;
-          </blockquote>
         </div>
 
         {/* ═══════ TOPICS ═══════ */}
