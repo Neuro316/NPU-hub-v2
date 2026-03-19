@@ -13,7 +13,7 @@ import {
   ChevronLeft, Clock, Save, Upload, Check, Loader2, Target,
   Trash2, AlertTriangle, Sparkles, FileText, Video, X,
   Brain, TrendingUp, AlertCircle, Users, Calendar,
-  Play, Pause, Plus, CheckCircle2, XCircle, CalendarClock, ListTodo, Zap, ChevronDown, ChevronRight
+  Play, Pause, Plus, CheckCircle2, XCircle, CalendarClock, ListTodo, Zap, ChevronDown, ChevronRight, Download, Edit2
 } from 'lucide-react'
 
 export default function MeetingDetailPage() {
@@ -57,12 +57,24 @@ export default function MeetingDetailPage() {
   const [taskLoading, setTaskLoading]     = useState<Record<string, boolean>>({})
   const [taskDueDate, setTaskDueDate]     = useState('')
   const [expandedSection, setExpandedSection] = useState<number | null>(null)
+  const [editingTime, setEditingTime]         = useState(false)
+  const [editTimeVal, setEditTimeVal]         = useState('')
+  const [editDuration, setEditDuration]       = useState('')
+  const [addingSection, setAddingSection]     = useState(false)
+  const [newSectionName, setNewSectionName]   = useState('')
+  const [newSectionMins, setNewSectionMins]   = useState('10')
   const [sectionNotes, setSectionNotes]       = useState<Record<number, string>>({})
   const agendaUploadRef = useRef<HTMLInputElement>(null)
   const [agendaUploading, setAgendaUploading] = useState(false)
   const [showAiAgendaBuilder, setShowAiAgendaBuilder] = useState(false)
   const [aiAgendaPrompt, setAiAgendaPrompt]   = useState('')
   const [aiAgendaLoading, setAiAgendaLoading] = useState(false)
+  const [gdocLoading, setGdocLoading]         = useState(false)
+  const [gdocUrl, setGdocUrl]                 = useState<string | null>(null)
+  const [gdocError, setGdocError]             = useState('')
+  const [showGdocPanel, setShowGdocPanel]     = useState(false)
+  const [gdocAiDesc, setGdocAiDesc]           = useState('')
+  const [gdocUseAi, setGdocUseAi]             = useState(false)
 
   // Delete state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -147,6 +159,68 @@ export default function MeetingDetailPage() {
     }, { onConflict: 'meeting_id,rock_id' })
   }
 
+  // ═══ CREATE GOOGLE DOC ═══
+  const createGoogleDoc = async (useAi = false) => {
+    if (!meeting || !currentOrg) return
+    setGdocLoading(true)
+    setGdocError('')
+    try {
+      const res = await fetch('/api/meetings/create-gdoc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          org_id: currentOrg.id,
+          meeting_id: meeting.id,
+          use_ai: useAi,
+          ai_description: gdocAiDesc,
+        }),
+      })
+      const data = await res.json()
+      if (data.needs_auth) {
+        setGdocError('Google Drive not connected. Go to Settings → Integrations to connect.')
+        return
+      }
+      if (!res.ok || !data.url) throw new Error(data.error || 'Failed to create doc')
+      setGdocUrl(data.url)
+      if (data.sections_saved > 0) await loadData()
+      window.open(data.url, '_blank')
+    } catch (e: any) {
+      setGdocError(e.message)
+    } finally {
+      setGdocLoading(false)
+    }
+  }
+
+  // ═══ MEETING TIME EDIT ═══
+  const saveMeetingTime = async () => {
+    if (!meeting) return
+    const updates: Record<string, any> = { updated_at: new Date().toISOString() }
+    if (editTimeVal) updates.scheduled_at = new Date(editTimeVal).toISOString()
+    if (editDuration) updates.duration_minutes = parseInt(editDuration) || meeting.duration_minutes
+    setMeeting({ ...meeting, ...updates, scheduled_at: updates.scheduled_at || meeting.scheduled_at, duration_minutes: updates.duration_minutes || meeting.duration_minutes })
+    await supabase.from('meetings').update(updates).eq('id', meeting.id)
+    setEditingTime(false)
+  }
+
+  // ═══ ADD AGENDA SECTION ON THE FLY ═══
+  const addAgendaSection = async () => {
+    if (!meeting || !newSectionName.trim()) return
+    const newSection = {
+      section: newSectionName.trim(),
+      duration_min: parseInt(newSectionMins) || 10,
+      notes: '',
+      completed: false,
+      prompts: [],
+      talking_points: [],
+    }
+    const updated = [...(meeting.agenda || []), newSection]
+    setMeeting({ ...meeting, agenda: updated })
+    setNewSectionName('')
+    setNewSectionMins('10')
+    setAddingSection(false)
+    await supabase.from('meetings').update({ agenda: updated, updated_at: new Date().toISOString() }).eq('id', meeting.id)
+  }
+
   // ═══ AGENDA SECTION NOTES ═══
   const saveSectionNote = async (idx: number, note: string) => {
     if (!meeting) return
@@ -201,23 +275,20 @@ export default function MeetingDetailPage() {
 
   // ═══ DOWNLOAD AGENDA TEMPLATE ═══
   const downloadAgendaTemplate = () => {
-    const rows = [
-      ['Section Name', 'Duration (minutes)', 'Discussion Prompts (semicolon separated)', 'Notes'],
-      ['Opening / Check-in', '5', 'How is everyone doing?;Any blockers since last time?', ''],
-      ['Review Previous Actions', '10', 'What was completed?;What carried over and why?', ''],
-      ['Main Topic 1', '15', 'What is the issue?;What are the options?;Who owns the decision?', ''],
-      ['Main Topic 2', '15', '', ''],
-      ['IDS / Problem Solving', '20', 'Identify the issue;Discuss options;Solve and assign', ''],
-      ['Action Items & Close', '5', 'What are the key takeaways?;Who owns what?', ''],
-    ]
-    const csv = rows.map(r => r.map(cell => `"${cell.replace(/"/g, '""')}"`).join(',')).join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
+    // Download blank template docx
     const a = document.createElement('a')
-    a.href = url
-    a.download = 'agenda-template.csv'
+    a.href = '/api/meetings/agenda-template'
+    a.download = 'agenda-template.docx'
     a.click()
-    URL.revokeObjectURL(url)
+  }
+
+  const downloadFilledAgenda = () => {
+    // Download this meeting's agenda as a filled docx
+    if (!meeting) return
+    const a = document.createElement('a')
+    a.href = `/api/meetings/agenda-template?meeting_id=${meeting.id}`
+    a.download = `${meeting.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}-agenda.docx`
+    a.click()
   }
 
   // ═══ AI AGENDA BUILDER ═══
@@ -602,12 +673,29 @@ export default function MeetingDetailPage() {
             <h2 className="text-base font-bold text-np-dark flex-1">{meeting.title}</h2>
           </div>
           <div className="flex items-center gap-4 text-[11px] text-gray-400">
-            <span className="flex items-center gap-1">
-              <Clock size={11} />
-              {meeting.scheduled_at ? new Date(meeting.scheduled_at).toLocaleString('en-US', {
-                weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
-              }) : 'No date set'} &middot; {meeting.duration_minutes} min
-            </span>
+            {editingTime ? (
+              <div className="flex items-center gap-2">
+                <input type="datetime-local"
+                  defaultValue={meeting.scheduled_at ? new Date(meeting.scheduled_at).toISOString().slice(0,16) : ''}
+                  onChange={e => setEditTimeVal(e.target.value)}
+                  className="text-[10px] px-2 py-1 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                <input type="number" min="5" max="480" defaultValue={meeting.duration_minutes}
+                  onChange={e => setEditDuration(e.target.value)}
+                  className="w-16 text-[10px] px-2 py-1 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30"
+                  placeholder="min" />
+                <span className="text-[10px] text-gray-400">min</span>
+                <button onClick={saveMeetingTime} className="px-2 py-1 bg-np-blue text-white text-[10px] font-semibold rounded-lg">Save</button>
+                <button onClick={() => setEditingTime(false)} className="px-2 py-1 text-[10px] text-gray-400 hover:text-gray-600">Cancel</button>
+              </div>
+            ) : (
+              <button onClick={() => setEditingTime(true)} className="flex items-center gap-1 hover:text-np-blue group transition-colors">
+                <Clock size={11} />
+                <span>{meeting.scheduled_at ? new Date(meeting.scheduled_at).toLocaleString('en-US', {
+                  weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+                }) : 'No date set'} &middot; {meeting.duration_minutes} min</span>
+                <Edit2 size={9} className="opacity-0 group-hover:opacity-100 transition-opacity ml-0.5" />
+              </button>
+            )}
             {attendeeAvatars.length > 0 && <AvatarStack list={attendeeAvatars} />}
             <div className="ml-auto flex items-center gap-1.5">
               {meeting.status === 'scheduled' && (
@@ -669,9 +757,9 @@ export default function MeetingDetailPage() {
                   className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-semibold text-gray-500 hover:text-np-dark border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                   <Upload size={10} />{agendaUploading ? 'Uploading...' : 'Upload Agenda'}
                 </button>
-                <button onClick={downloadAgendaTemplate}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-semibold text-gray-500 hover:text-np-dark border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                  <FileText size={10} />Download Template
+                <button onClick={() => setShowGdocPanel(!showGdocPanel)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-semibold border rounded-lg transition-colors ${showGdocPanel ? 'bg-green-600 text-white border-green-600' : 'text-green-700 border-green-200 hover:bg-green-50'}`}>
+                  <FileText size={10} />Open as Google Doc
                 </button>
                 <button onClick={() => setShowAiAgendaBuilder(!showAiAgendaBuilder)}
                   className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-semibold border rounded-lg transition-colors ${showAiAgendaBuilder ? 'bg-violet-600 text-white border-violet-600' : 'text-violet-600 border-violet-200 hover:bg-violet-50'}`}>
@@ -685,12 +773,12 @@ export default function MeetingDetailPage() {
                   <div className="flex items-center gap-2">
                     <Sparkles size={12} className="text-violet-600" />
                     <span className="text-xs font-semibold text-violet-800">AI Agenda Builder</span>
-                    <span className="text-[10px] text-violet-500">Describe your meeting goals and Claude will build a structured agenda</span>
+                    <span className="text-[10px] text-violet-500">Claude will build a structured agenda for this meeting type</span>
                   </div>
                   <textarea
                     value={aiAgendaPrompt}
                     onChange={e => setAiAgendaPrompt(e.target.value)}
-                    placeholder="e.g. Weekly L10 meeting for a neuroscience wellness company. We need to review Q2 rocks, discuss a staffing issue, and plan the next product launch. 90 minutes total."
+                    placeholder="Describe the meeting goals, key topics, or any context Claude should know..."
                     rows={3}
                     className="w-full px-3 py-2 text-xs border border-violet-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-violet-300 bg-white resize-none placeholder:text-gray-400"
                   />
@@ -701,6 +789,54 @@ export default function MeetingDetailPage() {
                       {aiAgendaLoading ? 'Building agenda...' : 'Build Agenda'}
                     </button>
                     <button onClick={() => setShowAiAgendaBuilder(false)} className="px-2 py-1.5 text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Google Doc panel */}
+              {showGdocPanel && (
+                <div className="bg-green-50/60 border border-green-100 rounded-xl p-4 mb-3 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <FileText size={12} className="text-green-600" />
+                    <span className="text-xs font-semibold text-green-800">Open as Google Doc</span>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={gdocUseAi} onChange={e => setGdocUseAi(e.target.checked)}
+                        className="w-3.5 h-3.5 rounded border-gray-300 text-green-600" />
+                      <span className="text-xs text-gray-600">Use AI to build agenda before opening</span>
+                    </label>
+                  </div>
+
+                  {gdocUseAi && (
+                    <textarea
+                      value={gdocAiDesc}
+                      onChange={e => setGdocAiDesc(e.target.value)}
+                      placeholder="Describe meeting goals, key topics, or context for the AI..."
+                      rows={3}
+                      className="w-full px-3 py-2 text-xs border border-green-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-green-300 bg-white resize-none placeholder:text-gray-400"
+                    />
+                  )}
+
+                  {gdocError && (
+                    <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{gdocError}</p>
+                  )}
+
+                  {gdocUrl && (
+                    <a href={gdocUrl} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 text-xs text-green-700 font-semibold hover:underline">
+                      <FileText size={11} />Open Google Doc again →
+                    </a>
+                  )}
+
+                  <div className="flex gap-2">
+                    <button onClick={() => createGoogleDoc(gdocUseAi)} disabled={gdocLoading || (gdocUseAi && !gdocAiDesc.trim())}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors">
+                      {gdocLoading ? <Loader2 size={10} className="animate-spin" /> : <FileText size={10} />}
+                      {gdocLoading ? 'Creating doc...' : 'Create & Open Google Doc'}
+                    </button>
+                    <button onClick={() => setShowGdocPanel(false)} className="px-2 py-1.5 text-xs text-gray-400 hover:text-gray-600">Cancel</button>
                   </div>
                 </div>
               )}
@@ -790,6 +926,46 @@ export default function MeetingDetailPage() {
                   </button>
                 </div>
               )}
+
+              {/* Add section on the fly */}
+              <div className="pt-3 mt-1 border-t border-gray-100">
+                {addingSection ? (
+                  <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2">
+                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Add Agenda Section</p>
+                    <div className="flex gap-2">
+                      <input
+                        value={newSectionName}
+                        onChange={e => setNewSectionName(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && addAgendaSection()}
+                        placeholder="Section name (e.g. Budget Review)"
+                        autoFocus
+                        className="flex-1 px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 bg-white"
+                      />
+                      <input
+                        type="number" min="1" max="120"
+                        value={newSectionMins}
+                        onChange={e => setNewSectionMins(e.target.value)}
+                        className="w-16 px-2 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 bg-white text-center"
+                      />
+                      <span className="text-xs text-gray-400 self-center">min</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={addAgendaSection} disabled={!newSectionName.trim()}
+                        className="px-3 py-1.5 bg-np-blue text-white text-xs font-semibold rounded-lg hover:bg-np-blue/90 disabled:opacity-50 transition-colors">
+                        Add Section
+                      </button>
+                      <button onClick={() => setAddingSection(false)} className="px-2 py-1.5 text-xs text-gray-400 hover:text-gray-600">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button onClick={() => setAddingSection(true)}
+                    className="flex items-center gap-1.5 text-[10px] text-np-blue hover:text-np-dark font-medium transition-colors">
+                    <Plus size={10} />Add agenda section
+                  </button>
+                )}
+              </div>
 
               {/* Rock Review (L10) */}
               {meeting.template === 'level_10' && rocks.length > 0 && (

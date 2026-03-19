@@ -79,3 +79,30 @@ export function extractFolderId(url: string): string | null {
   const match = url.match(/folders\/([a-zA-Z0-9_-]+)/)
   return match ? match[1] : null
 }
+
+// Create a Google Doc from HTML content (converts automatically in Drive)
+export async function createGoogleDoc(
+  refreshToken: string,
+  title: string,
+  htmlContent: string,
+  folderId?: string
+): Promise<{ id: string; webViewLink: string }> {
+  const client = getOAuthClient()
+  client.setCredentials({ refresh_token: refreshToken })
+  const drive = google.drive({ version: 'v3', auth: client })
+
+  const res = await drive.files.create({
+    requestBody: {
+      name: title,
+      mimeType: 'application/vnd.google-apps.document',
+      ...(folderId ? { parents: [folderId] } : {}),
+    },
+    media: {
+      mimeType: 'text/html',
+      body: Readable.from(Buffer.from(htmlContent, 'utf-8')),
+    },
+    fields: 'id, webViewLink',
+  })
+
+  return { id: res.data.id!, webViewLink: res.data.webViewLink! }
+}
