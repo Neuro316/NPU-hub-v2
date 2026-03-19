@@ -3,8 +3,18 @@ import { NextResponse } from 'next/server';
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const expected = `Bearer ${process.env.CRON_SECRET}`;
+  if (authHeader !== expected) {
+    return NextResponse.json({
+      error: 'Unauthorized',
+      debug: {
+        receivedLength: authHeader?.length,
+        expectedLength: expected.length,
+        cronSecretSet: !!process.env.CRON_SECRET,
+        cronSecretLength: process.env.CRON_SECRET?.length,
+        match: authHeader === expected,
+      }
+    }, { status: 401 });
   }
 
   const supabase = createAdminSupabase();
