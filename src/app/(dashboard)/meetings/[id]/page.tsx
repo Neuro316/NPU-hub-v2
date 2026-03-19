@@ -182,7 +182,7 @@ export default function MeetingDetailPage() {
       }
       if (!res.ok || !data.url) throw new Error(data.error || 'Failed to create doc')
       setGdocUrl(data.url)
-      if (data.sections_saved > 0) await loadData()
+      if (data.sections_saved > 0) await load()
       window.open(data.url, '_blank')
     } catch (e: any) {
       setGdocError(e.message)
