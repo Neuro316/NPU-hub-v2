@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
+import { useTeamData } from '@/lib/hooks/use-team-data'
 import { useRockData } from '@/lib/hooks/use-rock-data'
 import { StatusDot, BadgePill, AvatarStack, Avatar, ProgressBar } from '@/components/shared/meeting-rock-ui'
 import { MEETING_TEMPLATES } from '@/lib/types/meetings'
@@ -20,6 +21,8 @@ export default function MeetingDetailPage() {
   const router = useRouter()
   const { currentOrg } = useWorkspace()
   const { rocks } = useRockData()
+  const { members } = useTeamData()
+  const teamMembers = members.filter(m => m.status === 'active').map(m => m.display_name)
   const supabase = createClient()
 
   const [meeting, setMeeting] = useState<Meeting | null>(null)
@@ -52,6 +55,7 @@ export default function MeetingDetailPage() {
   const [taskPriority, setTaskPriority]   = useState<'low'|'medium'|'high'|'urgent'>('medium')
   const [deferDates, setDeferDates]       = useState<Record<string, string>>({})
   const [taskLoading, setTaskLoading]     = useState<Record<string, boolean>>({})
+  const [taskDueDate, setTaskDueDate]     = useState('')
   const [expandedSection, setExpandedSection] = useState<number | null>(null)
   const [sectionNotes, setSectionNotes]       = useState<Record<number, string>>({})
   const agendaUploadRef = useRef<HTMLInputElement>(null)
@@ -172,12 +176,17 @@ export default function MeetingDetailPage() {
       } else {
         // Plain text / CSV — each line is a section
         const lines = text.split('\n').filter(l => l.trim())
-        sections = lines.map(line => {
-          const parts = line.split(',')
-          const name = parts[0]?.trim() || line.trim()
+        const dataLines = lines[0]?.toLowerCase().includes('section') ? lines.slice(1) : lines
+        sections = dataLines.map(line => {
+          // Handle quoted CSV fields
+          const parts = line.match(/(".*?"|[^,]+)(?=,|$)/g)?.map(p => p.replace(/^"|"$/g,'').replace(/""/g,'"').trim()) || line.split(',').map(s=>s.trim())
+          const name = parts[0] || line.trim()
           const mins = parseInt(parts[1]) || 10
-          return { section: name, duration_min: mins, notes: '', completed: false, prompts: [], talking_points: [] }
-        })
+          const promptsRaw = parts[2] || ''
+          const prompts = promptsRaw ? promptsRaw.split(';').map(p=>p.trim()).filter(Boolean) : []
+          const notes = parts[3] || ''
+          return { section: name, duration_min: mins, notes, completed: false, prompts, talking_points: [] }
+        }).filter(s => s.section)
       }
       if (sections.length === 0) { alert('No sections found in file'); return }
       if (!meeting) return
@@ -192,19 +201,21 @@ export default function MeetingDetailPage() {
 
   // ═══ DOWNLOAD AGENDA TEMPLATE ═══
   const downloadAgendaTemplate = () => {
-    const template = [
-      { section: 'Opening / Check-in', duration_min: 5, notes: '', prompts: ['How is everyone doing?', 'Any blockers since last time?'] },
-      { section: 'Review Previous Actions', duration_min: 10, notes: '', prompts: ['What was completed?', 'What carried over?'] },
-      { section: 'Main Topic 1', duration_min: 15, notes: '', prompts: ['What is the issue?', 'What are the options?', 'Who owns the decision?'] },
-      { section: 'Main Topic 2', duration_min: 15, notes: '', prompts: [] },
-      { section: 'IDS / Problem Solving', duration_min: 20, notes: '', prompts: ['Identify the issue', 'Discuss options', 'Solve and assign'] },
-      { section: 'Action Items & Close', duration_min: 5, notes: '', prompts: ['What are the key takeaways?', 'Who owns what?'] },
+    const rows = [
+      ['Section Name', 'Duration (minutes)', 'Discussion Prompts (semicolon separated)', 'Notes'],
+      ['Opening / Check-in', '5', 'How is everyone doing?;Any blockers since last time?', ''],
+      ['Review Previous Actions', '10', 'What was completed?;What carried over and why?', ''],
+      ['Main Topic 1', '15', 'What is the issue?;What are the options?;Who owns the decision?', ''],
+      ['Main Topic 2', '15', '', ''],
+      ['IDS / Problem Solving', '20', 'Identify the issue;Discuss options;Solve and assign', ''],
+      ['Action Items & Close', '5', 'What are the key takeaways?;Who owns what?', ''],
     ]
-    const blob = new Blob([JSON.stringify(template, null, 2)], { type: 'application/json' })
+    const csv = rows.map(r => r.map(cell => `"${cell.replace(/"/g, '""')}"`).join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = 'agenda-template.json'
+    a.download = 'agenda-template.csv'
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -305,7 +316,7 @@ export default function MeetingDetailPage() {
       description: taskDesc,
       owner: '',
       owner_name: taskOwner,
-      due_date: '',
+      due_date: taskDueDate,
       status: 'pending',
       task_id: null,
       priority: taskPriority,
@@ -324,6 +335,7 @@ export default function MeetingDetailPage() {
     setTaskRaciR('')
     setTaskRaciA('')
     setTaskSubtasks([])
+    setTaskDueDate('')
     setShowTaskForm(false)
     await supabase.from('meetings').update({ action_items: updated, updated_at: new Date().toISOString() }).eq('id', meeting.id)
   }
@@ -344,15 +356,17 @@ export default function MeetingDetailPage() {
         title: item.title,
         description: item.description || null,
         assignee: item.owner_name || null,
+        owner_id: null,
         priority: item.priority || 'medium',
+        due_date: item.due_date || null,
         raci_responsible: item.raci_responsible || null,
         raci_accountable: item.raci_accountable || null,
-        raci_consulted: [],
-        raci_informed: [],
+        raci_consulted: item.raci_consulted ? [item.raci_consulted] : [],
+        raci_informed: item.raci_informed ? [item.raci_informed] : [],
         source: 'meeting',
         sort_order: 9999,
         visibility: 'everyone',
-        custom_fields: {},
+        custom_fields: { meeting_id: meeting.id, meeting_title: meeting.title },
         rock_tags: [],
         depends_on: [],
         blocked_by: [],
@@ -878,31 +892,54 @@ export default function MeetingDetailPage() {
                     <div className="bg-np-blue/5 border border-np-blue/10 rounded-xl p-3 space-y-2">
                       <input value={taskInput} onChange={e => setTaskInput(e.target.value)}
                         placeholder="Task name..."
-                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30"
+                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 bg-white"
                         onKeyDown={e => e.key === 'Enter' && !e.shiftKey && addActionItem()} />
                       <textarea value={taskDesc} onChange={e => setTaskDesc(e.target.value)}
                         placeholder="Description / context (optional)"
                         rows={2}
-                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 resize-none" />
+                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 resize-none bg-white" />
                       <div className="grid grid-cols-2 gap-2">
-                        <input value={taskOwner} onChange={e => setTaskOwner(e.target.value)}
-                          placeholder="Owner name"
-                          className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
-                        <select value={taskPriority} onChange={e => setTaskPriority(e.target.value as any)}
-                          className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30">
-                          <option value="low">Low Priority</option>
-                          <option value="medium">Medium Priority</option>
-                          <option value="high">High Priority</option>
-                          <option value="urgent">Urgent</option>
-                        </select>
+                        <div>
+                          <label className="text-[9px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Owner</label>
+                          <select value={taskOwner} onChange={e => setTaskOwner(e.target.value)}
+                            className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 bg-white">
+                            <option value="">— Select owner —</option>
+                            {teamMembers.map(m => <option key={m} value={m}>{m}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Priority</label>
+                          <select value={taskPriority} onChange={e => setTaskPriority(e.target.value as any)}
+                            className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 bg-white">
+                            <option value="low">Low</option>
+                            <option value="medium">Medium</option>
+                            <option value="high">High</option>
+                            <option value="urgent">Urgent</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Due Date</label>
+                        <input type="date" value={taskDueDate} onChange={e => setTaskDueDate(e.target.value)}
+                          className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 bg-white" />
                       </div>
                       <div className="grid grid-cols-2 gap-2">
-                        <input value={taskRaciR} onChange={e => setTaskRaciR(e.target.value)}
-                          placeholder="RACI: Responsible"
-                          className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
-                        <input value={taskRaciA} onChange={e => setTaskRaciA(e.target.value)}
-                          placeholder="RACI: Accountable"
-                          className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                        <div>
+                          <label className="text-[9px] font-bold text-gray-400 uppercase tracking-wider block mb-1">RACI — Responsible</label>
+                          <select value={taskRaciR} onChange={e => setTaskRaciR(e.target.value)}
+                            className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 bg-white">
+                            <option value="">— Select —</option>
+                            {teamMembers.map(m => <option key={m} value={m}>{m}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-bold text-gray-400 uppercase tracking-wider block mb-1">RACI — Accountable</label>
+                          <select value={taskRaciA} onChange={e => setTaskRaciA(e.target.value)}
+                            className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 bg-white">
+                            <option value="">— Select —</option>
+                            {teamMembers.map(m => <option key={m} value={m}>{m}</option>)}
+                          </select>
+                        </div>
                       </div>
                       {/* Subtasks */}
                       <div>
@@ -940,6 +977,7 @@ export default function MeetingDetailPage() {
                           <ListTodo size={9} className="text-np-blue flex-shrink-0" />
                           <span className="flex-1 truncate font-medium">{item.title}</span>
                           {item.owner_name && <span className="text-gray-400">{item.owner_name}</span>}
+                          {item.due_date && <span className="text-gray-300">{item.due_date}</span>}
                         </div>
                       ))}
                       <button onClick={() => setTab('task_review')} className="text-[10px] text-np-blue hover:underline pl-3">
