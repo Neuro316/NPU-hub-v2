@@ -138,6 +138,7 @@ const navCategories: NavCategory[] = [
     collapsible: true,
     items: [
       { label: 'Team', href: '/team', icon: Users, moduleKey: 'team' },
+      { label: 'User Management', href: '/admin/users', icon: UserCheck, moduleKey: 'team' },
       { label: 'Integrations', href: '/integrations', icon: Activity, moduleKey: 'integrations' },
       { label: 'Platform Advisor', href: '/platform-advisor', icon: Brain, moduleKey: 'platform_advisor' },
       { label: 'Activity Log', href: '/activity-log', icon: History, moduleKey: 'activity_log' },

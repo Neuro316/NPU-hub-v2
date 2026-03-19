@@ -25,6 +25,31 @@ const DEFAULT_GUEST_PROFILE = {
     x: '@neuroprogeny',
   },
   headshot_url: null as string | null,
+  cross_promo_requirements: '',
+}
+
+/** Map flat guest_profile JSONB fields to the shape used by this component */
+function mapGuestProfile(gp: Record<string, unknown>) {
+  return {
+    name: (gp.guest_name as string) || DEFAULT_GUEST_PROFILE.name,
+    title: (gp.guest_title as string) || DEFAULT_GUEST_PROFILE.title,
+    email: (gp.email as string) || DEFAULT_GUEST_PROFILE.email,
+    website: (gp.website as string) || DEFAULT_GUEST_PROFILE.website,
+    bio_short: (gp.short_bio as string) || DEFAULT_GUEST_PROFILE.bio_short,
+    preferred_intro: (gp.preferred_introduction as string) || DEFAULT_GUEST_PROFILE.preferred_intro,
+    verbal_cta_template: (gp.verbal_cta_template as string) || DEFAULT_GUEST_PROFILE.verbal_cta_template,
+    avoid_topics: (gp.topics_to_avoid as string)
+      ? (gp.topics_to_avoid as string).split('\n').map(s => s.trim()).filter(Boolean)
+      : DEFAULT_GUEST_PROFILE.avoid_topics,
+    social: {
+      instagram: (gp.social_instagram as string) || DEFAULT_GUEST_PROFILE.social.instagram,
+      linkedin: (gp.social_linkedin as string) || DEFAULT_GUEST_PROFILE.social.linkedin,
+      youtube: (gp.social_youtube as string) || DEFAULT_GUEST_PROFILE.social.youtube,
+      x: (gp.social_twitter as string) || DEFAULT_GUEST_PROFILE.social.x,
+    },
+    headshot_url: (gp.headshot_url as string) || DEFAULT_GUEST_PROFILE.headshot_url,
+    cross_promo_requirements: (gp.cross_promotion_requirements as string) || DEFAULT_GUEST_PROFILE.cross_promo_requirements,
+  }
 }
 
 interface Appearance {
@@ -89,7 +114,7 @@ export default function GuestSheetPage() {
     ]).then(([appRes, orgRes]) => {
       if (appRes.data) setAppearance(appRes.data)
       if (orgRes.data?.guest_profile && typeof orgRes.data.guest_profile === 'object') {
-        setGuestProfile(prev => ({ ...prev, ...orgRes.data.guest_profile as any }))
+        setGuestProfile(mapGuestProfile(orgRes.data.guest_profile as Record<string, unknown>))
       }
       setLoading(false)
     })
@@ -254,7 +279,18 @@ export default function GuestSheetPage() {
           </div>
         </div>
 
+        {/* ═══════ PREFERRED INTRO ═══════ */}
+        <div className="bg-purple-50 border border-purple-200 rounded-xl p-6 mb-6 print-avoid-break">
+          <h2 className="text-sm font-bold text-purple-700 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <MessageSquare className="w-4 h-4" /> Preferred Introduction
+          </h2>
+          <blockquote className="text-sm text-purple-900 leading-relaxed italic border-l-4 border-purple-300 pl-4">
+            &ldquo;{guestProfile.preferred_intro}&rdquo;
+          </blockquote>
+        </div>
+
         {/* ═══════ LINKS ═══════ */}
+        <div className="print-page-break"></div>
         <div className="bg-white border border-gray-100 rounded-xl p-6 mb-6 print-avoid-break">
           <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wider mb-4 flex items-center gap-2">
             <Link2 className="w-4 h-4" /> Links for Show Notes
@@ -298,17 +334,6 @@ export default function GuestSheetPage() {
               <span className="text-sm text-amber-700 ml-2">{appearance.affiliate_tier.replace('tier', 'Tier ')}</span>
             </div>
           )}
-        </div>
-
-        {/* ═══════ PREFERRED INTRO ═══════ */}
-        <div className="print-page-break"></div>
-        <div className="bg-purple-50 border border-purple-200 rounded-xl p-6 mb-6 print-avoid-break">
-          <h2 className="text-sm font-bold text-purple-700 uppercase tracking-wider mb-3 flex items-center gap-2">
-            <MessageSquare className="w-4 h-4" /> Preferred Introduction
-          </h2>
-          <blockquote className="text-sm text-purple-900 leading-relaxed italic border-l-4 border-purple-300 pl-4">
-            &ldquo;{guestProfile.preferred_intro}&rdquo;
-          </blockquote>
         </div>
 
         {/* ═══════ TOPICS ═══════ */}
@@ -366,6 +391,12 @@ export default function GuestSheetPage() {
             })}
           </div>
 
+          {guestProfile.cross_promo_requirements && (
+            <div className="mb-5 p-4 bg-blue-50 border border-blue-100 rounded-lg">
+              <h3 className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-2">Additional Requirements</h3>
+              <p className="text-sm text-blue-800 whitespace-pre-line">{guestProfile.cross_promo_requirements}</p>
+            </div>
+          )}
           <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Show Notes Checklist</h3>
           <div className="grid grid-cols-2 gap-2">
             {SHOW_NOTES_CHECKLIST.map((item, i) => (

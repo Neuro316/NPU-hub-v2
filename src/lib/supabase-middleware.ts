@@ -25,8 +25,10 @@ export async function updateSession(request: NextRequest) {
   const isPublicPath =
     pathname.startsWith('/login') ||
     pathname.startsWith('/signup') ||
+    pathname.startsWith('/invite') ||
     pathname.startsWith('/pending') ||
     pathname.startsWith('/api/auth') ||
+    pathname.startsWith('/api/invite') ||
     pathname.startsWith('/api/twilio') ||
     pathname.startsWith('/policies')
 

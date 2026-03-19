@@ -2,17 +2,19 @@
 
 import { useEffect, useState } from 'react'
 import {
-  Mail, Phone, Brain, Shield, Bell, Users, Sliders,
+  Mail, Phone, Brain, Shield, Bell, Users, Sliders, Mic,
   Save, Plus, X, Trash2, CheckCircle2, AlertTriangle
 } from 'lucide-react'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
 import PipelineResourcesManager from '@/components/crm/pipeline-resources'
+import GuestProfileSettings from '@/components/settings/GuestProfileSettings'
 
-type Section = 'email' | 'twilio' | 'ai' | 'pipeline' | 'team' | 'notifications' | 'compliance' | 'general'
+type Section = 'email' | 'twilio' | 'ai' | 'pipeline' | 'team' | 'notifications' | 'compliance' | 'general' | 'guest_profile'
 
 const SECTIONS: { id: Section; label: string; icon: any }[] = [
   { id: 'general', label: 'General', icon: Sliders },
+  { id: 'guest_profile', label: 'Guest Profile', icon: Mic },
   { id: 'email', label: 'Email', icon: Mail },
   { id: 'twilio', label: 'Twilio / SMS', icon: Phone },
   { id: 'ai', label: 'AI Integration', icon: Brain },
@@ -422,8 +424,11 @@ export default function SettingsPage() {
             </div>
           )}
 
+          {/* Guest Profile */}
+          {active === 'guest_profile' && <GuestProfileSettings />}
+
           {/* Save Button */}
-          <div className="flex items-center justify-end gap-2 mt-6 pt-4 border-t border-gray-100">
+          <div className={`flex items-center justify-end gap-2 mt-6 pt-4 border-t border-gray-100${active === 'guest_profile' ? ' hidden' : ''}`}>
             {saved && <span className="flex items-center gap-1 text-[10px] text-green-600 font-medium"><CheckCircle2 size={12} /> Saved</span>}
             <button onClick={handleSave} disabled={saving}
               className="flex items-center gap-1.5 px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark disabled:opacity-40 transition-colors">
