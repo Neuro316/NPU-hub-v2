@@ -5,14 +5,18 @@ export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization');
   const expected = `Bearer ${process.env.CRON_SECRET}`;
   if (authHeader !== expected) {
+    const envSecret = process.env.CRON_SECRET || '';
     return NextResponse.json({
       error: 'Unauthorized',
       debug: {
         receivedLength: authHeader?.length,
         expectedLength: expected.length,
-        cronSecretSet: !!process.env.CRON_SECRET,
-        cronSecretLength: process.env.CRON_SECRET?.length,
+        cronSecretLength: envSecret.length,
         match: authHeader === expected,
+        envFirst2: envSecret.slice(0, 2),
+        envLast2: envSecret.slice(-2),
+        receivedFirst9: authHeader?.slice(0, 9),
+        receivedLast2: authHeader?.slice(-2),
       }
     }, { status: 401 });
   }
