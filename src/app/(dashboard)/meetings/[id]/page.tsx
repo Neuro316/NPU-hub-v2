@@ -11,7 +11,8 @@ import type { Meeting, MeetingTemplate, MeetingAttendee, AgendaSection } from '@
 import {
   ChevronLeft, Clock, Save, Upload, Check, Loader2, Target,
   Trash2, AlertTriangle, Sparkles, FileText, Video, X,
-  Brain, TrendingUp, AlertCircle, Users, Calendar
+  Brain, TrendingUp, AlertCircle, Users, Calendar,
+  Play, Pause, Plus, CheckCircle2, XCircle, CalendarClock, ListTodo, Zap, ChevronDown, ChevronRight
 } from 'lucide-react'
 
 export default function MeetingDetailPage() {
@@ -24,10 +25,40 @@ export default function MeetingDetailPage() {
   const [meeting, setMeeting] = useState<Meeting | null>(null)
   const [attendees, setAttendees] = useState<MeetingAttendee[]>([])
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'agenda' | 'notes' | 'read_ai' | 'ai_advisor'>('agenda')
+  const [tab, setTab] = useState<'agenda' | 'notes' | 'read_ai' | 'ids' | 'task_review' | 'ai_advisor'>('agenda')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [rockReviews, setRockReviews] = useState<Record<string, string>>({})
+
+  // Timer state
+  const [activeTimerIdx, setActiveTimerIdx]   = useState<number | null>(null)
+  const [sectionTimes, setSectionTimes]       = useState<Record<number, number>>({})
+  const timerRef = useRef<NodeJS.Timeout | null>(null)
+
+  // IDS capture state
+  const [idsInput, setIdsInput]       = useState('')
+  const [idsType, setIdsType]         = useState<'issue'|'decision'|'solution'>('issue')
+  const [idsOwner, setIdsOwner]       = useState('')
+  const [showIdsForm, setShowIdsForm] = useState(false)
+
+  // Action item capture state
+  const [taskInput, setTaskInput]         = useState('')
+  const [taskOwner, setTaskOwner]         = useState('')
+  const [taskRaciR, setTaskRaciR]         = useState('')
+  const [taskRaciA, setTaskRaciA]         = useState('')
+  const [taskDesc, setTaskDesc]           = useState('')
+  const [taskSubtasks, setTaskSubtasks]   = useState<string[]>([])
+  const [showTaskForm, setShowTaskForm]   = useState(false)
+  const [taskPriority, setTaskPriority]   = useState<'low'|'medium'|'high'|'urgent'>('medium')
+  const [deferDates, setDeferDates]       = useState<Record<string, string>>({})
+  const [taskLoading, setTaskLoading]     = useState<Record<string, boolean>>({})
+  const [expandedSection, setExpandedSection] = useState<number | null>(null)
+  const [sectionNotes, setSectionNotes]       = useState<Record<number, string>>({})
+  const agendaUploadRef = useRef<HTMLInputElement>(null)
+  const [agendaUploading, setAgendaUploading] = useState(false)
+  const [showAiAgendaBuilder, setShowAiAgendaBuilder] = useState(false)
+  const [aiAgendaPrompt, setAiAgendaPrompt]   = useState('')
+  const [aiAgendaLoading, setAiAgendaLoading] = useState(false)
 
   // Delete state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -110,6 +141,278 @@ export default function MeetingDetailPage() {
     await supabase.from('meeting_rock_reviews').upsert({
       meeting_id: meeting.id, rock_id: rockId, status_at_review: status,
     }, { onConflict: 'meeting_id,rock_id' })
+  }
+
+  // ═══ AGENDA SECTION NOTES ═══
+  const saveSectionNote = async (idx: number, note: string) => {
+    if (!meeting) return
+    const agenda = [...(meeting.agenda || [])]
+    agenda[idx] = { ...agenda[idx], notes: note }
+    setMeeting({ ...meeting, agenda })
+    await supabase.from('meetings').update({ agenda, updated_at: new Date().toISOString() }).eq('id', meeting.id)
+  }
+
+  // ═══ AGENDA UPLOAD ═══
+  const handleAgendaUpload = async (file: File) => {
+    setAgendaUploading(true)
+    try {
+      const text = await file.text()
+      let sections: any[] = []
+      if (file.name.endsWith('.json')) {
+        const raw = JSON.parse(text)
+        const items = Array.isArray(raw) ? raw : (raw.agenda || raw.sections || [])
+        sections = items.map((item: any) => ({
+          section: item.section || item.title || item.name || 'Untitled',
+          duration_min: item.duration_min || item.duration || item.minutes || 10,
+          notes: item.notes || item.description || '',
+          completed: false,
+          prompts: item.prompts || item.talking_points || [],
+          talking_points: item.talking_points || item.prompts || [],
+        }))
+      } else {
+        // Plain text / CSV — each line is a section
+        const lines = text.split('\n').filter(l => l.trim())
+        sections = lines.map(line => {
+          const parts = line.split(',')
+          const name = parts[0]?.trim() || line.trim()
+          const mins = parseInt(parts[1]) || 10
+          return { section: name, duration_min: mins, notes: '', completed: false, prompts: [], talking_points: [] }
+        })
+      }
+      if (sections.length === 0) { alert('No sections found in file'); return }
+      if (!meeting) return
+      setMeeting({ ...meeting, agenda: sections })
+      await supabase.from('meetings').update({ agenda: sections, updated_at: new Date().toISOString() }).eq('id', meeting.id)
+    } catch (e: any) {
+      alert('Upload error: ' + e.message)
+    } finally {
+      setAgendaUploading(false)
+    }
+  }
+
+  // ═══ DOWNLOAD AGENDA TEMPLATE ═══
+  const downloadAgendaTemplate = () => {
+    const template = [
+      { section: 'Opening / Check-in', duration_min: 5, notes: '', prompts: ['How is everyone doing?', 'Any blockers since last time?'] },
+      { section: 'Review Previous Actions', duration_min: 10, notes: '', prompts: ['What was completed?', 'What carried over?'] },
+      { section: 'Main Topic 1', duration_min: 15, notes: '', prompts: ['What is the issue?', 'What are the options?', 'Who owns the decision?'] },
+      { section: 'Main Topic 2', duration_min: 15, notes: '', prompts: [] },
+      { section: 'IDS / Problem Solving', duration_min: 20, notes: '', prompts: ['Identify the issue', 'Discuss options', 'Solve and assign'] },
+      { section: 'Action Items & Close', duration_min: 5, notes: '', prompts: ['What are the key takeaways?', 'Who owns what?'] },
+    ]
+    const blob = new Blob([JSON.stringify(template, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'agenda-template.json'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // ═══ AI AGENDA BUILDER ═══
+  const buildAiAgenda = async () => {
+    if (!meeting || !aiAgendaPrompt.trim()) return
+    setAiAgendaLoading(true)
+    try {
+      const res = await fetch('/api/ai/agenda-builder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          meeting_title: meeting.title,
+          meeting_template: meeting.template,
+          duration_minutes: meeting.duration_minutes,
+          description: aiAgendaPrompt,
+        }),
+      })
+      const data = await res.json()
+      if (data.agenda && Array.isArray(data.agenda)) {
+        setMeeting({ ...meeting, agenda: data.agenda })
+        await supabase.from('meetings').update({ agenda: data.agenda, updated_at: new Date().toISOString() }).eq('id', meeting.id)
+        setShowAiAgendaBuilder(false)
+        setAiAgendaPrompt('')
+      }
+    } catch (e: any) {
+      alert('AI error: ' + e.message)
+    } finally {
+      setAiAgendaLoading(false)
+    }
+  }
+
+  // ═══ TIMER ═══
+  const startTimer = (idx: number) => {
+    if (timerRef.current) clearInterval(timerRef.current)
+    setActiveTimerIdx(idx)
+    timerRef.current = setInterval(() => {
+      setSectionTimes(prev => ({ ...prev, [idx]: (prev[idx] || 0) + 1 }))
+    }, 1000)
+  }
+
+  const stopTimer = () => {
+    if (timerRef.current) clearInterval(timerRef.current)
+    setActiveTimerIdx(null)
+  }
+
+  const toggleTimer = (idx: number) => {
+    if (activeTimerIdx === idx) { stopTimer() } else { startTimer(idx) }
+  }
+
+  const fmtTime = (secs: number) => {
+    const m = Math.floor(secs / 60).toString().padStart(2, '0')
+    const s = (secs % 60).toString().padStart(2, '0')
+    return `${m}:${s}`
+  }
+
+  useEffect(() => { return () => { if (timerRef.current) clearInterval(timerRef.current) } }, [])
+
+  // ═══ IDS ═══
+  const addIdsItem = async () => {
+    if (!meeting || !idsInput.trim()) return
+    const newItem: any = {
+      id: crypto.randomUUID(),
+      issue_category: idsType,
+      description: idsInput.trim(),
+      owner_name: idsOwner,
+      owner: '',
+      status: 'identified',
+      resolution: '',
+      decisions_needed: '',
+      action_items_text: '',
+      dependencies_context: '',
+      due_date: '',
+      created_at: new Date().toISOString(),
+    }
+    const updated = [...(meeting.ids_items || []), newItem]
+    setMeeting({ ...meeting, ids_items: updated })
+    setIdsInput('')
+    setIdsOwner('')
+    setShowIdsForm(false)
+    await supabase.from('meetings').update({ ids_items: updated, updated_at: new Date().toISOString() }).eq('id', meeting.id)
+  }
+
+  const removeIdsItem = async (id: string) => {
+    if (!meeting) return
+    const updated = (meeting.ids_items || []).filter((i: any) => i.id !== id)
+    setMeeting({ ...meeting, ids_items: updated })
+    await supabase.from('meetings').update({ ids_items: updated, updated_at: new Date().toISOString() }).eq('id', meeting.id)
+  }
+
+  // ═══ ACTION ITEMS / TASK CAPTURE ═══
+  const addActionItem = async () => {
+    if (!meeting || !taskInput.trim()) return
+    const newItem: any = {
+      id: crypto.randomUUID(),
+      title: taskInput.trim(),
+      description: taskDesc,
+      owner: '',
+      owner_name: taskOwner,
+      due_date: '',
+      status: 'pending',
+      task_id: null,
+      priority: taskPriority,
+      raci_responsible: taskRaciR,
+      raci_accountable: taskRaciA,
+      raci_consulted: '',
+      raci_informed: '',
+      subtasks: taskSubtasks.filter(s => s.trim()),
+      task_column: '',
+    }
+    const updated = [...((meeting.action_items || []) as any[]), newItem]
+    setMeeting({ ...meeting, action_items: updated as any })
+    setTaskInput('')
+    setTaskDesc('')
+    setTaskOwner('')
+    setTaskRaciR('')
+    setTaskRaciA('')
+    setTaskSubtasks([])
+    setShowTaskForm(false)
+    await supabase.from('meetings').update({ action_items: updated, updated_at: new Date().toISOString() }).eq('id', meeting.id)
+  }
+
+  const approveTask = async (item: any) => {
+    if (!meeting || !currentOrg) return
+    setTaskLoading(prev => ({ ...prev, [item.id]: true }))
+    try {
+      // Get first kanban column for org
+      const { data: cols } = await supabase.from('kanban_columns').select('id').eq('org_id', currentOrg.id).order('sort_order').limit(1)
+      const colId = cols?.[0]?.id
+      if (!colId) { alert('No task columns found. Create a column in Task Manager first.'); return }
+
+      // Create kanban task
+      const { data: task } = await supabase.from('kanban_tasks').insert({
+        org_id: currentOrg.id,
+        column_id: colId,
+        title: item.title,
+        description: item.description || null,
+        assignee: item.owner_name || null,
+        priority: item.priority || 'medium',
+        raci_responsible: item.raci_responsible || null,
+        raci_accountable: item.raci_accountable || null,
+        raci_consulted: [],
+        raci_informed: [],
+        source: 'meeting',
+        sort_order: 9999,
+        visibility: 'everyone',
+        custom_fields: {},
+        rock_tags: [],
+        depends_on: [],
+        blocked_by: [],
+        ai_generated: false,
+        milestone: false,
+      }).select().single()
+
+      // Create subtasks if any
+      if (task && item.subtasks?.length > 0) {
+        await supabase.from('subtasks').insert(
+          item.subtasks.map((s: string, i: number) => ({
+            task_id: task.id, org_id: currentOrg.id, title: s, completed: false, sort_order: i,
+          }))
+        )
+      }
+
+      // Update action item status
+      const updated = (meeting.action_items || []).map((a: any) =>
+        a.id === item.id ? { ...a, status: 'approved', task_id: task?.id || null } : a
+      )
+      setMeeting({ ...meeting, action_items: updated as any })
+      await supabase.from('meetings').update({ action_items: updated, updated_at: new Date().toISOString() }).eq('id', meeting.id)
+    } finally {
+      setTaskLoading(prev => ({ ...prev, [item.id]: false }))
+    }
+  }
+
+  const rejectTask = async (id: string) => {
+    if (!meeting) return
+    const updated = (meeting.action_items || []).map((a: any) => a.id === id ? { ...a, status: 'deleted' } : a)
+    setMeeting({ ...meeting, action_items: updated as any })
+    await supabase.from('meetings').update({ action_items: updated, updated_at: new Date().toISOString() }).eq('id', meeting.id)
+  }
+
+  const deferTask = async (item: any) => {
+    if (!meeting) return
+    const deferDate = deferDates[item.id]
+    if (!deferDate) { alert('Please set a revisit date before deferring.'); return }
+
+    // If there's a next meeting in chain, migrate there
+    const nextId = (meeting as any).next_meeting_id as string | null
+    if (nextId) {
+      const { data: nm } = await supabase.from('meetings').select('action_items').eq('id', nextId).single()
+      if (nm) {
+        const existing = ((nm as any).action_items || []) as any[]
+        const alreadyThere = existing.some((a: any) => a.id === item.id)
+        if (!alreadyThere) {
+          await supabase.from('meetings').update({
+            action_items: [...existing, { ...item, status: 'pending', deferred_from: meeting.id, defer_revisit_date: deferDate }],
+            updated_at: new Date().toISOString(),
+          }).eq('id', nextId)
+        }
+      }
+    }
+
+    const updated = (meeting.action_items || []).map((a: any) =>
+      a.id === item.id ? { ...a, status: 'deferred', defer_revisit_date: deferDate } : a
+    )
+    setMeeting({ ...meeting, action_items: updated as any })
+    await supabase.from('meetings').update({ action_items: updated, updated_at: new Date().toISOString() }).eq('id', meeting.id)
   }
 
   // ═══ DELETE — chain-aware ═══
@@ -323,6 +626,8 @@ export default function MeetingDetailPage() {
             { key: 'agenda', label: 'Agenda' },
             { key: 'notes', label: 'Notes' },
             { key: 'read_ai', label: 'Read AI' },
+            { key: 'ids', label: 'IDS' },
+            { key: 'task_review', label: 'Task Review' },
             { key: 'ai_advisor', label: 'AI Advisor' },
           ] as const).map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
@@ -342,22 +647,134 @@ export default function MeetingDetailPage() {
           {/* ── AGENDA TAB ── */}
           {tab === 'agenda' && (
             <div className="space-y-0">
+              {/* Agenda toolbar */}
+              <div className="flex items-center gap-2 pb-3 mb-1 border-b border-gray-100">
+                <input ref={agendaUploadRef} type="file" accept=".json,.csv,.txt" className="hidden"
+                  onChange={e => { if (e.target.files?.[0]) handleAgendaUpload(e.target.files[0]) }} />
+                <button onClick={() => agendaUploadRef.current?.click()} disabled={agendaUploading}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-semibold text-gray-500 hover:text-np-dark border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                  <Upload size={10} />{agendaUploading ? 'Uploading...' : 'Upload Agenda'}
+                </button>
+                <button onClick={downloadAgendaTemplate}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-semibold text-gray-500 hover:text-np-dark border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                  <FileText size={10} />Download Template
+                </button>
+                <button onClick={() => setShowAiAgendaBuilder(!showAiAgendaBuilder)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-semibold border rounded-lg transition-colors ${showAiAgendaBuilder ? 'bg-violet-600 text-white border-violet-600' : 'text-violet-600 border-violet-200 hover:bg-violet-50'}`}>
+                  <Sparkles size={10} />AI Agenda Builder
+                </button>
+              </div>
+
+              {/* AI Agenda Builder panel */}
+              {showAiAgendaBuilder && (
+                <div className="bg-violet-50/60 border border-violet-100 rounded-xl p-4 mb-3 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Sparkles size={12} className="text-violet-600" />
+                    <span className="text-xs font-semibold text-violet-800">AI Agenda Builder</span>
+                    <span className="text-[10px] text-violet-500">Describe your meeting goals and Claude will build a structured agenda</span>
+                  </div>
+                  <textarea
+                    value={aiAgendaPrompt}
+                    onChange={e => setAiAgendaPrompt(e.target.value)}
+                    placeholder="e.g. Weekly L10 meeting for a neuroscience wellness company. We need to review Q2 rocks, discuss a staffing issue, and plan the next product launch. 90 minutes total."
+                    rows={3}
+                    className="w-full px-3 py-2 text-xs border border-violet-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-violet-300 bg-white resize-none placeholder:text-gray-400"
+                  />
+                  <div className="flex gap-2">
+                    <button onClick={buildAiAgenda} disabled={aiAgendaLoading || !aiAgendaPrompt.trim()}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white text-xs font-semibold rounded-lg hover:bg-violet-700 disabled:opacity-50 transition-colors">
+                      {aiAgendaLoading ? <Loader2 size={10} className="animate-spin" /> : <Sparkles size={10} />}
+                      {aiAgendaLoading ? 'Building agenda...' : 'Build Agenda'}
+                    </button>
+                    <button onClick={() => setShowAiAgendaBuilder(false)} className="px-2 py-1.5 text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Agenda sections */}
               {(meeting.agenda || []).map((section: AgendaSection, i: number) => (
-                <div key={i} className="flex items-center gap-3 py-2.5 border-b border-gray-100 last:border-0">
-                  <button onClick={() => toggleAgendaItem(i)}
-                    className={`w-[18px] h-[18px] rounded flex items-center justify-center border-2 transition-colors flex-shrink-0 ${
-                      section.completed ? 'bg-green-500 border-green-500' : 'border-gray-300 hover:border-teal'
-                    }`}>
-                    {section.completed && <Check size={10} className="text-white" strokeWidth={3} />}
-                  </button>
-                  <span className={`text-xs font-medium flex-1 ${section.completed ? 'text-gray-400 line-through' : 'text-np-dark'}`}>
-                    {section.section}
-                  </span>
-                  <BadgePill text={`${section.duration_min} min`} color="#9CA3AF" bgColor="#F3F4F6" />
+                <div key={i} className={`border-b border-gray-100 last:border-0 transition-colors ${activeTimerIdx === i ? 'bg-np-blue/5 -mx-5 px-5' : ''}`}>
+                  {/* Section header row */}
+                  <div className="flex items-center gap-3 py-2.5">
+                    <button onClick={() => toggleAgendaItem(i)}
+                      className={`w-[18px] h-[18px] rounded flex items-center justify-center border-2 transition-colors flex-shrink-0 ${
+                        section.completed ? 'bg-green-500 border-green-500' : 'border-gray-300 hover:border-teal'
+                      }`}>
+                      {section.completed && <Check size={10} className="text-white" strokeWidth={3} />}
+                    </button>
+                    {/* Expand/collapse + section name */}
+                    <button
+                      onClick={() => setExpandedSection(expandedSection === i ? null : i)}
+                      className={`flex items-center gap-1.5 flex-1 text-left transition-colors ${section.completed ? 'text-gray-400' : 'text-np-dark hover:text-np-blue'}`}>
+                      {expandedSection === i
+                        ? <ChevronDown size={12} className="flex-shrink-0 text-np-blue" />
+                        : <ChevronRight size={12} className="flex-shrink-0 text-gray-400" />}
+                      <span className={`text-xs font-medium ${section.completed ? 'line-through' : ''}`}>{section.section}</span>
+                    </button>
+                    {sectionTimes[i] !== undefined && (
+                      <span className={`text-[10px] font-mono font-bold ${activeTimerIdx === i ? 'text-np-blue' : 'text-gray-400'}`}>
+                        {fmtTime(sectionTimes[i])}
+                      </span>
+                    )}
+                    <button onClick={() => toggleTimer(i)}
+                      className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors flex-shrink-0 ${
+                        activeTimerIdx === i ? 'bg-np-blue text-white' : 'bg-gray-100 text-gray-400 hover:bg-np-blue/10 hover:text-np-blue'
+                      }`}>
+                      {activeTimerIdx === i ? <Pause size={9} /> : <Play size={9} />}
+                    </button>
+                    <BadgePill text={`${section.duration_min} min`} color="#9CA3AF" bgColor="#F3F4F6" />
+                  </div>
+
+                  {/* Expanded section content */}
+                  {expandedSection === i && (
+                    <div className="pb-4 pl-7 space-y-3">
+                      {/* Prompts / talking points */}
+                      {((section.prompts || []).length > 0 || (section.talking_points || []).length > 0) && (
+                        <div>
+                          <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Discussion Prompts</p>
+                          <div className="space-y-1">
+                            {[...(section.prompts || []), ...(section.talking_points || [])].map((p, pi) => (
+                              <div key={pi} className="flex items-start gap-2 text-[11px] text-gray-600">
+                                <span className="text-np-blue mt-0.5">&#8227;</span>
+                                <span>{p}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Section notes */}
+                      <div>
+                        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Section Notes</p>
+                        <textarea
+                          defaultValue={section.notes || sectionNotes[i] || ''}
+                          onBlur={e => saveSectionNote(i, e.target.value)}
+                          onChange={e => setSectionNotes(prev => ({ ...prev, [i]: e.target.value }))}
+                          placeholder="Add notes for this section..."
+                          rows={3}
+                          className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg bg-gray-50 focus:outline-none focus:ring-1 focus:ring-np-blue/30 resize-none placeholder:text-gray-300"
+                        />
+                      </div>
+
+                      {/* Quick IDS capture from section */}
+                      <div>
+                        <button
+                          onClick={() => { setShowIdsForm(true) }}
+                          className="flex items-center gap-1.5 text-[10px] text-amber-600 hover:text-amber-700 font-medium">
+                          <Zap size={9} />Capture IDS item from this section
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
               {(meeting.agenda || []).length === 0 && (
-                <p className="text-xs text-gray-400 text-center py-8">No agenda items. Choose a template with a built-in agenda.</p>
+                <div className="py-8 text-center space-y-2">
+                  <p className="text-xs text-gray-400">No agenda items yet.</p>
+                  <button onClick={() => setShowAiAgendaBuilder(true)} className="text-xs text-violet-600 hover:underline flex items-center gap-1 mx-auto">
+                    <Sparkles size={10} />Build one with AI
+                  </button>
+                </div>
               )}
 
               {/* Rock Review (L10) */}
@@ -384,6 +801,154 @@ export default function MeetingDetailPage() {
                   ))}
                 </div>
               )}
+              {/* IDS + Task capture bar */}
+              <div className="mt-5 pt-4 border-t border-gray-200 space-y-3">
+                {/* IDS Capture */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
+                      <Zap size={10} className="text-amber-500" />Issues / Decisions / Solutions
+                    </span>
+                    <button onClick={() => setShowIdsForm(!showIdsForm)}
+                      className="text-[10px] text-np-blue hover:underline flex items-center gap-1">
+                      <Plus size={10} />Add IDS Item
+                    </button>
+                  </div>
+                  {showIdsForm && (
+                    <div className="bg-amber-50/60 border border-amber-100 rounded-xl p-3 space-y-2">
+                      <div className="flex gap-2">
+                        {(['issue','decision','solution'] as const).map(t => (
+                          <button key={t} onClick={() => setIdsType(t)}
+                            className={`px-2.5 py-1 text-[10px] font-bold rounded-full border transition-colors capitalize ${idsType === t ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-gray-500 border-gray-200 hover:border-amber-300'}`}>
+                            {t === 'issue' ? '⚡ Issue' : t === 'decision' ? '✓ Decision' : '💡 Solution'}
+                          </button>
+                        ))}
+                      </div>
+                      <input value={idsInput} onChange={e => setIdsInput(e.target.value)}
+                        placeholder="Describe the issue, decision, or solution..."
+                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-300"
+                        onKeyDown={e => e.key === 'Enter' && addIdsItem()} />
+                      <div className="flex gap-2">
+                        <input value={idsOwner} onChange={e => setIdsOwner(e.target.value)}
+                          placeholder="Owner (optional)"
+                          className="flex-1 px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-300" />
+                        <button onClick={addIdsItem} disabled={!idsInput.trim()}
+                          className="px-3 py-1.5 bg-amber-500 text-white text-xs font-semibold rounded-lg hover:bg-amber-600 disabled:opacity-50 transition-colors">
+                          Add
+                        </button>
+                        <button onClick={() => setShowIdsForm(false)} className="px-2 py-1.5 text-xs text-gray-400 hover:text-gray-600">
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {/* IDS items preview */}
+                  {(meeting.ids_items || []).length > 0 && (
+                    <div className="space-y-1 mt-2">
+                      {(meeting.ids_items as any[]).slice(-3).map((item: any) => (
+                        <div key={item.id} className="flex items-center gap-2 text-[10px] text-gray-600 bg-gray-50 rounded-lg px-3 py-1.5">
+                          <span className={`font-bold uppercase ${item.issue_category === 'issue' ? 'text-red-500' : item.issue_category === 'decision' ? 'text-green-600' : 'text-np-blue'}`}>
+                            {item.issue_category[0].toUpperCase()}
+                          </span>
+                          <span className="flex-1 truncate">{item.description}</span>
+                          {item.owner_name && <span className="text-gray-400">{item.owner_name}</span>}
+                        </div>
+                      ))}
+                      {(meeting.ids_items || []).length > 3 && (
+                        <button onClick={() => setTab('ids')} className="text-[10px] text-np-blue hover:underline pl-3">
+                          +{(meeting.ids_items || []).length - 3} more → View IDS tab
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Task Capture */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
+                      <ListTodo size={10} className="text-np-blue" />Action Items / Tasks
+                    </span>
+                    <button onClick={() => setShowTaskForm(!showTaskForm)}
+                      className="text-[10px] text-np-blue hover:underline flex items-center gap-1">
+                      <Plus size={10} />Capture Task
+                    </button>
+                  </div>
+                  {showTaskForm && (
+                    <div className="bg-np-blue/5 border border-np-blue/10 rounded-xl p-3 space-y-2">
+                      <input value={taskInput} onChange={e => setTaskInput(e.target.value)}
+                        placeholder="Task name..."
+                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30"
+                        onKeyDown={e => e.key === 'Enter' && !e.shiftKey && addActionItem()} />
+                      <textarea value={taskDesc} onChange={e => setTaskDesc(e.target.value)}
+                        placeholder="Description / context (optional)"
+                        rows={2}
+                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 resize-none" />
+                      <div className="grid grid-cols-2 gap-2">
+                        <input value={taskOwner} onChange={e => setTaskOwner(e.target.value)}
+                          placeholder="Owner name"
+                          className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                        <select value={taskPriority} onChange={e => setTaskPriority(e.target.value as any)}
+                          className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30">
+                          <option value="low">Low Priority</option>
+                          <option value="medium">Medium Priority</option>
+                          <option value="high">High Priority</option>
+                          <option value="urgent">Urgent</option>
+                        </select>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input value={taskRaciR} onChange={e => setTaskRaciR(e.target.value)}
+                          placeholder="RACI: Responsible"
+                          className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                        <input value={taskRaciA} onChange={e => setTaskRaciA(e.target.value)}
+                          placeholder="RACI: Accountable"
+                          className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                      </div>
+                      {/* Subtasks */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Subtasks</span>
+                          <button onClick={() => setTaskSubtasks(s => [...s, ''])}
+                            className="text-[9px] text-np-blue hover:underline">+ Add subtask</button>
+                        </div>
+                        {taskSubtasks.map((s, i) => (
+                          <div key={i} className="flex gap-1 mb-1">
+                            <input value={s} onChange={e => setTaskSubtasks(prev => prev.map((x, j) => j === i ? e.target.value : x))}
+                              placeholder={`Subtask ${i + 1}`}
+                              className="flex-1 px-2 py-1 text-xs border border-gray-200 rounded-lg focus:outline-none" />
+                            <button onClick={() => setTaskSubtasks(prev => prev.filter((_, j) => j !== i))}
+                              className="text-gray-300 hover:text-red-400 px-1"><X size={10} /></button>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex gap-2 pt-1">
+                        <button onClick={addActionItem} disabled={!taskInput.trim()}
+                          className="px-3 py-1.5 bg-np-blue text-white text-xs font-semibold rounded-lg hover:bg-np-blue/90 disabled:opacity-50 transition-colors">
+                          Capture Task
+                        </button>
+                        <button onClick={() => setShowTaskForm(false)} className="px-2 py-1.5 text-xs text-gray-400 hover:text-gray-600">
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {/* Pending tasks preview */}
+                  {((meeting.action_items || []) as any[]).filter((a: any) => a.status === 'pending').length > 0 && (
+                    <div className="space-y-1 mt-2">
+                      {((meeting.action_items || []) as any[]).filter((a: any) => a.status === 'pending').slice(-3).map((item: any) => (
+                        <div key={item.id} className="flex items-center gap-2 text-[10px] text-gray-600 bg-gray-50 rounded-lg px-3 py-1.5">
+                          <ListTodo size={9} className="text-np-blue flex-shrink-0" />
+                          <span className="flex-1 truncate font-medium">{item.title}</span>
+                          {item.owner_name && <span className="text-gray-400">{item.owner_name}</span>}
+                        </div>
+                      ))}
+                      <button onClick={() => setTab('task_review')} className="text-[10px] text-np-blue hover:underline pl-3">
+                        Review all tasks →
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
@@ -548,6 +1113,232 @@ export default function MeetingDetailPage() {
               )}
             </div>
           )}
+
+          {/* ── IDS TAB ── */}
+          {tab === 'ids' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-np-dark flex items-center gap-2">
+                  <Zap size={14} className="text-amber-500" />IDS — Identify, Discuss, Solve
+                </h3>
+                <button onClick={() => { setShowIdsForm(true); setTab('agenda') }}
+                  className="flex items-center gap-1 text-[10px] text-np-blue hover:underline">
+                  <Plus size={10} />Add Item
+                </button>
+              </div>
+
+              {(['issue','decision','solution'] as const).map(type => {
+                const items = ((meeting.ids_items || []) as any[]).filter((i: any) => i.issue_category === type)
+                if (items.length === 0) return null
+                const colors = { issue: 'text-red-600 bg-red-50 border-red-100', decision: 'text-green-700 bg-green-50 border-green-100', solution: 'text-np-blue bg-np-blue/5 border-np-blue/10' }
+                const labels = { issue: '⚡ Issues', decision: '✓ Decisions', solution: '💡 Solutions' }
+                return (
+                  <div key={type} className={`rounded-xl border p-4 ${colors[type]}`}>
+                    <h4 className="text-[10px] font-bold uppercase tracking-widest mb-3">{labels[type]} ({items.length})</h4>
+                    <div className="space-y-2">
+                      {items.map((item: any) => (
+                        <div key={item.id} className="flex items-start gap-3 bg-white/70 rounded-lg p-3">
+                          <div className="flex-1">
+                            <p className="text-xs font-medium text-np-dark">{item.description}</p>
+                            {item.owner_name && <p className="text-[10px] text-gray-400 mt-0.5">Owner: {item.owner_name}</p>}
+                            {item.resolution && <p className="text-[10px] text-green-700 mt-1 italic">Resolution: {item.resolution}</p>}
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <select value={item.status}
+                              onChange={async e => {
+                                const updated = (meeting.ids_items || []).map((x: any) => x.id === item.id ? { ...x, status: e.target.value } : x)
+                                setMeeting({ ...meeting, ids_items: updated as any })
+                                await supabase.from('meetings').update({ ids_items: updated, updated_at: new Date().toISOString() }).eq('id', meeting.id)
+                              }}
+                              className="text-[9px] px-1.5 py-0.5 border border-gray-200 rounded focus:outline-none bg-white">
+                              <option value="identified">Identified</option>
+                              <option value="discussed">Discussed</option>
+                              <option value="solved">Solved</option>
+                            </select>
+                            <button onClick={() => removeIdsItem(item.id)} className="p-1 text-gray-300 hover:text-red-400 transition-colors">
+                              <X size={10} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+
+              {((meeting.ids_items || []) as any[]).length === 0 && (
+                <div className="py-10 text-center">
+                  <Zap size={24} className="mx-auto text-gray-200 mb-2" />
+                  <p className="text-xs text-gray-400">No IDS items yet.</p>
+                  <button onClick={() => { setShowIdsForm(true); setTab('agenda') }}
+                    className="mt-2 text-xs text-np-blue hover:underline">Capture one from the Agenda tab</button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── TASK REVIEW TAB ── */}
+          {tab === 'task_review' && (() => {
+            const allItems = (meeting.action_items || []) as any[]
+            const pending  = allItems.filter(a => a.status === 'pending')
+            const approved = allItems.filter(a => a.status === 'approved')
+            const deferred = allItems.filter(a => a.status === 'deferred')
+            const rejected = allItems.filter(a => a.status === 'deleted')
+
+            const priColor: Record<string, string> = { low: '#9CA3AF', medium: '#3B82F6', high: '#F59E0B', urgent: '#EF4444' }
+
+            return (
+              <div className="space-y-5">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-np-dark flex items-center gap-2">
+                    <ListTodo size={14} className="text-np-blue" />Task Review
+                  </h3>
+                  <div className="flex items-center gap-3 text-[10px] text-gray-400">
+                    <span className="text-green-600 font-semibold">{approved.length} approved</span>
+                    <span className="text-amber-600 font-semibold">{deferred.length} deferred</span>
+                    <span className="text-red-400 font-semibold">{rejected.length} rejected</span>
+                  </div>
+                </div>
+
+                {pending.length === 0 && approved.length === 0 && deferred.length === 0 && (
+                  <div className="py-10 text-center">
+                    <ListTodo size={24} className="mx-auto text-gray-200 mb-2" />
+                    <p className="text-xs text-gray-400">No action items captured yet.</p>
+                    <button onClick={() => { setShowTaskForm(true); setTab('agenda') }}
+                      className="mt-2 text-xs text-np-blue hover:underline">Capture tasks from the Agenda tab</button>
+                  </div>
+                )}
+
+                {/* Pending — needs review */}
+                {pending.length > 0 && (
+                  <div>
+                    <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                      <Clock size={10} />Pending Review ({pending.length})
+                    </h4>
+                    <div className="space-y-3">
+                      {pending.map((item: any) => (
+                        <div key={item.id} className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm">
+                          <div className="flex items-start justify-between gap-3 mb-3">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-sm font-semibold text-np-dark">{item.title}</span>
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ color: priColor[item.priority || 'medium'], backgroundColor: priColor[item.priority || 'medium'] + '20' }}>
+                                  {(item.priority || 'medium').toUpperCase()}
+                                </span>
+                              </div>
+                              {item.description && <p className="text-[11px] text-gray-500 leading-relaxed">{item.description}</p>}
+                            </div>
+                          </div>
+
+                          {/* RACI */}
+                          {(item.raci_responsible || item.raci_accountable || item.owner_name) && (
+                            <div className="flex flex-wrap gap-3 mb-3 text-[10px]">
+                              {item.owner_name && (
+                                <span className="flex items-center gap-1"><span className="font-bold text-gray-400">Owner:</span><span className="text-np-dark">{item.owner_name}</span></span>
+                              )}
+                              {item.raci_responsible && (
+                                <span className="flex items-center gap-1"><span className="font-bold text-gray-400">R:</span><span className="text-np-dark">{item.raci_responsible}</span></span>
+                              )}
+                              {item.raci_accountable && (
+                                <span className="flex items-center gap-1"><span className="font-bold text-gray-400">A:</span><span className="text-np-dark">{item.raci_accountable}</span></span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Subtasks */}
+                          {item.subtasks?.length > 0 && (
+                            <div className="mb-3 space-y-1">
+                              <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Subtasks</span>
+                              {item.subtasks.map((s: string, i: number) => (
+                                <div key={i} className="flex items-center gap-2 text-[10px] text-gray-600">
+                                  <div className="w-3 h-3 rounded border border-gray-300 flex-shrink-0" />
+                                  {s}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Actions */}
+                          <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+                            <button onClick={() => approveTask(item)} disabled={taskLoading[item.id]}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500 text-white text-xs font-semibold rounded-lg hover:bg-green-600 disabled:opacity-50 transition-colors">
+                              {taskLoading[item.id] ? <Loader2 size={10} className="animate-spin" /> : <CheckCircle2 size={10} />}
+                              Accept → Task Manager
+                            </button>
+                            <div className="flex items-center gap-1 flex-1">
+                              <input type="date" value={deferDates[item.id] || ''} onChange={e => setDeferDates(prev => ({ ...prev, [item.id]: e.target.value }))}
+                                className="text-[10px] px-2 py-1.5 border border-gray-200 rounded-lg focus:outline-none flex-1" />
+                              <button onClick={() => deferTask(item)}
+                                className="flex items-center gap-1 px-2.5 py-1.5 bg-amber-100 text-amber-700 text-[10px] font-semibold rounded-lg hover:bg-amber-200 transition-colors">
+                                <CalendarClock size={10} />Defer
+                              </button>
+                            </div>
+                            <button onClick={() => rejectTask(item.id)}
+                              className="flex items-center gap-1 px-2.5 py-1.5 bg-red-50 text-red-500 text-[10px] font-semibold rounded-lg hover:bg-red-100 transition-colors">
+                              <XCircle size={10} />Reject
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Approved */}
+                {approved.length > 0 && (
+                  <div>
+                    <h4 className="text-[10px] font-bold text-green-600 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                      <CheckCircle2 size={10} />Approved → Task Manager ({approved.length})
+                    </h4>
+                    <div className="space-y-1.5">
+                      {approved.map((item: any) => (
+                        <div key={item.id} className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-100 rounded-lg text-xs">
+                          <CheckCircle2 size={11} className="text-green-500 flex-shrink-0" />
+                          <span className="text-green-800 font-medium flex-1">{item.title}</span>
+                          {item.owner_name && <span className="text-green-600 text-[10px]">{item.owner_name}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Deferred */}
+                {deferred.length > 0 && (
+                  <div>
+                    <h4 className="text-[10px] font-bold text-amber-600 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                      <CalendarClock size={10} />Deferred — Carries to Next Meeting ({deferred.length})
+                    </h4>
+                    <div className="space-y-1.5">
+                      {deferred.map((item: any) => (
+                        <div key={item.id} className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-100 rounded-lg text-xs">
+                          <CalendarClock size={11} className="text-amber-500 flex-shrink-0" />
+                          <span className="text-amber-800 font-medium flex-1">{item.title}</span>
+                          {item.defer_revisit_date && <span className="text-amber-600 text-[10px]">Revisit: {item.defer_revisit_date}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Rejected */}
+                {rejected.length > 0 && (
+                  <details>
+                    <summary className="text-[10px] font-bold text-gray-400 uppercase tracking-widest cursor-pointer hover:text-gray-600">
+                      Rejected ({rejected.length})
+                    </summary>
+                    <div className="space-y-1.5 mt-2">
+                      {rejected.map((item: any) => (
+                        <div key={item.id} className="flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-100 rounded-lg text-xs text-gray-400">
+                          <XCircle size={11} className="flex-shrink-0" />
+                          <span className="line-through flex-1">{item.title}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </div>
+            )
+          })()}
 
           {/* ── AI ADVISOR TAB ── */}
           {tab === 'ai_advisor' && (
