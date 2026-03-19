@@ -757,9 +757,13 @@ export default function MeetingDetailPage() {
                   className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-semibold text-gray-500 hover:text-np-dark border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                   <Upload size={10} />{agendaUploading ? 'Uploading...' : 'Upload Agenda'}
                 </button>
-                <button onClick={() => setShowGdocPanel(!showGdocPanel)}
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-semibold border rounded-lg transition-colors ${showGdocPanel ? 'bg-green-600 text-white border-green-600' : 'text-green-700 border-green-200 hover:bg-green-50'}`}>
-                  <FileText size={10} />Open as Google Doc
+                <button onClick={downloadAgendaTemplate}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-semibold text-gray-500 hover:text-np-dark border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                  <FileText size={10} />Download Template
+                </button>
+                <button onClick={downloadFilledAgenda}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-semibold text-np-blue border border-np-blue/20 rounded-lg hover:bg-np-blue/5 transition-colors">
+                  <Download size={10} />Export This Agenda
                 </button>
                 <button onClick={() => setShowAiAgendaBuilder(!showAiAgendaBuilder)}
                   className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-semibold border rounded-lg transition-colors ${showAiAgendaBuilder ? 'bg-violet-600 text-white border-violet-600' : 'text-violet-600 border-violet-200 hover:bg-violet-50'}`}>
@@ -793,53 +797,7 @@ export default function MeetingDetailPage() {
                 </div>
               )}
 
-              {/* Google Doc panel */}
-              {showGdocPanel && (
-                <div className="bg-green-50/60 border border-green-100 rounded-xl p-4 mb-3 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <FileText size={12} className="text-green-600" />
-                    <span className="text-xs font-semibold text-green-800">Open as Google Doc</span>
-                  </div>
 
-                  <div className="flex items-center gap-3">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" checked={gdocUseAi} onChange={e => setGdocUseAi(e.target.checked)}
-                        className="w-3.5 h-3.5 rounded border-gray-300 text-green-600" />
-                      <span className="text-xs text-gray-600">Use AI to build agenda before opening</span>
-                    </label>
-                  </div>
-
-                  {gdocUseAi && (
-                    <textarea
-                      value={gdocAiDesc}
-                      onChange={e => setGdocAiDesc(e.target.value)}
-                      placeholder="Describe meeting goals, key topics, or context for the AI..."
-                      rows={3}
-                      className="w-full px-3 py-2 text-xs border border-green-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-green-300 bg-white resize-none placeholder:text-gray-400"
-                    />
-                  )}
-
-                  {gdocError && (
-                    <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{gdocError}</p>
-                  )}
-
-                  {gdocUrl && (
-                    <a href={gdocUrl} target="_blank" rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 text-xs text-green-700 font-semibold hover:underline">
-                      <FileText size={11} />Open Google Doc again →
-                    </a>
-                  )}
-
-                  <div className="flex gap-2">
-                    <button onClick={() => createGoogleDoc(gdocUseAi)} disabled={gdocLoading || (gdocUseAi && !gdocAiDesc.trim())}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors">
-                      {gdocLoading ? <Loader2 size={10} className="animate-spin" /> : <FileText size={10} />}
-                      {gdocLoading ? 'Creating doc...' : 'Create & Open Google Doc'}
-                    </button>
-                    <button onClick={() => setShowGdocPanel(false)} className="px-2 py-1.5 text-xs text-gray-400 hover:text-gray-600">Cancel</button>
-                  </div>
-                </div>
-              )}
 
               {/* Agenda sections */}
               {(meeting.agenda || []).map((section: AgendaSection, i: number) => (
