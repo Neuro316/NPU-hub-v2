@@ -18,10 +18,7 @@ export async function GET(request: Request) {
   const webhookUrl = orgSettings?.setting_value?.webhook_url;
   if (!webhookUrl) return NextResponse.json({ error: 'No Slack config found' }, { status: 500 });
 
-  const today = new Date();
-  const offset = today.getTimezoneOffset() * 60000;
-  const localDate = new Date(today.getTime() - offset);
-  const todayStr = localDate.toISOString().split('T')[0];
+  const todayStr = new Date().toISOString().split('T')[0];
   console.log('todayStr:', todayStr);
 
   const { data: contacts, error } = await supabase
