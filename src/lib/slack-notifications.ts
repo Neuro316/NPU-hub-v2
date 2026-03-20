@@ -90,7 +90,7 @@ export async function notifyTaskAssigned(
   assignee: string,
   actor: string,
 ) {
-  return; // disabled
+
   const config = await getSlackConfig(orgId)
   if (!config) return
 
@@ -105,10 +105,10 @@ export async function notifyTaskAssigned(
   // DM to assignee
   if (assignee !== actor) {
     const slackId = await getSlackUserId(orgId, assignee)
-    if (slackId !== null && slackId !== undefined) {
+    if (slackId) {
       await sendDM(
         orgId,
-        slackId as string,
+        slackId,
         `📋 *${actor}* assigned you to task *${taskTitle}*\n→ <${taskUrl}|Open Task>`
       )
     }
@@ -125,7 +125,7 @@ export async function notifyTaskMoved(
   assignee: string | null,
   raciRoles: Record<string, string>,
 ) {
-  return; // disabled
+
   const config = await getSlackConfig(orgId)
   if (!config) return
 
@@ -165,7 +165,7 @@ export async function notifyRACIAssigned(
   assignedTo: string,
   actor: string,
 ) {
-  return; // disabled
+
   const config = await getSlackConfig(orgId)
   if (!config) return
 
@@ -200,7 +200,7 @@ export async function notifyTaskCreated(
   assignee: string | null,
   actor: string,
 ) {
-  return; // disabled
+
   const config = await getSlackConfig(orgId)
   if (!config) return
 
@@ -232,7 +232,7 @@ export async function notifyCommentMention(
   author: string,
   commentPreview: string,
 ) {
-  return; // disabled
+
   const config = await getSlackConfig(orgId)
   if (!config) return
 
