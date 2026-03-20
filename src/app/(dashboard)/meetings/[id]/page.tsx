@@ -63,6 +63,11 @@ export default function MeetingDetailPage() {
   const [addingSection, setAddingSection]     = useState(false)
   const [newSectionName, setNewSectionName]   = useState('')
   const [newSectionMins, setNewSectionMins]   = useState('10')
+  const [editingTitle, setEditingTitle]       = useState(false)
+  const [editTitleVal, setEditTitleVal]       = useState('')
+  const [editingSectionIdx, setEditingSectionIdx] = useState<number | null>(null)
+  const [editSectionName, setEditSectionName] = useState('')
+  const [editSectionMins, setEditSectionMins] = useState('')
   const [sectionNotes, setSectionNotes]       = useState<Record<number, string>>({})
   const agendaUploadRef = useRef<HTMLInputElement>(null)
   const [agendaUploading, setAgendaUploading] = useState(false)
@@ -189,6 +194,36 @@ export default function MeetingDetailPage() {
     } finally {
       setGdocLoading(false)
     }
+  }
+
+  // ═══ TITLE EDIT ═══
+  const saveTitle = async () => {
+    if (!meeting || !editTitleVal.trim()) return
+    setMeeting({ ...meeting, title: editTitleVal.trim() })
+    await supabase.from('meetings').update({ title: editTitleVal.trim(), updated_at: new Date().toISOString() }).eq('id', meeting.id)
+    setEditingTitle(false)
+  }
+
+  // ═══ SECTION EDIT / REMOVE ═══
+  const saveSectionEdit = async (idx: number) => {
+    if (!meeting) return
+    const agenda = [...(meeting.agenda || [])]
+    agenda[idx] = {
+      ...agenda[idx],
+      section: editSectionName.trim() || agenda[idx].section,
+      duration_min: parseInt(editSectionMins) || agenda[idx].duration_min,
+    }
+    setMeeting({ ...meeting, agenda })
+    setEditingSectionIdx(null)
+    await supabase.from('meetings').update({ agenda, updated_at: new Date().toISOString() }).eq('id', meeting.id)
+  }
+
+  const removeSection = async (idx: number) => {
+    if (!meeting) return
+    const agenda = (meeting.agenda || []).filter((_: any, i: number) => i !== idx)
+    setMeeting({ ...meeting, agenda })
+    if (expandedSection === idx) setExpandedSection(null)
+    await supabase.from('meetings').update({ agenda, updated_at: new Date().toISOString() }).eq('id', meeting.id)
   }
 
   // ═══ MEETING TIME EDIT ═══
@@ -670,7 +705,27 @@ export default function MeetingDetailPage() {
         <div className="px-5 py-4 border-b border-gray-100">
           <div className="flex items-center gap-2 mb-1">
             <BadgePill text={tmpl.label} color={tmpl.color} />
-            <h2 className="text-base font-bold text-np-dark flex-1">{meeting.title}</h2>
+            {editingTitle ? (
+              <div className="flex items-center gap-2 flex-1">
+                <input
+                  autoFocus
+                  value={editTitleVal}
+                  onChange={e => setEditTitleVal(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') saveTitle(); if (e.key === 'Escape') setEditingTitle(false) }}
+                  className="flex-1 px-2 py-1 text-sm font-semibold border border-np-blue/30 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/40 text-np-dark"
+                />
+                <button onClick={saveTitle} className="px-2 py-1 bg-np-blue text-white text-[10px] font-semibold rounded-lg">Save</button>
+                <button onClick={() => setEditingTitle(false)} className="text-[10px] text-gray-400 hover:text-gray-600">Cancel</button>
+              </div>
+            ) : (
+              <button
+                onClick={() => { setEditTitleVal(meeting.title); setEditingTitle(true) }}
+                className="flex items-center gap-1.5 group flex-1 text-left"
+              >
+                <h2 className="text-base font-bold text-np-dark group-hover:text-np-blue transition-colors">{meeting.title}</h2>
+                <Edit2 size={11} className="opacity-0 group-hover:opacity-60 transition-opacity text-np-blue flex-shrink-0" />
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-4 text-[11px] text-gray-400">
             {editingTime ? (
@@ -803,34 +858,65 @@ export default function MeetingDetailPage() {
               {(meeting.agenda || []).map((section: AgendaSection, i: number) => (
                 <div key={i} className={`border-b border-gray-100 last:border-0 transition-colors ${activeTimerIdx === i ? 'bg-np-blue/5 -mx-5 px-5' : ''}`}>
                   {/* Section header row */}
-                  <div className="flex items-center gap-3 py-2.5">
+                  <div className="flex items-center gap-3 py-2.5 group/row">
                     <button onClick={() => toggleAgendaItem(i)}
                       className={`w-[18px] h-[18px] rounded flex items-center justify-center border-2 transition-colors flex-shrink-0 ${
                         section.completed ? 'bg-green-500 border-green-500' : 'border-gray-300 hover:border-teal'
                       }`}>
                       {section.completed && <Check size={10} className="text-white" strokeWidth={3} />}
                     </button>
-                    {/* Expand/collapse + section name */}
-                    <button
-                      onClick={() => setExpandedSection(expandedSection === i ? null : i)}
-                      className={`flex items-center gap-1.5 flex-1 text-left transition-colors ${section.completed ? 'text-gray-400' : 'text-np-dark hover:text-np-blue'}`}>
-                      {expandedSection === i
-                        ? <ChevronDown size={12} className="flex-shrink-0 text-np-blue" />
-                        : <ChevronRight size={12} className="flex-shrink-0 text-gray-400" />}
-                      <span className={`text-xs font-medium ${section.completed ? 'line-through' : ''}`}>{section.section}</span>
-                    </button>
-                    {sectionTimes[i] !== undefined && (
-                      <span className={`text-[10px] font-mono font-bold ${activeTimerIdx === i ? 'text-np-blue' : 'text-gray-400'}`}>
-                        {fmtTime(sectionTimes[i])}
-                      </span>
+
+                    {editingSectionIdx === i ? (
+                      // Inline edit mode
+                      <div className="flex items-center gap-2 flex-1">
+                        <input autoFocus value={editSectionName} onChange={e => setEditSectionName(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') saveSectionEdit(i); if (e.key === 'Escape') setEditingSectionIdx(null) }}
+                          className="flex-1 px-2 py-0.5 text-xs font-medium border border-np-blue/30 rounded focus:outline-none bg-white" />
+                        <input type="number" min="1" max="180" value={editSectionMins} onChange={e => setEditSectionMins(e.target.value)}
+                          className="w-12 px-1.5 py-0.5 text-xs border border-np-blue/30 rounded focus:outline-none text-center bg-white" />
+                        <span className="text-[10px] text-gray-400">min</span>
+                        <button onClick={() => saveSectionEdit(i)} className="px-2 py-0.5 bg-np-blue text-white text-[10px] font-semibold rounded">Save</button>
+                        <button onClick={() => setEditingSectionIdx(null)} className="text-[10px] text-gray-400 hover:text-gray-600">✕</button>
+                      </div>
+                    ) : (
+                      // View mode
+                      <button
+                        onClick={() => setExpandedSection(expandedSection === i ? null : i)}
+                        className={`flex items-center gap-1.5 flex-1 text-left transition-colors ${section.completed ? 'text-gray-400' : 'text-np-dark hover:text-np-blue'}`}>
+                        {expandedSection === i
+                          ? <ChevronDown size={12} className="flex-shrink-0 text-np-blue" />
+                          : <ChevronRight size={12} className="flex-shrink-0 text-gray-400" />}
+                        <span className={`text-xs font-medium ${section.completed ? 'line-through' : ''}`}>{section.section}</span>
+                      </button>
                     )}
-                    <button onClick={() => toggleTimer(i)}
-                      className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors flex-shrink-0 ${
-                        activeTimerIdx === i ? 'bg-np-blue text-white' : 'bg-gray-100 text-gray-400 hover:bg-np-blue/10 hover:text-np-blue'
-                      }`}>
-                      {activeTimerIdx === i ? <Pause size={9} /> : <Play size={9} />}
-                    </button>
-                    <BadgePill text={`${section.duration_min} min`} color="#9CA3AF" bgColor="#F3F4F6" />
+
+                    {editingSectionIdx !== i && (
+                      <>
+                        {sectionTimes[i] !== undefined && (
+                          <span className={`text-[10px] font-mono font-bold ${activeTimerIdx === i ? 'text-np-blue' : 'text-gray-400'}`}>
+                            {fmtTime(sectionTimes[i])}
+                          </span>
+                        )}
+                        <button onClick={() => toggleTimer(i)}
+                          className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors flex-shrink-0 ${
+                            activeTimerIdx === i ? 'bg-np-blue text-white' : 'bg-gray-100 text-gray-400 hover:bg-np-blue/10 hover:text-np-blue'
+                          }`}>
+                          {activeTimerIdx === i ? <Pause size={9} /> : <Play size={9} />}
+                        </button>
+                        <BadgePill text={`${section.duration_min} min`} color="#9CA3AF" bgColor="#F3F4F6" />
+                        {/* Edit / Delete — show on row hover */}
+                        <button
+                          onClick={() => { setEditingSectionIdx(i); setEditSectionName(section.section); setEditSectionMins(String(section.duration_min)) }}
+                          className="opacity-0 group-hover/row:opacity-100 transition-opacity p-1 text-gray-300 hover:text-np-blue rounded">
+                          <Edit2 size={10} />
+                        </button>
+                        <button
+                          onClick={() => removeSection(i)}
+                          className="opacity-0 group-hover/row:opacity-100 transition-opacity p-1 text-gray-300 hover:text-red-400 rounded">
+                          <Trash2 size={10} />
+                        </button>
+                      </>
+                    )}
                   </div>
 
                   {/* Expanded section content */}
