@@ -1133,17 +1133,39 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                     </div>
                   </div>}
 
-                  {/* Due Date */}
+                  {/* Due Date - inline editable */}
                   <div className={`rounded-lg p-2 border ${(contact as any).due_date ? 'bg-amber-50/50 border-amber-100/50' : 'bg-gray-50 border-gray-100'}`}>
-                    <p className="text-[8px] font-bold uppercase" style={{ color: (contact as any).due_date ? '#d97706' : '#6b7280' }}>Due Date</p>
-                    {(contact as any).due_date ? (
-                      <>
-                        <p className="text-[10px] font-medium text-np-dark mt-0.5">{new Date((contact as any).due_date + 'T00:00:00').toLocaleDateString()}</p>
-                        {(contact as any).due_date_action && <p className="text-[9px] text-gray-500 mt-0.5">{(contact as any).due_date_action}</p>}
-                      </>
-                    ) : (
-                      <p className="text-[10px] font-medium text-np-dark mt-0.5">None</p>
-                    )}
+                    <p className="text-[8px] font-bold uppercase mb-1" style={{ color: (contact as any).due_date ? '#d97706' : '#6b7280' }}>Due Date</p>
+                    <input type="date" value={(contact as any).due_date || ''}
+                      onChange={async (e) => {
+                        const val = e.target.value || null
+                        await updateContact(contact.id, { due_date: val, due_date_notified: false } as any)
+                        load()
+                        onUpdate?.()
+                      }}
+                      className="w-full px-1.5 py-1 text-[10px] font-medium text-np-dark border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-amber-300 bg-white" />
+                    <div className="mt-1.5">
+                      <button onClick={async () => {
+                        await updateContact(contact.id, { due_date_action: 'Turn off access to xRegulation', due_date_notified: false } as any)
+                        load()
+                        onUpdate?.()
+                      }}
+                        className={`w-full px-1.5 py-1 text-[9px] border rounded text-left transition-colors ${(contact as any).due_date_action === 'Turn off access to xRegulation' ? 'border-np-blue bg-np-blue/5 text-np-blue font-medium' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
+                        Turn off access to xRegulation
+                      </button>
+                      <input defaultValue={(contact as any).due_date_action === 'Turn off access to xRegulation' ? '' : ((contact as any).due_date_action || '')}
+                        key={(contact as any).due_date_action || 'empty'}
+                        onBlur={async (e) => {
+                          if (e.target.value !== ((contact as any).due_date_action || '')) {
+                            await updateContact(contact.id, { due_date_action: e.target.value || null, due_date_notified: false } as any)
+                            load()
+                            onUpdate?.()
+                          }
+                        }}
+                        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                        placeholder="Or custom action..."
+                        className="w-full mt-1 px-1.5 py-1 text-[9px] text-np-dark border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-amber-300 bg-white" />
+                    </div>
                   </div>
 
                   {/* Subscription Banner */}
