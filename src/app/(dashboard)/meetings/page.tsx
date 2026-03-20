@@ -18,6 +18,7 @@ export default function MeetingsPage() {
   const { meetings, loading, addMeeting, deleteMeeting, fetchData } = useMeetingData()
   const { members } = useTeamData()
   const router = useRouter()
+  const supabase = createClient()
   const [showCreate, setShowCreate] = useState(false)
   const [createForm, setCreateForm] = useState({
     title: '', template: 'custom' as MeetingTemplate,
@@ -28,6 +29,11 @@ export default function MeetingsPage() {
   // Delete state
   const [deleteTarget, setDeleteTarget] = useState<MeetingWithAttendees | null>(null)
   const [deleting, setDeleting] = useState(false)
+
+  // Rename state
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameVal, setRenameVal] = useState('')
+  const renameRef = useRef<HTMLInputElement>(null)
 
   const handleDelete = async () => {
     if (!deleteTarget) return
