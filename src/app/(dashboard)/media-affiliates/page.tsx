@@ -885,6 +885,7 @@ function MediaAffiliatesContent() {
                   onDelete={deleteAppearance}
                   onEdit={setEditingAppearance}
                   onAdvanceStage={advanceStage}
+                  onGuestSheet={setGuestSheetAppearance}
                   contentPieces={contentPieces.filter(cp => cp.appearance_id === item.id)}
                 />
               ))}
