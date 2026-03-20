@@ -12,7 +12,7 @@ export async function GET(request: Request) {
   const { data: orgSettings } = await supabase
     .from('org_settings')
     .select('setting_value')
-    .eq('setting_key', 'slack_config')
+    .eq('setting_key', 'slack_crm_due_dates')
     .single();
 
   const webhookUrl = orgSettings?.setting_value?.webhook_url;
