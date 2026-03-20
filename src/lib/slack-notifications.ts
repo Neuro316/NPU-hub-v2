@@ -108,7 +108,7 @@ export async function notifyTaskAssigned(
     if (slackId !== null && slackId !== undefined) {
       await sendDM(
         orgId,
-        slackId,
+        slackId as string,
         `📋 *${actor}* assigned you to task *${taskTitle}*\n→ <${taskUrl}|Open Task>`
       )
     }
