@@ -10,7 +10,7 @@ import { StatusDot, BadgePill, AvatarStack, Avatar } from '@/components/shared/m
 import { MEETING_TEMPLATES } from '@/lib/types/meetings'
 import type { Meeting, MeetingTemplate, MeetingWithAttendees } from '@/lib/types/meetings'
 import {
-  Plus, Clock, ChevronRight, Calendar, X, Users, Loader2, Trash2, AlertTriangle, Pencil
+  Plus, Clock, ChevronRight, Calendar, X, Users, Loader2, Trash2, AlertTriangle, Pencil, Search
 } from 'lucide-react'
 
 export default function MeetingsPage() {
@@ -30,6 +30,9 @@ export default function MeetingsPage() {
   const [deleteTarget, setDeleteTarget] = useState<MeetingWithAttendees | null>(null)
   const [deleting, setDeleting] = useState(false)
 
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('')
+
   // Rename state
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameVal, setRenameVal] = useState('')
@@ -44,6 +47,18 @@ export default function MeetingsPage() {
   }
 
   // Group meetings by Today / Upcoming / Past
+  const filteredMeetings = useMemo(() => {
+    if (!searchQuery.trim()) return meetings
+    const q = searchQuery.toLowerCase()
+    return meetings.filter(m =>
+      m.title.toLowerCase().includes(q) ||
+      m.template?.toLowerCase().includes(q) ||
+      m.notes?.toLowerCase().includes(q) ||
+      (m.read_ai_data?.transcript || '').toLowerCase().includes(q) ||
+      (m.read_ai_data?.summary || '').toLowerCase().includes(q)
+    )
+  }, [meetings, searchQuery])
+
   const grouped = useMemo(() => {
     const now = new Date()
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -53,7 +68,7 @@ export default function MeetingsPage() {
     const upcoming: MeetingWithAttendees[] = []
     const past: MeetingWithAttendees[] = []
 
-    meetings.forEach(m => {
+    filteredMeetings.forEach(m => {
       const d = m.scheduled_at ? new Date(m.scheduled_at) : null
       if (!d) { upcoming.push(m); return }
       if (d >= todayStart && d < todayEnd) today.push(m)
@@ -178,6 +193,22 @@ export default function MeetingsPage() {
         </button>
       </div>
 
+      {/* Search bar */}
+      <div className="relative">
+        <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <input
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          placeholder="Search meetings, notes, transcripts..."
+          className="w-full pl-8 pr-4 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 bg-white"
+        />
+        {searchQuery && (
+          <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+            <X size={12} />
+          </button>
+        )}
+      </div>
+
       {/* Grouped lists */}
       {grouped.today.length > 0 && (
         <div>
@@ -205,7 +236,13 @@ export default function MeetingsPage() {
         </div>
       )}
 
-      {meetings.length === 0 && (
+      {filteredMeetings.length === 0 && searchQuery && (
+        <div className="text-center py-10">
+          <Search size={32} className="mx-auto text-gray-200 mb-2" />
+          <p className="text-sm text-gray-400">No meetings found for &quot;{searchQuery}&quot;</p>
+        </div>
+      )}
+      {meetings.length === 0 && !searchQuery && (
         <div className="text-center py-16">
           <Calendar size={40} className="mx-auto text-gray-200 mb-3" />
           <h2 className="text-sm font-semibold text-np-dark">No meetings yet</h2>

@@ -13,7 +13,7 @@ import {
   ChevronLeft, Clock, Save, Upload, Check, Loader2, Target,
   Trash2, AlertTriangle, Sparkles, FileText, Video, X,
   Brain, TrendingUp, AlertCircle, Users, Calendar,
-  Play, Pause, Plus, CheckCircle2, XCircle, CalendarClock, ListTodo, Zap, ChevronDown, ChevronRight, Download, Edit2
+  Play, Pause, Plus, CheckCircle2, XCircle, CalendarClock, ListTodo, Zap, ChevronDown, ChevronRight, Download, Edit2, Search
 } from 'lucide-react'
 
 export default function MeetingDetailPage() {
@@ -87,6 +87,9 @@ export default function MeetingDetailPage() {
 
   // Read AI upload state
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const videoInputRef  = useRef<HTMLInputElement>(null)
+  const transcriptInputRef = useRef<HTMLInputElement>(null)
+  const [transcriptSearch, setTranscriptSearch] = useState('')
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
 
@@ -688,6 +691,93 @@ export default function MeetingDetailPage() {
     setUploading(false)
   }
 
+  // ═══ SEPARATE VIDEO UPLOAD ═══
+  const handleVideoUpload = async (file: File) => {
+    setUploading(true)
+    setUploadError('')
+    try {
+      const videoUrl = URL.createObjectURL(file)
+      const existing = meeting?.read_ai_data || {}
+      const updated = {
+        ...existing,
+        video_url: videoUrl,
+        video_filename: file.name,
+        video_size_mb: (file.size / 1024 / 1024).toFixed(1),
+        video_uploaded_at: new Date().toISOString(),
+        original_filename: existing.original_filename || file.name,
+      }
+      if (meeting) {
+        await supabase.from('meetings').update({ read_ai_data: updated, updated_at: new Date().toISOString() }).eq('id', meeting.id)
+        setMeeting({ ...meeting, read_ai_data: updated })
+      }
+    } catch (e: any) {
+      setUploadError(e.message || 'Failed to upload video')
+    }
+    setUploading(false)
+  }
+
+  // ═══ SEPARATE TRANSCRIPT UPLOAD ═══
+  const handleTranscriptUpload = async (file: File) => {
+    setUploading(true)
+    setUploadError('')
+    try {
+      const ext = file.name.split('.').pop()?.toLowerCase() || ''
+      let transcript = ''
+      let summary = null
+      let action_items: any[] = []
+
+      if (ext === 'json') {
+        const raw = JSON.parse(await file.text())
+        transcript = raw.transcript || raw.full_transcript || ''
+        summary = raw.summary || raw.abstract || null
+        action_items = raw.action_items || raw.actionItems || []
+      } else if (['srt','vtt'].includes(ext)) {
+        const text = await file.text()
+        transcript = text
+          .replace(/\d+\n/g, '')
+          .replace(/\d{2}:\d{2}:\d{2}[.,]\d{2,3}\s*-->\s*\d{2}:\d{2}:\d{2}[.,]\d{2,3}/g, '')
+          .replace(/<[^>]+>/g, '')
+          .split('\n').map(l => l.trim()).filter(Boolean).join(' ')
+      } else {
+        const text = await file.text()
+        const sections: Record<string,string> = {}
+        let cur = 'transcript'
+        text.split('\n').forEach(line => {
+          const t = line.trim()
+          if (/^(summary|action items|key topics|decisions|questions|transcript)/i.test(t)) {
+            cur = t.toLowerCase().replace(/[^a-z_]/g,'_').replace(/_+/g,'_')
+          } else if (t) {
+            if (!sections[cur]) sections[cur] = ''
+            sections[cur] += t + '\n'
+          }
+        })
+        transcript = sections.transcript?.trim() || text.trim()
+        summary = sections.summary?.trim() || null
+        const actionLines = (sections.action_items || '').split('\n').filter(l => l.trim())
+        action_items = actionLines.map(l => ({ description: l.replace(/^[-*\u2022]\s*/,'').trim() }))
+      }
+
+      const existing = meeting?.read_ai_data || {}
+      const updated = {
+        ...existing,
+        transcript,
+        summary: summary || existing.summary,
+        action_items: action_items.length > 0 ? action_items : (existing.action_items || []),
+        transcript_filename: file.name,
+        transcript_uploaded_at: new Date().toISOString(),
+        original_filename: existing.original_filename || file.name,
+        source: existing.source || 'transcript_upload',
+      }
+      if (meeting) {
+        await supabase.from('meetings').update({ read_ai_data: updated, updated_at: new Date().toISOString() }).eq('id', meeting.id)
+        setMeeting({ ...meeting, read_ai_data: updated })
+      }
+    } catch (e: any) {
+      setUploadError(e.message || 'Failed to parse transcript')
+    }
+    setUploading(false)
+  }
+
   // ═══ AI ADVISOR ═══
   const runAiAdvisor = async () => {
     if (!meeting || !currentOrg) return
@@ -1271,25 +1361,38 @@ export default function MeetingDetailPage() {
           {tab === 'read_ai' && (
             <div className="space-y-4">
               {/* Hidden file input */}
+              {/* Hidden file inputs */}
               <input ref={fileInputRef} type="file" accept=".json,.txt,.csv,.md,.mp4,.mov,.avi,.webm,.docx,.pdf,.srt,.vtt" className="hidden"
                 onChange={e => { if (e.target.files?.[0]) handleReadAiUpload(e.target.files[0]) }} />
+              <input ref={videoInputRef} type="file" accept=".mp4,.mov,.avi,.webm,.m4v" className="hidden"
+                onChange={e => { if (e.target.files?.[0]) handleVideoUpload(e.target.files[0]) }} />
+              <input ref={transcriptInputRef} type="file" accept=".json,.txt,.csv,.md,.srt,.vtt" className="hidden"
+                onChange={e => { if (e.target.files?.[0]) handleTranscriptUpload(e.target.files[0]) }} />
 
-              {meeting.read_ai_data ? (
+              {/* Dual upload buttons */}
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                <button onClick={() => videoInputRef.current?.click()}
+                  className={`flex items-center justify-center gap-1.5 px-3 py-2.5 border rounded-xl text-xs font-semibold transition-colors ${meeting.read_ai_data?.video_url ? 'border-violet-200 bg-violet-50 text-violet-700' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}>
+                  <Video size={12} />{meeting.read_ai_data?.video_url ? 'Replace Video' : 'Upload Video'}
+                  {meeting.read_ai_data?.video_filename && <span className="text-[9px] font-normal truncate max-w-[80px]">· {meeting.read_ai_data.video_filename}</span>}
+                </button>
+                <button onClick={() => transcriptInputRef.current?.click()}
+                  className={`flex items-center justify-center gap-1.5 px-3 py-2.5 border rounded-xl text-xs font-semibold transition-colors ${meeting.read_ai_data?.transcript ? 'border-teal-200 bg-teal-50 text-teal-700' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}>
+                  <FileText size={12} />{meeting.read_ai_data?.transcript ? 'Replace Transcript' : 'Upload Transcript'}
+                  {meeting.read_ai_data?.transcript_filename && <span className="text-[9px] font-normal truncate max-w-[80px]">· {meeting.read_ai_data.transcript_filename}</span>}
+                </button>
+              </div>
+
+              {(meeting.read_ai_data?.video_url || meeting.read_ai_data?.transcript || meeting.read_ai_data?.summary) ? (
                 <>
                   {/* Source info */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <FileText size={12} className="text-teal" />
-                      <span className="text-[10px] font-semibold text-teal">
-                        Read AI Data Loaded
-                      </span>
-                      {meeting.read_ai_data.original_filename && (
-                        <span className="text-[9px] text-gray-400">({meeting.read_ai_data.original_filename})</span>
-                      )}
-                    </div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] font-semibold text-teal flex items-center gap-1.5">
+                      <FileText size={11} />Read AI Data
+                    </span>
                     <button onClick={() => fileInputRef.current?.click()}
                       className="text-[10px] text-np-blue hover:underline flex items-center gap-1">
-                      <Upload size={9} /> Replace
+                      <Upload size={9} />Upload All-in-One
                     </button>
                   </div>
 
@@ -1376,15 +1479,46 @@ export default function MeetingDetailPage() {
                     </div>
                   )}
 
-                  {/* Transcript */}
+                  {/* Transcript with search */}
                   {meeting.read_ai_data.transcript && (
                     <details className="group">
-                      <summary className="text-[10px] font-bold text-gray-400 uppercase tracking-wider cursor-pointer hover:text-np-dark">
+                      <summary className="text-[10px] font-bold text-gray-400 uppercase tracking-wider cursor-pointer hover:text-np-dark flex items-center gap-2">
                         Transcript
+                        <span className="text-[9px] font-normal text-gray-300">({meeting.read_ai_data.transcript.split(' ').length.toLocaleString()} words)</span>
                       </summary>
-                      <pre className="mt-2 p-4 bg-gray-50 rounded-lg text-[10px] text-gray-600 leading-relaxed whitespace-pre-wrap max-h-[400px] overflow-y-auto">
-                        {meeting.read_ai_data.transcript}
-                      </pre>
+                      <div className="mt-2 relative">
+                        <Search size={11} className="absolute left-3 top-2.5 text-gray-400" />
+                        <input
+                          value={transcriptSearch}
+                          onChange={e => setTranscriptSearch(e.target.value)}
+                          placeholder="Search transcript..."
+                          className="w-full pl-8 pr-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 mb-2 bg-white"
+                        />
+                      </div>
+                      {transcriptSearch ? (
+                        <div className="p-4 bg-gray-50 rounded-lg max-h-[400px] overflow-y-auto space-y-2">
+                          {(() => {
+                            const q = transcriptSearch.toLowerCase()
+                            const lines = meeting.read_ai_data.transcript.split(/[.!?\n]+/).filter((l: string) => l.trim())
+                            const matches = lines.filter((l: string) => l.toLowerCase().includes(q))
+                            if (matches.length === 0) return <p className="text-[10px] text-gray-400">No matches for "{transcriptSearch}"</p>
+                            return matches.map((line: string, i: number) => {
+                              const idx = line.toLowerCase().indexOf(q)
+                              return (
+                                <div key={i} className="text-[10px] text-gray-600 leading-relaxed bg-white border border-gray-100 rounded px-3 py-2">
+                                  {line.slice(0, idx)}
+                                  <mark className="bg-yellow-200 text-yellow-900 rounded px-0.5">{line.slice(idx, idx + q.length)}</mark>
+                                  {line.slice(idx + q.length)}
+                                </div>
+                              )
+                            })
+                          })()}
+                        </div>
+                      ) : (
+                        <pre className="p-4 bg-gray-50 rounded-lg text-[10px] text-gray-600 leading-relaxed whitespace-pre-wrap max-h-[400px] overflow-y-auto">
+                          {meeting.read_ai_data.transcript}
+                        </pre>
+                      )}
                     </details>
                   )}
 
