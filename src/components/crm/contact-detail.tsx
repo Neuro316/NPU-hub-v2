@@ -1134,13 +1134,17 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                   </div>}
 
                   {/* Due Date */}
-                  {(contact as any).due_date && (
-                    <div className="bg-amber-50/50 rounded-lg p-2 border border-amber-100/50">
-                      <p className="text-[8px] font-bold text-amber-600 uppercase">Due Date</p>
-                      <p className="text-[10px] font-medium text-np-dark mt-0.5">{new Date((contact as any).due_date + 'T00:00:00').toLocaleDateString()}</p>
-                      {(contact as any).due_date_action && <p className="text-[9px] text-gray-500 mt-0.5">{(contact as any).due_date_action}</p>}
-                    </div>
-                  )}
+                  <div className={`rounded-lg p-2 border ${(contact as any).due_date ? 'bg-amber-50/50 border-amber-100/50' : 'bg-gray-50 border-gray-100'}`}>
+                    <p className="text-[8px] font-bold uppercase" style={{ color: (contact as any).due_date ? '#d97706' : '#6b7280' }}>Due Date</p>
+                    {(contact as any).due_date ? (
+                      <>
+                        <p className="text-[10px] font-medium text-np-dark mt-0.5">{new Date((contact as any).due_date + 'T00:00:00').toLocaleDateString()}</p>
+                        {(contact as any).due_date_action && <p className="text-[9px] text-gray-500 mt-0.5">{(contact as any).due_date_action}</p>}
+                      </>
+                    ) : (
+                      <p className="text-[10px] font-medium text-np-dark mt-0.5">None</p>
+                    )}
+                  </div>
 
                   {/* Subscription Banner */}
                   {contact.subscription_status && (
