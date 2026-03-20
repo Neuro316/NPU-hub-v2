@@ -10,7 +10,7 @@ import { StatusDot, BadgePill, AvatarStack, Avatar } from '@/components/shared/m
 import { MEETING_TEMPLATES } from '@/lib/types/meetings'
 import type { Meeting, MeetingTemplate, MeetingWithAttendees } from '@/lib/types/meetings'
 import {
-  Plus, Clock, ChevronRight, Calendar, X, Users, Loader2, Trash2, AlertTriangle
+  Plus, Clock, ChevronRight, Calendar, X, Users, Loader2, Trash2, AlertTriangle, Pencil
 } from 'lucide-react'
 
 export default function MeetingsPage() {
