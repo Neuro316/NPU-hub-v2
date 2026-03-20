@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
+import { uploadToStorage } from '@/lib/storage'
 import { useTeamData } from '@/lib/hooks/use-team-data'
 import { useRockData } from '@/lib/hooks/use-rock-data'
 import { StatusDot, BadgePill, AvatarStack, Avatar, ProgressBar } from '@/components/shared/meeting-rock-ui'
@@ -593,14 +594,16 @@ export default function MeetingDetailPage() {
       let parsed: Record<string, any> = {}
 
       if (isVideo) {
-        // Video files — store as object URL for playback, no text extraction
-        const videoUrl = URL.createObjectURL(file)
+        // Video files — upload to Supabase Storage for persistence
+        if (!currentOrg) throw new Error('No org context')
+        const result = await uploadToStorage(file, 'meeting-media', currentOrg.id, 'videos')
         parsed = {
           summary: null,
           action_items: [],
           key_topics: [],
           transcript: null,
-          video_url: videoUrl,
+          video_url: result.publicUrl,
+          video_storage_path: result.path,
           video_filename: file.name,
           video_size_mb: (file.size / 1024 / 1024).toFixed(1),
           source: 'video_upload',
@@ -693,18 +696,21 @@ export default function MeetingDetailPage() {
 
   // ═══ SEPARATE VIDEO UPLOAD ═══
   const handleVideoUpload = async (file: File) => {
+    if (!currentOrg) return
     setUploading(true)
     setUploadError('')
     try {
-      const videoUrl = URL.createObjectURL(file)
+      const result = await uploadToStorage(file, 'meeting-media', currentOrg.id, 'videos')
       const existing = meeting?.read_ai_data || {}
       const updated = {
         ...existing,
-        video_url: videoUrl,
+        video_url: result.publicUrl,
+        video_storage_path: result.path,
         video_filename: file.name,
         video_size_mb: (file.size / 1024 / 1024).toFixed(1),
         video_uploaded_at: new Date().toISOString(),
         original_filename: existing.original_filename || file.name,
+        source: existing.source || 'video_upload',
       }
       if (meeting) {
         await supabase.from('meetings').update({ read_ai_data: updated, updated_at: new Date().toISOString() }).eq('id', meeting.id)

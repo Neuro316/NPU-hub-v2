@@ -1,3 +1,4 @@
+import { uploadToStorage } from '@/lib/storage'
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
@@ -230,7 +231,7 @@ When the user asks you to write, rewrite, or change the email, return the full u
     saveFields({ assets })
   }
 
-  // File upload
+  // File upload — uses Supabase Storage for persistence
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return

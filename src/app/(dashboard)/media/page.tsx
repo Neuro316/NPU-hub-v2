@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react'
 import { useMediaData } from '@/lib/hooks/use-media-data'
 import type { MediaAsset } from '@/lib/hooks/use-media-data'
+import { uploadToStorage } from '@/lib/storage'
 import { useWorkspace } from '@/lib/workspace-context'
 import { Plus, Search, Grid, List, Upload, Image, Film, FileText, Folder, X, ExternalLink, Trash2, Tag, Eye } from 'lucide-react'
 
@@ -73,16 +74,21 @@ export default function MediaPage() {
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file) return
-    const url = URL.createObjectURL(file)
-    await addAsset({
-      name: file.name,
-      url: url,
-      mime_type: file.type,
-      file_size: file.size,
-      brand: 'np',
-      tags: [],
-    } as any)
+    if (!file || !currentOrg) return
+    try {
+      const result = await uploadToStorage(file, 'media-library', currentOrg.id, 'assets')
+      await addAsset({
+        name: file.name,
+        url: result.publicUrl,
+        storage_path: result.path,
+        mime_type: file.type,
+        file_size: file.size,
+        brand: 'np',
+        tags: [],
+      } as any)
+    } catch (e: any) {
+      alert('Upload failed: ' + e.message)
+    }
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
