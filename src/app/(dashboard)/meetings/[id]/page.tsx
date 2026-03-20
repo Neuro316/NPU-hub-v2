@@ -584,61 +584,97 @@ export default function MeetingDetailPage() {
     setUploadError('')
 
     try {
-      const text = await file.text()
+      const ext = file.name.split('.').pop()?.toLowerCase() || ''
+      const isVideo = ['mp4', 'mov', 'avi', 'webm', 'm4v'].includes(ext)
+      const isBinary = ['pdf', 'docx'].includes(ext)
       let parsed: Record<string, any> = {}
 
-      if (file.name.endsWith('.json')) {
-        // Direct JSON parse
-        const raw = JSON.parse(text)
-        // Read AI JSON format has various structures — normalize
+      if (isVideo) {
+        // Video files — store as object URL for playback, no text extraction
+        const videoUrl = URL.createObjectURL(file)
         parsed = {
-          summary: raw.summary || raw.abstract || raw.overview || null,
-          action_items: raw.action_items || raw.actionItems || raw.action_items_list || [],
-          key_topics: raw.key_topics || raw.topics || raw.keyTopics || [],
-          transcript: raw.transcript || raw.full_transcript || null,
-          attendees: raw.attendees || raw.participants || [],
-          decisions: raw.decisions || [],
-          questions: raw.questions || raw.open_questions || [],
-          video_url: raw.video_url || raw.videoUrl || raw.recording_url || null,
-          source: 'read_ai',
+          summary: null,
+          action_items: [],
+          key_topics: [],
+          transcript: null,
+          video_url: videoUrl,
+          video_filename: file.name,
+          video_size_mb: (file.size / 1024 / 1024).toFixed(1),
+          source: 'video_upload',
+          uploaded_at: new Date().toISOString(),
+          original_filename: file.name,
+        }
+      } else if (isBinary) {
+        // Binary formats — store filename and show note
+        parsed = {
+          summary: null,
+          action_items: [],
+          transcript: null,
+          source: 'binary_upload',
+          binary_note: `${file.name} uploaded. Open in the appropriate application to view content.`,
           uploaded_at: new Date().toISOString(),
           original_filename: file.name,
         }
       } else {
-        // Text/CSV/MD — parse as raw transcript
-        // Try to extract sections if present
-        const sections: Record<string, string> = {}
-        let currentSection = 'transcript'
-        const lines = text.split('\n')
+        const text = await file.text()
 
-        lines.forEach(line => {
-          const trimmed = line.trim()
-          // Common Read AI section headers
-          if (/^(summary|action items|key topics|decisions|questions|transcript)/i.test(trimmed)) {
-            currentSection = trimmed.toLowerCase().replace(/[^a-z_]/g, '_').replace(/_+/g, '_')
-          } else if (trimmed) {
-            if (!sections[currentSection]) sections[currentSection] = ''
-            sections[currentSection] += trimmed + '\n'
+        if (ext === 'json') {
+          const raw = JSON.parse(text)
+          parsed = {
+            summary: raw.summary || raw.abstract || raw.overview || null,
+            action_items: raw.action_items || raw.actionItems || raw.action_items_list || [],
+            key_topics: raw.key_topics || raw.topics || raw.keyTopics || [],
+            transcript: raw.transcript || raw.full_transcript || null,
+            attendees: raw.attendees || raw.participants || [],
+            decisions: raw.decisions || [],
+            questions: raw.questions || raw.open_questions || [],
+            video_url: raw.video_url || raw.videoUrl || raw.recording_url || null,
+            source: 'read_ai',
+            uploaded_at: new Date().toISOString(),
+            original_filename: file.name,
           }
-        })
-
-        // Try to extract action items from bullet points
-        const actionLines = (sections.action_items || '').split('\n').filter(l => l.trim())
-        const actionItems = actionLines.map(l => ({
-          description: l.replace(/^[-*\u2022]\s*/, '').trim(),
-        }))
-
-        parsed = {
-          summary: sections.summary?.trim() || null,
-          action_items: actionItems.length > 0 ? actionItems : [],
-          transcript: sections.transcript?.trim() || text.trim(),
-          source: 'read_ai_text',
-          uploaded_at: new Date().toISOString(),
-          original_filename: file.name,
+        } else if (['srt', 'vtt'].includes(ext)) {
+          // Subtitle/caption files — strip timestamps, extract text
+          const stripped = text
+            .replace(/\d+\n/g, '')
+            .replace(/\d{2}:\d{2}:\d{2}[.,]\d{2,3}\s*-->\s*\d{2}:\d{2}:\d{2}[.,]\d{2,3}/g, '')
+            .replace(/<[^>]+>/g, '')
+            .split('\n').map(l => l.trim()).filter(Boolean).join(' ')
+          parsed = {
+            summary: null,
+            action_items: [],
+            transcript: stripped,
+            source: 'subtitle_file',
+            uploaded_at: new Date().toISOString(),
+            original_filename: file.name,
+          }
+        } else {
+          // TXT, CSV, MD — parse as transcript with section detection
+          const sections: Record<string, string> = {}
+          let currentSection = 'transcript'
+          const lines = text.split('\n')
+          lines.forEach(line => {
+            const trimmed = line.trim()
+            if (/^(summary|action items|key topics|decisions|questions|transcript)/i.test(trimmed)) {
+              currentSection = trimmed.toLowerCase().replace(/[^a-z_]/g, '_').replace(/_+/g, '_')
+            } else if (trimmed) {
+              if (!sections[currentSection]) sections[currentSection] = ''
+              sections[currentSection] += trimmed + '\n'
+            }
+          })
+          const actionLines = (sections.action_items || '').split('\n').filter(l => l.trim())
+          const actionItems = actionLines.map(l => ({ description: l.replace(/^[-*\u2022]\s*/, '').trim() }))
+          parsed = {
+            summary: sections.summary?.trim() || null,
+            action_items: actionItems.length > 0 ? actionItems : [],
+            transcript: sections.transcript?.trim() || text.trim(),
+            source: 'read_ai_text',
+            uploaded_at: new Date().toISOString(),
+            original_filename: file.name,
+          }
         }
       }
 
-      // Save to meeting
       if (meeting) {
         await supabase.from('meetings').update({
           read_ai_data: parsed,
@@ -1235,7 +1271,7 @@ export default function MeetingDetailPage() {
           {tab === 'read_ai' && (
             <div className="space-y-4">
               {/* Hidden file input */}
-              <input ref={fileInputRef} type="file" accept=".json,.txt,.csv,.md" className="hidden"
+              <input ref={fileInputRef} type="file" accept=".json,.txt,.csv,.md,.mp4,.mov,.avi,.webm,.docx,.pdf,.srt,.vtt" className="hidden"
                 onChange={e => { if (e.target.files?.[0]) handleReadAiUpload(e.target.files[0]) }} />
 
               {meeting.read_ai_data ? (
@@ -1257,13 +1293,34 @@ export default function MeetingDetailPage() {
                     </button>
                   </div>
 
-                  {/* Video link */}
+                  {/* Video — inline player for local uploads, link for remote URLs */}
                   {meeting.read_ai_data.video_url && (
-                    <a href={meeting.read_ai_data.video_url} target="_blank" rel="noopener noreferrer"
-                      className="flex items-center gap-2 px-3 py-2.5 bg-violet-50 rounded-lg border border-violet-100 hover:bg-violet-100 transition-colors">
-                      <Video size={14} className="text-violet-600" />
-                      <span className="text-[11px] font-semibold text-violet-700">Watch Recording</span>
-                    </a>
+                    meeting.read_ai_data.source === 'video_upload' ? (
+                      <div className="rounded-xl overflow-hidden border border-gray-100 bg-black">
+                        <video controls className="w-full max-h-64" src={meeting.read_ai_data.video_url}>
+                          Your browser does not support video playback.
+                        </video>
+                        <div className="px-3 py-2 bg-gray-50 flex items-center gap-2 text-[10px] text-gray-500">
+                          <Video size={10} className="text-violet-600" />
+                          <span className="flex-1 truncate">{meeting.read_ai_data.video_filename || meeting.read_ai_data.original_filename}</span>
+                          {meeting.read_ai_data.video_size_mb && <span>{meeting.read_ai_data.video_size_mb} MB</span>}
+                        </div>
+                      </div>
+                    ) : (
+                      <a href={meeting.read_ai_data.video_url} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-2 px-3 py-2.5 bg-violet-50 rounded-lg border border-violet-100 hover:bg-violet-100 transition-colors">
+                        <Video size={14} className="text-violet-600" />
+                        <span className="text-[11px] font-semibold text-violet-700">Watch Recording</span>
+                      </a>
+                    )
+                  )}
+
+                  {/* Binary file note */}
+                  {meeting.read_ai_data.binary_note && (
+                    <div className="flex items-center gap-2 px-3 py-2.5 bg-gray-50 rounded-lg border border-gray-100">
+                      <FileText size={13} className="text-gray-400 flex-shrink-0" />
+                      <span className="text-[11px] text-gray-600">{meeting.read_ai_data.binary_note}</span>
+                    </div>
                   )}
 
                   {/* Summary */}
@@ -1359,7 +1416,7 @@ export default function MeetingDetailPage() {
                   <div className="text-xs font-medium text-np-dark">
                     {uploading ? 'Processing...' : 'Drop Read AI export here or click to upload'}
                   </div>
-                  <div className="text-[11px] text-gray-400 mt-1">JSON, TXT, CSV, or Markdown</div>
+                  <div className="text-[11px] text-gray-400 mt-1">JSON, TXT, CSV, MD, MP4, MOV, DOCX, PDF, SRT, VTT</div>
                   <p className="text-[9px] text-gray-300 mt-3">Export from Read AI dashboard and upload here to import summary, action items, and transcript</p>
                 </div>
               )}
