@@ -90,6 +90,7 @@ export async function notifyTaskAssigned(
   assignee: string,
   actor: string,
 ) {
+
   const config = await getSlackConfig(orgId)
   if (!config) return
 
@@ -124,6 +125,7 @@ export async function notifyTaskMoved(
   assignee: string | null,
   raciRoles: Record<string, string>,
 ) {
+
   const config = await getSlackConfig(orgId)
   if (!config) return
 
@@ -163,6 +165,7 @@ export async function notifyRACIAssigned(
   assignedTo: string,
   actor: string,
 ) {
+
   const config = await getSlackConfig(orgId)
   if (!config) return
 
@@ -197,6 +200,7 @@ export async function notifyTaskCreated(
   assignee: string | null,
   actor: string,
 ) {
+
   const config = await getSlackConfig(orgId)
   if (!config) return
 
@@ -228,6 +232,7 @@ export async function notifyCommentMention(
   author: string,
   commentPreview: string,
 ) {
+
   const config = await getSlackConfig(orgId)
   if (!config) return
 
