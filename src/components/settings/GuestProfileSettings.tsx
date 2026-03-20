@@ -27,16 +27,16 @@ const EMPTY_PROFILE: GuestProfileData = {
   guest_title: '',
   email: '',
   website: '',
-  short_bio: '',
+  short_bio: 'Cameron Allen is the founder of Neuro Progeny and Sensorium Neuro Wellness, where he develops capacity-based nervous system training programs using VR biofeedback and HRV monitoring. His work reframes nervous system states as adaptive capacities rather than deficits.',
   preferred_introduction: '',
-  verbal_cta_template: '',
-  topics_to_avoid: '',
+  verbal_cta_template: 'If this resonates with you, head to neuroprogeny.com/courses/free — I\'ve put together a free nervous system training course that walks you through the capacity model.',
+  topics_to_avoid: 'Specific client medical diagnoses\nGuarantees about clinical outcomes\nComparisons to specific competitor programs',
   social_instagram: '',
   social_linkedin: '',
   social_youtube: '',
   social_twitter: '',
   headshot_url: '',
-  cross_promotion_requirements: '',
+  cross_promotion_requirements: 'Share episode to social media within 48 hours of airing\nUse only UTM-tagged links in show notes and descriptions\nInclude promo code in episode description\nMulti-post promotion preferred (launch day + 7-day + 14-day)',
 }
 
 export default function GuestProfileSettings() {
