@@ -105,7 +105,7 @@ export async function notifyTaskAssigned(
   // DM to assignee
   if (assignee !== actor) {
     const slackId = await getSlackUserId(orgId, assignee)
-    if (slackId) {
+    if (slackId !== null && slackId !== undefined) {
       await sendDM(
         orgId,
         slackId,
