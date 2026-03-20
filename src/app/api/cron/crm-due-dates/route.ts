@@ -22,6 +22,7 @@ export async function GET(request: Request) {
   const offset = today.getTimezoneOffset() * 60000;
   const localDate = new Date(today.getTime() - offset);
   const todayStr = localDate.toISOString().split('T')[0];
+  console.log('todayStr:', todayStr);
 
   const { data: contacts, error } = await supabase
     .from('contacts')
@@ -29,6 +30,8 @@ export async function GET(request: Request) {
     .eq('due_date', todayStr)
     .eq('due_date_notified', false)
     .not('due_date_action', 'is', null);
+
+  console.log('contacts found:', contacts?.length, JSON.stringify(contacts));
 
   if (error) {
     console.error('CRM due date cron error:', error);
