@@ -400,6 +400,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
     youtube_url: '', facebook_url: '', website_url: '',
     emergency_contact_name: '', emergency_contact_phone: '',
     referred_by_contact_id: '', referred_by_search: '',
+    due_date: '', due_date_action: '',
   })
   const [editingHeader, setEditingHeader] = useState(false)
   const [headerForm, setHeaderForm] = useState({ first_name: '', last_name: '', email: '', phone: '', company: '' })
@@ -429,6 +430,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
         emergency_contact_name: c.emergency_contact_name || '',
         emergency_contact_phone: c.emergency_contact_phone || '',
         referred_by_contact_id: c.referred_by_contact_id || '', referred_by_search: '',
+        due_date: (c as any).due_date || '', due_date_action: (c as any).due_date_action || '',
       })
 
       // Load supplemental data independently
@@ -644,6 +646,9 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
         emergency_contact_name: infoForm.emergency_contact_name || null,
         emergency_contact_phone: infoForm.emergency_contact_phone || null,
         referred_by_contact_id: infoForm.referred_by_contact_id || null,
+        due_date: infoForm.due_date || null,
+        due_date_action: infoForm.due_date_action || null,
+        due_date_notified: infoForm.due_date ? false : null,
       } as any)
       setEditingInfo(false)
       load()
@@ -1442,6 +1447,29 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                                 <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Phone</label>
                                 <input value={infoForm.emergency_contact_phone} onChange={e => setInfoForm(p => ({ ...p, emergency_contact_phone: e.target.value }))}
                                   className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Section: Due Date Action */}
+                          <div>
+                            <p className="text-[9px] font-bold uppercase tracking-wider text-np-blue mb-2">Due Date Action</p>
+                            <div className="space-y-2">
+                              <div>
+                                <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Due Date</label>
+                                <input type="date" value={infoForm.due_date} onChange={e => setInfoForm(p => ({ ...p, due_date: e.target.value }))}
+                                  className="w-full mt-0.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                              </div>
+                              <div>
+                                <label className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">Action on Due Date</label>
+                                <button type="button" onClick={() => setInfoForm(p => ({ ...p, due_date_action: 'Turn off access to xRegulation' }))}
+                                  className={`w-full mt-0.5 px-2 py-1.5 text-xs border rounded-lg text-left transition-colors ${infoForm.due_date_action === 'Turn off access to xRegulation' ? 'border-np-blue bg-np-blue/5 text-np-blue' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
+                                  Turn off access to xRegulation
+                                </button>
+                                <input value={infoForm.due_date_action === 'Turn off access to xRegulation' ? '' : infoForm.due_date_action}
+                                  onChange={e => setInfoForm(p => ({ ...p, due_date_action: e.target.value }))}
+                                  placeholder="Or type a custom action..."
+                                  className="w-full mt-1.5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
                               </div>
                             </div>
                           </div>
