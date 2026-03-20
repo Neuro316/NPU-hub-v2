@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useMeetingData } from '@/lib/hooks/use-meeting-data'
 import { useWorkspace } from '@/lib/workspace-context'
 import { useTeamData } from '@/lib/hooks/use-team-data'
+import { createClient } from '@/lib/supabase-browser'
 import { StatusDot, BadgePill, AvatarStack, Avatar } from '@/components/shared/meeting-rock-ui'
 import { MEETING_TEMPLATES } from '@/lib/types/meetings'
 import type { Meeting, MeetingTemplate, MeetingWithAttendees } from '@/lib/types/meetings'
@@ -61,6 +62,12 @@ export default function MeetingsPage() {
     return { today, upcoming, past }
   }, [meetings])
 
+  const saveRename = async (id: string) => {
+    if (!renameVal.trim()) { setRenamingId(null); return }
+    await supabase.from('meetings').update({ title: renameVal.trim(), updated_at: new Date().toISOString() }).eq('id', id)
+    setRenamingId(null)
+  }
+
   const handleCreate = async () => {
     if (!createForm.title.trim()) return
     setCreating(true)
@@ -102,7 +109,23 @@ export default function MeetingsPage() {
         <div className="flex-1 flex items-center gap-3 min-w-0" onClick={() => router.push(`/meetings/${m.id}`)}>
           <BadgePill text={tmpl.label} color={tmpl.color} />
           <div className="flex-1 min-w-0">
-            <div className="text-xs font-semibold text-np-dark truncate">{m.title}</div>
+            {renamingId === m.id ? (
+              <input
+                ref={renameRef}
+                autoFocus
+                value={renameVal}
+                onChange={e => setRenameVal(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') saveRename(m.id)
+                  if (e.key === 'Escape') setRenamingId(null)
+                }}
+                onBlur={() => saveRename(m.id)}
+                onClick={e => e.stopPropagation()}
+                className="w-full text-xs font-semibold text-np-dark border-b border-np-blue/40 focus:outline-none bg-transparent pb-0.5"
+              />
+            ) : (
+              <div className="text-xs font-semibold text-np-dark truncate">{m.title}</div>
+            )}
             <div className="text-[11px] text-gray-400 mt-0.5 flex items-center gap-1">
               <Clock size={10} /> {formatTime(m.scheduled_at)} &middot; {m.duration_minutes} min
             </div>
@@ -110,6 +133,11 @@ export default function MeetingsPage() {
           {attendeeAvatars.length > 0 && <AvatarStack list={attendeeAvatars} />}
           {m.status === 'completed' && <BadgePill text="Done" color="#16A34A" />}
         </div>
+        <button onClick={e => { e.stopPropagation(); setRenameVal(m.title); setRenamingId(m.id) }}
+          className="p-1.5 rounded-lg text-gray-200 hover:text-np-blue hover:bg-np-blue/5 opacity-0 group-hover:opacity-100 transition-all"
+          title="Rename meeting">
+          <Pencil size={12} />
+        </button>
         <button onClick={e => { e.stopPropagation(); setDeleteTarget(m) }}
           className="p-1.5 rounded-lg text-gray-200 hover:text-red-400 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
           title="Delete meeting">
