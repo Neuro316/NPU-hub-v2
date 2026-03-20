@@ -10,6 +10,7 @@ interface GuestProfileData {
   guest_title: string
   email: string
   website: string
+  cta_base_url: string
   short_bio: string
   preferred_introduction: string
   verbal_cta_template: string
@@ -27,6 +28,7 @@ const EMPTY_PROFILE: GuestProfileData = {
   guest_title: '',
   email: '',
   website: '',
+  cta_base_url: 'https://neuroprogeny.com/courses/free',
   short_bio: 'Cameron Allen is the founder of Neuro Progeny and Sensorium Neuro Wellness, where he develops capacity-based nervous system training programs using VR biofeedback and HRV monitoring. His work reframes nervous system states as adaptive capacities rather than deficits.',
   preferred_introduction: '',
   verbal_cta_template: 'If this resonates with you, head to neuroprogeny.com/courses/free — I\'ve put together a free nervous system training course that walks you through the capacity model.',
@@ -147,6 +149,14 @@ export default function GuestProfileSettings() {
           <input value={data.website} onChange={e => set('website', e.target.value)}
             placeholder="https://neuroprogeny.com" className={inputCls} />
         </div>
+      </div>
+
+      {/* Primary CTA URL */}
+      <div>
+        <label className={labelCls}>Primary CTA URL</label>
+        <input value={data.cta_base_url} onChange={e => set('cta_base_url', e.target.value)}
+          placeholder="https://neuroprogeny.com/courses/free" className={inputCls} />
+        <p className="text-[9px] text-gray-400 mt-1">Base URL for podcast CTAs. UTM parameters are appended automatically per show.</p>
       </div>
 
       {/* Short Bio */}
