@@ -26,6 +26,7 @@ const DEFAULT_GUEST_PROFILE = {
   },
   headshot_url: null as string | null,
   cross_promo_requirements: '',
+  cta_base_url: 'https://neuroprogeny.com/courses/free',
 }
 
 /** Map flat guest_profile JSONB fields to the shape used by this component */
@@ -49,6 +50,7 @@ function mapGuestProfile(gp: Record<string, unknown>) {
     },
     headshot_url: (gp.headshot_url as string) || DEFAULT_GUEST_PROFILE.headshot_url,
     cross_promo_requirements: (gp.cross_promotion_requirements as string) || DEFAULT_GUEST_PROFILE.cross_promo_requirements,
+    cta_base_url: (gp.cta_base_url as string) || DEFAULT_GUEST_PROFILE.cta_base_url,
   }
 }
 
@@ -74,6 +76,7 @@ interface Appearance {
   promo_code: string | null
   affiliate_tier: string
   status: string
+  guest_sheet_overrides?: Record<string, unknown>
 }
 
 const CROSS_PROMO_ITEMS = [
@@ -112,10 +115,33 @@ export default function GuestSheetPage() {
       supabase.from('media_appearances').select('*').eq('id', id).single(),
       supabase.from('organizations').select('guest_profile').eq('id', currentOrg.id).single(),
     ]).then(([appRes, orgRes]) => {
-      if (appRes.data) setAppearance(appRes.data)
-      if (orgRes.data?.guest_profile && typeof orgRes.data.guest_profile === 'object') {
-        setGuestProfile(mapGuestProfile(orgRes.data.guest_profile as Record<string, unknown>))
+      const overrides = (appRes.data?.guest_sheet_overrides || {}) as Record<string, unknown>
+      // Apply overrides to appearance-level fields
+      if (appRes.data) {
+        const app = { ...appRes.data }
+        if (overrides.episode_topic) app.description = overrides.episode_topic as string
+        if (overrides.recording_date) app.recording_date = overrides.recording_date as string
+        if (overrides.air_date) app.air_date = overrides.air_date as string
+        if (overrides.promo_code) app.promo_code = overrides.promo_code as string
+        if (overrides.verbal_cta) app.verbal_cta = overrides.verbal_cta as string
+        if (overrides.talking_points) app.key_topics = (overrides.talking_points as string).split('\n').map((s: string) => s.trim()).filter(Boolean)
+        setAppearance(app)
       }
+      // Build guest profile: start from org profile, then apply per-show overrides
+      const orgProfile = (orgRes.data?.guest_profile && typeof orgRes.data.guest_profile === 'object')
+        ? orgRes.data.guest_profile as Record<string, unknown>
+        : {}
+      // Map override keys to org profile keys for merging
+      const merged: Record<string, unknown> = { ...orgProfile }
+      if (overrides.guest_name) merged.guest_name = overrides.guest_name
+      if (overrides.guest_title) merged.guest_title = overrides.guest_title
+      if (overrides.short_bio) merged.short_bio = overrides.short_bio
+      if (overrides.preferred_introduction) merged.preferred_introduction = overrides.preferred_introduction
+      if (overrides.verbal_cta) merged.verbal_cta_template = overrides.verbal_cta
+      if (overrides.topics_to_avoid) merged.topics_to_avoid = overrides.topics_to_avoid
+      if (overrides.cross_promotion_requirements) merged.cross_promotion_requirements = overrides.cross_promotion_requirements
+      if (overrides.cta_base_url) merged.cta_base_url = overrides.cta_base_url
+      setGuestProfile(mapGuestProfile(merged))
       setLoading(false)
     })
   }, [id, currentOrg?.id])
@@ -137,7 +163,7 @@ export default function GuestSheetPage() {
   }
 
   const showSlug = (appearance.platform || appearance.title || 'show').toLowerCase().replace(/[^a-z0-9]+/g, '-')
-  const ctaLink = `https://neuroprogeny.com/courses/free?utm_source=podcast&utm_medium=audio&utm_campaign=${showSlug}`
+  const ctaLink = `${guestProfile.cta_base_url}?utm_source=podcast&utm_medium=audio&utm_campaign=${showSlug}`
   const formatDate = (d: string | null) => d ? new Date(d).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : 'TBD'
   const topics = appearance.key_topics?.length > 0 ? appearance.key_topics : []
 

@@ -13,6 +13,7 @@ import {
   FileText, Send, User, Globe, Megaphone, BarChart3,
   LayoutGrid, Table, Columns3, X, BookOpen,
 } from 'lucide-react'
+import GuestSheetModal from '@/components/media/GuestSheetModal'
 
 // ═══════════════════════════════════════════════════════
 // TYPES
@@ -303,6 +304,7 @@ function MediaAffiliatesContent() {
   const [showNewDropdown, setShowNewDropdown] = useState(false)
   const [guestSheetOpen, setGuestSheetOpen] = useState<Record<string, boolean>>({ bio: true })
   const [editingAppearance, setEditingAppearance] = useState<Appearance | null>(null)
+  const [guestSheetAppearance, setGuestSheetAppearance] = useState<Appearance | null>(null)
 
   // Create form state
   const [form, setForm] = useState({
@@ -862,6 +864,7 @@ function MediaAffiliatesContent() {
                           onDelete={deleteAppearance}
                           onEdit={setEditingAppearance}
                           onAdvanceStage={advanceStage}
+                          onGuestSheet={setGuestSheetAppearance}
                           contentPieces={contentPieces.filter(cp => cp.appearance_id === item.id)}
                         />
                       ))}
@@ -882,6 +885,7 @@ function MediaAffiliatesContent() {
                   onDelete={deleteAppearance}
                   onEdit={setEditingAppearance}
                   onAdvanceStage={advanceStage}
+                  onGuestSheet={setGuestSheetAppearance}
                   contentPieces={contentPieces.filter(cp => cp.appearance_id === item.id)}
                 />
               ))}
@@ -956,7 +960,7 @@ function MediaAffiliatesContent() {
                 appearances.filter(a => ['booked', 'prepped', 'recorded', 'scheduled', 'confirmed'].includes(a.status)).map(a => (
                   <button
                     key={a.id}
-                    onClick={() => window.open(`/guest-sheet/${a.id}`, '_blank')}
+                    onClick={() => setGuestSheetAppearance(a)}
                     className="w-full flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-np-blue/5 hover:border-np-blue/20 border border-transparent transition-colors text-left"
                   >
                     <div className="flex items-center gap-3">
@@ -983,7 +987,7 @@ function MediaAffiliatesContent() {
               {appearances.map(a => (
                 <button
                   key={a.id}
-                  onClick={() => window.open(`/guest-sheet/${a.id}`, '_blank')}
+                  onClick={() => setGuestSheetAppearance(a)}
                   className="w-full flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-np-blue/5 hover:border-np-blue/20 border border-transparent transition-colors text-left"
                 >
                   <div className="flex items-center gap-3">
@@ -1323,6 +1327,15 @@ function MediaAffiliatesContent() {
           onSave={saveAppearance}
         />
       )}
+
+      {/* ═══════ GUEST SHEET MODAL ═══════ */}
+      {guestSheetAppearance && orgId && (
+        <GuestSheetModal
+          appearance={guestSheetAppearance}
+          orgId={orgId}
+          onClose={() => setGuestSheetAppearance(null)}
+        />
+      )}
     </div>
   )
 }
@@ -1611,6 +1624,7 @@ function AppearanceCard({
   onDelete,
   onEdit,
   onAdvanceStage,
+  onGuestSheet,
   contentPieces,
 }: {
   item: Appearance
@@ -1619,6 +1633,7 @@ function AppearanceCard({
   onDelete: (id: string) => void
   onEdit: (item: Appearance) => void
   onAdvanceStage: (item: Appearance) => void
+  onGuestSheet: (item: Appearance) => void
   contentPieces: ContentPiece[]
 }) {
   const TypeIcon = TYPE_ICONS[item.type] || Globe
@@ -1803,7 +1818,7 @@ function AppearanceCard({
               <Edit3 className="w-3 h-3" /> Edit
             </button>
             <button
-              onClick={e => { e.stopPropagation(); window.open(`/guest-sheet/${item.id}`, '_blank') }}
+              onClick={e => { e.stopPropagation(); onGuestSheet(item) }}
               className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600"
             >
               <FileText className="w-3 h-3" /> Guest Sheet
