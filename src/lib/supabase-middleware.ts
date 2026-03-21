@@ -25,21 +25,20 @@ export async function updateSession(request: NextRequest) {
   const isPublicPath =
     pathname.startsWith('/login') ||
     pathname.startsWith('/signup') ||
-    pathname.startsWith('/invite') ||
     pathname.startsWith('/pending') ||
     pathname.startsWith('/api/auth') ||
-    pathname.startsWith('/api/invite') ||
     pathname.startsWith('/api/twilio') ||
+      pathname.startsWith('/api/webhooks') ||
     pathname.startsWith('/policies')
 
-  // Not logged in â€” redirect to login
+  // Not logged in — redirect to login
   if (!user && !isPublicPath) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
   }
 
-  // Logged in â€” check pending status before allowing dashboard access
+  // Logged in — check pending status before allowing dashboard access
   if (user && !isPublicPath) {
     const { data: profile } = await supabase
       .from('team_profiles')
@@ -55,7 +54,7 @@ export async function updateSession(request: NextRequest) {
     }
   }
 
-  // Logged in and trying to hit login/signup â€” send to dashboard
+  // Logged in and trying to hit login/signup — send to dashboard
   if (user && (pathname.startsWith('/login') || pathname.startsWith('/signup'))) {
     const url = request.nextUrl.clone()
     url.pathname = '/'
