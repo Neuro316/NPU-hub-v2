@@ -3,15 +3,17 @@
 import { useEffect, useState } from 'react'
 import {
   Mail, Phone, Brain, Shield, Bell, Users, Sliders,
-  Save, Plus, X, Trash2, CheckCircle2, AlertTriangle
+  Save, Plus, X, Trash2, CheckCircle2, AlertTriangle,
+  LayoutGrid, Eye, EyeOff,
 } from 'lucide-react'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
 
-type Section = 'email' | 'twilio' | 'ai' | 'pipeline' | 'team' | 'notifications' | 'compliance' | 'general'
+type Section = 'email' | 'twilio' | 'ai' | 'pipeline' | 'team' | 'notifications' | 'compliance' | 'general' | 'modules'
 
 const SECTIONS: { id: Section; label: string; icon: any }[] = [
   { id: 'general', label: 'General', icon: Sliders },
+  { id: 'modules', label: 'Modules', icon: LayoutGrid },
   { id: 'email', label: 'Email', icon: Mail },
   { id: 'twilio', label: 'Twilio / SMS', icon: Phone },
   { id: 'ai', label: 'AI Integration', icon: Brain },
@@ -19,6 +21,68 @@ const SECTIONS: { id: Section; label: string; icon: any }[] = [
   { id: 'team', label: 'Team', icon: Users },
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'compliance', label: 'Compliance', icon: Shield },
+]
+
+/* All sidebar modules that can be toggled, grouped by category.
+   'dashboard' and 'settings' are excluded — they must always be visible. */
+const SIDEBAR_MODULES: { category: string; items: { key: string; label: string }[] }[] = [
+  {
+    category: 'GROW',
+    items: [
+      { key: 'crm', label: 'CRM' },
+      { key: 'campaigns', label: 'Campaigns' },
+      { key: 'media_affiliates', label: 'Media & Affiliates' },
+      { key: 'icps', label: 'ICP Profiles' },
+      { key: 'analytics', label: 'Analytics' },
+      { key: 'media_appearances', label: 'Media Appearances' },
+    ],
+  },
+  {
+    category: 'CREATE',
+    items: [
+      { key: 'social', label: 'Social Media' },
+      { key: 'media', label: 'Media Library' },
+      { key: 'calendar', label: 'Calendar' },
+      { key: 'shipit', label: 'ShipIt Journal' },
+      { key: 'ideas', label: 'Ideas' },
+      { key: 'library', label: 'Company Library' },
+    ],
+  },
+  {
+    category: 'OPERATE',
+    items: [
+      { key: 'meetings', label: 'Meetings' },
+      { key: 'rocks', label: 'Rocks' },
+      { key: 'tasks', label: 'Tasks (My Tasks / Manager / Client)' },
+      { key: 'journeys', label: 'Journey Builder' },
+      { key: 'sops', label: 'SOPs' },
+      { key: 'tickets', label: 'Support Tickets' },
+    ],
+  },
+  {
+    category: 'INTELLIGENCE',
+    items: [
+      { key: 'advisory', label: 'AI Advisory' },
+    ],
+  },
+  {
+    category: 'FINANCE',
+    items: [
+      { key: 'finance_suite', label: 'AI CFO' },
+      { key: 'np_financial', label: 'NP Financial' },
+    ],
+  },
+  {
+    category: 'ADMIN',
+    items: [
+      { key: 'team', label: 'Team' },
+      { key: 'integrations', label: 'Integrations' },
+      { key: 'platform_advisor', label: 'Platform Advisor' },
+      { key: 'activity_log', label: 'Activity Log' },
+      { key: 'usage_analytics', label: 'Usage Analytics' },
+      { key: 'auditor', label: 'System Auditor' },
+    ],
+  },
 ]
 
 type NumberPurpose = 'outreach' | 'client_relations' | 'appointments' | 'inbound_main' | 'general'
@@ -49,6 +113,7 @@ export default function SettingsPage() {
   const [pipeline, setPipeline] = useState({ stages: 'New Lead,Contacted,Qualified,Proposal,Negotiation,Won,Lost' })
   const [compliance, setCompliance] = useState({ double_optin: false, auto_dnc_unsubscribe: true, retention_days: 365 })
   const [notifications, setNotifications] = useState({ new_lead: true, missed_call: true, task_overdue: true, campaign_complete: true })
+  const [hiddenModules, setHiddenModules] = useState<string[]>([])
 
   // Load settings from Supabase
   useEffect(() => {
@@ -60,7 +125,7 @@ export default function SettingsPage() {
       })
     // Load Twilio + other settings from org_settings
     supabase.from('org_settings').select('setting_key, setting_value').eq('org_id', currentOrg.id)
-      .in('setting_key', ['crm_twilio', 'crm_ai', 'crm_compliance', 'crm_notifications'])
+      .in('setting_key', ['crm_twilio', 'crm_ai', 'crm_compliance', 'crm_notifications', 'hidden_modules'])
       .then(({ data }) => {
         data?.forEach(row => {
           const v = row.setting_value
@@ -71,6 +136,7 @@ export default function SettingsPage() {
           if (row.setting_key === 'crm_ai' && v) setAi(prev => ({ ...prev, ...v }))
           if (row.setting_key === 'crm_compliance' && v) setCompliance(prev => ({ ...prev, ...v }))
           if (row.setting_key === 'crm_notifications' && v) setNotifications(prev => ({ ...prev, ...v }))
+          if (row.setting_key === 'hidden_modules' && Array.isArray(v)) setHiddenModules(v)
         })
       })
   }, [currentOrg])
@@ -107,6 +173,11 @@ export default function SettingsPage() {
       if (active === 'notifications') {
         await supabase.from('org_settings').upsert({
           org_id: currentOrg.id, setting_key: 'crm_notifications', setting_value: notifications,
+        }, { onConflict: 'org_id,setting_key' })
+      }
+      if (active === 'modules') {
+        await supabase.from('org_settings').upsert({
+          org_id: currentOrg.id, setting_key: 'hidden_modules', setting_value: hiddenModules,
         }, { onConflict: 'org_id,setting_key' })
       }
       setSaved(true); setTimeout(() => setSaved(false), 2000)
@@ -152,6 +223,51 @@ export default function SettingsPage() {
                   <option value="America/Los_Angeles">Pacific (PT)</option>
                 </select>
               </div>
+            </div>
+          )}
+
+          {/* Modules */}
+          {active === 'modules' && (
+            <div className="space-y-5">
+              <div>
+                <h3 className="text-sm font-bold text-np-dark">Sidebar Modules</h3>
+                <p className="text-xs text-gray-400 mt-1">Toggle modules visible in the sidebar for this organization. Hidden modules won&apos;t appear for any user. Use this to hide incomplete features until they&apos;re ready.</p>
+              </div>
+              {SIDEBAR_MODULES.map(group => (
+                <div key={group.category}>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">{group.category}</p>
+                  <div className="space-y-1">
+                    {group.items.map(item => {
+                      const isHidden = hiddenModules.includes(item.key)
+                      return (
+                        <button
+                          key={item.key}
+                          type="button"
+                          onClick={() => {
+                            setHiddenModules(prev =>
+                              isHidden
+                                ? prev.filter(k => k !== item.key)
+                                : [...prev, item.key]
+                            )
+                          }}
+                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border transition-colors ${
+                            isHidden
+                              ? 'border-gray-100 bg-gray-50/50 text-gray-400'
+                              : 'border-np-blue/20 bg-np-blue/5 text-np-dark'
+                          }`}
+                        >
+                          <span className="text-xs font-medium">{item.label}</span>
+                          {isHidden
+                            ? <EyeOff size={14} className="text-gray-300" />
+                            : <Eye size={14} className="text-np-blue" />
+                          }
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+              <p className="text-[10px] text-gray-400 italic">Dashboard and Settings are always visible and cannot be hidden.</p>
             </div>
           )}
 

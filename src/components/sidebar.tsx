@@ -169,7 +169,7 @@ const ehrItems: EhrItem[] = [
 
 export function Sidebar() {
   const pathname = usePathname()
-  const { user, organizations, currentOrg, switchOrg, enabledModules } = useWorkspace()
+  const { user, organizations, currentOrg, switchOrg, enabledModules, hiddenModules } = useWorkspace()
   const { canView, loading: permsLoading } = usePermissions()
   const { isCollapsed, isMobileOpen, toggleCollapse, closeMobile } = useSidebar()
   const [orgDropdownOpen, setOrgDropdownOpen] = useState(false)
@@ -293,7 +293,7 @@ export function Sidebar() {
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-2 px-3">
           {navCategories.map((category) => {
-            const visibleItems = category.items.filter(item => canView(item.moduleKey))
+            const visibleItems = category.items.filter(item => canView(item.moduleKey) && !hiddenModules.includes(item.moduleKey))
             if (visibleItems.length === 0) return null
 
             const isCatCollapsed = collapsed[category.id] && category.collapsible

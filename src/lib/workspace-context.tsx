@@ -17,6 +17,7 @@ interface WorkspaceContextType {
   switchOrg: (orgId: string) => void
   loading: boolean
   enabledModules: string[]
+  hiddenModules: string[]
 }
 
 const WorkspaceContext = createContext<WorkspaceContextType>({
@@ -26,6 +27,7 @@ const WorkspaceContext = createContext<WorkspaceContextType>({
   switchOrg: () => {},
   loading: true,
   enabledModules: [],
+  hiddenModules: [],
 })
 
 export function useWorkspace() {
@@ -38,6 +40,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [currentOrg, setCurrentOrg] = useState<Organization | null>(null)
   const [loading, setLoading] = useState(true)
   const [enabledModules, setEnabledModules] = useState<string[]>([])
+  const [hiddenModules, setHiddenModules] = useState<string[]>([])
 
   const supabase = createClient()
 
@@ -180,26 +183,30 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     }
   }, [organizations])
 
-  // Load enabled modules when org changes
+  // Load enabled modules + hidden modules when org changes
   useEffect(() => {
-    if (!currentOrg) { setEnabledModules([]); return }
+    if (!currentOrg) { setEnabledModules([]); setHiddenModules([]); return }
     supabase
       .from('org_settings')
-      .select('setting_value')
+      .select('setting_key, setting_value')
       .eq('org_id', currentOrg.id)
-      .eq('setting_key', 'enabled_modules')
-      .maybeSingle()
+      .in('setting_key', ['enabled_modules', 'hidden_modules'])
       .then(({ data }) => {
-        if (data?.setting_value && Array.isArray(data.setting_value)) {
-          setEnabledModules(data.setting_value)
-        } else {
-          setEnabledModules([])
-        }
+        const enabled = data?.find(r => r.setting_key === 'enabled_modules')
+        const hidden = data?.find(r => r.setting_key === 'hidden_modules')
+        setEnabledModules(
+          enabled?.setting_value && Array.isArray(enabled.setting_value)
+            ? enabled.setting_value : []
+        )
+        setHiddenModules(
+          hidden?.setting_value && Array.isArray(hidden.setting_value)
+            ? hidden.setting_value : []
+        )
       })
   }, [currentOrg?.id])
 
   return (
-    <WorkspaceContext.Provider value={{ user, organizations, currentOrg, switchOrg, loading, enabledModules }}>
+    <WorkspaceContext.Provider value={{ user, organizations, currentOrg, switchOrg, loading, enabledModules, hiddenModules }}>
       {children}
     </WorkspaceContext.Provider>
   )
