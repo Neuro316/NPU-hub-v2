@@ -194,12 +194,25 @@ export default function MediaPage() {
             All
           </button>
           {collections.map(c => (
-            <button key={c.id} onClick={() => setCollectionFilter(collectionFilter === c.id ? null : c.id)}
-              className={`text-[10px] font-medium px-2.5 py-1.5 rounded-lg flex items-center gap-1 ${collectionFilter === c.id ? 'text-white' : 'bg-gray-100 text-gray-600'}`}
-              style={collectionFilter === c.id ? { backgroundColor: c.color } : {}}>
-              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: c.color }} />
-              {c.name}
-            </button>
+            <div key={c.id} className="relative group flex items-center">
+              <button onClick={() => setCollectionFilter(collectionFilter === c.id ? null : c.id)}
+                className={`text-[10px] font-medium px-2.5 py-1.5 rounded-lg flex items-center gap-1 ${collectionFilter === c.id ? 'text-white' : 'bg-gray-100 text-gray-600'}`}
+                style={collectionFilter === c.id ? { backgroundColor: c.color } : {}}>
+                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: c.color }} />
+                {c.name}
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (confirm('Delete "' + c.name + '"? Assets will not be deleted.')) {
+                    deleteCollection(c.id)
+                  }
+                }}
+                className="absolute -top-1.5 -right-1.5 opacity-0 group-hover:opacity-100 w-4 h-4 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center transition-all z-10"
+              >
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </div>
           ))}
         </div>
 
