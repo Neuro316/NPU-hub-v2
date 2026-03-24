@@ -5,9 +5,9 @@ import ContactDetail from '@/components/crm/contact-detail'
 import {
   Plus, MoreHorizontal, ChevronDown, GripVertical,
   X, DollarSign, Trash2, Settings, BarChart3,
-  Clock, TrendingUp, Target, Percent, Save, User, ArrowRightLeft, LayoutGrid
+  Clock, TrendingUp, Target, Percent, Save, User, ArrowRightLeft, LayoutGrid, Sliders
 } from 'lucide-react'
-import { fetchContacts, updateContact } from '@/lib/crm-client'
+import { fetchContacts, updateContact, createContact } from '@/lib/crm-client'
 import type { CrmContact } from '@/types/crm'
 import { PIPELINE_STAGES, STAGE_COLORS } from '@/types/crm'
 import { useWorkspace } from '@/lib/workspace-context'
@@ -17,8 +17,25 @@ import { ContactCommsButtons } from '@/components/crm/twilio-comms'
 interface PipelineStageConfig {
   id: string; name: string; color: string; is_closed_won?: boolean; is_closed_lost?: boolean; position: number
 }
+
+interface PipelineCustomField {
+  id: string
+  label: string
+  type: 'text' | 'number' | 'date' | 'select' | 'checkbox' | 'currency' | 'url'
+  options?: string[]
+  required?: boolean
+  show_on_card?: boolean
+  placeholder?: string
+}
+
 interface PipelineConfig {
-  id: string; name: string; description?: string; stages: PipelineStageConfig[]; is_default?: boolean; card_config?: CardConfig
+  id: string
+  name: string
+  description?: string
+  stages: PipelineStageConfig[]
+  is_default?: boolean
+  card_config?: CardConfig
+  custom_fields?: PipelineCustomField[]
 }
 
 export interface CardConfig {
@@ -86,7 +103,17 @@ const TEMPLATES: Record<string, PipelineStageConfig[]> = {
   ],
 }
 
-function ContactCard({ contact, stages, pipelines, activePipelineId, onMove, onMovePipeline, onRemovePipeline, onOpenContact }: { contact: CrmContact; stages: PipelineStageConfig[]; pipelines: PipelineConfig[]; activePipelineId: string; onMove: (stage: string) => void; onMovePipeline: (pipelineId: string, firstStage: string) => void; onRemovePipeline: () => void; onOpenContact: (id: string) => void }) {
+function ContactCard({ contact, stages, pipelines, activePipelineId, customFields, onMove, onMovePipeline, onRemovePipeline, onOpenContact }: { 
+  contact: CrmContact
+  stages: PipelineStageConfig[]
+  pipelines: PipelineConfig[]
+  activePipelineId: string
+  customFields: PipelineCustomField[]
+  onMove: (stage: string) => void
+  onMovePipeline: (pipelineId: string, firstStage: string) => void
+  onRemovePipeline: () => void
+  onOpenContact: (id: string) => void
+}) {
   const [showMenu, setShowMenu] = useState(false)
   const [menuSection, setMenuSection] = useState<'main'|'stage'|'pipeline'>('main')
   const initials = `${contact.first_name?.[0] || ''}${contact.last_name?.[0] || ''}`.toUpperCase()
@@ -100,6 +127,9 @@ function ContactCard({ contact, stages, pipelines, activePipelineId, onMove, onM
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [showMenu])
+
+  // Get custom fields to show on card
+  const cardFields = customFields.filter(f => f.show_on_card)
 
   return (
     <div
@@ -119,6 +149,25 @@ function ContactCard({ contact, stages, pipelines, activePipelineId, onMove, onM
       <div className="flex items-center gap-1.5 mt-2 flex-wrap">
         {contact.pipeline_stage && <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full bg-teal/10 text-teal">{contact.pipeline_stage}</span>}
         {contact.tags?.slice(0,2).map(t => <span key={t} className="text-[8px] font-semibold px-1 py-0.5 rounded-full bg-np-blue/8 text-np-blue">{t}</span>)}
+        
+        {/* Custom field badges */}
+        {cardFields.map(field => {
+          const fieldValue = contact.custom_fields?.[field.id]
+          if (!fieldValue) return null
+          let displayValue = String(fieldValue)
+          if (field.type === 'currency' && typeof fieldValue === 'number') {
+            displayValue = `$${(fieldValue / 1000).toFixed(0)}k`
+          } else if (field.type === 'checkbox') {
+            displayValue = fieldValue ? '✓' : ''
+          }
+          if (!displayValue) return null
+          return (
+            <span key={field.id} className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600" title={field.label}>
+              {displayValue}
+            </span>
+          )
+        })}
+        
         <div className="flex-1" />
         {daysSince !== null && daysSince > 7 && <span className="text-[9px] text-orange-400">{daysSince}d</span>}
         {value && <span className="text-[10px] font-semibold text-green-600 flex items-center gap-0.5"><DollarSign size={9} />{(value/1000).toFixed(0)}k</span>}
@@ -240,8 +289,8 @@ function StageEditor({ stages, onSave, onClose }: { stages: PipelineStageConfig[
               <input value={stage.name} onChange={e => update(stage.id, { name: e.target.value })} className="flex-1 text-xs font-medium px-2 py-1 border border-gray-100 rounded-md focus:outline-none focus:ring-1 focus:ring-teal/30" />
               <label className="flex items-center gap-1 text-[9px] text-gray-400"><input type="checkbox" checked={!!stage.is_closed_won} onChange={e => update(stage.id, { is_closed_won:e.target.checked, is_closed_lost:false })} className="accent-green-500 w-3 h-3" /> Won</label>
               <label className="flex items-center gap-1 text-[9px] text-gray-400"><input type="checkbox" checked={!!stage.is_closed_lost} onChange={e => update(stage.id, { is_closed_lost:e.target.checked, is_closed_won:false })} className="accent-red-500 w-3 h-3" /> Lost</label>
-              <button onClick={() => move(stage.id,-1)} disabled={i===0} className="p-0.5 text-gray-300 hover:text-np-dark disabled:opacity-20">&#9650;</button>
-              <button onClick={() => move(stage.id,1)} disabled={i===editing.length-1} className="p-0.5 text-gray-300 hover:text-np-dark disabled:opacity-20">&#9660;</button>
+              <button onClick={() => move(stage.id,-1)} disabled={i===0} className="p-0.5 text-gray-300 hover:text-np-dark disabled:opacity-20">▲</button>
+              <button onClick={() => move(stage.id,1)} disabled={i===editing.length-1} className="p-0.5 text-gray-300 hover:text-np-dark disabled:opacity-20">▼</button>
               <button onClick={() => remove(stage.id)} disabled={editing.length<=2} className="p-0.5 text-gray-300 hover:text-red-500 disabled:opacity-20"><Trash2 size={11} /></button>
             </div>
           ))}
@@ -251,6 +300,166 @@ function StageEditor({ stages, onSave, onClose }: { stages: PipelineStageConfig[
         <div className="flex justify-end gap-2 mt-4">
           <button onClick={onClose} className="px-3 py-2 text-xs text-gray-400">Cancel</button>
           <button onClick={() => onSave(editing)} className="px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark transition-colors flex items-center gap-1.5"><Save size={12} /> Save Stages</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CustomFieldEditor({ pipeline, onSave, onClose }: { pipeline: PipelineConfig; onSave: (fields: PipelineCustomField[]) => void; onClose: () => void }) {
+  const [fields, setFields] = useState<PipelineCustomField[]>(pipeline.custom_fields || [])
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+
+  const addField = () => {
+    const newField: PipelineCustomField = {
+      id: `field-${Date.now()}`,
+      label: 'New Field',
+      type: 'text',
+      required: false,
+      show_on_card: false,
+    }
+    setFields(prev => [...prev, newField])
+    setExpandedId(newField.id)
+  }
+
+  const updateField = (id: string, updates: Partial<PipelineCustomField>) => {
+    setFields(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f))
+  }
+
+  const removeField = (id: string) => {
+    setFields(prev => prev.filter(f => f.id !== id))
+    if (expandedId === id) setExpandedId(null)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="w-full max-w-2xl bg-white rounded-xl shadow-2xl border border-gray-100 p-5 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-base font-bold text-np-dark">Pipeline Custom Fields</h3>
+            <p className="text-[10px] text-gray-400 mt-0.5">Define custom fields for <span className="font-semibold text-np-blue">{pipeline.name}</span></p>
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:bg-gray-50"><X size={14} /></button>
+        </div>
+
+        <div className="space-y-2 mb-4">
+          {fields.map(field => (
+            <div key={field.id} className="border border-gray-100 rounded-lg overflow-hidden">
+              <button
+                onClick={() => setExpandedId(expandedId === field.id ? null : field.id)}
+                className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-gray-50 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Sliders size={14} className="text-gray-400" />
+                  <span className="text-xs font-semibold text-np-dark">{field.label}</span>
+                  <span className="text-[9px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">{field.type}</span>
+                  {field.required && <span className="text-[8px] text-red-500 font-bold">*</span>}
+                  {field.show_on_card && <span className="text-[8px] text-np-blue bg-np-blue/10 px-1.5 py-0.5 rounded">Card</span>}
+                </div>
+                <ChevronDown size={14} className={`text-gray-400 transition-transform ${expandedId === field.id ? 'rotate-180' : ''}`} />
+              </button>
+
+              {expandedId === field.id && (
+                <div className="px-3 pb-3 pt-2 bg-gray-50/50 space-y-3 border-t border-gray-100">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Label</label>
+                      <input
+                        value={field.label}
+                        onChange={e => updateField(field.id, { label: e.target.value })}
+                        className="w-full mt-1 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Type</label>
+                      <select
+                        value={field.type}
+                        onChange={e => updateField(field.id, { type: e.target.value as any })}
+                        className="w-full mt-1 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30"
+                      >
+                        <option value="text">Text</option>
+                        <option value="number">Number</option>
+                        <option value="currency">Currency</option>
+                        <option value="date">Date</option>
+                        <option value="select">Dropdown</option>
+                        <option value="checkbox">Checkbox</option>
+                        <option value="url">URL</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Placeholder</label>
+                    <input
+                      value={field.placeholder || ''}
+                      onChange={e => updateField(field.id, { placeholder: e.target.value })}
+                      placeholder="Optional..."
+                      className="w-full mt-1 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30"
+                    />
+                  </div>
+
+                  {field.type === 'select' && (
+                    <div>
+                      <label className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Options (one per line)</label>
+                      <textarea
+                        value={(field.options || []).join('\n')}
+                        onChange={e => updateField(field.id, { options: e.target.value.split('\n').filter(o => o.trim()) })}
+                        placeholder="Option 1&#10;Option 2&#10;Option 3"
+                        rows={4}
+                        className="w-full mt-1 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 font-mono"
+                      />
+                    </div>
+                  )}
+
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={field.required}
+                        onChange={e => updateField(field.id, { required: e.target.checked })}
+                        className="w-4 h-4 accent-np-blue"
+                      />
+                      Required field
+                    </label>
+                    <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={field.show_on_card}
+                        onChange={e => updateField(field.id, { show_on_card: e.target.checked })}
+                        className="w-4 h-4 accent-np-blue"
+                      />
+                      Show on kanban card
+                    </label>
+                  </div>
+
+                  <button
+                    onClick={() => removeField(field.id)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                  >
+                    <Trash2 size={12} /> Delete Field
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {fields.length === 0 && (
+          <p className="text-center text-[10px] text-gray-400 py-6">No custom fields yet. Add one below.</p>
+        )}
+
+        <button
+          onClick={addField}
+          className="w-full py-2.5 border-2 border-dashed border-gray-200 rounded-lg text-xs text-gray-400 hover:text-np-blue hover:border-np-blue/30 transition-colors flex items-center justify-center gap-1.5"
+        >
+          <Plus size={14} /> Add Field
+        </button>
+
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={onClose} className="px-3 py-2 text-xs text-gray-400">Cancel</button>
+          <button onClick={() => onSave(fields)} className="px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark transition-colors flex items-center gap-1.5">
+            <Save size={12} /> Save Custom Fields
+          </button>
         </div>
       </div>
     </div>
@@ -349,6 +558,108 @@ function NewPipelineModal({ onSave, onClose }: { onSave: (p: PipelineConfig) => 
   )
 }
 
+function NewContactModal({ pipeline, firstStage, onSave, onClose }: { pipeline: PipelineConfig; firstStage: string; onSave: (contact: CrmContact) => void; onClose: () => void }) {
+  const { currentOrg } = useWorkspace()
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const handleCreate = async () => {
+    if (!firstName.trim() || !currentOrg) return
+    setSaving(true)
+    try {
+      const newContact = await createContact({
+        org_id: currentOrg.id,
+        first_name: firstName.trim(),
+        last_name: lastName.trim() || undefined,
+        email: email.trim() || undefined,
+        phone: phone.trim() || undefined,
+        pipeline_id: pipeline.id,
+        pipeline_stage: firstStage,
+      })
+      onSave(newContact)
+      onClose()
+    } catch (e) {
+      console.error(e)
+      alert('Failed to create contact')
+    }
+    setSaving(false)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="w-full max-w-md bg-white rounded-xl shadow-2xl border border-gray-100 p-5 animate-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-base font-bold text-np-dark">New Contact</h3>
+            <p className="text-[10px] text-gray-400 mt-0.5">Add to <span className="font-semibold text-np-blue">{pipeline.name}</span> → {firstStage}</p>
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:bg-gray-50"><X size={14} /></button>
+        </div>
+
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">First Name *</label>
+              <input
+                value={firstName}
+                onChange={e => setFirstName(e.target.value)}
+                placeholder="John"
+                className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30"
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Last Name</label>
+              <input
+                value={lastName}
+                onChange={e => setLastName(e.target.value)}
+                placeholder="Doe"
+                className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="john@example.com"
+              className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30"
+            />
+          </div>
+
+          <div>
+            <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Phone</label>
+            <input
+              type="tel"
+              value={phone}
+              onChange={e => setPhone(e.target.value)}
+              placeholder="+1 (555) 123-4567"
+              className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 mt-5">
+          <button onClick={onClose} className="px-3 py-2 text-xs text-gray-400">Cancel</button>
+          <button
+            onClick={handleCreate}
+            disabled={!firstName.trim() || saving}
+            className="px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark disabled:opacity-40 transition-colors"
+          >
+            {saving ? 'Creating...' : 'Create Contact'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function PipelinesPage() {
   const { currentOrg } = useWorkspace()
   const [contacts, setContacts] = useState<CrmContact[]>([])
@@ -360,6 +671,8 @@ export default function PipelinesPage() {
   const [showStageEditor, setShowStageEditor] = useState(false)
   const [showNewPipeline, setShowNewPipeline] = useState(false)
   const [showCardConfig, setShowCardConfig] = useState(false)
+  const [showCustomFieldEditor, setShowCustomFieldEditor] = useState(false)
+  const [showNewContact, setShowNewContact] = useState(false)
   const [showMetrics, setShowMetrics] = useState(true)
   const activePipeline = pipelines.find(p => p.id === activePipelineId) || pipelines[0]
 
@@ -407,9 +720,11 @@ export default function PipelinesPage() {
     } catch (e) { console.error(e) }
   }
 
+  const handleNewContact = (newContact: CrmContact) => {
+    setContacts(prev => [newContact, ...prev])
+  }
+
   const pipelineContacts = contacts.filter(c => {
-    // Show contact in this pipeline only if explicitly assigned
-    // Contacts with no pipeline_id show only in the default pipeline
     if (c.pipeline_id) return c.pipeline_id === activePipelineId
     return activePipeline.is_default === true
   })
@@ -444,8 +759,10 @@ export default function PipelinesPage() {
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setShowMetrics(!showMetrics)} className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg transition-colors ${showMetrics ? 'bg-np-blue/10 text-np-blue' : 'bg-gray-50 text-gray-400'}`}><BarChart3 size={13} /> Metrics</button>
+          <button onClick={() => setShowCustomFieldEditor(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-50 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-100 transition-colors"><Sliders size={13} /> Custom Fields</button>
           <button onClick={() => setShowCardConfig(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-50 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-100 transition-colors"><LayoutGrid size={13} /> Card Fields</button>
           <button onClick={() => setShowStageEditor(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-50 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-100 transition-colors"><Settings size={13} /> Edit Stages</button>
+          <button onClick={() => setShowNewContact(true)} className="flex items-center gap-1.5 px-3 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark transition-colors"><Plus size={13} /> Add Contact</button>
         </div>
       </div>
 
@@ -469,7 +786,7 @@ export default function PipelinesPage() {
                 onDragLeave={e => { e.currentTarget.classList.remove('bg-np-blue/10', 'border-np-blue/40', 'scale-[1.01]'); e.currentTarget.classList.add('bg-gray-50/50', 'border-gray-100/50') }}
                 onDrop={e => { e.preventDefault(); e.currentTarget.classList.remove('bg-np-blue/10', 'border-np-blue/40', 'scale-[1.01]'); e.currentTarget.classList.add('bg-gray-50/50', 'border-gray-100/50'); const cid = e.dataTransfer.getData('contactId'); if (cid) moveContact(cid, stage.name) }}
               >
-                {sc.map(c => <ContactCard key={c.id} contact={c} stages={activePipeline.stages} pipelines={pipelines} activePipelineId={activePipelineId} onMove={s => moveContact(c.id, s)} onMovePipeline={(pid, fs) => moveToPipeline(c.id, pid, fs)} onRemovePipeline={() => removeFromPipeline(c.id)} onOpenContact={setSelectedContactId} />)}
+                {sc.map(c => <ContactCard key={c.id} contact={c} stages={activePipeline.stages} pipelines={pipelines} activePipelineId={activePipelineId} customFields={activePipeline.custom_fields || []} onMove={s => moveContact(c.id, s)} onMovePipeline={(pid, fs) => moveToPipeline(c.id, pid, fs)} onRemovePipeline={() => removeFromPipeline(c.id)} onOpenContact={setSelectedContactId} />)}
                 {sc.length === 0 && <div className="text-center py-8 text-[10px] text-gray-400">No contacts</div>}
               </div>
             </div>
@@ -480,7 +797,9 @@ export default function PipelinesPage() {
       {showStageEditor && <StageEditor stages={activePipeline.stages} onSave={s => { savePipelines(pipelines.map(p => p.id===activePipelineId ? { ...p, stages:s } : p)); setShowStageEditor(false) }} onClose={() => setShowStageEditor(false)} />}
       {showNewPipeline && <NewPipelineModal onSave={p => { savePipelines([...pipelines, p], p.id); setShowNewPipeline(false) }} onClose={() => setShowNewPipeline(false)} />}
       {showCardConfig && <CardConfigEditor pipeline={activePipeline} onSave={cfg => { savePipelines(pipelines.map(p => p.id===activePipelineId ? { ...p, card_config:cfg } : p)); setShowCardConfig(false) }} onClose={() => setShowCardConfig(false)} />}
-      {selectedContactId && <ContactDetail contactId={selectedContactId} cardConfig={activePipeline.card_config} onClose={() => setSelectedContactId(null)} onUpdate={() => {
+      {showCustomFieldEditor && <CustomFieldEditor pipeline={activePipeline} onSave={fields => { savePipelines(pipelines.map(p => p.id===activePipelineId ? { ...p, custom_fields:fields } : p)); setShowCustomFieldEditor(false) }} onClose={() => setShowCustomFieldEditor(false)} />}
+      {showNewContact && <NewContactModal pipeline={activePipeline} firstStage={activePipeline.stages[0]?.name || 'New Lead'} onSave={handleNewContact} onClose={() => setShowNewContact(false)} />}
+      {selectedContactId && <ContactDetail contactId={selectedContactId} cardConfig={activePipeline.card_config} pipelineCustomFields={activePipeline.custom_fields} onClose={() => setSelectedContactId(null)} onUpdate={() => {
         if (currentOrg) fetchContacts({ org_id: currentOrg.id, limit: 500 }).then(r => setContacts(r.contacts)).catch(console.error)
       }} />}
     </div>
