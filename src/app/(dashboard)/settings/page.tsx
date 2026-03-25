@@ -1,24 +1,30 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import {
   Mail, Phone, Brain, Shield, Bell, Users, Sliders,
   Save, Plus, X, Trash2, CheckCircle2, AlertTriangle,
-  LayoutGrid, Eye, EyeOff,
+  LayoutGrid, Eye, EyeOff, Search, Activity, History,
+  BarChart3, ChevronRight,
 } from 'lucide-react'
 import { useWorkspace } from '@/lib/workspace-context'
+import { useTeamData, ROLE_CONFIG } from '@/lib/hooks/use-team-data'
+import type { TeamMember } from '@/lib/hooks/use-team-data'
+import { MemberDetail } from '@/components/team/member-detail'
 import { createClient } from '@/lib/supabase-browser'
 
-type Section = 'email' | 'twilio' | 'ai' | 'pipeline' | 'team' | 'notifications' | 'compliance' | 'general' | 'modules'
+type Section = 'email' | 'twilio' | 'ai' | 'pipeline' | 'team' | 'notifications' | 'compliance' | 'general' | 'modules' | 'admin_tools'
 
 const SECTIONS: { id: Section; label: string; icon: any }[] = [
   { id: 'general', label: 'General', icon: Sliders },
   { id: 'modules', label: 'Modules', icon: LayoutGrid },
+  { id: 'team', label: 'Team', icon: Users },
+  { id: 'admin_tools', label: 'Admin Tools', icon: Shield },
   { id: 'email', label: 'Email', icon: Mail },
   { id: 'twilio', label: 'Twilio / SMS', icon: Phone },
   { id: 'ai', label: 'AI Integration', icon: Brain },
   { id: 'pipeline', label: 'Pipeline', icon: Sliders },
-  { id: 'team', label: 'Team', icon: Users },
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'compliance', label: 'Compliance', icon: Shield },
 ]
@@ -75,12 +81,7 @@ const SIDEBAR_MODULES: { category: string; items: { key: string; label: string }
   {
     category: 'ADMIN',
     items: [
-      { key: 'team', label: 'Team' },
-      { key: 'integrations', label: 'Integrations' },
       { key: 'platform_advisor', label: 'Platform Advisor' },
-      { key: 'activity_log', label: 'Activity Log' },
-      { key: 'usage_analytics', label: 'Usage Analytics' },
-      { key: 'auditor', label: 'System Auditor' },
     ],
   },
 ]
@@ -96,7 +97,11 @@ const NUMBER_PURPOSES: { value: NumberPurpose; label: string; desc: string }[] =
 interface TwilioNumber { phone: string; nickname: string; purpose: NumberPurpose }
 
 export default function SettingsPage() {
-  const { currentOrg } = useWorkspace()
+  const { currentOrg, organizations, user } = useWorkspace()
+  const {
+    members, loading: teamLoading, isSuperAdmin, isAdmin,
+    addMember, updateMember, deleteMember,
+  } = useTeamData()
   const [active, setActive] = useState<Section>('general')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -114,6 +119,36 @@ export default function SettingsPage() {
   const [compliance, setCompliance] = useState({ double_optin: false, auto_dnc_unsubscribe: true, retention_days: 365 })
   const [notifications, setNotifications] = useState({ new_lead: true, missed_call: true, task_overdue: true, campaign_complete: true })
   const [hiddenModules, setHiddenModules] = useState<string[]>([])
+
+  // Team management state
+  const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null)
+  const [addingMember, setAddingMember] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newEmail, setNewEmail] = useState('')
+  const [newRole, setNewRole] = useState<TeamMember['role']>('team_member')
+  const [newTitle, setNewTitle] = useState('')
+  const [teamSearch, setTeamSearch] = useState('')
+
+  const handleAddMember = async () => {
+    if (!newName.trim()) return
+    const maxRole = isSuperAdmin ? newRole : (newRole === 'super_admin' ? 'admin' : newRole)
+    await addMember({
+      display_name: newName.trim(),
+      email: newEmail.trim() || null,
+      role: maxRole,
+      job_title: newTitle.trim() || null,
+      status: 'invited',
+    } as any)
+    setNewName(''); setNewEmail(''); setNewRole('team_member'); setNewTitle(''); setAddingMember(false)
+  }
+
+  const filteredMembers = members.filter(m =>
+    m.display_name.toLowerCase().includes(teamSearch.toLowerCase()) ||
+    (m.email && m.email.toLowerCase().includes(teamSearch.toLowerCase())) ||
+    (m.job_title && m.job_title.toLowerCase().includes(teamSearch.toLowerCase()))
+  )
+  const activeMembers = filteredMembers.filter(m => m.status === 'active')
+  const otherMembers = filteredMembers.filter(m => m.status !== 'active')
 
   // Load settings from Supabase
   useEffect(() => {
@@ -222,7 +257,7 @@ export default function SettingsPage() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 max-w-2xl">
+      <div className="flex-1 max-w-3xl">
         <div className="rounded-xl border border-gray-100 bg-white p-6">
           {/* General */}
           {active === 'general' && (
@@ -490,14 +525,193 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* Team */}
+          {/* Team — Embedded */}
           {active === 'team' && (
             <div className="space-y-4">
-              <h3 className="text-sm font-bold text-np-dark">Team Management</h3>
-              <p className="text-xs text-gray-400">Team members are managed from the main hub Team page. CRM team assignment uses the team_members table.</p>
-              <a href="/team" className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-np-blue border border-np-blue/20 rounded-lg hover:bg-np-blue/5">
-                <Users size={12} /> Go to Team Settings
-              </a>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-np-dark">Team Members</h3>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {currentOrg?.name} &middot; {members.length} members
+                  </p>
+                </div>
+                {isAdmin && (
+                  <button onClick={() => setAddingMember(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-np-blue text-white rounded-lg text-xs font-medium hover:bg-np-blue/90">
+                    <Plus size={12} /> Add Member
+                  </button>
+                )}
+              </div>
+
+              {/* Add Member Form */}
+              {addingMember && (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <h4 className="text-xs font-semibold text-np-dark mb-3">Add Team Member</h4>
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div>
+                      <label className="text-[10px] text-gray-500 block mb-0.5">Name *</label>
+                      <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Full name"
+                        className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30" autoFocus />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-gray-500 block mb-0.5">Email</label>
+                      <input value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="email@company.com"
+                        className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-gray-500 block mb-0.5">Role</label>
+                      <select value={newRole} onChange={e => setNewRole(e.target.value as any)}
+                        className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30">
+                        {Object.entries(ROLE_CONFIG).map(([key, config]) => {
+                          if (!isSuperAdmin && key === 'super_admin') return null
+                          return <option key={key} value={key}>{config.label}</option>
+                        })}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-gray-500 block mb-0.5">Job Title</label>
+                      <input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="Role / Title"
+                        className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={handleAddMember} className="px-4 py-1.5 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark">Add</button>
+                    <button onClick={() => { setAddingMember(false); setNewName(''); setNewEmail(''); setNewTitle('') }}
+                      className="px-4 py-1.5 border border-gray-200 text-xs font-medium rounded-lg hover:bg-gray-50">Cancel</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Search */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                <input value={teamSearch} onChange={e => setTeamSearch(e.target.value)} placeholder="Search team..."
+                  className="w-full pl-9 pr-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+              </div>
+
+              {/* Role Legend */}
+              {isSuperAdmin && (
+                <div className="flex gap-1.5 flex-wrap">
+                  {Object.entries(ROLE_CONFIG).map(([key, config]) => {
+                    const count = members.filter(m => m.role === key).length
+                    if (count === 0) return null
+                    return (
+                      <span key={key} className="text-[9px] font-bold px-2 py-0.5 rounded-full"
+                        style={{ backgroundColor: config.bg, color: config.color }}>
+                        {config.label}: {count}
+                      </span>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* Active Members */}
+              {teamLoading ? (
+                <div className="text-center py-8 text-xs text-gray-400">Loading team...</div>
+              ) : (
+                <>
+                  <div className="border border-gray-100 rounded-lg overflow-hidden">
+                    <div className="px-3 py-2 bg-gray-50 border-b border-gray-100">
+                      <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Active ({activeMembers.length})</span>
+                    </div>
+                    <div className="divide-y divide-gray-50">
+                      {activeMembers.map(member => {
+                        const roleConfig = ROLE_CONFIG[member.role]
+                        return (
+                          <button key={member.id} onClick={() => setSelectedMember(member)}
+                            className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors text-left">
+                            <div className="w-7 h-7 rounded-full flex items-center justify-center text-white font-bold text-[10px] flex-shrink-0"
+                              style={{ backgroundColor: roleConfig.color }}>
+                              {member.display_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-semibold text-np-dark">{member.display_name}</span>
+                                <span className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
+                                  style={{ backgroundColor: roleConfig.bg, color: roleConfig.color }}>
+                                  {roleConfig.label}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                {member.job_title && <span className="text-[10px] text-gray-500">{member.job_title}</span>}
+                                {member.email && <span className="text-[10px] text-gray-400">{member.email}</span>}
+                              </div>
+                            </div>
+                          </button>
+                        )
+                      })}
+                      {activeMembers.length === 0 && (
+                        <div className="px-3 py-6 text-center text-xs text-gray-400">No active members found</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Inactive/Invited */}
+                  {otherMembers.length > 0 && (
+                    <div className="border border-gray-100 rounded-lg overflow-hidden">
+                      <div className="px-3 py-2 bg-gray-50 border-b border-gray-100">
+                        <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Invited / Inactive ({otherMembers.length})</span>
+                      </div>
+                      <div className="divide-y divide-gray-50">
+                        {otherMembers.map(member => (
+                          <button key={member.id} onClick={() => setSelectedMember(member)}
+                            className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors text-left opacity-60">
+                            <div className="w-7 h-7 rounded-full flex items-center justify-center text-white font-bold text-[10px] flex-shrink-0 bg-gray-400">
+                              {member.display_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <span className="text-xs font-medium text-np-dark">{member.display_name}</span>
+                              <span className="text-[9px] ml-2 uppercase text-gray-400 font-medium">{member.status}</span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Member Detail Panel */}
+              <MemberDetail
+                member={selectedMember}
+                onClose={() => setSelectedMember(null)}
+                onUpdate={updateMember}
+                onDelete={deleteMember}
+                isSuperAdmin={isSuperAdmin}
+                isAdmin={isAdmin}
+                isOwnProfile={selectedMember?.user_id === user?.id || false}
+                allOrgs={organizations}
+              />
+            </div>
+          )}
+
+          {/* Admin Tools — Link Cards */}
+          {active === 'admin_tools' && (
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-sm font-bold text-np-dark">Admin Tools</h3>
+                <p className="text-xs text-gray-400 mt-1">Quick access to administration and monitoring dashboards.</p>
+              </div>
+              <div className="space-y-2">
+                {([
+                  { href: '/integrations', icon: Activity, label: 'Integrations', desc: 'Google, Slack, Twilio connections and OAuth setup' },
+                  { href: '/activity-log', icon: History, label: 'Activity Log', desc: 'Real-time CRM activity feed with filters' },
+                  { href: '/usage-analytics', icon: BarChart3, label: 'Usage Analytics', desc: 'Page views, team activity, API health, and sunset candidates' },
+                  { href: '/auditor', icon: Shield, label: 'System Auditor', desc: 'System health score, data integrity, and repair tools' },
+                ] as const).map(tool => (
+                  <Link key={tool.href} href={tool.href}
+                    className="flex items-center gap-3 px-4 py-3.5 rounded-lg border border-gray-100 hover:border-np-blue/20 hover:bg-np-blue/5 transition-colors group">
+                    <div className="w-8 h-8 rounded-lg bg-gray-100 group-hover:bg-np-blue/10 flex items-center justify-center flex-shrink-0 transition-colors">
+                      <tool.icon size={16} className="text-gray-500 group-hover:text-np-blue transition-colors" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-np-dark">{tool.label}</p>
+                      <p className="text-[10px] text-gray-400 mt-0.5">{tool.desc}</p>
+                    </div>
+                    <ChevronRight size={14} className="text-gray-300 group-hover:text-np-blue transition-colors" />
+                  </Link>
+                ))}
+              </div>
             </div>
           )}
 
@@ -542,14 +756,16 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* Save Button */}
-          <div className="flex items-center justify-end gap-2 mt-6 pt-4 border-t border-gray-100">
-            {saved && <span className="flex items-center gap-1 text-[10px] text-green-600 font-medium"><CheckCircle2 size={12} /> Saved</span>}
-            <button onClick={handleSave} disabled={saving}
-              className="flex items-center gap-1.5 px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark disabled:opacity-40 transition-colors">
-              <Save size={12} /> {saving ? 'Saving...' : 'Save Settings'}
-            </button>
-          </div>
+          {/* Save Button — hidden for sections that don't need it */}
+          {active !== 'team' && active !== 'admin_tools' && (
+            <div className="flex items-center justify-end gap-2 mt-6 pt-4 border-t border-gray-100">
+              {saved && <span className="flex items-center gap-1 text-[10px] text-green-600 font-medium"><CheckCircle2 size={12} /> Saved</span>}
+              <button onClick={handleSave} disabled={saving}
+                className="flex items-center gap-1.5 px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark disabled:opacity-40 transition-colors">
+                <Save size={12} /> {saving ? 'Saving...' : 'Save Settings'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
