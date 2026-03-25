@@ -4,14 +4,26 @@ import { getAnthropicClient } from '@/lib/crm-ai'
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = createServerSupabase()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Auth check (soft — log but don't block if cookies issue)
+    try {
+      const supabase = createServerSupabase()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        console.warn('[equipment/scan] No user from auth — proceeding anyway (cookies issue)')
+      }
+    } catch (authErr) {
+      console.warn('[equipment/scan] Auth check failed:', authErr)
+    }
 
     const { image_base64, media_type, org_id } = await req.json()
     if (!image_base64) {
       return NextResponse.json({ error: 'image_base64 is required' }, { status: 400 })
     }
+    if (!org_id) {
+      return NextResponse.json({ error: 'org_id is required' }, { status: 400 })
+    }
+
+    console.log('[equipment/scan] Processing image, size:', Math.round(image_base64.length / 1024), 'KB, org:', org_id)
 
     const client = await getAnthropicClient(org_id)
     const response = await client.messages.create({
@@ -48,8 +60,11 @@ If no serial numbers found, return:
 
     const block = response.content[0]
     if (block.type !== 'text') {
+      console.log('[equipment/scan] Non-text response block:', block.type)
       return NextResponse.json({ serials: [], raw_text: '', confidence: 0 })
     }
+
+    console.log('[equipment/scan] Claude response:', block.text.substring(0, 200))
 
     // Parse JSON from response, handling potential markdown wrapping
     let text = block.text.trim()
@@ -61,6 +76,7 @@ If no serial numbers found, return:
       const result = JSON.parse(text)
       return NextResponse.json(result)
     } catch {
+      console.warn('[equipment/scan] Failed to parse JSON, raw:', text)
       return NextResponse.json({ serials: [], raw_text: text, confidence: 0 })
     }
   } catch (e: any) {

@@ -192,27 +192,52 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
   // Capture image and send to AI
   const captureAndScan = async () => {
     if (!videoRef.current || !canvasRef.current || !currentOrg) return
+
+    const video = videoRef.current
+    // Wait for video to have actual dimensions
+    if (!video.videoWidth || !video.videoHeight) {
+      setScanError('Camera not ready yet. Wait a moment and try again.')
+      return
+    }
+
     setScanProcessing(true)
     setScanError('')
 
-    const video = videoRef.current
     const canvas = canvasRef.current
     // Resize to max 1024px
     const scale = Math.min(1024 / video.videoWidth, 1024 / video.videoHeight, 1)
-    canvas.width = video.videoWidth * scale
-    canvas.height = video.videoHeight * scale
+    canvas.width = Math.round(video.videoWidth * scale)
+    canvas.height = Math.round(video.videoHeight * scale)
     const ctx = canvas.getContext('2d')!
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
 
-    const base64 = canvas.toDataURL('image/jpeg', 0.85).split(',')[1]
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
+    const base64 = dataUrl.split(',')[1]
+    if (!base64 || base64.length < 100) {
+      setScanError('Failed to capture image. Try again.')
+      setScanProcessing(false)
+      return
+    }
 
     try {
+      console.log('[Equipment] Sending scan request, image size:', Math.round(base64.length / 1024), 'KB')
       const res = await fetch('/api/equipment/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ image_base64: base64, media_type: 'image/jpeg', org_id: currentOrg.id }),
       })
+
+      if (!res.ok) {
+        const errText = await res.text()
+        console.error('[Equipment] Scan API error:', res.status, errText)
+        setScanError(`Scan API error (${res.status}). Try manual entry.`)
+        setScanProcessing(false)
+        return
+      }
+
       const data = await res.json()
+      console.log('[Equipment] Scan result:', data)
+
       if (data.error) { setScanError(data.error); setScanProcessing(false); return }
       setScanResult(data)
 
@@ -223,6 +248,7 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
         setScanError('No serial numbers detected. Try again or use manual entry.')
       }
     } catch (e: any) {
+      console.error('[Equipment] Scan failed:', e)
       setScanError('Scan failed: ' + (e.message || 'Unknown error'))
     }
     setScanProcessing(false)
