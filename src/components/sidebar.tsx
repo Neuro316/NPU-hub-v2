@@ -175,6 +175,11 @@ export function Sidebar() {
   const [orgDropdownOpen, setOrgDropdownOpen] = useState(false)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
+  // Debug: log hidden modules filtering
+  if (hiddenModules.length > 0) {
+    console.log('[Sidebar] Filtering out hidden modules:', hiddenModules)
+  }
+
   const toggleCategory = (id: string) => {
     setCollapsed(prev => ({ ...prev, [id]: !prev[id] }))
   }

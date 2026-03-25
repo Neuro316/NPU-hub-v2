@@ -136,7 +136,10 @@ export default function SettingsPage() {
           if (row.setting_key === 'crm_ai' && v) setAi(prev => ({ ...prev, ...v }))
           if (row.setting_key === 'crm_compliance' && v) setCompliance(prev => ({ ...prev, ...v }))
           if (row.setting_key === 'crm_notifications' && v) setNotifications(prev => ({ ...prev, ...v }))
-          if (row.setting_key === 'hidden_modules' && Array.isArray(v)) setHiddenModules(v)
+          if (row.setting_key === 'hidden_modules') {
+            console.log('[Settings] Loaded hidden_modules from DB:', v)
+            if (Array.isArray(v)) setHiddenModules(v)
+          }
         })
       })
   }, [currentOrg])
@@ -176,9 +179,25 @@ export default function SettingsPage() {
         }, { onConflict: 'org_id,setting_key' })
       }
       if (active === 'modules') {
-        await supabase.from('org_settings').upsert({
-          org_id: currentOrg.id, setting_key: 'hidden_modules', setting_value: hiddenModules,
-        }, { onConflict: 'org_id,setting_key' })
+        console.log('[Settings] Saving hidden_modules:', hiddenModules)
+        const res = await fetch('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            org_id: currentOrg.id,
+            setting_key: 'hidden_modules',
+            setting_value: hiddenModules,
+          }),
+        })
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({ error: 'Unknown error' }))
+          console.error('[Settings] Failed to save hidden_modules:', data)
+          alert('Failed to save module settings: ' + (data.error || res.statusText))
+          return
+        }
+        console.log('[Settings] hidden_modules saved successfully, reloading...')
+        window.location.reload()
+        return
       }
       setSaved(true); setTimeout(() => setSaved(false), 2000)
     } catch (e) { console.error(e); alert('Failed to save settings') }

@@ -198,10 +198,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
           enabled?.setting_value && Array.isArray(enabled.setting_value)
             ? enabled.setting_value : []
         )
-        setHiddenModules(
-          hidden?.setting_value && Array.isArray(hidden.setting_value)
-            ? hidden.setting_value : []
-        )
+        const hiddenList = hidden?.setting_value && Array.isArray(hidden.setting_value)
+          ? hidden.setting_value : []
+        console.log('[WorkspaceContext] hidden_modules loaded:', hiddenList)
+        setHiddenModules(hiddenList)
       })
   }, [currentOrg?.id])
 
