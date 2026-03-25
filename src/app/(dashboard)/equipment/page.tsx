@@ -70,25 +70,21 @@ export default function EquipmentPage() {
   const [deviceHistory, setDeviceHistory] = useState<any[]>([])
   const [detailLoading, setDetailLoading] = useState(false)
 
-  const openDeviceDetail = async (device: Equipment) => {
+  const openDeviceDetail = (device: Equipment) => {
     setSelectedDevice(device)
+    setDeviceAssignments([])
+    setDeviceHistory([])
     setDetailLoading(true)
-    const [assignRes, historyRes] = await Promise.all([
-      supabase
-        .from('equipment_assignments')
-        .select('*, contacts!assigned_to_contact_id(first_name, last_name, phone, pipeline_stage)')
-        .eq('equipment_id', device.id)
-        .order('checked_out_at', { ascending: false }),
-      supabase
-        .from('equipment_history')
-        .select('*, contacts!contact_id(first_name, last_name)')
-        .eq('equipment_id', device.id)
-        .order('created_at', { ascending: false })
-        .limit(50),
-    ])
-    setDeviceAssignments(assignRes.data || [])
-    setDeviceHistory(historyRes.data || [])
-    setDetailLoading(false)
+
+    // Load history via API to bypass RLS
+    fetch(`/api/equipment/history?equipment_id=${device.id}`)
+      .then(res => res.json())
+      .then(data => {
+        setDeviceAssignments(data.assignments || [])
+        setDeviceHistory(data.history || [])
+      })
+      .catch(e => console.error('[Equipment] detail load error:', e))
+      .finally(() => setDetailLoading(false))
   }
 
   const handleDeleteEquipment = async (id: string) => {
