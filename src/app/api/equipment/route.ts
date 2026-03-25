@@ -84,3 +84,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
 }
+
+// DELETE /api/equipment?id=XXX — delete equipment and all related records
+export async function DELETE(req: NextRequest) {
+  try {
+    const id = req.nextUrl.searchParams.get('id')
+    if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+
+    const admin = createAdminSupabase()
+
+    // Delete in order: history → assignments → equipment (FK cascade should handle it but be explicit)
+    await admin.from('equipment_history').delete().eq('equipment_id', id)
+    await admin.from('equipment_assignments').delete().eq('equipment_id', id)
+    const { error } = await admin.from('equipment').delete().eq('id', id)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    return NextResponse.json({ ok: true })
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 })
+  }
+}

@@ -5,7 +5,7 @@ import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
 import {
   Camera, Package, Search, X, Loader2, CheckCircle2, AlertTriangle,
-  ChevronDown, ArrowLeft, Keyboard, RotateCcw, Upload, Clock, ArrowRight, User,
+  ChevronDown, ArrowLeft, Keyboard, RotateCcw, Upload, Clock, ArrowRight, User, Trash2,
 } from 'lucide-react'
 import type { Equipment, SerialScanResult } from '@/lib/types/equipment'
 import { EQUIPMENT_STATUS_CONFIG, CONDITION_OPTIONS } from '@/lib/types/equipment'
@@ -89,6 +89,19 @@ export default function EquipmentPage() {
     setDeviceAssignments(assignRes.data || [])
     setDeviceHistory(historyRes.data || [])
     setDetailLoading(false)
+  }
+
+  const handleDeleteEquipment = async (id: string) => {
+    if (!confirm('Delete this equipment? This will remove all assignment history.')) return
+    try {
+      const res = await fetch(`/api/equipment?id=${id}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (data.error) { alert('Delete failed: ' + data.error); return }
+      setSelectedDevice(null)
+      setEquipment(prev => prev.filter(e => e.id !== id))
+    } catch (e: any) {
+      alert('Delete failed: ' + e.message)
+    }
   }
 
   const handleCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -668,7 +681,14 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
               className="w-full px-3 py-2 text-xs font-mono border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 mb-3" />
             {importResult && (
               <div className={`p-3 rounded-lg mb-3 text-xs ${importResult.imported ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                {importResult.imported && <p className="font-medium">{importResult.imported} devices imported{(importResult as any).assigned ? `, ${(importResult as any).assigned} assigned to contacts` : ''}</p>}
+                {(importResult as any).total > 0 && (
+                  <p className="font-medium">
+                    {(importResult as any).created > 0 && `${(importResult as any).created} created`}
+                    {(importResult as any).created > 0 && (importResult as any).updated > 0 && ', '}
+                    {(importResult as any).updated > 0 && `${(importResult as any).updated} updated`}
+                    {(importResult as any).assigned > 0 && `, ${(importResult as any).assigned} assigned`}
+                  </p>
+                )}
                 {importResult.errors?.map((e, i) => <p key={i}>{e}</p>)}
               </div>
             )}
@@ -769,6 +789,10 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
                   {EQUIPMENT_STATUS_CONFIG[selectedDevice.status]?.label}
                 </span>
               </div>
+              <button onClick={() => handleDeleteEquipment(selectedDevice.id)}
+                className="p-1.5 hover:bg-red-50 rounded-lg text-gray-400 hover:text-red-500 transition-colors" title="Delete">
+                <Trash2 className="w-4 h-4" />
+              </button>
               <button onClick={() => setSelectedDevice(null)} className="p-1.5 hover:bg-gray-100 rounded-lg">
                 <X className="w-4 h-4 text-gray-400" />
               </button>
