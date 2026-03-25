@@ -702,7 +702,7 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
                     {(importResult as any).warnings.map((w: string, i: number) => <p key={i}>{w}</p>)}
                   </div>
                 )}
-                {importResult.errors?.length > 0 && (
+                {importResult.errors && importResult.errors.length > 0 && (
                   <div className="p-3 rounded-lg mb-2 text-xs bg-red-50 text-red-700">
                     {importResult.errors.map((e, i) => <p key={i}>{e}</p>)}
                   </div>
