@@ -71,6 +71,19 @@ export default function EquipmentPage() {
     reader.readAsText(file)
   }
 
+  const downloadTemplate = () => {
+    const template = `device_id,device_type,bundle_serial,headset_serial,status,meta_account_email,location,notes
+NP-MQ0001,meta_quest,340YB0FGBV0G9K,340YC10GBQ01CK,available,quest1@neuroprogeny.com,Office,
+NP-MQ0002,meta_quest,,,maintenance,,,Missing serial stickers`
+    const blob = new Blob([template], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'equipment-import-template.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const handleImport = async () => {
     if (!csvText.trim() || !currentOrg) return
     setImporting(true)
@@ -524,12 +537,15 @@ export default function EquipmentPage() {
               CSV columns: <code className="text-[10px] bg-gray-100 px-1 rounded">device_id, device_type, bundle_serial, headset_serial, status, meta_account_email, location, notes</code>
             </p>
             <div className="flex gap-2 mb-3">
+              <button onClick={downloadTemplate}
+                className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-xs font-medium hover:bg-gray-50 text-np-blue">
+                Download Template
+              </button>
               <button onClick={() => fileInputRef.current?.click()}
                 className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-xs font-medium hover:bg-gray-50">
                 <Upload className="w-3.5 h-3.5" /> Choose File
               </button>
               <input ref={fileInputRef} type="file" accept=".csv" onChange={handleCsvFile} className="hidden" />
-              <span className="text-xs text-gray-400 self-center">or paste CSV below</span>
             </div>
             <textarea value={csvText} onChange={e => setCsvText(e.target.value)}
               rows={8} placeholder="device_id,device_type,bundle_serial,headset_serial,status,meta_account_email,location,notes&#10;NP-MQ0001,meta_quest,340YB0FGBV0G9K,340YC10GBQ01CK,available,quest1@np.com,Office,"
