@@ -39,6 +39,7 @@ export default function EquipmentPage() {
   const [scanResult, setScanResult] = useState<SerialScanResult | null>(null)
   const [lookupResult, setLookupResult] = useState<{ equipment: Equipment | null; current_assignment: any } | null>(null)
   const [scanError, setScanError] = useState('')
+  const [scanStatus, setScanStatus] = useState('')
 
   // Camera state
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -135,15 +136,42 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
     setImporting(false)
   }
 
-  // Fetch equipment list
+  // Fetch equipment list (direct Supabase query, no API route)
   const fetchEquipment = useCallback(async () => {
     if (!currentOrg) return
     setLoading(true)
     try {
-      const res = await fetch(`/api/equipment?org_id=${currentOrg.id}`)
-      const data = await res.json()
-      if (data.equipment) setEquipment(data.equipment)
-    } catch {}
+      const { data, error } = await supabase
+        .from('equipment')
+        .select('*')
+        .eq('org_id', currentOrg.id)
+        .order('created_at', { ascending: false })
+
+      if (error) { console.error('[Equipment] fetch error:', error); setLoading(false); return }
+
+      // Fetch assigned contact names separately to avoid join issues
+      const assigned = (data || []).filter(e => e.assigned_to)
+      const contactIds = Array.from(new Set(assigned.map(e => e.assigned_to)))
+      let contactMap: Record<string, any> = {}
+      if (contactIds.length > 0) {
+        const { data: contacts } = await supabase
+          .from('contacts')
+          .select('id, first_name, last_name, phone, pipeline_stage')
+          .in('id', contactIds)
+        if (contacts) {
+          for (const c of contacts) contactMap[c.id] = c
+        }
+      }
+
+      const enriched = (data || []).map(e => ({
+        ...e,
+        contact_first_name: e.assigned_to ? contactMap[e.assigned_to]?.first_name || null : null,
+        contact_last_name: e.assigned_to ? contactMap[e.assigned_to]?.last_name || null : null,
+        contact_phone: e.assigned_to ? contactMap[e.assigned_to]?.phone || null : null,
+        contact_pipeline_stage: e.assigned_to ? contactMap[e.assigned_to]?.pipeline_stage || null : null,
+      }))
+      setEquipment(enriched)
+    } catch (e) { console.error('[Equipment] fetch error:', e) }
     setLoading(false)
   }, [currentOrg?.id])
 
@@ -247,6 +275,7 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
     }
 
     try {
+      setScanStatus('Sending image to AI...')
       console.log('[Equipment] Sending scan request, image size:', Math.round(base64.length / 1024), 'KB')
       const res = await fetch('/api/equipment/scan', {
         method: 'POST',
@@ -265,11 +294,12 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
       const data = await res.json()
       console.log('[Equipment] Scan result:', data)
 
-      if (data.error) { setScanError(data.error); setScanProcessing(false); return }
+      if (data.error) { setScanError(data.error); setScanProcessing(false); setScanStatus(''); return }
       setScanResult(data)
 
       // Auto-lookup first serial found
       if (data.serials?.length > 0) {
+        setScanStatus('Serial found! Looking up device...')
         await lookupSerial(data.serials[0].value)
       } else {
         setScanError('No serial numbers detected. Try again or use manual entry.')
@@ -279,6 +309,7 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
       setScanError('Scan failed: ' + (e.message || 'Unknown error'))
     }
     setScanProcessing(false)
+    setScanStatus('')
   }
 
   // Manual serial lookup
@@ -290,17 +321,61 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
     setScanProcessing(false)
   }
 
-  // Lookup serial in DB
+  // Lookup serial in DB (direct Supabase query)
   const lookupSerial = async (serial: string) => {
     if (!currentOrg) return
     try {
-      const res = await fetch(`/api/equipment/lookup?serial=${encodeURIComponent(serial)}&org_id=${currentOrg.id}`)
-      const data = await res.json()
-      setLookupResult(data)
-      if (!data.equipment) {
+      const { data: equip } = await supabase
+        .from('equipment')
+        .select('*')
+        .eq('org_id', currentOrg.id)
+        .or(`bundle_serial.eq.${serial},headset_serial.eq.${serial}`)
+        .maybeSingle()
+
+      if (!equip) {
+        setLookupResult({ equipment: null, current_assignment: null })
         setScanError(`No equipment found for serial: ${serial}`)
+        return
       }
-    } catch {
+
+      // Enrich with contact info
+      let enriched: any = { ...equip }
+      if (equip.assigned_to) {
+        const { data: contact } = await supabase
+          .from('contacts').select('first_name, last_name, phone, pipeline_stage').eq('id', equip.assigned_to).maybeSingle()
+        if (contact) {
+          enriched.contact_first_name = contact.first_name
+          enriched.contact_last_name = contact.last_name
+          enriched.contact_phone = contact.phone
+          enriched.contact_pipeline_stage = contact.pipeline_stage
+        }
+      }
+
+      // Get current assignment if checked out
+      let current_assignment = null
+      if (equip.status === 'checked_out') {
+        const { data: assign } = await supabase
+          .from('equipment_assignments')
+          .select('*')
+          .eq('equipment_id', equip.id)
+          .is('checked_in_at', null)
+          .order('checked_out_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (assign) {
+          const { data: aContact } = await supabase
+            .from('contacts').select('first_name, last_name').eq('id', assign.assigned_to_contact_id).maybeSingle()
+          current_assignment = {
+            ...assign,
+            contact_first_name: aContact?.first_name || null,
+            contact_last_name: aContact?.last_name || null,
+          }
+        }
+      }
+
+      setLookupResult({ equipment: enriched, current_assignment })
+    } catch (e) {
+      console.error('[Equipment] lookup error:', e)
       setScanError('Lookup failed')
     }
   }
@@ -417,10 +492,15 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="w-72 h-44 border-2 border-white/60 rounded-xl" />
                 </div>
-                {/* Capture button */}
-                <div className="absolute bottom-8 left-0 right-0 flex justify-center">
+                {/* Status + Capture button */}
+                <div className="absolute bottom-6 left-0 right-0 flex flex-col items-center gap-3">
+                  {scanStatus && (
+                    <div className="bg-black/70 text-white text-xs font-medium px-4 py-2 rounded-full">
+                      {scanStatus}
+                    </div>
+                  )}
                   <button onClick={captureAndScan} disabled={scanProcessing}
-                    className="w-16 h-16 rounded-full bg-white flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50">
+                    className="w-16 h-16 rounded-full bg-white flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 shadow-lg">
                     {scanProcessing
                       ? <Loader2 className="w-7 h-7 text-gray-800 animate-spin" />
                       : <Camera className="w-7 h-7 text-gray-800" />
