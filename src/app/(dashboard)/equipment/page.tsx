@@ -72,9 +72,10 @@ export default function EquipmentPage() {
   }
 
   const downloadTemplate = () => {
-    const template = `device_id,device_type,bundle_serial,headset_serial,status,meta_account_email,location,notes
-NP-MQ0001,meta_quest,340YB0FGBV0G9K,340YC10GBQ01CK,available,quest1@neuroprogeny.com,Office,
-NP-MQ0002,meta_quest,,,maintenance,,,Missing serial stickers`
+    const template = `device_id,device_type,bundle_serial,headset_serial,status,assigned_to_name,meta_account_email,location,notes
+NP-MQ0001,meta_quest,340YB0FGBV0G9K,340YC10GBQ01CK,available,,quest1@neuroprogeny.com,Office,
+NP-MQ0002,meta_quest,340YBMMGCB0PN4,340YC10GC205LS,checked_out,John Smith,quest2@neuroprogeny.com,Office,Currently in use
+NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
     const blob = new Blob([template], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -534,7 +535,8 @@ NP-MQ0002,meta_quest,,,maintenance,,,Missing serial stickers`
               <button onClick={() => { setShowImport(false); setCsvText(''); setImportResult(null) }}><X className="w-4 h-4 text-gray-400" /></button>
             </div>
             <p className="text-xs text-gray-500 mb-3">
-              CSV columns: <code className="text-[10px] bg-gray-100 px-1 rounded">device_id, device_type, bundle_serial, headset_serial, status, meta_account_email, location, notes</code>
+              CSV columns: <code className="text-[10px] bg-gray-100 px-1 rounded">device_id, device_type, bundle_serial, headset_serial, status, assigned_to_name, meta_account_email, location, notes</code>
+              <br /><span className="text-gray-400">Use <strong>assigned_to_name</strong> to auto-assign (matches CRM contact by name). Devices with a name are auto-set to checked_out.</span>
             </p>
             <div className="flex gap-2 mb-3">
               <button onClick={downloadTemplate}
@@ -552,7 +554,7 @@ NP-MQ0002,meta_quest,,,maintenance,,,Missing serial stickers`
               className="w-full px-3 py-2 text-xs font-mono border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 mb-3" />
             {importResult && (
               <div className={`p-3 rounded-lg mb-3 text-xs ${importResult.imported ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                {importResult.imported && <p className="font-medium">{importResult.imported} devices imported successfully</p>}
+                {importResult.imported && <p className="font-medium">{importResult.imported} devices imported{(importResult as any).assigned ? `, ${(importResult as any).assigned} assigned to contacts` : ''}</p>}
                 {importResult.errors?.map((e, i) => <p key={i}>{e}</p>)}
               </div>
             )}
