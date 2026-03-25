@@ -5,7 +5,7 @@ import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
 import {
   Camera, Package, Search, X, Loader2, CheckCircle2, AlertTriangle,
-  ChevronDown, ArrowLeft, Keyboard, RotateCcw,
+  ChevronDown, ArrowLeft, Keyboard, RotateCcw, Upload,
 } from 'lucide-react'
 import type { Equipment, SerialScanResult } from '@/lib/types/equipment'
 import { EQUIPMENT_STATUS_CONFIG, CONDITION_OPTIONS } from '@/lib/types/equipment'
@@ -55,6 +55,44 @@ export default function EquipmentPage() {
   const [actionLoading, setActionLoading] = useState(false)
   const [actionSuccess, setActionSuccess] = useState('')
   const [contactSearch, setContactSearch] = useState('')
+
+  // Import state
+  const [showImport, setShowImport] = useState(false)
+  const [csvText, setCsvText] = useState('')
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<{ imported?: number; errors?: string[] } | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => { setCsvText(ev.target?.result as string || '') }
+    reader.readAsText(file)
+  }
+
+  const handleImport = async () => {
+    if (!csvText.trim() || !currentOrg) return
+    setImporting(true)
+    setImportResult(null)
+    try {
+      const res = await fetch('/api/equipment/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ org_id: currentOrg.id, csv_text: csvText }),
+      })
+      const data = await res.json()
+      if (data.error) { setImportResult({ errors: [data.error] }); setImporting(false); return }
+      setImportResult(data)
+      if (data.imported > 0) {
+        fetchEquipment()
+        setTimeout(() => { setShowImport(false); setCsvText(''); setImportResult(null) }, 2000)
+      }
+    } catch (e: any) {
+      setImportResult({ errors: [e.message] })
+    }
+    setImporting(false)
+  }
 
   // Fetch equipment list
   const fetchEquipment = useCallback(async () => {
@@ -461,11 +499,54 @@ export default function EquipmentPage() {
           </h1>
           <p className="text-[10px] text-gray-400 mt-0.5">Track Meta Quest headsets &middot; Scan, assign, and manage</p>
         </div>
-        <button onClick={openScanner}
-          className="flex items-center gap-2 px-4 py-2.5 bg-np-blue text-white rounded-xl text-sm font-medium hover:bg-np-blue/90 active:scale-95 transition-all">
-          <Camera className="w-4 h-4" /> Scan Equipment
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowImport(true)}
+            className="flex items-center gap-1.5 px-3 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50">
+            <Upload className="w-4 h-4" /> Import CSV
+          </button>
+          <button onClick={openScanner}
+            className="flex items-center gap-2 px-4 py-2.5 bg-np-blue text-white rounded-xl text-sm font-medium hover:bg-np-blue/90 active:scale-95 transition-all">
+            <Camera className="w-4 h-4" /> Scan Equipment
+          </button>
+        </div>
       </div>
+
+      {/* Import CSV Modal */}
+      {showImport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/30" onClick={() => { setShowImport(false); setCsvText(''); setImportResult(null) }} />
+          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-np-dark">Import Equipment from CSV</h3>
+              <button onClick={() => { setShowImport(false); setCsvText(''); setImportResult(null) }}><X className="w-4 h-4 text-gray-400" /></button>
+            </div>
+            <p className="text-xs text-gray-500 mb-3">
+              CSV columns: <code className="text-[10px] bg-gray-100 px-1 rounded">device_id, device_type, bundle_serial, headset_serial, status, meta_account_email, location, notes</code>
+            </p>
+            <div className="flex gap-2 mb-3">
+              <button onClick={() => fileInputRef.current?.click()}
+                className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-xs font-medium hover:bg-gray-50">
+                <Upload className="w-3.5 h-3.5" /> Choose File
+              </button>
+              <input ref={fileInputRef} type="file" accept=".csv" onChange={handleCsvFile} className="hidden" />
+              <span className="text-xs text-gray-400 self-center">or paste CSV below</span>
+            </div>
+            <textarea value={csvText} onChange={e => setCsvText(e.target.value)}
+              rows={8} placeholder="device_id,device_type,bundle_serial,headset_serial,status,meta_account_email,location,notes&#10;NP-MQ0001,meta_quest,340YB0FGBV0G9K,340YC10GBQ01CK,available,quest1@np.com,Office,"
+              className="w-full px-3 py-2 text-xs font-mono border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 mb-3" />
+            {importResult && (
+              <div className={`p-3 rounded-lg mb-3 text-xs ${importResult.imported ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                {importResult.imported && <p className="font-medium">{importResult.imported} devices imported successfully</p>}
+                {importResult.errors?.map((e, i) => <p key={i}>{e}</p>)}
+              </div>
+            )}
+            <button onClick={handleImport} disabled={!csvText.trim() || importing}
+              className="w-full py-2.5 bg-np-blue text-white rounded-lg text-sm font-medium disabled:opacity-40">
+              {importing ? 'Importing...' : 'Import Equipment'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
