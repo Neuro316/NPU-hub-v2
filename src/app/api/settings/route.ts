@@ -7,31 +7,49 @@ import { createAdminSupabase, createServerSupabase } from '@/lib/supabase'
  */
 export async function PUT(req: NextRequest) {
   try {
+    const admin = createAdminSupabase()
+
     // Verify the caller is authenticated
     const supabaseUser = createServerSupabase()
-    const { data: { user } } = await supabaseUser.auth.getUser()
+    const { data: { user }, error: authError } = await supabaseUser.auth.getUser()
+    console.log('[API settings] auth result:', { userId: user?.id, email: user?.email, authError: authError?.message })
+
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const body = await req.json()
     const { org_id, setting_key, setting_value } = body
+    console.log('[API settings] request:', { org_id, setting_key, userId: user.id })
 
     if (!org_id || !setting_key) {
       return NextResponse.json({ error: 'org_id and setting_key are required' }, { status: 400 })
     }
 
     // Verify user belongs to this org
-    const admin = createAdminSupabase()
-    const { data: membership } = await admin
+    const { data: membership, error: memberError } = await admin
       .from('org_members')
-      .select('role')
+      .select('id, role')
       .eq('org_id', org_id)
       .eq('user_id', user.id)
       .maybeSingle()
 
+    console.log('[API settings] membership check:', { membership, memberError: memberError?.message })
+
     if (!membership) {
-      return NextResponse.json({ error: 'Not a member of this organization' }, { status: 403 })
+      // Fallback: check team_profiles (some users exist there but not in org_members)
+      const { data: profile } = await admin
+        .from('team_profiles')
+        .select('id, role')
+        .eq('org_id', org_id)
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+      console.log('[API settings] team_profiles fallback:', { profile })
+
+      if (!profile) {
+        return NextResponse.json({ error: 'Not a member of this organization' }, { status: 403 })
+      }
     }
 
     // Upsert with service role (bypasses RLS)
