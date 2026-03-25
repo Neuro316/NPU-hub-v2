@@ -40,6 +40,9 @@ export default function EquipmentPage() {
   const [lookupResult, setLookupResult] = useState<{ equipment: Equipment | null; current_assignment: any } | null>(null)
   const [scanError, setScanError] = useState('')
   const [scanStatus, setScanStatus] = useState('')
+  const [registerSerials, setRegisterSerials] = useState<{ value: string; type: string }[]>([])
+  const [registerDeviceId, setRegisterDeviceId] = useState('')
+  const [registerLoading, setRegisterLoading] = useState(false)
 
   // Camera state
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -215,6 +218,7 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
     setConditionIn('good')
     setCheckinNotes('')
     setManualSerial('')
+    setRegisterSerials([])
     setTimeout(startCamera, 100)
   }
 
@@ -325,7 +329,10 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
 
       if (!equip) {
         setLookupResult({ equipment: null, current_assignment: null })
-        setScanError(`No equipment found for serial: ${serial}`)
+        // Store serial for registration
+        const allSerials = scanResult?.serials || [{ value: serial, type: serial.match(/40Y[BC]|497[BC]/) ? (serial.includes('40YB') || serial.includes('497B') ? 'bundle' : 'headset') : 'bundle' }]
+        setRegisterSerials(allSerials)
+        setRegisterDeviceId('')
         return
       }
 
@@ -421,6 +428,43 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
     setActionLoading(false)
   }
 
+  // Register new equipment from scan
+  const handleRegister = async () => {
+    if (!currentOrg) return
+    setRegisterLoading(true)
+    const bundleSerial = registerSerials.find(s => s.type === 'bundle')?.value || null
+    const headsetSerial = registerSerials.find(s => s.type === 'headset')?.value || null
+    try {
+      const res = await fetch('/api/equipment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          org_id: currentOrg.id,
+          device_id: registerDeviceId.trim() || null,
+          device_type: 'meta_quest',
+          bundle_serial: bundleSerial,
+          headset_serial: headsetSerial,
+        }),
+      })
+      const data = await res.json()
+      if (data.error) { setScanError(data.error); setRegisterLoading(false); return }
+      // Registration successful — now look it up to show checkout form
+      setRegisterSerials([])
+      setActionSuccess(`Equipment registered! ${registerDeviceId || bundleSerial || 'New device'}`)
+      // Add to local list
+      setEquipment(prev => [data.equipment, ...prev])
+      // Auto-lookup so they can immediately check out
+      if (bundleSerial) {
+        await lookupSerial(bundleSerial)
+      } else if (headsetSerial) {
+        await lookupSerial(headsetSerial)
+      }
+    } catch (e: any) {
+      setScanError('Registration failed: ' + e.message)
+    }
+    setRegisterLoading(false)
+  }
+
   // Stats
   const total = equipment.length
   const available = equipment.filter(e => e.status === 'available').length
@@ -507,6 +551,35 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
                           {s.type}: {s.value}
                         </button>
                       ))}
+                    </div>
+                  )}
+
+                  {/* Register new equipment form */}
+                  {registerSerials.length > 0 && !lookupResult?.equipment && (
+                    <div className="w-full p-4 bg-gray-900/95 rounded-xl">
+                      <p className="text-white text-sm font-semibold mb-1">New Equipment Detected</p>
+                      <p className="text-gray-400 text-xs mb-3">These serials aren&apos;t registered yet. Register to start tracking.</p>
+                      <div className="space-y-1.5 mb-3">
+                        {registerSerials.map((s, i) => (
+                          <div key={i} className="px-3 py-2 bg-gray-800 rounded-lg text-white font-mono text-xs">
+                            {s.type}: {s.value}
+                          </div>
+                        ))}
+                      </div>
+                      <input
+                        value={registerDeviceId}
+                        onChange={e => setRegisterDeviceId(e.target.value)}
+                        placeholder="Device ID (e.g. NP-MQ0007)"
+                        className="w-full px-3 py-2.5 mb-3 bg-gray-800 text-white text-sm rounded-lg border border-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      />
+                      <button onClick={handleRegister} disabled={registerLoading}
+                        className="w-full py-3 bg-blue-500 text-white rounded-xl font-semibold text-sm disabled:opacity-40">
+                        {registerLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Register Equipment'}
+                      </button>
+                      <button onClick={() => setRegisterSerials([])}
+                        className="w-full mt-2 py-2 text-gray-400 text-xs hover:text-white">
+                        Cancel
+                      </button>
                     </div>
                   )}
 
