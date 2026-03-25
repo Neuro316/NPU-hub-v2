@@ -5,7 +5,7 @@ import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
 import {
   Camera, Package, Search, X, Loader2, CheckCircle2, AlertTriangle,
-  ChevronDown, ArrowLeft, Keyboard, RotateCcw, Upload,
+  ChevronDown, ArrowLeft, Keyboard, RotateCcw, Upload, Clock, ArrowRight, User,
 } from 'lucide-react'
 import type { Equipment, SerialScanResult } from '@/lib/types/equipment'
 import { EQUIPMENT_STATUS_CONFIG, CONDITION_OPTIONS } from '@/lib/types/equipment'
@@ -62,6 +62,33 @@ export default function EquipmentPage() {
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState<{ imported?: number; errors?: string[] } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Detail view state
+  const [selectedDevice, setSelectedDevice] = useState<Equipment | null>(null)
+  const [deviceAssignments, setDeviceAssignments] = useState<any[]>([])
+  const [deviceHistory, setDeviceHistory] = useState<any[]>([])
+  const [detailLoading, setDetailLoading] = useState(false)
+
+  const openDeviceDetail = async (device: Equipment) => {
+    setSelectedDevice(device)
+    setDetailLoading(true)
+    const [assignRes, historyRes] = await Promise.all([
+      supabase
+        .from('equipment_assignments')
+        .select('*, contacts!assigned_to_contact_id(first_name, last_name, phone, pipeline_stage)')
+        .eq('equipment_id', device.id)
+        .order('checked_out_at', { ascending: false }),
+      supabase
+        .from('equipment_history')
+        .select('*, contacts!contact_id(first_name, last_name)')
+        .eq('equipment_id', device.id)
+        .order('created_at', { ascending: false })
+        .limit(50),
+    ])
+    setDeviceAssignments(assignRes.data || [])
+    setDeviceHistory(historyRes.data || [])
+    setDetailLoading(false)
+  }
 
   const handleCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -633,7 +660,8 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
           {filtered.map(e => {
             const st = EQUIPMENT_STATUS_CONFIG[e.status]
             return (
-              <div key={e.id} className="bg-white border border-gray-100 rounded-xl p-4 flex items-center gap-4">
+              <button key={e.id} onClick={() => openDeviceDetail(e)}
+                className="w-full text-left bg-white border border-gray-100 rounded-xl p-4 flex items-center gap-4 hover:shadow-md hover:border-gray-200 transition-all">
                 <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
                   style={{ backgroundColor: st.bg }}>
                   <Package className="w-5 h-5" style={{ color: st.color }} />
@@ -647,6 +675,7 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
                   </div>
                   <div className="flex items-center gap-3 mt-0.5">
                     {e.bundle_serial && <span className="text-[10px] text-gray-400 font-mono">{e.bundle_serial}</span>}
+                    {e.headset_serial && <span className="text-[10px] text-gray-400 font-mono">{e.headset_serial}</span>}
                     {e.status === 'checked_out' && e.contact_first_name && (
                       <span className="text-[10px] text-blue-500 font-medium">
                         {e.contact_first_name} {e.contact_last_name}
@@ -654,9 +683,164 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
                     )}
                   </div>
                 </div>
-              </div>
+                <ChevronDown className="w-4 h-4 text-gray-300 -rotate-90 flex-shrink-0" />
+              </button>
             )
           })}
+        </div>
+      )}
+
+      {/* Equipment Detail Drawer */}
+      {selectedDevice && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div className="absolute inset-0 bg-black/20 backdrop-blur-[2px]" onClick={() => setSelectedDevice(null)} />
+          <div className="relative w-full max-w-md bg-white shadow-2xl border-l border-gray-100 flex flex-col overflow-hidden animate-in slide-in-from-right duration-200">
+            {/* Header */}
+            <div className="p-4 border-b border-gray-100 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+                style={{ backgroundColor: EQUIPMENT_STATUS_CONFIG[selectedDevice.status]?.bg }}>
+                <Package className="w-5 h-5" style={{ color: EQUIPMENT_STATUS_CONFIG[selectedDevice.status]?.color }} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-sm font-bold text-np-dark">{selectedDevice.device_id || 'Unknown Device'}</h2>
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded"
+                  style={{ backgroundColor: EQUIPMENT_STATUS_CONFIG[selectedDevice.status]?.bg, color: EQUIPMENT_STATUS_CONFIG[selectedDevice.status]?.color }}>
+                  {EQUIPMENT_STATUS_CONFIG[selectedDevice.status]?.label}
+                </span>
+              </div>
+              <button onClick={() => setSelectedDevice(null)} className="p-1.5 hover:bg-gray-100 rounded-lg">
+                <X className="w-4 h-4 text-gray-400" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-5">
+              {/* Device Info */}
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Device Info</p>
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Type</span>
+                    <span className="text-np-dark font-medium">{selectedDevice.device_type}</span>
+                  </div>
+                  {selectedDevice.bundle_serial && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Bundle Serial</span>
+                      <span className="text-np-dark font-mono text-[11px]">{selectedDevice.bundle_serial}</span>
+                    </div>
+                  )}
+                  {selectedDevice.headset_serial && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Headset Serial</span>
+                      <span className="text-np-dark font-mono text-[11px]">{selectedDevice.headset_serial}</span>
+                    </div>
+                  )}
+                  {selectedDevice.meta_account_email && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Meta Account</span>
+                      <span className="text-np-dark">{selectedDevice.meta_account_email}</span>
+                    </div>
+                  )}
+                  {selectedDevice.location && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Location</span>
+                      <span className="text-np-dark">{selectedDevice.location}</span>
+                    </div>
+                  )}
+                  {selectedDevice.notes && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Notes</span>
+                      <span className="text-np-dark">{selectedDevice.notes}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {detailLoading ? (
+                <div className="text-center py-8 text-gray-400 text-xs">Loading history...</div>
+              ) : (
+                <>
+                  {/* Assignment History */}
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
+                      Assignment History ({deviceAssignments.length})
+                    </p>
+                    {deviceAssignments.length === 0 ? (
+                      <p className="text-xs text-gray-400 italic">No assignments yet</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {deviceAssignments.map((a: any) => {
+                          const contactName = a.contacts
+                            ? `${a.contacts.first_name || ''} ${a.contacts.last_name || ''}`.trim()
+                            : 'Unknown'
+                          const isActive = !a.checked_in_at
+                          return (
+                            <div key={a.id} className={`border rounded-lg p-3 ${isActive ? 'border-blue-200 bg-blue-50/50' : 'border-gray-100 bg-gray-50/50'}`}>
+                              <div className="flex items-center gap-2 mb-1">
+                                <User className="w-3.5 h-3.5 text-gray-400" />
+                                <span className={`text-xs font-semibold ${isActive ? 'text-blue-700' : 'text-np-dark'}`}>{contactName}</span>
+                                {a.contacts?.pipeline_stage && (
+                                  <span className="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">{a.contacts.pipeline_stage}</span>
+                                )}
+                                {isActive && <span className="text-[9px] font-bold text-blue-500 ml-auto">ACTIVE</span>}
+                              </div>
+                              <div className="flex items-center gap-1 text-[10px] text-gray-500">
+                                <Clock className="w-3 h-3" />
+                                <span>Out: {new Date(a.checked_out_at).toLocaleDateString()}</span>
+                                {a.checked_in_at && (
+                                  <>
+                                    <ArrowRight className="w-3 h-3" />
+                                    <span>In: {new Date(a.checked_in_at).toLocaleDateString()}</span>
+                                  </>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3 mt-1 text-[10px] text-gray-400">
+                                {a.condition_out && <span>Condition out: {a.condition_out}</span>}
+                                {a.condition_in && <span>Condition in: {a.condition_in}</span>}
+                              </div>
+                              {a.purpose && <p className="text-[10px] text-gray-400 mt-1">Purpose: {a.purpose}</p>}
+                              {a.notes && <p className="text-[10px] text-gray-400 mt-0.5">Notes: {a.notes}</p>}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Activity Log */}
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
+                      Activity Log ({deviceHistory.length})
+                    </p>
+                    {deviceHistory.length === 0 ? (
+                      <p className="text-xs text-gray-400 italic">No activity logged</p>
+                    ) : (
+                      <div className="space-y-1">
+                        {deviceHistory.map((h: any) => {
+                          const contactName = h.contacts
+                            ? `${h.contacts.first_name || ''} ${h.contacts.last_name || ''}`.trim()
+                            : null
+                          return (
+                            <div key={h.id} className="flex items-start gap-2 py-1.5 border-b border-gray-50 last:border-0">
+                              <div className="w-1.5 h-1.5 rounded-full bg-gray-300 mt-1.5 flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs text-np-dark">
+                                  <span className="font-medium capitalize">{h.action.replace(/_/g, ' ')}</span>
+                                  {contactName && <span className="text-gray-500"> — {contactName}</span>}
+                                </p>
+                                {h.notes && <p className="text-[10px] text-gray-400">{h.notes}</p>}
+                                <p className="text-[10px] text-gray-400">{new Date(h.created_at).toLocaleString()}</p>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>
