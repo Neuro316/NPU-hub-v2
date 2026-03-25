@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
 
     steps.push('3. Sending test message (text only, no image)...')
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-5-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 50,
       messages: [{ role: 'user', content: 'Reply with just the word "OK"' }],
     })

@@ -28,7 +28,7 @@ export async function getAnthropicClient(orgId?: string): Promise<Anthropic> {
 export async function generateCallSummary(transcription: string, orgId?: string): Promise<string> {
   const client = await getAnthropicClient(orgId);
   const response = await client.messages.create({
-    model: 'claude-sonnet-4-5-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 300,
     messages: [{
       role: 'user',
@@ -46,7 +46,7 @@ export async function analyzeSentiment(
 ): Promise<'positive' | 'neutral' | 'negative' | 'concerned'> {
   const client = await getAnthropicClient(orgId);
   const response = await client.messages.create({
-    model: 'claude-sonnet-4-5-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 50,
     messages: [{
       role: 'user',
@@ -72,7 +72,7 @@ export interface ExtractedTask {
 export async function extractTasks(text: string, orgId?: string): Promise<ExtractedTask[]> {
   const client = await getAnthropicClient(orgId);
   const response = await client.messages.create({
-    model: 'claude-sonnet-4-5-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 1000,
     messages: [{
       role: 'user',
@@ -96,7 +96,7 @@ export async function generateSmartReplies(messages: string[], orgId?: string): 
   const client = await getAnthropicClient(orgId);
 
   const response = await client.messages.create({
-    model: 'claude-sonnet-4-5-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 500,
     messages: [{
       role: 'user',
@@ -121,7 +121,7 @@ export async function scoreDuplicates(
 ): Promise<Array<{ index: number; confidence: number; reason: string }>> {
   const client = await getAnthropicClient(orgId);
   const response = await client.messages.create({
-    model: 'claude-sonnet-4-5-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 1000,
     messages: [{
       role: 'user',
