@@ -267,10 +267,18 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
       })
 
       if (!res.ok) {
-        const errText = await res.text()
-        console.error('[Equipment] Scan API error:', res.status, errText)
-        setScanError(`Scan API error (${res.status}). Try manual entry.`)
+        let errMsg = `Scan failed (${res.status})`
+        try {
+          const errData = await res.json()
+          errMsg = errData.error || errMsg
+        } catch {
+          const errText = await res.text().catch(() => '')
+          if (errText) errMsg = errText.substring(0, 150)
+        }
+        console.error('[Equipment] Scan API error:', res.status, errMsg)
+        setScanError(errMsg)
         setScanProcessing(false)
+        setScanStatus('')
         return
       }
 
