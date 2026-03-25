@@ -684,17 +684,30 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
               rows={8} placeholder="device_id,device_type,bundle_serial,headset_serial,status,meta_account_email,location,notes&#10;NP-MQ0001,meta_quest,340YB0FGBV0G9K,340YC10GBQ01CK,available,quest1@np.com,Office,"
               className="w-full px-3 py-2 text-xs font-mono border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 mb-3" />
             {importResult && (
-              <div className={`p-3 rounded-lg mb-3 text-xs ${importResult.imported ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                {(importResult as any).total > 0 && (
-                  <p className="font-medium">
-                    {(importResult as any).created > 0 && `${(importResult as any).created} created`}
-                    {(importResult as any).created > 0 && (importResult as any).updated > 0 && ', '}
-                    {(importResult as any).updated > 0 && `${(importResult as any).updated} updated`}
-                    {(importResult as any).assigned > 0 && `, ${(importResult as any).assigned} assigned`}
-                  </p>
+              <>
+                {((importResult as any).total > 0 || (importResult as any).imported > 0) && (
+                  <div className="p-3 rounded-lg mb-2 text-xs bg-green-50 text-green-700">
+                    <p className="font-medium">
+                      {(importResult as any).created > 0 && `${(importResult as any).created} created`}
+                      {(importResult as any).created > 0 && (importResult as any).updated > 0 && ', '}
+                      {(importResult as any).updated > 0 && `${(importResult as any).updated} updated`}
+                      {(importResult as any).assigned > 0 && `, ${(importResult as any).assigned} assigned`}
+                      {!(importResult as any).created && !(importResult as any).updated && (importResult as any).imported && `${(importResult as any).imported} imported`}
+                    </p>
+                  </div>
                 )}
-                {importResult.errors?.map((e, i) => <p key={i}>{e}</p>)}
-              </div>
+                {(importResult as any).warnings?.length > 0 && (
+                  <div className="p-3 rounded-lg mb-2 text-xs bg-amber-50 text-amber-700">
+                    <p className="font-medium mb-1">Warnings (devices still imported):</p>
+                    {(importResult as any).warnings.map((w: string, i: number) => <p key={i}>{w}</p>)}
+                  </div>
+                )}
+                {importResult.errors?.length > 0 && (
+                  <div className="p-3 rounded-lg mb-2 text-xs bg-red-50 text-red-700">
+                    {importResult.errors.map((e, i) => <p key={i}>{e}</p>)}
+                  </div>
+                )}
+              </>
             )}
             <button onClick={handleImport} disabled={!csvText.trim() || importing}
               className="w-full py-2.5 bg-np-blue text-white rounded-lg text-sm font-medium disabled:opacity-40">

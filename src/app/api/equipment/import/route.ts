@@ -65,6 +65,7 @@ export async function POST(req: NextRequest) {
 
     // Parse rows
     const errors: string[] = []
+    const warnings: string[] = []
     let created = 0
     let updated = 0
     let assigned = 0
@@ -97,7 +98,7 @@ export async function POST(req: NextRequest) {
 
       const contact = assignedName ? findContact(assignedName) : null
       if (assignedName && !contact) {
-        errors.push(`Row ${i + 1}: contact "${assignedName}" not found — set as available`)
+        warnings.push(`Row ${i + 1}: "${assignedName}" not found in contacts — imported as available`)
         status = 'available'
       }
 
@@ -225,6 +226,7 @@ export async function POST(req: NextRequest) {
       assigned,
       total: created + updated,
       errors: errors.length > 0 ? errors : undefined,
+      warnings: warnings.length > 0 ? warnings : undefined,
     })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
