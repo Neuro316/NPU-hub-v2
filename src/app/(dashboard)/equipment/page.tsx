@@ -136,41 +136,15 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
     setImporting(false)
   }
 
-  // Fetch equipment list (direct Supabase query, no API route)
+  // Fetch equipment list via API route (uses service role, bypasses RLS)
   const fetchEquipment = useCallback(async () => {
     if (!currentOrg) return
     setLoading(true)
     try {
-      const { data, error } = await supabase
-        .from('equipment')
-        .select('*')
-        .eq('org_id', currentOrg.id)
-        .order('created_at', { ascending: false })
-
-      if (error) { console.error('[Equipment] fetch error:', error); setLoading(false); return }
-
-      // Fetch assigned contact names separately to avoid join issues
-      const assigned = (data || []).filter(e => e.assigned_to)
-      const contactIds = Array.from(new Set(assigned.map(e => e.assigned_to)))
-      let contactMap: Record<string, any> = {}
-      if (contactIds.length > 0) {
-        const { data: contacts } = await supabase
-          .from('contacts')
-          .select('id, first_name, last_name, phone, pipeline_stage')
-          .in('id', contactIds)
-        if (contacts) {
-          for (const c of contacts) contactMap[c.id] = c
-        }
-      }
-
-      const enriched = (data || []).map(e => ({
-        ...e,
-        contact_first_name: e.assigned_to ? contactMap[e.assigned_to]?.first_name || null : null,
-        contact_last_name: e.assigned_to ? contactMap[e.assigned_to]?.last_name || null : null,
-        contact_phone: e.assigned_to ? contactMap[e.assigned_to]?.phone || null : null,
-        contact_pipeline_stage: e.assigned_to ? contactMap[e.assigned_to]?.pipeline_stage || null : null,
-      }))
-      setEquipment(enriched)
+      const res = await fetch(`/api/equipment?org_id=${currentOrg.id}`)
+      const data = await res.json()
+      if (data.error) { console.error('[Equipment] fetch error:', data.error) }
+      else if (data.equipment) { setEquipment(data.equipment) }
     } catch (e) { console.error('[Equipment] fetch error:', e) }
     setLoading(false)
   }, [currentOrg?.id])

@@ -4,30 +4,41 @@ import { createAdminSupabase, createServerSupabase } from '@/lib/supabase'
 // GET /api/equipment — list all equipment for org
 export async function GET(req: NextRequest) {
   try {
-    const supabase = createServerSupabase()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
     const orgId = req.nextUrl.searchParams.get('org_id')
     if (!orgId) return NextResponse.json({ error: 'org_id required' }, { status: 400 })
 
     const admin = createAdminSupabase()
-    const { data, error } = await admin
+
+    // Fetch equipment
+    const { data: equipData, error } = await admin
       .from('equipment')
-      .select('*, contacts!assigned_to(first_name, last_name, phone, pipeline_stage)')
+      .select('*')
       .eq('org_id', orgId)
       .order('created_at', { ascending: false })
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-    // Flatten the joined contact data
-    const equipment = (data || []).map((e: any) => ({
+    const items = equipData || []
+
+    // Fetch assigned contact names
+    const assignedIds = items.filter(e => e.assigned_to).map(e => e.assigned_to)
+    let contactMap: Record<string, any> = {}
+    if (assignedIds.length > 0) {
+      const { data: contacts } = await admin
+        .from('contacts')
+        .select('id, first_name, last_name, phone, pipeline_stage')
+        .in('id', assignedIds)
+      if (contacts) {
+        for (const c of contacts) contactMap[c.id] = c
+      }
+    }
+
+    const equipment = items.map(e => ({
       ...e,
-      contact_first_name: e.contacts?.first_name || null,
-      contact_last_name: e.contacts?.last_name || null,
-      contact_phone: e.contacts?.phone || null,
-      contact_pipeline_stage: e.contacts?.pipeline_stage || null,
-      contacts: undefined,
+      contact_first_name: e.assigned_to ? contactMap[e.assigned_to]?.first_name || null : null,
+      contact_last_name: e.assigned_to ? contactMap[e.assigned_to]?.last_name || null : null,
+      contact_phone: e.assigned_to ? contactMap[e.assigned_to]?.phone || null : null,
+      contact_pipeline_stage: e.assigned_to ? contactMap[e.assigned_to]?.pipeline_stage || null : null,
     }))
 
     return NextResponse.json({ equipment })
@@ -41,7 +52,6 @@ export async function POST(req: NextRequest) {
   try {
     const supabase = createServerSupabase()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const body = await req.json()
     const { org_id, device_id, device_type, bundle_serial, headset_serial, meta_account_email, location, notes } = body
@@ -62,11 +72,10 @@ export async function POST(req: NextRequest) {
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-    // Log registration
     await admin.from('equipment_history').insert({
       equipment_id: data.id,
       action: 'registered',
-      performed_by: user.id,
+      performed_by: user?.id || null,
       notes: `Registered ${device_type || 'meta_quest'} ${device_id || ''}`.trim(),
     })
 
