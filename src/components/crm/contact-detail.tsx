@@ -7,7 +7,7 @@ import {
   TrendingUp, Send, Pencil, Trash2, Plus, User, Activity, Brain,
   Route, Target, Calendar, FileText, Sparkles, ChevronRight, Heart,
   ArrowRightLeft, GraduationCap, BarChart3, Shield, ExternalLink, Paperclip, GitBranch, MapPin, ChevronDown, Upload, FolderOpen,
-  Globe, Lightbulb, Linkedin, Instagram, Twitter, Youtube, BookOpen, Mic, Link2, ThumbsUp, ThumbsDown, Workflow, Sliders
+  Globe, Lightbulb, Linkedin, Instagram, Twitter, Youtube, BookOpen, Mic, Link2, ThumbsUp, ThumbsDown, Workflow, Sliders, Package, Loader2
 } from 'lucide-react'
 import {
   fetchContact, updateContact, deleteContact, fetchNotes, createNote,
@@ -21,6 +21,7 @@ import type { CrmContact, ContactNote, CrmTask, CallLog, ActivityLogEntry, TeamM
 import { ContactCommsButtons } from '@/components/crm/twilio-comms'
 import { CrmTaskCard, CrmTaskDetail } from '@/components/crm/crm-task-card'
 import ContactCommPanel from '@/components/crm/contact-comm-panel'
+import { ContactEquipmentTab } from '@/components/crm/contact-equipment-tab'
 import EmailComposer from '@/components/crm/email-composer'
 import { createClient } from '@/lib/supabase-browser'
 
@@ -347,7 +348,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
     !cardConfig || cardConfig.sections[key] !== false
   const supabase = createClient()
   const [contact, setContact] = useState<CrmContact | null>(null)
-  const [tab, setTab] = useState<'overview' | 'intel' | 'connections' | 'timeline' | 'tasks' | 'notes' | 'comms' | 'stats'>('overview')
+  const [tab, setTab] = useState<'overview' | 'intel' | 'connections' | 'timeline' | 'tasks' | 'notes' | 'comms' | 'stats' | 'equipment'>('overview')
   const [engagementTopics, setEngagementTopics] = useState<any[]>([])
   const [showEngagementForm, setShowEngagementForm] = useState(false)
   const [engTopic, setEngTopic] = useState('')
@@ -689,6 +690,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
     { key: 'notes', label: 'Notes', icon: FileText },
     { key: 'comms', label: 'Comms', icon: MessageCircle },
     { key: 'stats', label: 'Stats', icon: BarChart3 },
+    { key: 'equipment', label: 'Equipment', icon: Package },
   ] as const
 
   return (
@@ -1988,6 +1990,10 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
 
               {tab === 'stats' && contactId && (
                 <ContactCommPanel contactId={contactId} />
+              )}
+
+              {tab === 'equipment' && contactId && (
+                <ContactEquipmentTab contactId={contactId} />
               )}
             </div>
           </>

@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { createAdminSupabase } from '@/lib/supabase';
 
 // Get Anthropic client - checks org settings first, falls back to env var
-async function getAnthropicClient(orgId?: string): Promise<Anthropic> {
+export async function getAnthropicClient(orgId?: string): Promise<Anthropic> {
   if (orgId) {
     try {
       const supabase = createAdminSupabase();
