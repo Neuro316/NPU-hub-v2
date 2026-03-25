@@ -1,36 +1,42 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAnthropicClient } from '@/lib/crm-ai'
 
-// Increase Vercel function timeout
 export const maxDuration = 30
 
+const SERIAL_PROMPT = `Extract all serial numbers from this image of a Meta Quest headset label/sticker.
+
+Serial number patterns:
+- Bundle serial: starts with "340YB" or "3497B", 14 characters alphanumeric
+- Headset serial: starts with "340YC" or "3497C", 14 characters alphanumeric
+
+Return ONLY valid JSON, no other text:
+{"serials":[{"value":"XXXXX","type":"bundle"}],"raw_text":"all visible text","confidence":85}
+
+If no serial numbers found, return:
+{"serials":[],"raw_text":"","confidence":0}`
+
 export async function POST(req: NextRequest) {
+  let step = 'parsing request'
   try {
-    const { image_base64, media_type, org_id } = await req.json()
-    if (!image_base64) {
-      return NextResponse.json({ error: 'image_base64 is required' }, { status: 400 })
-    }
-    if (!org_id) {
-      return NextResponse.json({ error: 'org_id is required' }, { status: 400 })
-    }
+    const body = await req.json()
+    const { image_base64, media_type, org_id } = body
 
-    const imageSizeKB = Math.round(image_base64.length / 1024)
-    console.log('[equipment/scan] Processing image, size:', imageSizeKB, 'KB, org:', org_id)
+    if (!image_base64) return NextResponse.json({ error: 'No image provided' }, { status: 400 })
+    if (!org_id) return NextResponse.json({ error: 'org_id required' }, { status: 400 })
 
-    // Reject if image is too large (>4MB base64 = ~3MB image)
+    const sizeKB = Math.round(image_base64.length / 1024)
+    console.log(`[equipment/scan] Image: ${sizeKB}KB, org: ${org_id}`)
+
     if (image_base64.length > 4 * 1024 * 1024) {
       return NextResponse.json({ error: 'Image too large. Move closer to the serial number.' }, { status: 400 })
     }
 
-    let client
-    try {
-      client = await getAnthropicClient(org_id)
-    } catch (e: any) {
-      console.error('[equipment/scan] Failed to get Anthropic client:', e)
-      return NextResponse.json({ error: 'AI not configured. Check Settings > AI Integration for API key.' }, { status: 500 })
-    }
+    step = 'getting AI client'
+    const client = await getAnthropicClient(org_id)
 
-    console.log('[equipment/scan] Calling Claude vision API...')
+    step = 'calling Claude API'
+    console.log('[equipment/scan] Calling Claude...')
+
     const response = await client.messages.create({
       model: 'claude-sonnet-4-5-20250514',
       max_tokens: 500,
@@ -41,38 +47,25 @@ export async function POST(req: NextRequest) {
             type: 'image',
             source: {
               type: 'base64',
-              media_type: media_type || 'image/jpeg',
+              media_type: (media_type || 'image/jpeg') as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
               data: image_base64,
             },
           },
-          {
-            type: 'text',
-            text: `Extract all serial numbers from this image of a Meta Quest headset label/sticker.
-
-Serial number patterns:
-- Bundle serial: starts with "340YB" or "3497B", 14 characters alphanumeric
-- Headset serial: starts with "340YC" or "3497C", 14 characters alphanumeric
-
-Return ONLY valid JSON, no other text:
-{"serials":[{"value":"XXXXX","type":"bundle"}],"raw_text":"all visible text","confidence":85}
-
-If no serial numbers found, return:
-{"serials":[],"raw_text":"","confidence":0}`,
-          },
+          { type: 'text', text: SERIAL_PROMPT },
         ],
       }],
     })
-    console.log('[equipment/scan] Claude responded, stop_reason:', response.stop_reason)
+
+    step = 'parsing response'
+    console.log('[equipment/scan] Response received, stop_reason:', response.stop_reason)
 
     const block = response.content[0]
     if (block.type !== 'text') {
-      console.log('[equipment/scan] Non-text response block:', block.type)
       return NextResponse.json({ serials: [], raw_text: '', confidence: 0 })
     }
 
-    console.log('[equipment/scan] Response text:', block.text.substring(0, 300))
+    console.log('[equipment/scan] Text:', block.text.substring(0, 200))
 
-    // Parse JSON from response, handling potential markdown wrapping
     let text = block.text.trim()
     if (text.startsWith('```')) {
       text = text.replace(/^```json?\n?/, '').replace(/\n?```$/, '').trim()
@@ -82,19 +75,40 @@ If no serial numbers found, return:
       const result = JSON.parse(text)
       return NextResponse.json(result)
     } catch {
-      console.warn('[equipment/scan] Failed to parse JSON, raw:', text)
-      return NextResponse.json({ serials: [], raw_text: text, confidence: 0 })
+      // Try to extract serials from raw text with regex
+      const serialPattern = /3(?:40Y|497)[BC][A-Z0-9]{9,11}/g
+      const matches = text.match(serialPattern) || []
+      const serials = matches.map(m => ({
+        value: m,
+        type: m.includes('40YB') || m.includes('497B') ? 'bundle' : 'headset',
+      }))
+      return NextResponse.json({
+        serials,
+        raw_text: text,
+        confidence: serials.length > 0 ? 60 : 0,
+      })
     }
   } catch (e: any) {
-    console.error('[equipment/scan] error:', e?.message || e)
-    const msg = e?.message || 'Scan failed'
-    // Common Anthropic errors
-    if (msg.includes('401') || msg.includes('authentication')) {
-      return NextResponse.json({ error: 'AI API key invalid. Check Settings > AI Integration.' }, { status: 500 })
+    const msg = e?.message || String(e)
+    console.error(`[equipment/scan] Failed at step "${step}":`, msg)
+
+    // Return helpful error messages
+    if (msg.includes('Could not process image') || msg.includes('invalid_request')) {
+      return NextResponse.json({ error: 'Could not read image. Try taking the photo closer and with better lighting.' }, { status: 400 })
     }
-    if (msg.includes('rate_limit') || msg.includes('429')) {
+    if (msg.includes('model') || msg.includes('not_found')) {
+      return NextResponse.json({ error: 'AI model unavailable. Contact admin.' }, { status: 500 })
+    }
+    if (msg.includes('authentication') || msg.includes('401') || msg.includes('invalid x-api-key')) {
+      return NextResponse.json({ error: 'AI API key is invalid. Check Settings > AI Integration.' }, { status: 401 })
+    }
+    if (msg.includes('rate') || msg.includes('429')) {
       return NextResponse.json({ error: 'AI rate limited. Wait a moment and try again.' }, { status: 429 })
     }
-    return NextResponse.json({ error: msg }, { status: 500 })
+    if (msg.includes('timeout') || msg.includes('ETIMEDOUT')) {
+      return NextResponse.json({ error: 'AI took too long. Try again with a clearer photo.' }, { status: 504 })
+    }
+
+    return NextResponse.json({ error: `Scan failed (${step}): ${msg.substring(0, 100)}` }, { status: 500 })
   }
 }
