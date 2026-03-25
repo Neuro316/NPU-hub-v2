@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useWorkspace } from '@/lib/workspace-context'
@@ -8,33 +8,15 @@ import { usePermissions } from '@/lib/hooks/use-permissions'
 import { useSidebar } from '@/lib/sidebar-context'
 import { createClient } from '@/lib/supabase-browser'
 import {
-  LayoutDashboard,
-  Route,
-  CheckSquare,
-  Brain,
-  FileText,
-  Lightbulb,
-  Users,
-  Target,
-  Megaphone,
-  Radio,
-  Calendar,
-  BarChart3,
-  Settings,
   LogOut,
   ChevronDown,
   ChevronRight,
   Building2,
-  BookOpen,
-  Mic,
-  TicketCheck,
-  Image,
-  Rocket,
-  Contact2,
   HeartPulse,
   DollarSign,
   ClipboardList,
   FileCheck,
+  Brain,
   UserCheck,
   ExternalLink,
   X,
@@ -42,102 +24,7 @@ import {
   PanelLeftOpen,
 } from 'lucide-react'
 import { NotificationBell } from '@/components/notification-bell'
-
-/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-   Category-grouped navigation
-   â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-
-interface NavItem {
-  label: string
-  href: string
-  icon: any
-  moduleKey: string
-}
-
-interface NavCategory {
-  id: string
-  label: string
-  collapsible: boolean
-  items: NavItem[]
-}
-
-const navCategories: NavCategory[] = [
-  {
-    id: 'home',
-    label: '',
-    collapsible: false,
-    items: [
-      { label: 'Dashboard', href: '/', icon: LayoutDashboard, moduleKey: 'dashboard' },
-    ],
-  },
-  {
-    id: 'grow',
-    label: 'GROW',
-    collapsible: true,
-    items: [
-      { label: 'CRM', href: '/crm', icon: Contact2, moduleKey: 'crm' },
-      { label: 'Campaigns', href: '/campaigns', icon: Megaphone, moduleKey: 'campaigns' },
-      { label: 'Media & Affiliates', href: '/media-affiliates', icon: Radio, moduleKey: 'media_affiliates' },
-      { label: 'ICP Profiles', href: '/icps', icon: Users, moduleKey: 'icps' },
-      { label: 'Analytics', href: '/analytics', icon: BarChart3, moduleKey: 'analytics' },
-      { label: 'Media Appearances', href: '/media-appearances', icon: Mic, moduleKey: 'media_appearances' },
-    ],
-  },
-  {
-    id: 'create',
-    label: 'CREATE',
-    collapsible: true,
-    items: [
-      { label: 'Social Media', href: '/social', icon: Target, moduleKey: 'social' },
-      { label: 'Media Library', href: '/media', icon: Image, moduleKey: 'media' },
-      { label: 'Calendar', href: '/calendar', icon: Calendar, moduleKey: 'calendar' },
-      { label: 'ShipIt Journal', href: '/shipit', icon: Rocket, moduleKey: 'shipit' },
-      { label: 'Ideas', href: '/ideas', icon: Lightbulb, moduleKey: 'ideas' },
-      { label: 'Company Library', href: '/library', icon: BookOpen, moduleKey: 'library' },
-    ],
-  },
-  {
-    id: 'operate',
-    label: 'OPERATE',
-    collapsible: true,
-    items: [
-      { label: 'Meetings', href: '/meetings', icon: Calendar, moduleKey: 'meetings' },
-      { label: 'Rocks', href: '/rocks', icon: Target, moduleKey: 'rocks' },
-      { label: 'My Tasks', href: '/tasks/my-tasks', icon: CheckSquare, moduleKey: 'tasks' },
-      { label: 'Task Manager', href: '/tasks', icon: CheckSquare, moduleKey: 'tasks' },
-      { label: 'Client Tasks', href: '/crm/tasks', icon: ClipboardList, moduleKey: 'tasks' },
-      { label: 'Journey Builder', href: '/journeys', icon: Route, moduleKey: 'journeys' },
-      { label: 'SOPs', href: '/sops', icon: FileText, moduleKey: 'sops' },
-      { label: 'Support Tickets', href: '/tickets', icon: TicketCheck, moduleKey: 'tickets' },
-    ],
-  },
-  {
-    id: 'intelligence',
-    label: 'INTELLIGENCE',
-    collapsible: false,
-    items: [
-      { label: 'AI Advisory', href: '/advisory', icon: Brain, moduleKey: 'advisory' },
-    ],
-  },
-  {
-    id: 'finance',
-    label: 'FINANCE',
-    collapsible: true,
-    items: [
-      { label: 'AI CFO', href: '/finance', icon: Brain, moduleKey: 'finance_suite' },
-      { label: 'NP Financial', href: '/financial/np', icon: DollarSign, moduleKey: 'np_financial' },
-    ],
-  },
-  {
-    id: 'admin',
-    label: 'ADMIN',
-    collapsible: true,
-    items: [
-      { label: 'Platform Advisor', href: '/platform-advisor', icon: Brain, moduleKey: 'platform_advisor' },
-      { label: 'Settings', href: '/settings', icon: Settings, moduleKey: 'settings' },
-    ],
-  },
-]
+import { navCategories, applySidebarOrder } from '@/lib/nav-config'
 
 /* EHR items */
 interface EhrItem {
@@ -159,16 +46,16 @@ const ehrItems: EhrItem[] = [
 
 export function Sidebar() {
   const pathname = usePathname()
-  const { user, organizations, currentOrg, switchOrg, enabledModules, hiddenModules } = useWorkspace()
+  const { user, organizations, currentOrg, switchOrg, enabledModules, hiddenModules, sidebarOrder } = useWorkspace()
   const { canView, loading: permsLoading } = usePermissions()
   const { isCollapsed, isMobileOpen, toggleCollapse, closeMobile } = useSidebar()
   const [orgDropdownOpen, setOrgDropdownOpen] = useState(false)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
-  // Debug: log hidden modules filtering
-  if (hiddenModules.length > 0) {
-    console.log('[Sidebar] Filtering out hidden modules:', hiddenModules)
-  }
+  const orderedCategories = useMemo(
+    () => applySidebarOrder(navCategories, sidebarOrder),
+    [sidebarOrder]
+  )
 
   const toggleCategory = (id: string) => {
     setCollapsed(prev => ({ ...prev, [id]: !prev[id] }))
@@ -287,7 +174,7 @@ export function Sidebar() {
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-2 px-3">
-          {navCategories.map((category) => {
+          {orderedCategories.map((category) => {
             const visibleItems = category.items.filter(item => canView(item.moduleKey) && !hiddenModules.includes(item.moduleKey))
             if (visibleItems.length === 0) return null
 

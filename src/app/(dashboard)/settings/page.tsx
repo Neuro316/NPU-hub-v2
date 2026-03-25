@@ -6,19 +6,23 @@ import {
   Mail, Phone, Brain, Shield, Bell, Users, Sliders,
   Save, Plus, X, Trash2, CheckCircle2, AlertTriangle,
   LayoutGrid, Eye, EyeOff, Search, Activity, History,
-  BarChart3, ChevronRight,
+  BarChart3, ChevronRight, ChevronDown, ArrowUp, ArrowDown,
+  GripVertical, RotateCcw,
 } from 'lucide-react'
 import { useWorkspace } from '@/lib/workspace-context'
 import { useTeamData, ROLE_CONFIG } from '@/lib/hooks/use-team-data'
 import type { TeamMember } from '@/lib/hooks/use-team-data'
 import { MemberDetail } from '@/components/team/member-detail'
+import { navCategories, REORDERABLE_IDS } from '@/lib/nav-config'
+import type { SidebarOrder } from '@/lib/nav-config'
 import { createClient } from '@/lib/supabase-browser'
 
-type Section = 'email' | 'twilio' | 'ai' | 'pipeline' | 'team' | 'notifications' | 'compliance' | 'general' | 'modules' | 'admin_tools'
+type Section = 'email' | 'twilio' | 'ai' | 'pipeline' | 'team' | 'notifications' | 'compliance' | 'general' | 'modules' | 'admin_tools' | 'sidebar_layout'
 
 const SECTIONS: { id: Section; label: string; icon: any }[] = [
   { id: 'general', label: 'General', icon: Sliders },
   { id: 'modules', label: 'Modules', icon: LayoutGrid },
+  { id: 'sidebar_layout', label: 'Sidebar Layout', icon: GripVertical },
   { id: 'team', label: 'Team', icon: Users },
   { id: 'admin_tools', label: 'Admin Tools', icon: Shield },
   { id: 'email', label: 'Email', icon: Mail },
@@ -28,6 +32,15 @@ const SECTIONS: { id: Section; label: string; icon: any }[] = [
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'compliance', label: 'Compliance', icon: Shield },
 ]
+
+/** Swap two adjacent items in an array */
+function moveInArray<T>(arr: T[], index: number, direction: 'up' | 'down'): T[] {
+  const target = direction === 'up' ? index - 1 : index + 1
+  if (target < 0 || target >= arr.length) return arr
+  const result = [...arr]
+  ;[result[index], result[target]] = [result[target], result[index]]
+  return result
+}
 
 /* All sidebar modules that can be toggled, grouped by category.
    'dashboard' and 'settings' are excluded — they must always be visible. */
@@ -120,6 +133,19 @@ export default function SettingsPage() {
   const [notifications, setNotifications] = useState({ new_lead: true, missed_call: true, task_overdue: true, campaign_complete: true })
   const [hiddenModules, setHiddenModules] = useState<string[]>([])
 
+  // Sidebar layout state
+  const defaultCategoryOrder = REORDERABLE_IDS
+  const [categoryOrder, setCategoryOrder] = useState<string[]>(defaultCategoryOrder)
+  const [itemOrders, setItemOrders] = useState<Record<string, string[]>>({})
+  const [expandedLayoutCat, setExpandedLayoutCat] = useState<string | null>(null)
+
+  // Helper: get current item order for a category (saved or default)
+  const getItemOrder = (catId: string): string[] => {
+    if (itemOrders[catId]?.length) return itemOrders[catId]
+    const cat = navCategories.find(c => c.id === catId)
+    return cat?.items.map(i => i.href) || []
+  }
+
   // Team management state
   const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null)
   const [addingMember, setAddingMember] = useState(false)
@@ -160,7 +186,7 @@ export default function SettingsPage() {
       })
     // Load Twilio + other settings from org_settings
     supabase.from('org_settings').select('setting_key, setting_value').eq('org_id', currentOrg.id)
-      .in('setting_key', ['crm_twilio', 'crm_ai', 'crm_compliance', 'crm_notifications', 'hidden_modules'])
+      .in('setting_key', ['crm_twilio', 'crm_ai', 'crm_compliance', 'crm_notifications', 'hidden_modules', 'sidebar_order'])
       .then(({ data }) => {
         data?.forEach(row => {
           const v = row.setting_value
@@ -174,6 +200,11 @@ export default function SettingsPage() {
           if (row.setting_key === 'hidden_modules') {
             console.log('[Settings] Loaded hidden_modules from DB:', v)
             if (Array.isArray(v)) setHiddenModules(v)
+          }
+          if (row.setting_key === 'sidebar_order' && v && typeof v === 'object' && !Array.isArray(v)) {
+            const so = v as SidebarOrder
+            if (so.categories?.length) setCategoryOrder(so.categories)
+            if (so.items) setItemOrders(so.items)
           }
         })
       })
@@ -231,6 +262,24 @@ export default function SettingsPage() {
           return
         }
         console.log('[Settings] hidden_modules saved successfully, reloading...')
+        window.location.reload()
+        return
+      }
+      if (active === 'sidebar_layout') {
+        const res = await fetch('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            org_id: currentOrg.id,
+            setting_key: 'sidebar_order',
+            setting_value: { categories: categoryOrder, items: itemOrders } as SidebarOrder,
+          }),
+        })
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({ error: 'Unknown error' }))
+          alert('Failed to save sidebar layout: ' + (data.error || res.statusText))
+          return
+        }
         window.location.reload()
         return
       }
@@ -322,6 +371,145 @@ export default function SettingsPage() {
                 </div>
               ))}
               <p className="text-[10px] text-gray-400 italic">Dashboard and Settings are always visible and cannot be hidden.</p>
+            </div>
+          )}
+
+          {/* Sidebar Layout */}
+          {active === 'sidebar_layout' && (
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-sm font-bold text-np-dark">Sidebar Layout</h3>
+                <p className="text-xs text-gray-400 mt-1">Reorder sidebar categories and items. Dashboard is always first, Admin always last.</p>
+              </div>
+
+              {/* Category Order */}
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Category Order</p>
+                <div className="space-y-1">
+                  {categoryOrder.map((catId, idx) => {
+                    const cat = navCategories.find(c => c.id === catId)
+                    if (!cat) return null
+                    return (
+                      <div key={catId} className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-gray-100 bg-white">
+                        <GripVertical size={14} className="text-gray-300 flex-shrink-0" />
+                        <span className="text-xs font-semibold text-np-dark flex-1">{cat.label || catId.toUpperCase()}</span>
+                        <button
+                          type="button"
+                          onClick={() => setCategoryOrder(prev => moveInArray(prev, idx, 'up'))}
+                          disabled={idx === 0}
+                          className="p-1 rounded hover:bg-gray-100 disabled:opacity-20 disabled:cursor-not-allowed"
+                        >
+                          <ArrowUp size={14} className="text-gray-500" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCategoryOrder(prev => moveInArray(prev, idx, 'down'))}
+                          disabled={idx === categoryOrder.length - 1}
+                          className="p-1 rounded hover:bg-gray-100 disabled:opacity-20 disabled:cursor-not-allowed"
+                        >
+                          <ArrowDown size={14} className="text-gray-500" />
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Item Order Within Categories */}
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Item Order Within Categories</p>
+                <div className="space-y-1">
+                  {/* Show all categories including home and admin for item reordering */}
+                  {navCategories.filter(c => c.id !== 'home').map(cat => {
+                    const isExpanded = expandedLayoutCat === cat.id
+                    const currentItemOrder = getItemOrder(cat.id)
+                    // Build ordered items list from hrefs
+                    const orderedItems = currentItemOrder
+                      .map(href => cat.items.find(i => i.href === href))
+                      .filter(Boolean) as typeof cat.items
+                    // Append any items not in the saved order
+                    const missingItems = cat.items.filter(i => !currentItemOrder.includes(i.href))
+                    const allItems = [...orderedItems, ...missingItems]
+
+                    return (
+                      <div key={cat.id}>
+                        <button
+                          type="button"
+                          onClick={() => setExpandedLayoutCat(isExpanded ? null : cat.id)}
+                          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors"
+                        >
+                          <ChevronRight size={12} className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                          <span className="text-xs font-semibold text-np-dark flex-1 text-left">{cat.label || 'HOME'}</span>
+                          <span className="text-[10px] text-gray-400">{cat.items.length} items</span>
+                        </button>
+                        {isExpanded && (
+                          <div className="ml-5 mt-1 space-y-0.5">
+                            {allItems.map((item, idx) => {
+                              const isHidden = hiddenModules.includes(item.moduleKey)
+                              return (
+                                <div key={item.href} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-50 bg-gray-50/50">
+                                  <span className={`text-xs flex-1 ${isHidden ? 'text-gray-400' : 'text-np-dark'}`}>
+                                    {item.label}
+                                    {isHidden && <span className="text-[9px] text-gray-400 ml-1.5">(hidden)</span>}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const order = getItemOrder(cat.id)
+                                      // Ensure we have the full list before moving
+                                      const fullOrder = order.length >= allItems.length
+                                        ? order
+                                        : allItems.map(i => i.href)
+                                      setItemOrders(prev => ({
+                                        ...prev,
+                                        [cat.id]: moveInArray(fullOrder, idx, 'up'),
+                                      }))
+                                    }}
+                                    disabled={idx === 0}
+                                    className="p-0.5 rounded hover:bg-gray-200 disabled:opacity-20 disabled:cursor-not-allowed"
+                                  >
+                                    <ArrowUp size={12} className="text-gray-500" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const order = getItemOrder(cat.id)
+                                      const fullOrder = order.length >= allItems.length
+                                        ? order
+                                        : allItems.map(i => i.href)
+                                      setItemOrders(prev => ({
+                                        ...prev,
+                                        [cat.id]: moveInArray(fullOrder, idx, 'down'),
+                                      }))
+                                    }}
+                                    disabled={idx === allItems.length - 1}
+                                    className="p-0.5 rounded hover:bg-gray-200 disabled:opacity-20 disabled:cursor-not-allowed"
+                                  >
+                                    <ArrowDown size={12} className="text-gray-500" />
+                                  </button>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Reset */}
+              <button
+                type="button"
+                onClick={() => {
+                  setCategoryOrder(defaultCategoryOrder)
+                  setItemOrders({})
+                  setExpandedLayoutCat(null)
+                }}
+                className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-np-dark transition-colors"
+              >
+                <RotateCcw size={12} /> Reset to Default Order
+              </button>
             </div>
           )}
 

@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase-browser'
 import type { User } from '@supabase/supabase-js'
+import type { SidebarOrder } from '@/lib/nav-config'
 
 interface Organization {
   id: string
@@ -18,6 +19,7 @@ interface WorkspaceContextType {
   loading: boolean
   enabledModules: string[]
   hiddenModules: string[]
+  sidebarOrder: SidebarOrder | null
 }
 
 const WorkspaceContext = createContext<WorkspaceContextType>({
@@ -28,6 +30,7 @@ const WorkspaceContext = createContext<WorkspaceContextType>({
   loading: true,
   enabledModules: [],
   hiddenModules: [],
+  sidebarOrder: null,
 })
 
 export function useWorkspace() {
@@ -41,6 +44,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [enabledModules, setEnabledModules] = useState<string[]>([])
   const [hiddenModules, setHiddenModules] = useState<string[]>([])
+  const [sidebarOrder, setSidebarOrder] = useState<SidebarOrder | null>(null)
 
   const supabase = createClient()
 
@@ -183,17 +187,18 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     }
   }, [organizations])
 
-  // Load enabled modules + hidden modules when org changes
+  // Load enabled modules + hidden modules + sidebar order when org changes
   useEffect(() => {
-    if (!currentOrg) { setEnabledModules([]); setHiddenModules([]); return }
+    if (!currentOrg) { setEnabledModules([]); setHiddenModules([]); setSidebarOrder(null); return }
     supabase
       .from('org_settings')
       .select('setting_key, setting_value')
       .eq('org_id', currentOrg.id)
-      .in('setting_key', ['enabled_modules', 'hidden_modules'])
+      .in('setting_key', ['enabled_modules', 'hidden_modules', 'sidebar_order'])
       .then(({ data }) => {
         const enabled = data?.find(r => r.setting_key === 'enabled_modules')
         const hidden = data?.find(r => r.setting_key === 'hidden_modules')
+        const order = data?.find(r => r.setting_key === 'sidebar_order')
         setEnabledModules(
           enabled?.setting_value && Array.isArray(enabled.setting_value)
             ? enabled.setting_value : []
@@ -202,11 +207,15 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
           ? hidden.setting_value : []
         console.log('[WorkspaceContext] hidden_modules loaded:', hiddenList)
         setHiddenModules(hiddenList)
+        setSidebarOrder(
+          order?.setting_value && typeof order.setting_value === 'object' && !Array.isArray(order.setting_value)
+            ? order.setting_value as SidebarOrder : null
+        )
       })
   }, [currentOrg?.id])
 
   return (
-    <WorkspaceContext.Provider value={{ user, organizations, currentOrg, switchOrg, loading, enabledModules, hiddenModules }}>
+    <WorkspaceContext.Provider value={{ user, organizations, currentOrg, switchOrg, loading, enabledModules, hiddenModules, sidebarOrder }}>
       {children}
     </WorkspaceContext.Provider>
   )
