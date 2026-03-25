@@ -5,7 +5,8 @@ import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
 import type {
   KanbanColumn, KanbanTask, TaskComment, CardTaskLink,
-  Subtask, TaskActivity, Project, SavedView, ViewFilters
+  Subtask, TaskActivity, Project, SavedView, ViewFilters,
+  ProjectProgress
 } from '@/lib/types/tasks'
 
 // Fields worth logging in the activity feed
@@ -181,6 +182,31 @@ export function useTaskData() {
               logActivity(id, 'field_change', label, displayOld, displayNew)
             }
           }
+        }
+      }
+      // Auto-update linked journey cards when task moves to Done
+      if (updates.column_id && data) {
+        const doneCol = columns.find(c => c.title.toLowerCase() === 'done')
+        if (updates.column_id === doneCol?.id) {
+          try {
+            const links = await fetchCardLinks(id)
+            for (const link of links) {
+              const { data: allCardLinks } = await supabase
+                .from('card_task_links').select('task_id').eq('card_id', link.card_id)
+              if (allCardLinks) {
+                const allDone = allCardLinks.every(cl => {
+                  if (cl.task_id === id) return true
+                  const t = tasks.find(x => x.id === cl.task_id)
+                  return t?.column_id === doneCol.id
+                })
+                if (allDone) {
+                  await supabase.from('journey_cards')
+                    .update({ status: 'done', updated_at: new Date().toISOString() })
+                    .eq('id', link.card_id)
+                }
+              }
+            }
+          } catch {} // non-blocking
         }
       }
     }
@@ -379,6 +405,99 @@ export function useTaskData() {
     })
   }
 
+  // ─── Project Progress ─────────────────────────────────────
+  const getProjectProgress = useCallback((projectId: string): ProjectProgress => {
+    const projectTasks = tasks.filter(t => t.project_id === projectId)
+    const doneColumn = columns.find(c => c.title.toLowerCase() === 'done')
+    const completed = doneColumn
+      ? projectTasks.filter(t => t.column_id === doneColumn.id).length
+      : 0
+    return {
+      project_id: projectId,
+      total_tasks: projectTasks.length,
+      completed_tasks: completed,
+      percentage: projectTasks.length > 0 ? Math.round((completed / projectTasks.length) * 100) : 0,
+    }
+  }, [tasks, columns])
+
+  const getAllProjectProgress = useCallback((): Record<string, ProjectProgress> => {
+    const map: Record<string, ProjectProgress> = {}
+    for (const p of projects) {
+      map[p.id] = getProjectProgress(p.id)
+    }
+    return map
+  }, [projects, getProjectProgress])
+
+  // ─── ShipIt → Project Creation ──────────────────────────────
+  const createProjectFromShipIt = async (
+    shipitId: string,
+    name: string,
+    description: string | null,
+    shipDate: string | null,
+    sectionData: Record<string, string>
+  ): Promise<{ projectId: string | null; tasksCreated: number }> => {
+    if (!currentOrg) return { projectId: null, tasksCreated: 0 }
+
+    // 1. Create project
+    const projResult = await addProject(name, { description, status: 'active', color: '#3B82F6' })
+    const projectId = projResult?.data?.id
+    if (!projectId) return { projectId: null, tasksCreated: 0 }
+
+    // 2. Bidirectional link
+    await supabase.from('shipit_projects').update({ project_id: projectId }).eq('id', shipitId)
+    await supabase.from('projects').update({ shipit_project_id: shipitId }).eq('id', projectId)
+    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, shipit_project_id: shipitId } : p))
+
+    // 3. Find target column
+    const targetColumn = columns.find(c => c.title.toLowerCase() === 'to do') || columns[0]
+    if (!targetColumn) return { projectId, tasksCreated: 0 }
+
+    let tasksCreated = 0
+
+    // 4. Parse milestones from "The Actual Work" section
+    const milestones = sectionData['milestones'] || ''
+    const milestoneLines = milestones.split('\n')
+      .map(l => l.replace(/^\d+[\.\)\-]\s*/, '').trim())
+      .filter(l => l.length > 0)
+    for (const title of milestoneLines) {
+      await addTask(targetColumn.id, title, {
+        project_id: projectId,
+        milestone: true,
+        due_date: shipDate,
+        source: 'shipit',
+      } as Partial<KanbanTask>)
+      tasksCreated++
+    }
+
+    // 5. Parse blockers
+    for (const field of ['waiting', 'missing', 'one-blocker']) {
+      const text = sectionData[field]?.trim()
+      if (!text) continue
+      const lines = text.split('\n').map(l => l.replace(/^[\-\*]\s*/, '').trim()).filter(l => l.length > 0)
+      for (const title of lines) {
+        await addTask(targetColumn.id, `[Blocker] ${title}`, {
+          project_id: projectId,
+          priority: 'high',
+          source: 'shipit',
+        } as Partial<KanbanTask>)
+        tasksCreated++
+      }
+    }
+
+    // 6. Parse 30-minute action if present
+    const quickAction = sectionData['thirty-min']?.trim()
+    if (quickAction) {
+      await addTask(targetColumn.id, quickAction, {
+        project_id: projectId,
+        priority: 'urgent',
+        source: 'shipit',
+      } as Partial<KanbanTask>)
+      tasksCreated++
+    }
+
+    return { projectId, tasksCreated }
+  }
+
   return {
     columns, tasks, projects, savedViews, loading,
     userId,
@@ -394,5 +513,7 @@ export function useTaskData() {
     addProject, updateProject, deleteProject,
     addSavedView, updateSavedView, deleteSavedView,
     filterTasks,
+    // Project integration
+    getProjectProgress, getAllProjectProgress, createProjectFromShipIt,
   }
 }

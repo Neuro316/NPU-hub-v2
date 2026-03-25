@@ -1,9 +1,11 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
-import { ArrowLeft, Plus, Send, ChevronDown, ChevronUp, Loader2, Download, Trash2, RefreshCw, ExternalLink, X, Rocket, Sparkles, FileText, FolderOpen, Globe, Check } from 'lucide-react'
+import { useTaskData } from '@/lib/hooks/use-task-data'
+import { ArrowLeft, Plus, Send, ChevronDown, ChevronUp, Loader2, Download, Trash2, RefreshCw, ExternalLink, X, Rocket, Sparkles, FileText, FolderOpen, Globe, Check, Kanban } from 'lucide-react'
 
 const SECTIONS = [
   { id: 'project', icon: '01', title: 'The Project', fields: [
@@ -78,8 +80,11 @@ function buildJournalText(meta: any, sections: Record<string, string>) {
 export default function ShipItPage() {
   const { currentOrg, loading: orgLoading } = useWorkspace()
   const supabase = createClient()
+  const { createProjectFromShipIt } = useTaskData()
 
   const [projects, setProjects] = useState<any[]>([])
+  const [linkedProjectId, setLinkedProjectId] = useState<string | null>(null)
+  const [creatingProject, setCreatingProject] = useState(false)
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState<'list' | 'editor'>('list')
   const [currentId, setCurrentId] = useState<string | null>(null)
@@ -142,6 +147,7 @@ export default function ShipItPage() {
     setDocId(p.doc_id || null)
     setFolderUrl(p.folder_url || null)
     setFolderId(p.folder_id || null)
+    setLinkedProjectId(p.project_id || null)
     setExpanded(new Set(SECTIONS.map(s => s.id)))
     setSyncMsg('')
     setView('editor')
@@ -154,9 +160,34 @@ export default function ShipItPage() {
     setSectionData({})
     setChatMsgs([])
     setDocUrl(null); setDocId(null); setFolderUrl(null); setFolderId(null)
+    setLinkedProjectId(null)
     setExpanded(new Set(SECTIONS.map(s => s.id)))
     setSyncMsg('')
     setView('editor')
+  }
+
+  // Create Task Manager project from ShipIt
+  const handleCreateTaskProject = async () => {
+    if (!currentId || !meta.name.trim()) return
+    setCreatingProject(true)
+    try {
+      const result = await createProjectFromShipIt(
+        currentId,
+        meta.name,
+        meta.description || null,
+        meta.shipDate || null,
+        sectionData
+      )
+      if (result.projectId) {
+        setLinkedProjectId(result.projectId)
+        // Update local projects list
+        setProjects(prev => prev.map(p => p.id === currentId ? { ...p, project_id: result.projectId } : p))
+        alert(`Project created with ${result.tasksCreated} tasks!`)
+      }
+    } catch (e) {
+      console.error('Failed to create project:', e)
+    }
+    setCreatingProject(false)
   }
 
   // Save
@@ -378,7 +409,14 @@ export default function ShipItPage() {
                 style={{ borderLeftWidth: 3, borderLeftColor: st.color }}>
                 <div className="flex items-start justify-between mb-2">
                   <h3 className="text-sm font-bold text-np-dark">{p.name || 'Untitled'}</h3>
-                  <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded" style={{ backgroundColor: st.color + '18', color: st.color }}>{st.label}</span>
+                  <div className="flex items-center gap-1.5">
+                    {p.project_id && (
+                      <span className="text-[9px] font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                        <Kanban className="w-2.5 h-2.5" /> Linked
+                      </span>
+                    )}
+                    <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded" style={{ backgroundColor: st.color + '18', color: st.color }}>{st.label}</span>
+                  </div>
                 </div>
                 {p.description && <p className="text-[11px] text-gray-500 truncate mb-2">{p.description}</p>}
                 <div className="flex items-center justify-between text-[10px] text-gray-400 mb-2">
@@ -420,6 +458,18 @@ export default function ShipItPage() {
           <button onClick={() => setShowExport(true)} className="text-[10px] font-medium text-gray-500 hover:text-np-blue flex items-center gap-1">
             <Download className="w-3 h-3" /> {docId ? 'Sync to Doc' : 'Export'}
           </button>
+          {currentId && !linkedProjectId && (
+            <button onClick={handleCreateTaskProject} disabled={creatingProject || !meta.name.trim()}
+              className="text-[10px] font-medium text-emerald-600 hover:text-emerald-700 flex items-center gap-1 bg-emerald-50 px-2 py-1.5 rounded-lg border border-emerald-200 disabled:opacity-40">
+              {creatingProject ? <Loader2 className="w-3 h-3 animate-spin" /> : <Kanban className="w-3 h-3" />} Create Project
+            </button>
+          )}
+          {linkedProjectId && (
+            <Link href={`/tasks?project=${linkedProjectId}`}
+              className="text-[10px] font-medium text-emerald-600 flex items-center gap-1 bg-emerald-50 px-2 py-1.5 rounded-lg border border-emerald-200 hover:bg-emerald-100">
+              <Kanban className="w-3 h-3" /> View Project
+            </Link>
+          )}
           {currentId && <button onClick={deleteProject} className="text-[10px] font-medium text-gray-400 hover:text-red-500 flex items-center gap-1"><Trash2 className="w-3 h-3" /></button>}
           <button onClick={saveProject} disabled={saving || !meta.name.trim() || !meta.shipDate}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-np-blue text-white rounded-lg text-[10px] font-bold disabled:opacity-40">

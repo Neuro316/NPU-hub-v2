@@ -99,8 +99,24 @@ export interface Project {
   status: 'active' | 'on_hold' | 'completed' | 'archived'
   owner_id: string | null
   owner_name: string | null
+  shipit_project_id: string | null
   created_at: string
   updated_at: string
+}
+
+export interface ProjectProgress {
+  project_id: string
+  total_tasks: number
+  completed_tasks: number
+  percentage: number
+}
+
+export interface ProjectJourneyLink {
+  id: string
+  org_id: string
+  project_id: string
+  journey_phase_id: string
+  created_at: string
 }
 
 // Phase 2: Saved Views

@@ -7,7 +7,19 @@
       "Bash(find /c/Users/Camer/Downloads/npu-hub-fresh -type f -name *settings*)",
       "Bash(wc:*)",
       "Bash(ls -la /c/Users/Camer/Downloads/npu-hub-fresh/src/app/\\\\\\(dashboard\\\\\\)/)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(grep -n \"meetings\\\\|read_ai\" /c/Users/Camer/Downloads/npu-hub-fresh/supabase/migrations/*.sql)",
+      "Bash(grep -r \"meetings\\\\|read_ai\" /c/Users/Camer/Downloads/npu-hub-fresh/src/lib/supabase* --include=*.ts)",
+      "Bash(grep:*)",
+      "Bash(find C:UsersCamerDownloadsnpu-hub-fresh -type f -path *journeys/page.tsx)",
+      "Bash(find C:UsersCamerDownloadsnpu-hub-fresh -type f \\\\\\(-name *.sql -o -name *migration* -o -name *schema* \\\\\\))",
+      "Bash(find C:UsersCamerDownloadsnpu-hub-fresh -type f -name *.sql)",
+      "Bash(find C:UsersCamerDownloadsnpu-hub-fresh -path */node_modules -prune -o -type f -name *.sql -print)",
+      "Bash(while read:*)",
+      "Bash(do echo:*)",
+      "Read(//c/Users/Camer/Downloads/npu-hub-fresh/**)",
+      "Bash(done)",
+      "Bash(find:*)"
     ]
   }
 }

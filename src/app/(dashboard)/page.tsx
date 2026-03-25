@@ -7,7 +7,8 @@ import Link from 'next/link'
 import {
   Route, CheckSquare, Megaphone, Target, Brain, Image, BarChart3, Users,
   Lightbulb, ArrowRight, Sparkles, TrendingUp, Zap, Pencil, X, Save,
-  Plus, Trash2, Quote, Heart, Globe, Rocket, Eye, Contact2, Activity
+  Plus, Trash2, Quote, Heart, Globe, Rocket, Eye, Contact2, Activity,
+  FolderOpen,
 } from 'lucide-react'
 
 /* --- Types --- */
@@ -38,6 +39,8 @@ const PILLARS = [
 export default function DashboardPage() {
   const { currentOrg, user, loading: orgLoading } = useWorkspace()
   const [stats, setStats] = useState<Stats>({ contacts: 0, journeyCards: 0, tasks: 0, campaigns: 0, posts: 0, mediaAssets: 0, ideas: 0, teamMembers: 0, sessions: 0 })
+  const [activeProjects, setActiveProjects] = useState<any[]>([])
+  const [projectProgress, setProjectProgress] = useState<Record<string, { total: number; done: number }>>({})
   const supabase = createClient()
 
   /* --- Company Overview state --- */
@@ -115,6 +118,29 @@ export default function DashboardPage() {
         mediaAssets: media.count || 0, ideas: ideas.count || 0,
         teamMembers: team.count || 0, sessions: sessions.count || 0,
       })
+    }).catch(() => {})
+  }, [currentOrg?.id])
+
+  // Load active projects with progress
+  useEffect(() => {
+    if (!currentOrg) return
+    Promise.all([
+      supabase.from('projects').select('*').eq('org_id', currentOrg.id).eq('status', 'active').order('updated_at', { ascending: false }).limit(6),
+      supabase.from('kanban_tasks').select('id, project_id, column_id').eq('org_id', currentOrg.id),
+      supabase.from('kanban_columns').select('id, title').eq('org_id', currentOrg.id),
+    ]).then(([projRes, taskRes, colRes]) => {
+      const projs = projRes.data || []
+      setActiveProjects(projs)
+      const doneColId = (colRes.data || []).find((c: any) => c.title.toLowerCase() === 'done')?.id
+      const progress: Record<string, { total: number; done: number }> = {}
+      for (const p of projs) {
+        const pTasks = (taskRes.data || []).filter((t: any) => t.project_id === p.id)
+        progress[p.id] = {
+          total: pTasks.length,
+          done: doneColId ? pTasks.filter((t: any) => t.column_id === doneColId).length : 0,
+        }
+      }
+      setProjectProgress(progress)
     }).catch(() => {})
   }, [currentOrg?.id])
 
@@ -345,6 +371,45 @@ export default function DashboardPage() {
           </Link>
         ))}
       </div>
+
+      {/* ======= ACTIVE PROJECTS ======= */}
+      {activeProjects.length > 0 && (
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+              <FolderOpen className="w-3.5 h-3.5" /> Active Projects
+            </h2>
+            <Link href="/tasks" className="text-[10px] text-np-blue font-medium hover:underline flex items-center gap-1">
+              View All <ArrowRight className="w-3 h-3" />
+            </Link>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {activeProjects.map(p => {
+              const prog = projectProgress[p.id] || { total: 0, done: 0 }
+              const pct = prog.total > 0 ? Math.round((prog.done / prog.total) * 100) : 0
+              return (
+                <Link key={p.id} href={`/tasks?project=${p.id}`}
+                  className="bg-white border border-gray-100 rounded-xl p-4 hover:shadow-md transition-all group">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: p.color || '#3B82F6' }} />
+                    <span className="text-xs font-semibold text-np-dark truncate">{p.name}</span>
+                    <ArrowRight className="w-3 h-3 text-gray-300 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </div>
+                  {p.description && <p className="text-[10px] text-gray-400 truncate mb-2">{p.description}</p>}
+                  <div className="flex items-center justify-between text-[10px] text-gray-400 mb-1.5">
+                    <span>{prog.done}/{prog.total} tasks</span>
+                    <span className="font-bold">{pct}%</span>
+                  </div>
+                  <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full transition-all duration-500"
+                      style={{ width: `${pct}%`, backgroundColor: p.color || '#3B82F6' }} />
+                  </div>
+                </Link>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ======= QUICK ACTIONS ======= */}
       <div className="mb-8">

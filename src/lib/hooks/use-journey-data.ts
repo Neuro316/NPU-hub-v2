@@ -139,6 +139,40 @@ export function useJourneyData() {
     return updateCard(cardId, { phase_id: newPhaseId, sort_order: newSortOrder } as any)
   }
 
+  // ─── Project-Journey Links ─────────────────────────────────
+  const linkPhaseToProject = async (projectId: string, phaseId: string) => {
+    if (!currentOrg) return
+    const { data, error } = await supabase
+      .from('project_journey_links')
+      .insert({ org_id: currentOrg.id, project_id: projectId, journey_phase_id: phaseId })
+      .select().single()
+    return { data, error }
+  }
+
+  const unlinkPhaseFromProject = async (linkId: string) => {
+    const { error } = await supabase.from('project_journey_links').delete().eq('id', linkId)
+    return { error }
+  }
+
+  const createDefaultProjectJourney = async (projectId: string) => {
+    if (!currentOrg) return []
+    const defaults = [
+      { label: 'Planning', key: 'planning', color: '#8B5CF6' },
+      { label: 'In Progress', key: 'in_progress', color: '#3B82F6' },
+      { label: 'Review', key: 'review', color: '#F59E0B' },
+      { label: 'Complete', key: 'complete', color: '#10B981' },
+    ]
+    const created = []
+    for (let i = 0; i < defaults.length; i++) {
+      const result = await addPhase(defaults[i].label, defaults[i].key, defaults[i].color)
+      if (result?.data) {
+        created.push(result.data)
+        await linkPhaseToProject(projectId, result.data.id)
+      }
+    }
+    return created
+  }
+
   return {
     phases,
     cards,
@@ -151,5 +185,8 @@ export function useJourneyData() {
     updateCard,
     deleteCard,
     moveCard,
+    linkPhaseToProject,
+    unlinkPhaseFromProject,
+    createDefaultProjectJourney,
   }
 }
