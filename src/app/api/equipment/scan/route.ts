@@ -1,20 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabase } from '@/lib/supabase'
 import { getAnthropicClient } from '@/lib/crm-ai'
+
+// Increase Vercel function timeout
+export const maxDuration = 30
 
 export async function POST(req: NextRequest) {
   try {
-    // Auth check (soft — log but don't block if cookies issue)
-    try {
-      const supabase = createServerSupabase()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        console.warn('[equipment/scan] No user from auth — proceeding anyway (cookies issue)')
-      }
-    } catch (authErr) {
-      console.warn('[equipment/scan] Auth check failed:', authErr)
-    }
-
     const { image_base64, media_type, org_id } = await req.json()
     if (!image_base64) {
       return NextResponse.json({ error: 'image_base64 is required' }, { status: 400 })
@@ -23,9 +14,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'org_id is required' }, { status: 400 })
     }
 
-    console.log('[equipment/scan] Processing image, size:', Math.round(image_base64.length / 1024), 'KB, org:', org_id)
+    const imageSizeKB = Math.round(image_base64.length / 1024)
+    console.log('[equipment/scan] Processing image, size:', imageSizeKB, 'KB, org:', org_id)
 
-    const client = await getAnthropicClient(org_id)
+    // Reject if image is too large (>4MB base64 = ~3MB image)
+    if (image_base64.length > 4 * 1024 * 1024) {
+      return NextResponse.json({ error: 'Image too large. Move closer to the serial number.' }, { status: 400 })
+    }
+
+    let client
+    try {
+      client = await getAnthropicClient(org_id)
+    } catch (e: any) {
+      console.error('[equipment/scan] Failed to get Anthropic client:', e)
+      return NextResponse.json({ error: 'AI not configured. Check Settings > AI Integration for API key.' }, { status: 500 })
+    }
+
+    console.log('[equipment/scan] Calling Claude vision API...')
     const response = await client.messages.create({
       model: 'claude-sonnet-4-5-20250514',
       max_tokens: 500,
@@ -57,6 +62,7 @@ If no serial numbers found, return:
         ],
       }],
     })
+    console.log('[equipment/scan] Claude responded, stop_reason:', response.stop_reason)
 
     const block = response.content[0]
     if (block.type !== 'text') {
@@ -64,7 +70,7 @@ If no serial numbers found, return:
       return NextResponse.json({ serials: [], raw_text: '', confidence: 0 })
     }
 
-    console.log('[equipment/scan] Claude response:', block.text.substring(0, 200))
+    console.log('[equipment/scan] Response text:', block.text.substring(0, 300))
 
     // Parse JSON from response, handling potential markdown wrapping
     let text = block.text.trim()
@@ -80,7 +86,15 @@ If no serial numbers found, return:
       return NextResponse.json({ serials: [], raw_text: text, confidence: 0 })
     }
   } catch (e: any) {
-    console.error('[equipment/scan] error:', e)
-    return NextResponse.json({ error: e.message || 'Scan failed' }, { status: 500 })
+    console.error('[equipment/scan] error:', e?.message || e)
+    const msg = e?.message || 'Scan failed'
+    // Common Anthropic errors
+    if (msg.includes('401') || msg.includes('authentication')) {
+      return NextResponse.json({ error: 'AI API key invalid. Check Settings > AI Integration.' }, { status: 500 })
+    }
+    if (msg.includes('rate_limit') || msg.includes('429')) {
+      return NextResponse.json({ error: 'AI rate limited. Wait a moment and try again.' }, { status: 429 })
+    }
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

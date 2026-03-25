@@ -259,14 +259,14 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
     setScanError('')
 
     const canvas = canvasRef.current
-    // Resize to max 1024px
-    const scale = Math.min(1024 / video.videoWidth, 1024 / video.videoHeight, 1)
+    // Resize to max 640px to keep payload small and fast
+    const scale = Math.min(640 / video.videoWidth, 640 / video.videoHeight, 1)
     canvas.width = Math.round(video.videoWidth * scale)
     canvas.height = Math.round(video.videoHeight * scale)
     const ctx = canvas.getContext('2d')!
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
 
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.7)
     const base64 = dataUrl.split(',')[1]
     if (!base64 || base64.length < 100) {
       setScanError('Failed to capture image. Try again.')
@@ -486,19 +486,47 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
                 </button>
               </div>
             ) : (
-              <div className="flex-1 relative">
+              <div className="flex-1 relative overflow-hidden">
                 <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
                 {/* Viewfinder overlay */}
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="w-72 h-44 border-2 border-white/60 rounded-xl" />
                 </div>
-                {/* Status + Capture button */}
-                <div className="absolute bottom-6 left-0 right-0 flex flex-col items-center gap-3">
+
+                {/* Bottom overlay — error, status, capture button, results all layered on camera */}
+                <div className="absolute bottom-0 left-0 right-0 p-4 flex flex-col items-center gap-3 pb-8"
+                  style={{ background: 'linear-gradient(transparent, rgba(0,0,0,0.7) 40%)' }}>
+
+                  {/* Error */}
+                  {scanError && (
+                    <div className="w-full p-3 bg-red-500 text-white rounded-xl text-sm flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                      <span className="flex-1">{scanError}</span>
+                      <button onClick={() => setScanError('')}><X className="w-4 h-4" /></button>
+                    </div>
+                  )}
+
+                  {/* Scan result serials */}
+                  {scanResult && scanResult.serials.length > 0 && !lookupResult && (
+                    <div className="w-full p-3 bg-gray-900/90 rounded-xl">
+                      <p className="text-xs text-gray-400 mb-1">Detected serials:</p>
+                      {scanResult.serials.map((s, i) => (
+                        <button key={i} onClick={() => lookupSerial(s.value)}
+                          className="block w-full text-left px-3 py-2 bg-gray-800 rounded-lg text-white font-mono text-sm mb-1 hover:bg-gray-700">
+                          {s.type}: {s.value}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Status message */}
                   {scanStatus && (
                     <div className="bg-black/70 text-white text-xs font-medium px-4 py-2 rounded-full">
                       {scanStatus}
                     </div>
                   )}
+
+                  {/* Capture button */}
                   <button onClick={captureAndScan} disabled={scanProcessing}
                     className="w-16 h-16 rounded-full bg-white flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 shadow-lg">
                     {scanProcessing
@@ -510,30 +538,9 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
               </div>
             )}
 
-            {/* Error */}
-            {scanError && (
-              <div className="mx-4 mb-2 p-3 bg-red-500/90 text-white rounded-xl text-sm flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 flex-shrink-0" /> {scanError}
-                <button onClick={() => setScanError('')} className="ml-auto"><X className="w-4 h-4" /></button>
-              </div>
-            )}
-
-            {/* Scan result + serials */}
-            {scanResult && scanResult.serials.length > 0 && !lookupResult && (
-              <div className="mx-4 mb-2 p-3 bg-gray-900 rounded-xl">
-                <p className="text-xs text-gray-400 mb-1">Detected serials:</p>
-                {scanResult.serials.map((s, i) => (
-                  <button key={i} onClick={() => lookupSerial(s.value)}
-                    className="block w-full text-left px-3 py-2 bg-gray-800 rounded-lg text-white font-mono text-sm mb-1 hover:bg-gray-700">
-                    {s.type}: {s.value}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Lookup result — Equipment found */}
+            {/* Lookup result — Equipment found (full-screen overlay on camera) */}
             {lookupResult?.equipment && (
-              <div className="mx-4 mb-4 p-4 bg-gray-900 rounded-xl max-h-[60vh] overflow-y-auto">
+              <div className="absolute inset-0 z-10 bg-black/95 overflow-y-auto p-4 pt-16">
                 {/* Equipment info */}
                 <div className="flex items-center gap-3 mb-3">
                   <Package className="w-5 h-5 text-blue-400" />
