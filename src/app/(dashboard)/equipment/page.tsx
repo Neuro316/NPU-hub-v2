@@ -583,21 +583,129 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
 
         {/* Camera or Manual Entry */}
         {!actionSuccess && (
-          <>
-            {manualEntry ? (
+          <div className="flex-1 flex flex-col min-h-0 relative">
+            {/* RESULTS OVERLAY — shown for both manual entry and camera scan */}
+            {(lookupResult?.equipment || registerSerials.length > 0) ? (
+              <div className="flex-1 overflow-y-auto p-4">
+                <button onClick={() => { setLookupResult(null); setRegisterSerials([]); setScanResult(null); setSelectedContact(''); setPurpose(''); setScanError('') }}
+                  className="mb-3 text-gray-400 text-xs flex items-center gap-1 hover:text-white">
+                  <ArrowLeft className="w-3 h-3" /> Back
+                </button>
+                {scanError && (
+                  <div className="p-3 bg-red-500 text-white rounded-xl text-sm flex items-center gap-2 mb-3">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0" /><span className="flex-1">{scanError}</span>
+                    <button onClick={() => setScanError('')}><X className="w-4 h-4" /></button>
+                  </div>
+                )}
+                {/* Register new equipment */}
+                {registerSerials.length > 0 && !lookupResult?.equipment && (
+                  <div className="p-4 bg-gray-900 rounded-xl">
+                    <p className="text-white text-sm font-semibold mb-1">New Equipment Detected</p>
+                    <p className="text-gray-400 text-xs mb-3">Not registered yet. Register to start tracking.</p>
+                    {registerSerials.map((s, i) => (
+                      <div key={i} className="px-3 py-2 bg-gray-800 rounded-lg text-white font-mono text-xs mb-1.5">{s.type}: {s.value}</div>
+                    ))}
+                    <input value={registerDeviceId} onChange={e => setRegisterDeviceId(e.target.value)}
+                      placeholder="Device ID (e.g. NP-MQ0007)" autoComplete="off"
+                      className="w-full px-3 py-2.5 mt-2 mb-3 bg-gray-800 text-white text-sm rounded-lg border border-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                    <button onClick={handleRegister} disabled={registerLoading}
+                      className="w-full py-3 bg-blue-500 text-white rounded-xl font-semibold text-sm disabled:opacity-40">
+                      {registerLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Register Equipment'}
+                    </button>
+                  </div>
+                )}
+                {/* Equipment found — info + checkout/checkin */}
+                {lookupResult?.equipment && (
+                  <>
+                    <div className="flex items-center gap-3 mb-3">
+                      <Package className="w-5 h-5 text-blue-400" />
+                      <div>
+                        <p className="text-white font-semibold text-sm">{lookupResult.equipment.device_id || 'Unknown Device'}</p>
+                        <p className="text-gray-400 text-xs">{lookupResult.equipment.device_type}</p>
+                      </div>
+                      <span className="ml-auto text-xs font-bold px-2 py-1 rounded"
+                        style={{ backgroundColor: EQUIPMENT_STATUS_CONFIG[lookupResult.equipment.status]?.bg, color: EQUIPMENT_STATUS_CONFIG[lookupResult.equipment.status]?.color }}>
+                        {EQUIPMENT_STATUS_CONFIG[lookupResult.equipment.status]?.label}
+                      </span>
+                    </div>
+                    {lookupResult.equipment.bundle_serial && <p className="text-xs text-gray-500 font-mono mb-1">Bundle: {lookupResult.equipment.bundle_serial}</p>}
+                    {lookupResult.equipment.headset_serial && <p className="text-xs text-gray-500 font-mono mb-2">Headset: {lookupResult.equipment.headset_serial}</p>}
+                    {/* CHECKOUT */}
+                    {lookupResult.equipment.status === 'available' && (
+                      <div className="border-t border-gray-800 pt-3 mt-3">
+                        <p className="text-white text-xs font-semibold mb-2">Check Out To:</p>
+                        <input value={contactSearch} onChange={e => setContactSearch(e.target.value)} placeholder="Search contacts..."
+                          className="w-full px-3 py-2 mb-2 bg-gray-800 text-white text-sm rounded-lg border border-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                        <select value={selectedContact} onChange={e => setSelectedContact(e.target.value)}
+                          className="w-full px-3 py-2.5 bg-gray-800 text-white text-sm rounded-lg border border-gray-700 mb-2">
+                          <option value="">Select a contact...</option>
+                          {filteredContacts.map(c => (
+                            <option key={c.id} value={c.id}>{c.first_name} {c.last_name} — {c.pipeline_stage}{c.phone ? ` (${c.phone})` : ''}</option>
+                          ))}
+                        </select>
+                        <input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="Purpose (optional)"
+                          className="w-full px-3 py-2 mb-2 bg-gray-800 text-white text-sm rounded-lg border border-gray-700" />
+                        <div className="flex gap-2 mb-3">
+                          {CONDITION_OPTIONS.map(c => (
+                            <button key={c.value} onClick={() => setConditionOut(c.value)}
+                              className={`flex-1 py-2 text-xs font-medium rounded-lg border ${conditionOut === c.value ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-gray-800 border-gray-700 text-gray-400'}`}>
+                              {c.label}
+                            </button>
+                          ))}
+                        </div>
+                        <button onClick={handleCheckout} disabled={!selectedContact || actionLoading}
+                          className="w-full py-3 bg-blue-500 text-white rounded-xl font-semibold text-sm disabled:opacity-40">
+                          {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Assign Equipment'}
+                        </button>
+                      </div>
+                    )}
+                    {/* CHECKIN */}
+                    {lookupResult.equipment.status === 'checked_out' && (
+                      <div className="border-t border-gray-800 pt-3 mt-3">
+                        <p className="text-yellow-400 text-xs mb-2">
+                          Currently with: <span className="font-semibold text-white">
+                            {lookupResult.current_assignment ? `${lookupResult.current_assignment.contact_first_name || ''} ${lookupResult.current_assignment.contact_last_name || ''}`.trim()
+                              : `${lookupResult.equipment.contact_first_name || ''} ${lookupResult.equipment.contact_last_name || ''}`.trim() || 'Unknown'}
+                          </span>
+                          {lookupResult.current_assignment?.checked_out_at && <span className="text-gray-500"> since {new Date(lookupResult.current_assignment.checked_out_at).toLocaleDateString()}</span>}
+                        </p>
+                        <div className="flex gap-2 mb-2">
+                          {CONDITION_OPTIONS.map(c => (
+                            <button key={c.value} onClick={() => setConditionIn(c.value)}
+                              className={`flex-1 py-2 text-xs font-medium rounded-lg border ${conditionIn === c.value ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-gray-800 border-gray-700 text-gray-400'}`}>
+                              {c.label}
+                            </button>
+                          ))}
+                        </div>
+                        <input value={checkinNotes} onChange={e => setCheckinNotes(e.target.value)} placeholder="Notes (optional)"
+                          className="w-full px-3 py-2 mb-3 bg-gray-800 text-white text-sm rounded-lg border border-gray-700" />
+                        <button onClick={handleCheckin} disabled={actionLoading}
+                          className="w-full py-3 bg-emerald-500 text-white rounded-xl font-semibold text-sm disabled:opacity-40">
+                          {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Check In Equipment'}
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            ) : manualEntry ? (
+              /* MANUAL ENTRY */
               <div className="flex-1 flex flex-col items-center justify-center p-6">
                 <Package className="w-12 h-12 text-gray-500 mb-4" />
                 <p className="text-white text-sm mb-2">Enter serial number</p>
                 <p className="text-gray-500 text-xs mb-4">Found on the sticker on the headset or box</p>
-                <input
-                  value={manualSerial}
-                  onChange={e => setManualSerial(e.target.value.toUpperCase())}
+                {scanError && (
+                  <div className="w-full max-w-sm p-3 bg-red-500 text-white rounded-xl text-sm flex items-center gap-2 mb-3">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0" /><span className="flex-1">{scanError}</span>
+                    <button onClick={() => setScanError('')}><X className="w-4 h-4" /></button>
+                  </div>
+                )}
+                <input value={manualSerial} onChange={e => setManualSerial(e.target.value.toUpperCase())}
                   onKeyDown={e => { if (e.key === 'Enter' && manualSerial.trim()) handleManualLookup() }}
                   placeholder="340YC... or 3497C..."
                   spellCheck={false} autoComplete="off" autoCorrect="off"
                   className="w-full max-w-sm px-4 py-3 text-center text-lg font-mono bg-gray-900 text-white border border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  autoFocus
-                />
+                  autoFocus />
                 <button onClick={handleManualLookup} disabled={!manualSerial.trim() || scanProcessing}
                   className="mt-4 px-6 py-3 bg-blue-500 text-white rounded-xl font-medium disabled:opacity-40 flex items-center gap-2">
                   {scanProcessing ? <><Loader2 className="w-4 h-4 animate-spin" /> Searching...</> : <><Search className="w-4 h-4" /> Look Up Serial</>}
@@ -605,28 +713,21 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
                 <p className="text-gray-600 text-[10px] mt-3">If not found, you can register it as new equipment</p>
               </div>
             ) : (
+              /* CAMERA */
               <div className="flex-1 relative overflow-hidden">
                 <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
-                {/* Viewfinder overlay */}
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="w-72 h-44 border-2 border-white/60 rounded-xl" />
                 </div>
-
-                {/* Bottom overlay — error, status, capture button, results all layered on camera */}
                 <div className="absolute bottom-0 left-0 right-0 p-4 flex flex-col items-center gap-3 pb-8"
                   style={{ background: 'linear-gradient(transparent, rgba(0,0,0,0.7) 40%)' }}>
-
-                  {/* Error */}
                   {scanError && (
                     <div className="w-full p-3 bg-red-500 text-white rounded-xl text-sm flex items-center gap-2">
-                      <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                      <span className="flex-1">{scanError}</span>
+                      <AlertTriangle className="w-4 h-4 flex-shrink-0" /><span className="flex-1">{scanError}</span>
                       <button onClick={() => setScanError('')}><X className="w-4 h-4" /></button>
                     </div>
                   )}
-
-                  {/* Scan result serials */}
-                  {scanResult && scanResult.serials.length > 0 && !lookupResult && (
+                  {scanResult && scanResult.serials.length > 0 && !lookupResult && !registerSerials.length && (
                     <div className="w-full p-3 bg-gray-900/90 rounded-xl">
                       <p className="text-xs text-gray-400 mb-1">Detected serials:</p>
                       {scanResult.serials.map((s, i) => (
@@ -637,157 +738,15 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
                       ))}
                     </div>
                   )}
-
-                  {/* Register new equipment form */}
-                  {registerSerials.length > 0 && !lookupResult?.equipment && (
-                    <div className="w-full p-4 bg-gray-900/95 rounded-xl">
-                      <p className="text-white text-sm font-semibold mb-1">New Equipment Detected</p>
-                      <p className="text-gray-400 text-xs mb-3">These serials aren&apos;t registered yet. Register to start tracking.</p>
-                      <div className="space-y-1.5 mb-3">
-                        {registerSerials.map((s, i) => (
-                          <div key={i} className="px-3 py-2 bg-gray-800 rounded-lg text-white font-mono text-xs">
-                            {s.type}: {s.value}
-                          </div>
-                        ))}
-                      </div>
-                      <input
-                        value={registerDeviceId}
-                        onChange={e => setRegisterDeviceId(e.target.value)}
-                        placeholder="Device ID (e.g. NP-MQ0007)"
-                        className="w-full px-3 py-2.5 mb-3 bg-gray-800 text-white text-sm rounded-lg border border-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      />
-                      <button onClick={handleRegister} disabled={registerLoading}
-                        className="w-full py-3 bg-blue-500 text-white rounded-xl font-semibold text-sm disabled:opacity-40">
-                        {registerLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Register Equipment'}
-                      </button>
-                      <button onClick={() => setRegisterSerials([])}
-                        className="w-full mt-2 py-2 text-gray-400 text-xs hover:text-white">
-                        Cancel
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Status message */}
-                  {scanStatus && (
-                    <div className="bg-black/70 text-white text-xs font-medium px-4 py-2 rounded-full">
-                      {scanStatus}
-                    </div>
-                  )}
-
-                  {/* Capture button */}
+                  {scanStatus && <div className="bg-black/70 text-white text-xs font-medium px-4 py-2 rounded-full">{scanStatus}</div>}
                   <button onClick={captureAndScan} disabled={scanProcessing}
                     className="w-16 h-16 rounded-full bg-white flex items-center justify-center active:scale-95 transition-transform disabled:opacity-50 shadow-lg">
-                    {scanProcessing
-                      ? <Loader2 className="w-7 h-7 text-gray-800 animate-spin" />
-                      : <Camera className="w-7 h-7 text-gray-800" />
-                    }
+                    {scanProcessing ? <Loader2 className="w-7 h-7 text-gray-800 animate-spin" /> : <Camera className="w-7 h-7 text-gray-800" />}
                   </button>
                 </div>
               </div>
             )}
-
-            {/* Lookup result — Equipment found (full-screen overlay on camera) */}
-            {lookupResult?.equipment && (
-              <div className="absolute inset-0 z-10 bg-black/95 overflow-y-auto p-4 pt-16">
-                {/* Back button */}
-                <button onClick={() => { setLookupResult(null); setScanResult(null); setSelectedContact(''); setPurpose(''); startCamera() }}
-                  className="mb-3 text-gray-400 text-xs flex items-center gap-1 hover:text-white">
-                  <ArrowLeft className="w-3 h-3" /> Back to scan
-                </button>
-                {/* Equipment info */}
-                <div className="flex items-center gap-3 mb-3">
-                  <Package className="w-5 h-5 text-blue-400" />
-                  <div>
-                    <p className="text-white font-semibold text-sm">{lookupResult.equipment.device_id || 'Unknown Device'}</p>
-                    <p className="text-gray-400 text-xs">{lookupResult.equipment.device_type}</p>
-                  </div>
-                  <span className="ml-auto text-xs font-bold px-2 py-1 rounded"
-                    style={{
-                      backgroundColor: EQUIPMENT_STATUS_CONFIG[lookupResult.equipment.status]?.bg,
-                      color: EQUIPMENT_STATUS_CONFIG[lookupResult.equipment.status]?.color,
-                    }}>
-                    {EQUIPMENT_STATUS_CONFIG[lookupResult.equipment.status]?.label}
-                  </span>
-                </div>
-
-                {lookupResult.equipment.bundle_serial && (
-                  <p className="text-xs text-gray-500 font-mono mb-1">Bundle: {lookupResult.equipment.bundle_serial}</p>
-                )}
-                {lookupResult.equipment.headset_serial && (
-                  <p className="text-xs text-gray-500 font-mono mb-2">Headset: {lookupResult.equipment.headset_serial}</p>
-                )}
-
-                {/* CHECKOUT FORM */}
-                {lookupResult.equipment.status === 'available' && (
-                  <div className="border-t border-gray-800 pt-3 mt-3">
-                    <p className="text-white text-xs font-semibold mb-2">Check Out To:</p>
-                    <input value={contactSearch} onChange={e => setContactSearch(e.target.value)}
-                      placeholder="Search contacts..."
-                      className="w-full px-3 py-2 mb-2 bg-gray-800 text-white text-sm rounded-lg border border-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                    <select value={selectedContact} onChange={e => setSelectedContact(e.target.value)}
-                      className="w-full px-3 py-2.5 bg-gray-800 text-white text-sm rounded-lg border border-gray-700 mb-2">
-                      <option value="">Select a contact...</option>
-                      {filteredContacts.map(c => (
-                        <option key={c.id} value={c.id}>
-                          {c.first_name} {c.last_name} — {c.pipeline_stage}{c.phone ? ` (${c.phone})` : ''}
-                        </option>
-                      ))}
-                    </select>
-                    <input value={purpose} onChange={e => setPurpose(e.target.value)}
-                      placeholder="Purpose (optional)"
-                      className="w-full px-3 py-2 mb-2 bg-gray-800 text-white text-sm rounded-lg border border-gray-700" />
-                    <div className="flex gap-2 mb-3">
-                      {CONDITION_OPTIONS.map(c => (
-                        <button key={c.value} onClick={() => setConditionOut(c.value)}
-                          className={`flex-1 py-2 text-xs font-medium rounded-lg border ${
-                            conditionOut === c.value ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-gray-800 border-gray-700 text-gray-400'
-                          }`}>
-                          {c.label}
-                        </button>
-                      ))}
-                    </div>
-                    <button onClick={handleCheckout} disabled={!selectedContact || actionLoading}
-                      className="w-full py-3 bg-blue-500 text-white rounded-xl font-semibold text-sm disabled:opacity-40">
-                      {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Assign Equipment'}
-                    </button>
-                  </div>
-                )}
-
-                {/* CHECKIN FORM */}
-                {lookupResult.equipment.status === 'checked_out' && (
-                  <div className="border-t border-gray-800 pt-3 mt-3">
-                    <p className="text-yellow-400 text-xs mb-2">
-                      Currently with: <span className="font-semibold text-white">
-                        {lookupResult.current_assignment
-                          ? `${lookupResult.current_assignment.contact_first_name || ''} ${lookupResult.current_assignment.contact_last_name || ''}`.trim()
-                          : `${lookupResult.equipment.contact_first_name || ''} ${lookupResult.equipment.contact_last_name || ''}`.trim() || 'Unknown'}
-                      </span>
-                      {lookupResult.current_assignment?.checked_out_at && (
-                        <span className="text-gray-500"> since {new Date(lookupResult.current_assignment.checked_out_at).toLocaleDateString()}</span>
-                      )}
-                    </p>
-                    <div className="flex gap-2 mb-2">
-                      {CONDITION_OPTIONS.map(c => (
-                        <button key={c.value} onClick={() => setConditionIn(c.value)}
-                          className={`flex-1 py-2 text-xs font-medium rounded-lg border ${
-                            conditionIn === c.value ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-gray-800 border-gray-700 text-gray-400'
-                          }`}>
-                          {c.label}
-                        </button>
-                      ))}
-                    </div>
-                    <input value={checkinNotes} onChange={e => setCheckinNotes(e.target.value)}
-                      placeholder="Notes (optional)"
-                      className="w-full px-3 py-2 mb-3 bg-gray-800 text-white text-sm rounded-lg border border-gray-700" />
-                    <button onClick={handleCheckin} disabled={actionLoading}
-                      className="w-full py-3 bg-emerald-500 text-white rounded-xl font-semibold text-sm disabled:opacity-40">
-                      {actionLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Check In Equipment'}
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-          </>
+          </div>
         )}
 
         <canvas ref={canvasRef} className="hidden" />
