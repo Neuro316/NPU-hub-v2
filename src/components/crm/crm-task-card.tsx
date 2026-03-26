@@ -368,6 +368,7 @@ export function CrmTaskDetail(props: CrmTaskDetailProps) {
             <label className="text-[8px] font-semibold text-gray-400 uppercase tracking-wider block mb-1">Description</label>
             {editing ? (
               <textarea value={description} onChange={e => setDescription(e.target.value)} rows={2}
+                spellCheck autoCapitalize="sentences" autoCorrect="on"
                 className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-md resize-none focus:outline-none focus:ring-1 focus:ring-np-blue/30 bg-white" placeholder="What needs to be done..." />
             ) : <p className="text-xs text-gray-600 whitespace-pre-wrap">{description || 'No description'}</p>}
           </div>

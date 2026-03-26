@@ -86,8 +86,10 @@ export function ProjectManager({ open, onClose, projects, onAdd, onUpdate, onDel
           {(adding || editingId) && (
             <div className="mb-4 bg-gray-50 rounded-xl p-4 space-y-3">
               <input value={name} onChange={e => setName(e.target.value)} placeholder="Project name..."
+                spellCheck autoCapitalize="words" autoCorrect="on" autoComplete="off"
                 className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-np-blue/20" autoFocus />
               <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Description (optional)..."
+                spellCheck autoCapitalize="sentences" autoCorrect="on"
                 rows={2} className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-np-blue/20 resize-none" />
               <div className="flex items-center gap-3">
                 <div className="flex gap-1">

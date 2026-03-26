@@ -550,8 +550,10 @@ function TasksPageInner() {
           <h3 className="text-xs font-semibold text-np-dark mb-2">Quick Add Task</h3>
           <input value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleQuickAddTask(); if (e.key === 'Escape') setAddingTask(false) }}
+            spellCheck autoCapitalize="sentences" autoCorrect="on" autoComplete="off"
             placeholder="Task title..." className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-np-blue/20 placeholder-gray-300 mb-2" autoFocus />
           <textarea value={newTaskNotes} onChange={e => setNewTaskNotes(e.target.value)}
+            spellCheck autoCapitalize="sentences" autoCorrect="on"
             placeholder="Notes (optional)..." rows={2}
             className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 mb-2 focus:outline-none focus:ring-2 focus:ring-np-blue/20 placeholder-gray-300 resize-none" />
           <div className="grid grid-cols-2 gap-2 mb-2">

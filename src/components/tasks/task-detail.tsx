@@ -429,6 +429,7 @@ export function TaskDetail({
               <textarea value={description}
                 onChange={e => setDescription(e.target.value)}
                 onBlur={() => description !== (task.description || '') && save('description', description)}
+                spellCheck autoCapitalize="sentences" autoCorrect="on"
                 placeholder="Describe this task..." rows={4}
                 className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 resize-none" />
             </div>

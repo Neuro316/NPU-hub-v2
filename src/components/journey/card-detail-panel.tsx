@@ -412,11 +412,13 @@ When the user asks you to write, rewrite, or change the email, return the full u
           <div className="px-5 py-4 space-y-4">
             {/* Title */}
             <input value={title} onChange={e => setTitle(e.target.value)} onBlur={() => save('title', title)}
+              spellCheck autoCapitalize="words" autoCorrect="on" autoComplete="off"
               className="w-full text-lg font-bold text-np-dark border-0 border-b-2 border-transparent focus:border-np-blue/30 focus:outline-none pb-1 bg-transparent placeholder-gray-300"
               placeholder="Card title" />
 
             {/* Description */}
             <textarea value={description} onChange={e => setDescription(e.target.value)} onBlur={() => save('description', description)}
+              spellCheck autoCapitalize="sentences" autoCorrect="on"
               rows={2} placeholder="Describe this step..."
               className="w-full text-sm text-gray-600 border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 resize-none" />
 
@@ -604,6 +606,7 @@ When the user asks you to write, rewrite, or change the email, return the full u
                     )}
 
                     <textarea value={personalNote} onChange={e => setPersonalNote(e.target.value)}
+                      spellCheck autoCapitalize="sentences" autoCorrect="on"
                       placeholder="Write your email message or use a template above..."
                       rows={4}
                       className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 resize-none" />
@@ -783,6 +786,7 @@ When the user asks you to write, rewrite, or change the email, return the full u
               <textarea value={fields.notes || ''}
                 onChange={e => setFields(prev => ({ ...prev, notes: e.target.value }))}
                 onBlur={() => saveFields({ notes: fields.notes })}
+                spellCheck autoCapitalize="sentences" autoCorrect="on"
                 placeholder="Internal notes, reminders, next steps..."
                 rows={2} className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 resize-none" />
             </div>

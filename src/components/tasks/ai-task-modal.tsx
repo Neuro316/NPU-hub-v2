@@ -362,9 +362,11 @@ export function AITaskModal({
             {editingTask ? (
               <div className="space-y-2">
                 <input value={editFields.title} onChange={e => setEditFields({ ...editFields, title: e.target.value })}
+                  spellCheck autoCapitalize="sentences" autoCorrect="on" autoComplete="off"
                   className="w-full text-xs font-semibold border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30"
                   placeholder="Title" />
                 <textarea value={editFields.description || ''} onChange={e => setEditFields({ ...editFields, description: e.target.value || null })}
+                  spellCheck autoCapitalize="sentences" autoCorrect="on"
                   className="w-full text-[10px] border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30 resize-none" rows={2}
                   placeholder="Description" />
                 <div className="grid grid-cols-3 gap-2">
