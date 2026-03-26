@@ -85,6 +85,37 @@ export async function POST(req: NextRequest) {
   }
 }
 
+// PATCH /api/equipment — update equipment fields
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const { id, ...updates } = body
+    if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+
+    const admin = createAdminSupabase()
+    const { data, error } = await admin
+      .from('equipment')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select().single()
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    // Log status change
+    if (updates.status) {
+      await admin.from('equipment_history').insert({
+        equipment_id: id,
+        action: `status_${updates.status}`,
+        notes: `Status changed to ${updates.status}`,
+      })
+    }
+
+    return NextResponse.json({ equipment: data })
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 })
+  }
+}
+
 // DELETE /api/equipment — delete one or many equipment records
 // Body: { id: string } or { ids: string[] }
 export async function DELETE(req: NextRequest) {

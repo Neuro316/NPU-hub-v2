@@ -33,6 +33,8 @@ export default function EquipmentPage() {
   const [selectMode, setSelectMode] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [statusDropdownId, setStatusDropdownId] = useState<string | null>(null)
+  const [checkoutModalEquipId, setCheckoutModalEquipId] = useState<string | null>(null)
 
   const toggleSelect = (id: string) => {
     setSelected(prev => {
@@ -66,6 +68,56 @@ export default function EquipmentPage() {
       alert('Bulk delete failed: ' + e.message)
     }
     setBulkDeleting(false)
+  }
+
+  // Change equipment status via dropdown
+  const handleStatusChange = async (equipId: string, newStatus: string) => {
+    setStatusDropdownId(null)
+    if (newStatus === 'checked_out') {
+      // Need to pick a contact — open checkout modal
+      setCheckoutModalEquipId(equipId)
+      return
+    }
+    // For other statuses, update directly
+    const equip = equipment.find(e => e.id === equipId)
+    if (!equip) return
+    try {
+      // If currently checked out, auto check-in first
+      if (equip.status === 'checked_out') {
+        await fetch('/api/equipment/checkin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ equipment_id: equipId, condition_in: 'good', notes: `Status changed to ${newStatus}` }),
+        })
+      }
+      // If target isn't 'available', update status (checkin already sets to available)
+      if (newStatus !== 'available' || equip.status !== 'checked_out') {
+        await fetch('/api/equipment', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: equipId, status: newStatus }),
+        })
+      }
+      fetchEquipment()
+    } catch (e: any) {
+      console.error('[Equipment] status change error:', e)
+    }
+  }
+
+  // Quick checkout from status dropdown
+  const handleQuickCheckout = async (equipId: string, contactId: string) => {
+    if (!currentOrg) return
+    setCheckoutModalEquipId(null)
+    try {
+      await fetch('/api/equipment/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ equipment_id: equipId, contact_id: contactId, org_id: currentOrg.id, condition_out: 'good' }),
+      })
+      fetchEquipment()
+    } catch (e: any) {
+      console.error('[Equipment] quick checkout error:', e)
+    }
   }
 
   // Scan state
@@ -774,7 +826,7 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
 
   // ─── DEFAULT LIST VIEW ───
   return (
-    <div>
+    <div onClick={() => setStatusDropdownId(null)}>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -929,48 +981,101 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
                     onChange={() => toggleSelect(e.id)}
                     className="w-4 h-4 accent-red-500 flex-shrink-0 cursor-pointer" />
                 )}
-                <button onClick={() => selectMode ? toggleSelect(e.id) : openDeviceDetail(e)}
-                  className={`w-full text-left bg-white border rounded-xl p-4 flex items-center gap-3 hover:shadow-md transition-all ${
+                <div className={`w-full bg-white border rounded-xl p-4 flex items-center gap-3 transition-all ${
                     selected.has(e.id) ? 'border-red-300 bg-red-50/50' : 'border-gray-100 hover:border-gray-200'
                   }`}>
-                  {/* Avatar / Status icon */}
-                  {e.status === 'checked_out' && e.contact_first_name ? (
-                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                      <span className="text-sm font-bold text-blue-600">
-                        {(e.contact_first_name?.[0] || '')}{(e.contact_last_name?.[0] || '')}
-                      </span>
+                  {/* Clickable area — opens detail */}
+                  <button onClick={() => selectMode ? toggleSelect(e.id) : openDeviceDetail(e)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                    {/* Avatar / Status icon */}
+                    {e.status === 'checked_out' && e.contact_first_name ? (
+                      <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                        <span className="text-sm font-bold text-blue-600">
+                          {(e.contact_first_name?.[0] || '')}{(e.contact_last_name?.[0] || '')}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
+                        style={{ backgroundColor: st.bg }}>
+                        <Package className="w-5 h-5" style={{ color: st.color }} />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-np-dark truncate">
+                          {e.status === 'checked_out' && e.contact_first_name
+                            ? `${e.contact_first_name} ${e.contact_last_name || ''}`.trim()
+                            : e.status === 'available' ? 'Available' : st.label}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-gray-500 font-mono truncate mt-0.5">
+                        {e.headset_serial || e.bundle_serial || 'No serial'}
+                      </p>
+                      <p className="text-[10px] text-gray-400 mt-0.5">{e.device_id || 'No device ID'}</p>
                     </div>
-                  ) : (
-                    <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
-                      style={{ backgroundColor: st.bg }}>
-                      <Package className="w-5 h-5" style={{ color: st.color }} />
+                  </button>
+
+                  {/* Status dropdown */}
+                  {!selectMode && (
+                    <div className="relative flex-shrink-0">
+                      <button onClick={(ev) => { ev.stopPropagation(); setStatusDropdownId(statusDropdownId === e.id ? null : e.id) }}
+                        className="px-2 py-1 text-[9px] font-bold rounded flex items-center gap-1 hover:opacity-80"
+                        style={{ backgroundColor: st.bg, color: st.color }}>
+                        {st.label} <ChevronDown className="w-3 h-3" />
+                      </button>
+                      {statusDropdownId === e.id && (
+                        <div className="absolute right-0 top-full mt-1 z-30 w-40 bg-white rounded-lg shadow-xl border border-gray-100 py-1">
+                          {(['available', 'checked_out', 'maintenance', 'retired'] as const).map(s => {
+                            const sc = EQUIPMENT_STATUS_CONFIG[s]
+                            return (
+                              <button key={s} onClick={() => handleStatusChange(e.id, s)}
+                                className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 flex items-center gap-2 ${e.status === s ? 'font-bold' : ''}`}>
+                                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: sc.color }} />
+                                {sc.label}
+                                {e.status === s && <span className="ml-auto text-[9px] text-gray-400">current</span>}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
                   )}
-                  <div className="flex-1 min-w-0">
-                    {/* PRIMARY: Contact name or "Available" */}
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-np-dark truncate">
-                        {e.status === 'checked_out' && e.contact_first_name
-                          ? `${e.contact_first_name} ${e.contact_last_name || ''}`.trim()
-                          : e.status === 'available' ? 'Available' : st.label}
-                      </span>
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0"
-                        style={{ backgroundColor: st.bg, color: st.color }}>
-                        {st.label}
-                      </span>
-                    </div>
-                    {/* SECONDARY: Serial number */}
-                    <p className="text-[11px] text-gray-500 font-mono truncate mt-0.5">
-                      {e.headset_serial || e.bundle_serial || 'No serial'}
-                    </p>
-                    {/* TERTIARY: Device ID */}
-                    <p className="text-[10px] text-gray-400 mt-0.5">{e.device_id || 'No device ID'}</p>
-                  </div>
-                  {!selectMode && <ChevronDown className="w-4 h-4 text-gray-300 -rotate-90 flex-shrink-0" />}
-                </button>
+                </div>
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Quick Checkout Modal — shown when changing status to checked_out */}
+      {checkoutModalEquipId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setCheckoutModalEquipId(null)} />
+          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-np-dark">Check Out To</h3>
+              <button onClick={() => setCheckoutModalEquipId(null)}><X className="w-4 h-4 text-gray-400" /></button>
+            </div>
+            <input value={contactSearch} onChange={e => setContactSearch(e.target.value)}
+              placeholder="Search contacts..."
+              className="w-full px-3 py-2 mb-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
+            <div className="max-h-60 overflow-y-auto space-y-1">
+              {filteredContacts.map(c => (
+                <button key={c.id} onClick={() => handleQuickCheckout(checkoutModalEquipId, c.id)}
+                  className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-gray-50 flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-np-blue/10 flex items-center justify-center flex-shrink-0">
+                    <span className="text-xs font-bold text-np-blue">{(c.first_name?.[0] || '')}{(c.last_name?.[0] || '')}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-np-dark">{c.first_name} {c.last_name}</p>
+                    <p className="text-[10px] text-gray-400">{c.pipeline_stage}{c.phone ? ` · ${c.phone}` : ''}</p>
+                  </div>
+                </button>
+              ))}
+              {filteredContacts.length === 0 && (
+                <p className="text-xs text-gray-400 text-center py-4">No eligible contacts found</p>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
