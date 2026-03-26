@@ -69,6 +69,7 @@ export async function POST(req: NextRequest) {
     let created = 0
     let updated = 0
     let assigned = 0
+    let contactsCreated = 0
 
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i].trim()
@@ -96,10 +97,31 @@ export async function POST(req: NextRequest) {
         continue
       }
 
-      const contact = assignedName ? findContact(assignedName) : null
+      let contact = assignedName ? findContact(assignedName) : null
       if (assignedName && !contact) {
-        warnings.push(`Row ${i + 1}: "${assignedName}" not found in contacts — imported as available`)
-        status = 'available'
+        // Auto-create contact
+        const nameParts = assignedName.trim().split(/\s+/)
+        const firstName = nameParts.length > 1 ? nameParts.slice(0, -1).join(' ') : null
+        const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : nameParts[0]
+        const { data: newContact, error: contactErr } = await admin
+          .from('contacts')
+          .insert({
+            org_id,
+            first_name: firstName,
+            last_name: lastName,
+            pipeline_stage: 'Enrolled',
+          })
+          .select('id, first_name, last_name')
+          .single()
+        if (newContact && !contactErr) {
+          contact = newContact
+          contactList.push(newContact) // Add to local cache for subsequent rows
+          contactsCreated++
+          warnings.push(`Row ${i + 1}: created new contact "${assignedName}" (Enrolled pipeline)`)
+        } else {
+          warnings.push(`Row ${i + 1}: failed to create contact "${assignedName}" — ${contactErr?.message || 'unknown'}, imported as available`)
+          status = 'available'
+        }
       }
 
       // Skip rows with no identifying info
@@ -231,6 +253,7 @@ export async function POST(req: NextRequest) {
       updated,
       assigned,
       total: created + updated,
+      contacts_created: contactsCreated,
       errors: errors.length > 0 ? errors : undefined,
       warnings: warnings.length > 0 ? warnings : undefined,
     })
