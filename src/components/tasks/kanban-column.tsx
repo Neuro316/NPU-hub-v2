@@ -44,14 +44,21 @@ export function KanbanColumnView({
     setAddingTask(false)
   }
 
+  const [saving, setSaving] = useState(false)
   const handleAddTask = async () => {
-    if (!newTitle.trim()) return
+    if (!newTitle.trim() || saving) return
+    setSaving(true)
     const extra: Partial<KanbanTask> = { priority: newPriority }
     if (newAssignee) extra.assignee = newAssignee
     if (newDueDate) extra.due_date = newDueDate
     if (newPersonal) extra.visibility = 'private'
-    await onAddTask(column.id, newTitle.trim(), extra)
-    resetForm()
+    try {
+      await onAddTask(column.id, newTitle.trim(), extra)
+      resetForm()
+    } catch (e) {
+      console.error('[KanbanColumn] addTask error:', e)
+    }
+    setSaving(false)
   }
 
   const handleSaveTitle = async () => {
@@ -130,9 +137,10 @@ export function KanbanColumnView({
             <input
               value={newTitle}
               onChange={e => setNewTitle(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && newTitle.trim()) handleAddTask(); if (e.key === 'Escape') resetForm() }}
+              onKeyDown={e => { if (e.key === 'Enter' && newTitle.trim()) { e.preventDefault(); handleAddTask() } if (e.key === 'Escape') resetForm() }}
+              spellCheck autoCapitalize="sentences" autoCorrect="on" autoComplete="off"
               placeholder="Task title..."
-              className="w-full text-xs border-none focus:outline-none placeholder-gray-300"
+              className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300"
               autoFocus
             />
 
@@ -198,7 +206,10 @@ export function KanbanColumnView({
 
             {/* Actions */}
             <div className="flex gap-1 pt-0.5">
-              <button onClick={handleAddTask} className="text-[10px] bg-np-blue text-white px-2.5 py-1 rounded font-medium hover:bg-np-blue/90">Add</button>
+              <button onClick={handleAddTask} disabled={!newTitle.trim() || saving}
+                className="text-[10px] bg-np-blue text-white px-2.5 py-1 rounded font-medium hover:bg-np-blue/90 disabled:opacity-40">
+                {saving ? 'Saving...' : 'Add'}
+              </button>
               <button onClick={resetForm} className="text-[10px] text-gray-400 px-2 py-1 hover:text-gray-600">Cancel</button>
             </div>
           </div>
