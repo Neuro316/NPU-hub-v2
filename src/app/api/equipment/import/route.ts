@@ -66,6 +66,7 @@ export async function POST(req: NextRequest) {
     // Parse rows
     // Look up the Enrolled pipeline ID so new contacts get assigned correctly
     let enrolledPipelineId: string | null = null
+    let enrolledFirstStage: string | null = null
     const { data: pipelineConfig } = await admin
       .from('org_settings')
       .select('setting_value')
@@ -76,7 +77,13 @@ export async function POST(req: NextRequest) {
       const enrolledPipeline = pipelineConfig.setting_value.pipelines.find(
         (p: any) => p.name?.toLowerCase().includes('enrolled') || p.stages?.some((s: any) => s.name?.toLowerCase() === 'enrolled')
       )
-      if (enrolledPipeline) enrolledPipelineId = enrolledPipeline.id
+      if (enrolledPipeline) {
+        enrolledPipelineId = enrolledPipeline.id
+        // Use the first stage name from this pipeline instead of hardcoded 'Enrolled'
+        const stages = enrolledPipeline.stages || []
+        const sorted = [...stages].sort((a: any, b: any) => (a.position ?? 0) - (b.position ?? 0))
+        if (sorted.length > 0) enrolledFirstStage = sorted[0].name
+      }
     }
 
     const errors: string[] = []
@@ -124,7 +131,7 @@ export async function POST(req: NextRequest) {
             org_id,
             first_name: firstName,
             last_name: lastName,
-            pipeline_stage: 'Enrolled',
+            pipeline_stage: enrolledFirstStage || 'Enrolled',
             ...(enrolledPipelineId ? { pipeline_id: enrolledPipelineId } : {}),
           })
           .select('id, first_name, last_name')
