@@ -706,6 +706,7 @@ export default function ShipItPage() {
               <div>
                 <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Project Name *</label>
                 <input value={meta.name} onChange={e => setMeta(p => ({ ...p, name: e.target.value }))}
+                  spellCheck autoCapitalize="words" autoCorrect="on" autoComplete="off"
                   placeholder="What are you shipping?" className="w-full text-sm font-semibold border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-np-blue/20" />
               </div>
               <div>
@@ -718,6 +719,7 @@ export default function ShipItPage() {
               <div>
                 <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Vision</label>
                 <input value={meta.description} onChange={e => setMeta(p => ({ ...p, description: e.target.value }))}
+                  spellCheck autoCapitalize="sentences" autoCorrect="on" autoComplete="off"
                   placeholder="One sentence: what does success look like?" className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-np-blue/20" />
               </div>
               <div>
@@ -749,6 +751,7 @@ export default function ShipItPage() {
                       <div key={f.id}>
                         <label className="text-[11px] font-medium text-gray-500 block mb-1">{f.label}</label>
                         <textarea value={sectionData[f.id] || ''} onChange={e => setSectionData(p => ({ ...p, [f.id]: e.target.value }))}
+                          spellCheck autoCapitalize="sentences" autoCorrect="on" autoComplete="off"
                           placeholder={f.placeholder} rows={(f as any).rows || 2}
                           className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-np-blue/20 placeholder-gray-300 resize-vertical" />
                       </div>
@@ -843,6 +846,7 @@ export default function ShipItPage() {
             <div className="flex gap-2">
               <input value={chatInput} onChange={e => setChatInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat() } }}
+                spellCheck autoCapitalize="sentences" autoCorrect="on" autoComplete="off"
                 placeholder="Ask about your project... or /insert milestones"
                 className="flex-1 text-[11px] border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500/20 placeholder-gray-300" />
               <button onClick={sendChat} disabled={aiLoading || !chatInput.trim()}
