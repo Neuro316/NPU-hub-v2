@@ -429,6 +429,34 @@ export function useTaskData() {
   }, [projects, getProjectProgress])
 
   // ─── ShipIt → Project Creation ──────────────────────────────
+  // Use AI to break text into individual atomic tasks
+  const aiExtractTasks = async (text: string, context: string): Promise<string[]> => {
+    if (!text.trim()) return []
+    try {
+      const res = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: `Break the following ${context} into individual, actionable tasks. Each task should be something one person can complete in one sitting. Return ONLY a JSON array of task title strings, nothing else.\n\nText:\n${text}` }],
+          campaignContext: { type: 'task_extract', systemOverride: 'You extract actionable tasks from project descriptions. Return ONLY a valid JSON array of strings like ["Task 1","Task 2"]. No markdown, no explanation.' },
+        }),
+      })
+      const data = await res.json()
+      const content = (data.content || '').trim()
+      // Parse JSON array from response
+      let parsed = content
+      if (parsed.startsWith('```')) parsed = parsed.replace(/^```json?\n?/, '').replace(/\n?```$/, '').trim()
+      const arr = JSON.parse(parsed)
+      if (Array.isArray(arr)) return arr.filter((t: any) => typeof t === 'string' && t.trim())
+    } catch (e) {
+      console.warn('[createProjectFromShipIt] AI task extraction failed, using line split:', e)
+    }
+    // Fallback: simple line split
+    return text.split('\n')
+      .map(l => l.replace(/^\d+[\.\)\-]\s*/, '').replace(/^[\-\*]\s*/, '').trim())
+      .filter(l => l.length > 0)
+  }
+
   const createProjectFromShipIt = async (
     shipitId: string,
     name: string,
@@ -454,27 +482,30 @@ export function useTaskData() {
 
     let tasksCreated = 0
 
-    // 4. Parse milestones from "The Actual Work" section
+    // 4. AI-extract milestones as individual tasks
     const milestones = sectionData['milestones'] || ''
-    const milestoneLines = milestones.split('\n')
-      .map(l => l.replace(/^\d+[\.\)\-]\s*/, '').trim())
-      .filter(l => l.length > 0)
-    for (const title of milestoneLines) {
-      await addTask(targetColumn.id, title, {
-        project_id: projectId,
-        milestone: true,
-        due_date: shipDate,
-        source: 'shipit',
-      } as Partial<KanbanTask>)
-      tasksCreated++
+    if (milestones.trim()) {
+      const tasks = await aiExtractTasks(milestones, 'project milestones')
+      for (const title of tasks) {
+        await addTask(targetColumn.id, title, {
+          project_id: projectId,
+          milestone: true,
+          due_date: shipDate,
+          source: 'shipit',
+        } as Partial<KanbanTask>)
+        tasksCreated++
+      }
     }
 
-    // 5. Parse blockers
+    // 5. AI-extract blockers as individual tasks
+    const blockerTexts: string[] = []
     for (const field of ['waiting', 'missing', 'one-blocker']) {
       const text = sectionData[field]?.trim()
-      if (!text) continue
-      const lines = text.split('\n').map(l => l.replace(/^[\-\*]\s*/, '').trim()).filter(l => l.length > 0)
-      for (const title of lines) {
+      if (text) blockerTexts.push(text)
+    }
+    if (blockerTexts.length > 0) {
+      const tasks = await aiExtractTasks(blockerTexts.join('\n\n'), 'blockers and dependencies')
+      for (const title of tasks) {
         await addTask(targetColumn.id, `[Blocker] ${title}`, {
           project_id: projectId,
           priority: 'high',
@@ -484,8 +515,8 @@ export function useTaskData() {
       }
     }
 
-    // 6. Parse 30-minute action if present
-    const quickAction = sectionData['thirty-min']?.trim()
+    // 6. Parse 30-minute action
+    const quickAction = (sectionData['30min'] || sectionData['thirty-min'] || '').trim()
     if (quickAction) {
       await addTask(targetColumn.id, quickAction, {
         project_id: projectId,

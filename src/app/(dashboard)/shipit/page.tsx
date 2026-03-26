@@ -162,6 +162,30 @@ Keep responses concise (2-4 sentences per point). Use plain language. No em dash
 
 When asked to evaluate the full journal, give a structured assessment covering: clarity score, shipping readiness, biggest risk, and one recommended action.`
 
+const AI_HORMOZI = `You are an elite business strategist combining Alex Hormozi's value creation framework with Seth Godin's shipping mindset. You help users define irresistible offers and then ship them.
+
+Your approach follows Hormozi's Value Equation: Value = (Dream Outcome x Perceived Likelihood of Achievement) / (Time Delay x Effort & Sacrifice)
+
+CONVERSATION FLOW (guide the user through these in order, one at a time):
+
+1. THE REAL PROBLEM: "What's the actual problem you're solving? Not the surface symptom, the root cause that keeps people up at night."
+2. WHO HAS IT WORST: "Who experiences this problem most painfully? Be specific. Name the person. What's their day like?"
+3. DREAM OUTCOME: "If this worked perfectly, what transformation would they experience? Not features. The before/after of their life."
+4. THE GRAND SLAM OFFER: "What would make this so valuable they'd feel stupid saying no? What bonuses, guarantees, or urgency would stack the value?"
+5. THE MECHANICS: "What's the actual work? Break it into concrete deliverables with deadlines."
+6. WHAT COULD KILL IT: "What are the 3 things most likely to make this fail? Be honest."
+
+RULES:
+- Ask ONE question at a time. Wait for their answer before moving on.
+- When they give a vague answer, push harder: "That's surface level. Go deeper. Why does THAT matter?"
+- Use their answers to populate concrete milestones and blockers.
+- After completing the interview, summarize into ShipIt journal sections.
+- When summarizing, use numbered lists for milestones and bullet points for blockers.
+- Keep responses to 2-4 sentences. Be direct. No fluff.
+- Track which steps are complete. When the user seems ready, suggest: "Ready to populate your journal? I'll organize everything we discussed into your ShipIt sections."
+
+You are not gentle. You are kind but relentless about clarity and specificity.`
+
 function buildJournalText(meta: any, sections: Record<string, string>) {
   let text = `SHIPIT JOURNAL: ${meta.name || 'Untitled'}\nShip Date: ${meta.shipDate || 'Not set'}\nStatus: ${meta.status || 'planning'}\n`
   if (meta.description) text += `Vision: ${meta.description}\n`
@@ -207,6 +231,7 @@ export default function ShipItPage() {
   const [chatMsgs, setChatMsgs] = useState<Array<{ role: string; content: string }>>([])
   const [chatInput, setChatInput] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
+  const [hormoziMode, setHormoziMode] = useState(false)
   const chatRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => { chatRef.current?.scrollTo(0, chatRef.current?.scrollHeight || 0) }, [chatMsgs])
@@ -452,7 +477,7 @@ export default function ShipItPage() {
     try {
       const res = await fetch('/api/ai', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages, campaignContext: { type: 'shipit_coach', systemOverride: AI_SYSTEM } }),
+        body: JSON.stringify({ messages: apiMessages, campaignContext: { type: 'shipit_coach', systemOverride: hormoziMode ? AI_HORMOZI : AI_SYSTEM } }),
       })
       const text = await res.text()
       let data: any
@@ -742,13 +767,19 @@ export default function ShipItPage() {
         {/* RIGHT: AI Coach */}
         <div className="bg-white border border-gray-100 rounded-xl flex flex-col min-h-0">
           <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-teal-500 to-np-blue flex items-center justify-center">
+            <div className={`w-7 h-7 rounded-full flex items-center justify-center ${hormoziMode ? 'bg-gradient-to-br from-orange-500 to-red-500' : 'bg-gradient-to-br from-teal-500 to-np-blue'}`}>
               <Sparkles className="w-3.5 h-3.5 text-white" />
             </div>
-            <div>
-              <div className="text-xs font-bold text-np-dark">ShipIt Coach</div>
-              <div className="text-[9px] text-gray-400">AI assistant to help you ship</div>
+            <div className="flex-1">
+              <div className="text-xs font-bold text-np-dark">{hormoziMode ? 'Hormozi Mode' : 'ShipIt Coach'}</div>
+              <div className="text-[9px] text-gray-400">{hormoziMode ? 'Value equation + deep problem definition' : 'AI assistant to help you ship'}</div>
             </div>
+            <button onClick={() => { setHormoziMode(!hormoziMode); if (!hormoziMode && chatMsgs.length === 0) setChatInput("Let's define this project using the Hormozi framework") }}
+              className={`px-2 py-1 text-[9px] font-bold rounded-md border transition-colors ${
+                hormoziMode ? 'bg-orange-50 text-orange-600 border-orange-200' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-orange-50 hover:text-orange-500 hover:border-orange-200'
+              }`}>
+              {hormoziMode ? 'Hormozi ON' : 'Hormozi'}
+            </button>
           </div>
 
           <div ref={chatRef} className="flex-1 overflow-y-auto p-3 space-y-2.5 min-h-0">
@@ -760,7 +791,10 @@ export default function ShipItPage() {
                 <p className="text-xs text-gray-500 mb-1">I'm your ShipIt coach.</p>
                 <p className="text-[10px] text-gray-400 mb-4">Fill in your journal and I'll help you sharpen your thinking and get this thing shipped.</p>
                 <div className="space-y-1.5">
-                  {['Evaluate my full journal', "What's my biggest shipping risk?", 'Help me clarify my project scope', 'Am I thrashing or making progress?'].map(q => (
+                  {(hormoziMode
+                    ? ["Let's define this project using the Hormozi framework", "What's the REAL problem I'm solving?", "Help me build a Grand Slam offer", "Who has this problem the worst?"]
+                    : ['Evaluate my full journal', "What's my biggest shipping risk?", 'Help me clarify my project scope', 'Am I thrashing or making progress?']
+                  ).map(q => (
                     <button key={q} onClick={() => setChatInput(q)}
                       className="w-full text-left text-[10px] text-gray-500 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 hover:bg-np-blue/5 hover:border-np-blue/20 hover:text-np-blue transition-all">
                       {q}
