@@ -421,62 +421,29 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
     setScanProcessing(false)
   }
 
-  // Lookup serial in DB (direct Supabase query)
+  // Lookup serial in DB via API route (bypasses RLS)
   const lookupSerial = async (serial: string) => {
     if (!currentOrg) return
     try {
-      const { data: equip } = await supabase
-        .from('equipment')
-        .select('*')
-        .eq('org_id', currentOrg.id)
-        .or(`bundle_serial.eq.${serial},headset_serial.eq.${serial}`)
-        .maybeSingle()
+      const res = await fetch(`/api/equipment/lookup?serial=${encodeURIComponent(serial)}&org_id=${currentOrg.id}`)
+      const data = await res.json()
 
-      if (!equip) {
+      if (data.error) {
+        setScanError(data.error)
+        return
+      }
+
+      if (!data.equipment) {
         setLookupResult({ equipment: null, current_assignment: null })
-        // Store serial for registration
-        const allSerials = scanResult?.serials || [{ value: serial, type: serial.match(/40Y[BC]|497[BC]/) ? (serial.includes('40YB') || serial.includes('497B') ? 'bundle' : 'headset') : 'bundle' }]
+        // Determine serial type for registration
+        const type = (serial.includes('40YB') || serial.includes('497B')) ? 'bundle' : 'headset'
+        const allSerials = scanResult?.serials || [{ value: serial, type }]
         setRegisterSerials(allSerials)
         setRegisterDeviceId(nextDeviceId)
         return
       }
 
-      // Enrich with contact info
-      let enriched: any = { ...equip }
-      if (equip.assigned_to) {
-        const { data: contact } = await supabase
-          .from('contacts').select('first_name, last_name, phone, pipeline_stage').eq('id', equip.assigned_to).maybeSingle()
-        if (contact) {
-          enriched.contact_first_name = contact.first_name
-          enriched.contact_last_name = contact.last_name
-          enriched.contact_phone = contact.phone
-          enriched.contact_pipeline_stage = contact.pipeline_stage
-        }
-      }
-
-      // Get current assignment if checked out
-      let current_assignment = null
-      if (equip.status === 'checked_out') {
-        const { data: assign } = await supabase
-          .from('equipment_assignments')
-          .select('*')
-          .eq('equipment_id', equip.id)
-          .is('checked_in_at', null)
-          .order('checked_out_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-        if (assign) {
-          const { data: aContact } = await supabase
-            .from('contacts').select('first_name, last_name').eq('id', assign.assigned_to_contact_id).maybeSingle()
-          current_assignment = {
-            ...assign,
-            contact_first_name: aContact?.first_name || null,
-            contact_last_name: aContact?.last_name || null,
-          }
-        }
-      }
-
-      setLookupResult({ equipment: enriched, current_assignment })
+      setLookupResult({ equipment: data.equipment, current_assignment: data.current_assignment })
     } catch (e) {
       console.error('[Equipment] lookup error:', e)
       setScanError('Lookup failed')
@@ -620,18 +587,22 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
             {manualEntry ? (
               <div className="flex-1 flex flex-col items-center justify-center p-6">
                 <Package className="w-12 h-12 text-gray-500 mb-4" />
-                <p className="text-white text-sm mb-4">Enter serial number manually</p>
+                <p className="text-white text-sm mb-2">Enter serial number</p>
+                <p className="text-gray-500 text-xs mb-4">Found on the sticker on the headset or box</p>
                 <input
                   value={manualSerial}
                   onChange={e => setManualSerial(e.target.value.toUpperCase())}
-                  placeholder="e.g. 340YB0FGBV0G9K"
+                  onKeyDown={e => { if (e.key === 'Enter' && manualSerial.trim()) handleManualLookup() }}
+                  placeholder="340YC... or 3497C..."
+                  spellCheck={false} autoComplete="off" autoCorrect="off"
                   className="w-full max-w-sm px-4 py-3 text-center text-lg font-mono bg-gray-900 text-white border border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
                   autoFocus
                 />
                 <button onClick={handleManualLookup} disabled={!manualSerial.trim() || scanProcessing}
-                  className="mt-4 px-6 py-3 bg-blue-500 text-white rounded-xl font-medium disabled:opacity-40">
-                  {scanProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Look Up'}
+                  className="mt-4 px-6 py-3 bg-blue-500 text-white rounded-xl font-medium disabled:opacity-40 flex items-center gap-2">
+                  {scanProcessing ? <><Loader2 className="w-4 h-4 animate-spin" /> Searching...</> : <><Search className="w-4 h-4" /> Look Up Serial</>}
                 </button>
+                <p className="text-gray-600 text-[10px] mt-3">If not found, you can register it as new equipment</p>
               </div>
             ) : (
               <div className="flex-1 relative overflow-hidden">

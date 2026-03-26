@@ -9,23 +9,30 @@ export async function GET(req: NextRequest) {
 
     const admin = createAdminSupabase()
 
-    // Fetch contacts in eligible pipeline stages (case-insensitive)
+    // Fetch ALL non-archived contacts for this org (don't filter by pipeline_stage)
+    // This ensures contacts created via equipment import always show up
     const { data, error } = await admin
       .from('contacts')
       .select('id, first_name, last_name, phone, pipeline_stage')
       .eq('org_id', orgId)
       .is('archived_at', null)
-      .or('pipeline_stage.ilike.mastermind,pipeline_stage.ilike.enrolled,pipeline_stage.ilike.subscribed')
       .order('last_name')
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) {
+      console.error('[equipment/contacts] query error:', error)
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
 
-    // Sort by priority: Mastermind > Subscribed > Enrolled
+    const contacts = data || []
+    console.log(`[equipment/contacts] Found ${contacts.length} contacts for org ${orgId}`)
+
+    // Sort: Mastermind first, then Subscribed, then Enrolled, then everyone else
     const priority: Record<string, number> = { mastermind: 0, subscribed: 1, enrolled: 2 }
-    const sorted = (data || []).sort((a, b) => {
-      const aP = priority[(a.pipeline_stage || '').toLowerCase()] ?? 99
-      const bP = priority[(b.pipeline_stage || '').toLowerCase()] ?? 99
-      return aP - bP
+    const sorted = contacts.sort((a, b) => {
+      const aP = priority[(a.pipeline_stage || '').toLowerCase()] ?? 50
+      const bP = priority[(b.pipeline_stage || '').toLowerCase()] ?? 50
+      if (aP !== bP) return aP - bP
+      return (a.last_name || '').localeCompare(b.last_name || '')
     })
 
     return NextResponse.json({ contacts: sorted })
