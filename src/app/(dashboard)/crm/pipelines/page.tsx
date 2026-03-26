@@ -680,9 +680,21 @@ export default function PipelinesPage() {
     if (!currentOrg) return
     const load = async () => {
       try {
+        // Try browser client first
         const { data } = await createClient().from('org_settings').select('setting_value').eq('org_id', currentOrg.id).eq('setting_key', 'crm_pipelines').maybeSingle()
-        if (data?.setting_value?.pipelines) { setPipelines(data.setting_value.pipelines); setActivePipelineId(data.setting_value.active || data.setting_value.pipelines[0]?.id) }
-      } catch (e) { console.error(e) }
+        if (data?.setting_value?.pipelines) {
+          setPipelines(data.setting_value.pipelines)
+          setActivePipelineId(data.setting_value.active || data.setting_value.pipelines[0]?.id)
+          return
+        }
+        // Fallback: fetch via API route (service role, bypasses RLS)
+        const res = await fetch(`/api/settings/read?org_id=${currentOrg.id}&key=crm_pipelines`)
+        const apiData = await res.json()
+        if (apiData?.setting_value?.pipelines) {
+          setPipelines(apiData.setting_value.pipelines)
+          setActivePipelineId(apiData.setting_value.active || apiData.setting_value.pipelines[0]?.id)
+        }
+      } catch (e) { console.error('[Pipelines] load error:', e) }
     }
     load()
   }, [currentOrg?.id])
