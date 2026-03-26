@@ -385,7 +385,7 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
         // Store serial for registration
         const allSerials = scanResult?.serials || [{ value: serial, type: serial.match(/40Y[BC]|497[BC]/) ? (serial.includes('40YB') || serial.includes('497B') ? 'bundle' : 'headset') : 'bundle' }]
         setRegisterSerials(allSerials)
-        setRegisterDeviceId('')
+        setRegisterDeviceId(nextDeviceId)
         return
       }
 
@@ -520,6 +520,19 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
   const maintenance = equipment.filter(e => e.status === 'maintenance').length
 
   const filtered = statusFilter === 'all' ? equipment : equipment.filter(e => e.status === statusFilter)
+
+  // Auto-generate next device ID
+  const nextDeviceId = (() => {
+    let max = 0
+    for (const e of equipment) {
+      const match = e.device_id?.match(/NP-MQ(\d+)/i)
+      if (match) {
+        const num = parseInt(match[1], 10)
+        if (num > max) max = num
+      }
+    }
+    return `NP-MQ${String(max + 1).padStart(4, '0')}`
+  })()
 
   const filteredContacts = contactSearch
     ? contacts.filter(c =>
@@ -917,29 +930,41 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
                     className="w-4 h-4 accent-red-500 flex-shrink-0 cursor-pointer" />
                 )}
                 <button onClick={() => selectMode ? toggleSelect(e.id) : openDeviceDetail(e)}
-                  className={`w-full text-left bg-white border rounded-xl p-4 flex items-center gap-4 hover:shadow-md transition-all ${
+                  className={`w-full text-left bg-white border rounded-xl p-4 flex items-center gap-3 hover:shadow-md transition-all ${
                     selected.has(e.id) ? 'border-red-300 bg-red-50/50' : 'border-gray-100 hover:border-gray-200'
                   }`}>
-                  <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
-                    style={{ backgroundColor: st.bg }}>
-                    <Package className="w-5 h-5" style={{ color: st.color }} />
-                  </div>
+                  {/* Avatar / Status icon */}
+                  {e.status === 'checked_out' && e.contact_first_name ? (
+                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                      <span className="text-sm font-bold text-blue-600">
+                        {(e.contact_first_name?.[0] || '')}{(e.contact_last_name?.[0] || '')}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
+                      style={{ backgroundColor: st.bg }}>
+                      <Package className="w-5 h-5" style={{ color: st.color }} />
+                    </div>
+                  )}
                   <div className="flex-1 min-w-0">
+                    {/* PRIMARY: Contact name or "Available" */}
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-np-dark">{e.device_id || 'Unknown'}</span>
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: st.bg, color: st.color }}>
+                      <span className="text-sm font-bold text-np-dark truncate">
+                        {e.status === 'checked_out' && e.contact_first_name
+                          ? `${e.contact_first_name} ${e.contact_last_name || ''}`.trim()
+                          : e.status === 'available' ? 'Available' : st.label}
+                      </span>
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0"
+                        style={{ backgroundColor: st.bg, color: st.color }}>
                         {st.label}
                       </span>
                     </div>
-                    <div className="flex items-center gap-3 mt-0.5">
-                      {e.bundle_serial && <span className="text-[10px] text-gray-400 font-mono">{e.bundle_serial}</span>}
-                      {e.headset_serial && <span className="text-[10px] text-gray-400 font-mono">{e.headset_serial}</span>}
-                      {e.status === 'checked_out' && e.contact_first_name && (
-                        <span className="text-[10px] text-blue-500 font-medium">
-                          {e.contact_first_name} {e.contact_last_name}
-                        </span>
-                      )}
-                    </div>
+                    {/* SECONDARY: Serial number */}
+                    <p className="text-[11px] text-gray-500 font-mono truncate mt-0.5">
+                      {e.headset_serial || e.bundle_serial || 'No serial'}
+                    </p>
+                    {/* TERTIARY: Device ID */}
+                    <p className="text-[10px] text-gray-400 mt-0.5">{e.device_id || 'No device ID'}</p>
                   </div>
                   {!selectMode && <ChevronDown className="w-4 h-4 text-gray-300 -rotate-90 flex-shrink-0" />}
                 </button>
