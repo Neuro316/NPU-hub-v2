@@ -85,21 +85,34 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// DELETE /api/equipment?id=XXX — delete equipment and all related records
+// DELETE /api/equipment — delete one or many equipment records
+// Body: { id: string } or { ids: string[] }
 export async function DELETE(req: NextRequest) {
   try {
-    const id = req.nextUrl.searchParams.get('id')
-    if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
-
     const admin = createAdminSupabase()
 
-    // Delete in order: history → assignments → equipment (FK cascade should handle it but be explicit)
-    await admin.from('equipment_history').delete().eq('equipment_id', id)
-    await admin.from('equipment_assignments').delete().eq('equipment_id', id)
-    const { error } = await admin.from('equipment').delete().eq('id', id)
+    // Support both query param (single) and body (bulk)
+    let ids: string[] = []
+    const paramId = req.nextUrl.searchParams.get('id')
+    if (paramId) {
+      ids = [paramId]
+    } else {
+      try {
+        const body = await req.json()
+        if (body.id) ids = [body.id]
+        else if (body.ids) ids = body.ids
+      } catch {}
+    }
+
+    if (ids.length === 0) return NextResponse.json({ error: 'id or ids required' }, { status: 400 })
+
+    // Bulk delete: history → assignments → equipment
+    await admin.from('equipment_history').delete().in('equipment_id', ids)
+    await admin.from('equipment_assignments').delete().in('equipment_id', ids)
+    const { error } = await admin.from('equipment').delete().in('id', ids)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-    return NextResponse.json({ ok: true })
+    return NextResponse.json({ ok: true, deleted: ids.length })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }

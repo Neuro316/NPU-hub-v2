@@ -52,10 +52,13 @@ export default function EquipmentPage() {
     if (!confirm(`Delete ${selected.size} equipment items? This cannot be undone.`)) return
     setBulkDeleting(true)
     try {
-      const ids = Array.from(selected)
-      for (const id of ids) {
-        await fetch(`/api/equipment?id=${id}`, { method: 'DELETE' })
-      }
+      const res = await fetch('/api/equipment', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selected) }),
+      })
+      const data = await res.json()
+      if (data.error) { alert('Delete failed: ' + data.error); setBulkDeleting(false); return }
       setEquipment(prev => prev.filter(e => !selected.has(e.id)))
       setSelected(new Set())
       setSelectMode(false)
