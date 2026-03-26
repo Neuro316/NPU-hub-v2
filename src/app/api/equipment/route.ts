@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST /api/equipment — register new equipment
+// POST /api/equipment — register new equipment (with dedup/merge)
 export async function POST(req: NextRequest) {
   try {
     const supabase = createServerSupabase()
@@ -58,6 +58,69 @@ export async function POST(req: NextRequest) {
     if (!org_id) return NextResponse.json({ error: 'org_id required' }, { status: 400 })
 
     const admin = createAdminSupabase()
+
+    // Check for existing equipment with matching serial(s)
+    let existing = null
+    if (bundle_serial) {
+      const { data } = await admin.from('equipment').select('*').eq('org_id', org_id).eq('bundle_serial', bundle_serial).maybeSingle()
+      if (data) existing = data
+    }
+    if (!existing && headset_serial) {
+      const { data } = await admin.from('equipment').select('*').eq('org_id', org_id).eq('headset_serial', headset_serial).maybeSingle()
+      if (data) existing = data
+    }
+    if (!existing && device_id) {
+      const { data } = await admin.from('equipment').select('*').eq('org_id', org_id).eq('device_id', device_id).maybeSingle()
+      if (data) existing = data
+    }
+
+    if (existing) {
+      // Merge into existing — prefer checked_out version's data, fill in blanks
+      const mergeUpdates: Record<string, any> = { updated_at: new Date().toISOString() }
+      if (!existing.device_id && device_id) mergeUpdates.device_id = device_id
+      if (!existing.bundle_serial && bundle_serial) mergeUpdates.bundle_serial = bundle_serial
+      if (!existing.headset_serial && headset_serial) mergeUpdates.headset_serial = headset_serial
+      if (!existing.meta_account_email && meta_account_email) mergeUpdates.meta_account_email = meta_account_email
+      if (!existing.location && location) mergeUpdates.location = location
+      if (notes && notes !== existing.notes) mergeUpdates.notes = [existing.notes, notes].filter(Boolean).join(' | ')
+
+      if (Object.keys(mergeUpdates).length > 1) {
+        await admin.from('equipment').update(mergeUpdates).eq('id', existing.id)
+      }
+
+      // Delete any other duplicates with the same serials (keep the one with checked_out status, or the existing one)
+      const dupeFilters = []
+      if (bundle_serial) dupeFilters.push(`bundle_serial.eq.${bundle_serial}`)
+      if (headset_serial) dupeFilters.push(`headset_serial.eq.${headset_serial}`)
+      if (dupeFilters.length > 0) {
+        const { data: dupes } = await admin
+          .from('equipment')
+          .select('id, status')
+          .eq('org_id', org_id)
+          .or(dupeFilters.join(','))
+          .neq('id', existing.id)
+        if (dupes && dupes.length > 0) {
+          const dupeIds = dupes.map(d => d.id)
+          // Move any assignments from dupes to the kept record
+          await admin.from('equipment_assignments').update({ equipment_id: existing.id }).in('equipment_id', dupeIds)
+          await admin.from('equipment_history').update({ equipment_id: existing.id }).in('equipment_id', dupeIds)
+          await admin.from('equipment').delete().in('id', dupeIds)
+        }
+      }
+
+      await admin.from('equipment_history').insert({
+        equipment_id: existing.id,
+        action: 'merged',
+        performed_by: user?.id || null,
+        notes: `Merged duplicate registration (${device_id || bundle_serial || headset_serial})`,
+      })
+
+      // Return the updated existing record
+      const { data: merged } = await admin.from('equipment').select('*').eq('id', existing.id).single()
+      return NextResponse.json({ equipment: merged, merged: true })
+    }
+
+    // No duplicate — create new
     const { data, error } = await admin
       .from('equipment')
       .insert({
