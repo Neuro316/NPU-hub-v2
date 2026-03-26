@@ -185,17 +185,36 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
 
   // Camera management
   const startCamera = async () => {
+    console.log('[Equipment] startCamera called, videoRef exists:', !!videoRef.current)
     try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        console.error('[Equipment] getUserMedia not available')
+        setScanError('Camera not available on this device/browser.')
+        setManualEntry(true)
+        return
+      }
+      console.log('[Equipment] Requesting camera access...')
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
       })
+      console.log('[Equipment] Camera stream obtained, tracks:', stream.getTracks().length)
       streamRef.current = stream
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        videoRef.current.play()
+
+      // Wait for video element to be in DOM
+      const attachStream = () => {
+        if (videoRef.current) {
+          console.log('[Equipment] Attaching stream to video element')
+          videoRef.current.srcObject = stream
+          videoRef.current.play().catch(e => console.warn('[Equipment] video.play() error:', e))
+        } else {
+          console.log('[Equipment] Video ref not ready, retrying in 100ms...')
+          setTimeout(attachStream, 100)
+        }
       }
-    } catch (e) {
-      setScanError('Camera access denied. Use manual entry instead.')
+      attachStream()
+    } catch (e: any) {
+      console.error('[Equipment] Camera error:', e.name, e.message)
+      setScanError(`Camera error: ${e.message || e.name || 'Access denied'}. Use manual entry.`)
       setManualEntry(true)
     }
   }
@@ -206,6 +225,7 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
   }
 
   const openScanner = () => {
+    console.log('[Equipment] openScanner called')
     setScanning(true)
     setManualEntry(false)
     setScanResult(null)
@@ -219,7 +239,11 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
     setCheckinNotes('')
     setManualSerial('')
     setRegisterSerials([])
-    setTimeout(startCamera, 100)
+    // Delay camera start to let the scan overlay render first
+    setTimeout(() => {
+      console.log('[Equipment] Starting camera after timeout')
+      startCamera()
+    }, 300)
   }
 
   const closeScanner = () => {
