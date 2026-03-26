@@ -30,6 +30,40 @@ export default function EquipmentPage() {
   const [equipment, setEquipment] = useState<Equipment[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [selectMode, setSelectMode] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+
+  const toggleSelect = (id: string) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+  const selectAll = () => {
+    const filteredIds = filtered.map(e => e.id)
+    const allSelected = filteredIds.every(id => selected.has(id))
+    if (allSelected) setSelected(new Set())
+    else setSelected(new Set(filteredIds))
+  }
+  const handleBulkDelete = async () => {
+    if (selected.size === 0) return
+    if (!confirm(`Delete ${selected.size} equipment items? This cannot be undone.`)) return
+    setBulkDeleting(true)
+    try {
+      const ids = Array.from(selected)
+      for (const id of ids) {
+        await fetch(`/api/equipment?id=${id}`, { method: 'DELETE' })
+      }
+      setEquipment(prev => prev.filter(e => !selected.has(e.id)))
+      setSelected(new Set())
+      setSelectMode(false)
+    } catch (e: any) {
+      alert('Bulk delete failed: ' + e.message)
+    }
+    setBulkDeleting(false)
+  }
 
   // Scan state
   const [scanning, setScanning] = useState(false)
@@ -734,14 +768,34 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
           <p className="text-[10px] text-gray-400 mt-0.5">Track Meta Quest headsets &middot; Scan, assign, and manage</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => setShowImport(true)}
-            className="flex items-center gap-1.5 px-3 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50">
-            <Upload className="w-4 h-4" /> Import CSV
-          </button>
-          <button onClick={openScanner}
-            className="flex items-center gap-2 px-4 py-2.5 bg-np-blue text-white rounded-xl text-sm font-medium hover:bg-np-blue/90 active:scale-95 transition-all">
-            <Camera className="w-4 h-4" /> Scan Equipment
-          </button>
+          {selectMode ? (
+            <>
+              <span className="text-xs text-gray-500">{selected.size} selected</span>
+              <button onClick={handleBulkDelete} disabled={selected.size === 0 || bulkDeleting}
+                className="flex items-center gap-1.5 px-3 py-2.5 bg-red-500 text-white rounded-xl text-sm font-medium hover:bg-red-600 disabled:opacity-40">
+                <Trash2 className="w-4 h-4" /> {bulkDeleting ? 'Deleting...' : 'Delete Selected'}
+              </button>
+              <button onClick={() => { setSelectMode(false); setSelected(new Set()) }}
+                className="flex items-center gap-1.5 px-3 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50">
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={() => setSelectMode(true)}
+                className="flex items-center gap-1.5 px-3 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50">
+                <Trash2 className="w-4 h-4" /> Manage
+              </button>
+              <button onClick={() => setShowImport(true)}
+                className="flex items-center gap-1.5 px-3 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50">
+                <Upload className="w-4 h-4" /> Import CSV
+              </button>
+              <button onClick={openScanner}
+                className="flex items-center gap-2 px-4 py-2.5 bg-np-blue text-white rounded-xl text-sm font-medium hover:bg-np-blue/90 active:scale-95 transition-all">
+                <Camera className="w-4 h-4" /> Scan Equipment
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -822,7 +876,13 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
       </div>
 
       {/* Filter */}
-      <div className="flex gap-1.5 mb-4">
+      <div className="flex items-center gap-1.5 mb-4">
+        {selectMode && (
+          <button onClick={selectAll}
+            className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 mr-2">
+            {filtered.every(e => selected.has(e.id)) ? 'Deselect All' : 'Select All'}
+          </button>
+        )}
         {['all', 'available', 'checked_out', 'maintenance', 'retired'].map(s => (
           <button key={s} onClick={() => setStatusFilter(s)}
             className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
@@ -847,31 +907,40 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
           {filtered.map(e => {
             const st = EQUIPMENT_STATUS_CONFIG[e.status]
             return (
-              <button key={e.id} onClick={() => openDeviceDetail(e)}
-                className="w-full text-left bg-white border border-gray-100 rounded-xl p-4 flex items-center gap-4 hover:shadow-md hover:border-gray-200 transition-all">
-                <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
-                  style={{ backgroundColor: st.bg }}>
-                  <Package className="w-5 h-5" style={{ color: st.color }} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-np-dark">{e.device_id || 'Unknown'}</span>
-                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: st.bg, color: st.color }}>
-                      {st.label}
-                    </span>
+              <div key={e.id} className="flex items-center gap-2">
+                {selectMode && (
+                  <input type="checkbox" checked={selected.has(e.id)}
+                    onChange={() => toggleSelect(e.id)}
+                    className="w-4 h-4 accent-red-500 flex-shrink-0 cursor-pointer" />
+                )}
+                <button onClick={() => selectMode ? toggleSelect(e.id) : openDeviceDetail(e)}
+                  className={`w-full text-left bg-white border rounded-xl p-4 flex items-center gap-4 hover:shadow-md transition-all ${
+                    selected.has(e.id) ? 'border-red-300 bg-red-50/50' : 'border-gray-100 hover:border-gray-200'
+                  }`}>
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+                    style={{ backgroundColor: st.bg }}>
+                    <Package className="w-5 h-5" style={{ color: st.color }} />
                   </div>
-                  <div className="flex items-center gap-3 mt-0.5">
-                    {e.bundle_serial && <span className="text-[10px] text-gray-400 font-mono">{e.bundle_serial}</span>}
-                    {e.headset_serial && <span className="text-[10px] text-gray-400 font-mono">{e.headset_serial}</span>}
-                    {e.status === 'checked_out' && e.contact_first_name && (
-                      <span className="text-[10px] text-blue-500 font-medium">
-                        {e.contact_first_name} {e.contact_last_name}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-np-dark">{e.device_id || 'Unknown'}</span>
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: st.bg, color: st.color }}>
+                        {st.label}
                       </span>
-                    )}
+                    </div>
+                    <div className="flex items-center gap-3 mt-0.5">
+                      {e.bundle_serial && <span className="text-[10px] text-gray-400 font-mono">{e.bundle_serial}</span>}
+                      {e.headset_serial && <span className="text-[10px] text-gray-400 font-mono">{e.headset_serial}</span>}
+                      {e.status === 'checked_out' && e.contact_first_name && (
+                        <span className="text-[10px] text-blue-500 font-medium">
+                          {e.contact_first_name} {e.contact_last_name}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <ChevronDown className="w-4 h-4 text-gray-300 -rotate-90 flex-shrink-0" />
-              </button>
+                  {!selectMode && <ChevronDown className="w-4 h-4 text-gray-300 -rotate-90 flex-shrink-0" />}
+                </button>
+              </div>
             )
           })}
         </div>

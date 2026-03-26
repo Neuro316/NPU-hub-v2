@@ -102,6 +102,12 @@ export async function POST(req: NextRequest) {
         status = 'available'
       }
 
+      // Skip rows with no identifying info
+      if (!row.device_id && !row.bundle_serial && !row.headset_serial) {
+        warnings.push(`Row ${i + 1}: skipped — no device_id or serial numbers`)
+        continue
+      }
+
       const equipData = {
         org_id,
         device_id: row.device_id || null,
