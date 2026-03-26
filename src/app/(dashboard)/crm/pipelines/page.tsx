@@ -736,9 +736,17 @@ export default function PipelinesPage() {
     setContacts(prev => [newContact, ...prev])
   }
 
+  const activePipelineStageNames = activePipeline.stages.map(s => s.name.toLowerCase())
   const pipelineContacts = contacts.filter(c => {
+    // Contacts explicitly assigned to this pipeline
     if (c.pipeline_id) return c.pipeline_id === activePipelineId
-    return activePipeline.is_default === true
+    // Contacts with no pipeline_id: show in default pipeline OR if their stage name matches this pipeline's stages
+    if (!c.pipeline_id) {
+      if (activePipeline.is_default) return true
+      // Match by stage name — e.g. contact with pipeline_stage='Enrolled' shows in a pipeline that has an 'Enrolled' stage
+      if (c.pipeline_stage && activePipelineStageNames.includes(c.pipeline_stage.toLowerCase())) return true
+    }
+    return false
   })
   const stageContacts = (name: string) => pipelineContacts.filter(c => (c.pipeline_stage || activePipeline.stages[0]?.name || 'New Lead') === name)
   const stageValue = (name: string) => stageContacts(name).reduce((s,c) => s + ((c.custom_fields?.value as number)||0), 0)
