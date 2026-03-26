@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
 import { useTaskData } from '@/lib/hooks/use-task-data'
-import { ArrowLeft, Plus, Send, ChevronDown, ChevronUp, Loader2, Download, Trash2, RefreshCw, ExternalLink, X, Rocket, Sparkles, FileText, FolderOpen, Globe, Check, Kanban } from 'lucide-react'
+import { ArrowLeft, Plus, Send, ChevronDown, ChevronUp, Loader2, Download, Trash2, RefreshCw, ExternalLink, X, Rocket, Sparkles, FileText, FolderOpen, Globe, Check, Kanban, ClipboardPaste } from 'lucide-react'
 
 const SECTIONS = [
   { id: 'project', icon: '01', title: 'The Project', fields: [
@@ -40,6 +40,104 @@ const SECTIONS = [
 ]
 
 const ALL_FIELD_IDS = SECTIONS.flatMap(s => s.fields.map(f => f.id))
+
+// Map keywords in AI responses to section field IDs
+interface InsertTarget {
+  fieldId: string
+  label: string
+  content: string
+}
+
+function detectInsertTargets(text: string): InsertTarget[] {
+  const targets: InsertTarget[] = []
+  const lower = text.toLowerCase()
+
+  // Detect numbered lists (milestones pattern)
+  const numberedList = text.match(/(?:^|\n)\s*\d+[\.\)]\s+.+/gm)
+  if (numberedList && numberedList.length >= 2) {
+    const content = numberedList.map(l => l.replace(/^\s*/, '')).join('\n')
+    if (lower.includes('milestone') || lower.includes('deliverable') || lower.includes('step') || lower.includes('phase')) {
+      targets.push({ fieldId: 'milestones', label: 'Milestones', content })
+    }
+  }
+
+  // Detect blockers
+  if (lower.includes('blocker') || lower.includes('blocking') || lower.includes('stuck') || lower.includes('obstacle')) {
+    const blockContent = extractRelevantContent(text, ['blocker', 'blocking', 'stuck', 'obstacle', 'waiting'])
+    if (blockContent) targets.push({ fieldId: 'one-blocker', label: 'Top Blocker', content: blockContent })
+  }
+
+  // Detect waiting/dependencies
+  if (lower.includes('waiting on') || lower.includes('depend') || lower.includes('need from')) {
+    const waitContent = extractRelevantContent(text, ['waiting', 'depend', 'need from', 'require'])
+    if (waitContent) targets.push({ fieldId: 'waiting', label: 'Waiting On', content: waitContent })
+  }
+
+  // Detect missing skills/resources
+  if (lower.includes('missing') || lower.includes('gap') || lower.includes('lack') || lower.includes('skill')) {
+    const missContent = extractRelevantContent(text, ['missing', 'gap', 'lack', 'skill', 'resource'])
+    if (missContent) targets.push({ fieldId: 'missing', label: 'Missing Skills', content: missContent })
+  }
+
+  // Detect quick action / 30-min task
+  if (lower.includes('30 minute') || lower.includes('right now') || lower.includes('quick win') || lower.includes('first step') || lower.includes('next 30')) {
+    const quickContent = extractRelevantContent(text, ['30 minute', 'right now', 'quick win', 'first step', 'immediately', 'next 30'])
+    if (quickContent) targets.push({ fieldId: '30min', label: '30-Min Action', content: quickContent })
+  }
+
+  // Detect scope cuts / thrashing
+  if (lower.includes('cut') || lower.includes('scope') || lower.includes('nice-to-have') || lower.includes('simplify')) {
+    const cutContent = extractRelevantContent(text, ['cut', 'scope', 'nice-to-have', 'simplify', 'drop', 'remove'])
+    if (cutContent) targets.push({ fieldId: 'cut', label: 'Scope Cuts', content: cutContent })
+  }
+
+  // Detect decisions
+  if (lower.includes('decision') || lower.includes('decide') || lower.includes('open question')) {
+    const decContent = extractRelevantContent(text, ['decision', 'decide', 'open question', 'unanswered'])
+    if (decContent) targets.push({ fieldId: 'decisions', label: 'Unmade Decisions', content: decContent })
+  }
+
+  // Fallback: if numbered list found but no specific match, offer milestones
+  if (numberedList && numberedList.length >= 2 && targets.length === 0) {
+    const content = numberedList.map(l => l.replace(/^\s*/, '')).join('\n')
+    targets.push({ fieldId: 'milestones', label: 'Milestones', content })
+  }
+
+  return targets
+}
+
+// Extract the most relevant paragraph/sentences from AI text for a given topic
+function extractRelevantContent(text: string, keywords: string[]): string {
+  const sentences = text.split(/(?<=[.!?\n])\s+/)
+  const relevant = sentences.filter(s => {
+    const sl = s.toLowerCase()
+    return keywords.some(k => sl.includes(k))
+  })
+  if (relevant.length > 0) return relevant.join(' ').trim()
+  // Fallback: return bullet points or numbered items
+  const bullets = text.match(/(?:^|\n)\s*[-*]\s+.+/gm)
+  if (bullets) return bullets.map(b => b.trim()).join('\n')
+  return ''
+}
+
+// Map /insert commands to field IDs
+const INSERT_COMMANDS: Record<string, string> = {
+  milestones: 'milestones',
+  blockers: 'one-blocker',
+  blocker: 'one-blocker',
+  waiting: 'waiting',
+  missing: 'missing',
+  '30min': '30min',
+  quickwin: '30min',
+  scope: 'cut',
+  decisions: 'decisions',
+  what: 'what',
+  who: 'who',
+  why: 'why',
+  fear: 'worst',
+  announce: 'announce',
+  next: 'next',
+}
 
 const STATUS_OPTIONS = [
   { value: 'planning', label: 'Planning', color: '#9CA3AF' },
@@ -367,7 +465,41 @@ export default function ShipItPage() {
     setAiLoading(false)
   }
 
-  const sendChat = async () => { await sendChatMsg(chatInput) }
+  const sendChat = async () => {
+    // Handle /insert commands
+    const insertMatch = chatInput.trim().match(/^\/insert\s+(\w+)/i)
+    if (insertMatch) {
+      const key = insertMatch[1].toLowerCase()
+      const fieldId = INSERT_COMMANDS[key]
+      if (fieldId && chatMsgs.length > 0) {
+        const lastAi = [...chatMsgs].reverse().find(m => m.role === 'assistant')
+        if (lastAi) {
+          handleInsertContent(fieldId, lastAi.content)
+          setChatInput('')
+          return
+        }
+      }
+      setChatInput('')
+      setChatMsgs(prev => [...prev, { role: 'user', content: chatInput.trim() }, { role: 'assistant', content: `Unknown insert target "${key}". Try: milestones, blockers, waiting, missing, 30min, scope, decisions` }])
+      return
+    }
+    await sendChatMsg(chatInput)
+  }
+
+  // Insert AI content into a section field
+  const [insertSuccess, setInsertSuccess] = useState<string | null>(null)
+  const handleInsertContent = (fieldId: string, content: string) => {
+    const existing = sectionData[fieldId] || ''
+    const newContent = existing ? `${existing}\n\n${content}` : content
+    setSectionData(prev => ({ ...prev, [fieldId]: newContent }))
+    // Find the section and field label for the success message
+    const field = SECTIONS.flatMap(s => s.fields).find(f => f.id === fieldId)
+    setInsertSuccess(`Inserted into "${field?.label || fieldId}"`)
+    setTimeout(() => setInsertSuccess(null), 2000)
+    // Auto-expand the section containing this field
+    const section = SECTIONS.find(s => s.fields.some(f => f.id === fieldId))
+    if (section) setExpanded(prev => { const n = new Set(prev); n.add(section.id); return n })
+  }
 
   const toggleSection = (id: string) => setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   const filledCount = ALL_FIELD_IDS.filter(id => sectionData[id]?.trim()).length
@@ -637,13 +769,26 @@ export default function ShipItPage() {
                 </div>
               </div>
             )}
-            {chatMsgs.map((msg, i) => (
-              <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[88%] px-3 py-2 rounded-xl text-[11px] leading-relaxed whitespace-pre-wrap ${
-                  msg.role === 'user' ? 'bg-np-blue text-white rounded-br-sm' : 'bg-gray-50 border border-gray-100 text-gray-700 rounded-bl-sm'
-                }`}>{msg.content}</div>
-              </div>
-            ))}
+            {chatMsgs.map((msg, i) => {
+              const targets = msg.role === 'assistant' ? detectInsertTargets(msg.content) : []
+              return (
+                <div key={i} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                  <div className={`max-w-[88%] px-3 py-2 rounded-xl text-[11px] leading-relaxed whitespace-pre-wrap ${
+                    msg.role === 'user' ? 'bg-np-blue text-white rounded-br-sm' : 'bg-gray-50 border border-gray-100 text-gray-700 rounded-bl-sm'
+                  }`}>{msg.content}</div>
+                  {targets.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1 ml-1">
+                      {targets.map((t, ti) => (
+                        <button key={ti} onClick={() => handleInsertContent(t.fieldId, t.content)}
+                          className="flex items-center gap-1 px-2 py-1 text-[9px] font-medium bg-teal-50 text-teal-600 border border-teal-200 rounded-md hover:bg-teal-100 transition-colors">
+                          <ClipboardPaste className="w-2.5 h-2.5" /> Insert → {t.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
             {aiLoading && (
               <div className="flex justify-start">
                 <div className="bg-gray-50 border border-gray-100 rounded-xl rounded-bl-sm px-4 py-2.5 flex items-center gap-1.5">
@@ -654,15 +799,28 @@ export default function ShipItPage() {
             )}
           </div>
 
-          <div className="px-3 py-2.5 border-t border-gray-100 flex gap-2">
-            <input value={chatInput} onChange={e => setChatInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat() } }}
-              placeholder="Ask about your project..."
-              className="flex-1 text-[11px] border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500/20 placeholder-gray-300" />
-            <button onClick={sendChat} disabled={aiLoading || !chatInput.trim()}
-              className="px-3 py-2 bg-teal-500 text-white rounded-lg hover:bg-teal-600 disabled:opacity-40">
-              <Send className="w-3.5 h-3.5" />
-            </button>
+          {/* Success indicator */}
+          {insertSuccess && (
+            <div className="mx-3 mb-1 px-3 py-1.5 bg-teal-50 text-teal-600 text-[10px] font-medium rounded-lg flex items-center gap-1.5">
+              <Check className="w-3 h-3" /> {insertSuccess}
+            </div>
+          )}
+          <div className="px-3 py-2.5 border-t border-gray-100">
+            <div className="flex gap-2">
+              <input value={chatInput} onChange={e => setChatInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat() } }}
+                placeholder="Ask about your project... or /insert milestones"
+                className="flex-1 text-[11px] border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500/20 placeholder-gray-300" />
+              <button onClick={sendChat} disabled={aiLoading || !chatInput.trim()}
+                className="px-3 py-2 bg-teal-500 text-white rounded-lg hover:bg-teal-600 disabled:opacity-40">
+                <Send className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            {chatMsgs.some(m => m.role === 'assistant') && (
+              <p className="text-[9px] text-gray-400 mt-1.5 px-1">
+                Type <span className="font-mono bg-gray-100 px-1 rounded">/insert milestones</span> to insert last AI response into a section
+              </p>
+            )}
           </div>
         </div>
       </div>
