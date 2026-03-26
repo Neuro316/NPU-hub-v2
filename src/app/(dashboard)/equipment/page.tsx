@@ -138,9 +138,10 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
       const data = await res.json()
       if (data.error) { setImportResult({ errors: [data.error] }); setImporting(false); return }
       setImportResult(data)
-      if (data.imported > 0) {
+      const totalImported = (data.created || 0) + (data.updated || 0) + (data.imported || 0)
+      if (totalImported > 0) {
         fetchEquipment()
-        setTimeout(() => { setShowImport(false); setCsvText(''); setImportResult(null) }, 2000)
+        setTimeout(() => { setShowImport(false); setCsvText(''); setImportResult(null) }, 3000)
       }
     } catch (e: any) {
       setImportResult({ errors: [e.message] })
@@ -163,24 +164,15 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
 
   useEffect(() => { fetchEquipment() }, [fetchEquipment])
 
-  // Fetch eligible contacts
+  // Fetch eligible contacts via API to bypass RLS
   useEffect(() => {
     if (!currentOrg) return
-    supabase
-      .from('contacts')
-      .select('id, first_name, last_name, phone, pipeline_stage')
-      .eq('org_id', currentOrg.id)
-      .in('pipeline_stage', ELIGIBLE_STAGES)
-      .is('archived_at', null)
-      .order('last_name')
-      .then(({ data }) => {
-        if (data) {
-          const sorted = data.sort((a: any, b: any) =>
-            (STAGE_PRIORITY[a.pipeline_stage] ?? 99) - (STAGE_PRIORITY[b.pipeline_stage] ?? 99)
-          )
-          setContacts(sorted)
-        }
+    fetch(`/api/equipment/contacts?org_id=${currentOrg.id}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.contacts) setContacts(data.contacts)
       })
+      .catch(e => console.error('[Equipment] contacts fetch error:', e))
   }, [currentOrg?.id])
 
   // Camera management
@@ -472,17 +464,12 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
       })
       const data = await res.json()
       if (data.error) { setScanError(data.error); setRegisterLoading(false); return }
-      // Registration successful — now look it up to show checkout form
+      // Registration successful — go straight to checkout form
       setRegisterSerials([])
-      setActionSuccess(`Equipment registered! ${registerDeviceId || bundleSerial || 'New device'}`)
-      // Add to local list
+      setScanError('')
       setEquipment(prev => [data.equipment, ...prev])
-      // Auto-lookup so they can immediately check out
-      if (bundleSerial) {
-        await lookupSerial(bundleSerial)
-      } else if (headsetSerial) {
-        await lookupSerial(headsetSerial)
-      }
+      // Set lookup result directly so checkout form shows immediately
+      setLookupResult({ equipment: data.equipment, current_assignment: null })
     } catch (e: any) {
       setScanError('Registration failed: ' + e.message)
     }
@@ -629,6 +616,11 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
             {/* Lookup result — Equipment found (full-screen overlay on camera) */}
             {lookupResult?.equipment && (
               <div className="absolute inset-0 z-10 bg-black/95 overflow-y-auto p-4 pt-16">
+                {/* Back button */}
+                <button onClick={() => { setLookupResult(null); setScanResult(null); setSelectedContact(''); setPurpose(''); startCamera() }}
+                  className="mb-3 text-gray-400 text-xs flex items-center gap-1 hover:text-white">
+                  <ArrowLeft className="w-3 h-3" /> Back to scan
+                </button>
                 {/* Equipment info */}
                 <div className="flex items-center gap-3 mb-3">
                   <Package className="w-5 h-5 text-blue-400" />
