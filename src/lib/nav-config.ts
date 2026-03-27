@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Route, CheckSquare, Brain, FileText, Lightbulb,
   Users, Target, Megaphone, Radio, Calendar, BarChart3, Settings,
-  BookOpen, Mic, TicketCheck, Image, Rocket, Contact2, DollarSign, ClipboardList, Package,
+  BookOpen, Mic, TicketCheck, Image, Rocket, Contact2, DollarSign, Package,
 } from 'lucide-react'
 
 /* ───────────────────────────────────────────────────────────
@@ -66,7 +66,6 @@ export const navCategories: NavCategory[] = [
       { label: 'Rocks', href: '/rocks', icon: Target, moduleKey: 'rocks' },
       { label: 'My Tasks', href: '/tasks/my-tasks', icon: CheckSquare, moduleKey: 'tasks' },
       { label: 'Task Manager', href: '/tasks', icon: CheckSquare, moduleKey: 'tasks' },
-      { label: 'Client Tasks', href: '/crm/tasks', icon: ClipboardList, moduleKey: 'tasks' },
       { label: 'Journey Builder', href: '/journeys', icon: Route, moduleKey: 'journeys' },
       { label: 'SOPs', href: '/sops', icon: FileText, moduleKey: 'sops' },
       { label: 'Support Tickets', href: '/tickets', icon: TicketCheck, moduleKey: 'tickets' },
