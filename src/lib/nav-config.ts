@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Route, CheckSquare, Brain, FileText, Lightbulb,
   Users, Target, Megaphone, Radio, Calendar, BarChart3, Settings,
-  BookOpen, Mic, TicketCheck, Image, Rocket, Contact2, DollarSign, Package,
+  BookOpen, TicketCheck, Image, Rocket, Contact2, DollarSign, Package,
 } from 'lucide-react'
 
 /* ───────────────────────────────────────────────────────────
@@ -41,7 +41,6 @@ export const navCategories: NavCategory[] = [
       { label: 'Media & Affiliates', href: '/media-affiliates', icon: Radio, moduleKey: 'media_affiliates' },
       { label: 'ICP Profiles', href: '/icps', icon: Users, moduleKey: 'icps' },
       { label: 'Analytics', href: '/analytics', icon: BarChart3, moduleKey: 'analytics' },
-      { label: 'Media Appearances', href: '/media-appearances', icon: Mic, moduleKey: 'media_appearances' },
     ],
   },
   {
