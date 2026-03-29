@@ -635,6 +635,7 @@ function TasksPageInner() {
       {/* ── Modals ── */}
       <TaskDetail
         task={selectedTask} columns={columns}
+        allTasks={tasks}
         onClose={() => setSelectedTask(null)}
         onUpdate={updateTask} onDelete={deleteTask}
         fetchComments={fetchComments} addComment={addComment}

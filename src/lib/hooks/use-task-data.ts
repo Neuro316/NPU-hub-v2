@@ -6,7 +6,7 @@ import { useWorkspace } from '@/lib/workspace-context'
 import type {
   KanbanColumn, KanbanTask, TaskComment, CardTaskLink,
   Subtask, TaskActivity, Project, SavedView, ViewFilters,
-  ProjectProgress
+  ProjectProgress, TaskDependency, DependencyType
 } from '@/lib/types/tasks'
 
 // Fields worth logging in the activity feed
@@ -529,6 +529,47 @@ export function useTaskData() {
     return { projectId, tasksCreated }
   }
 
+  // ─── Dependencies ─────────────────────────────────────────
+  const fetchDependencies = async (taskId: string): Promise<{ blocks: TaskDependency[]; blocked_by: TaskDependency[] }> => {
+    try {
+      const res = await fetch(`/api/tasks/dependencies?task_id=${taskId}`)
+      const data = await res.json()
+      return { blocks: data.blocks || [], blocked_by: data.blocked_by || [] }
+    } catch { return { blocks: [], blocked_by: [] } }
+  }
+
+  const addDependency = async (blockerTaskId: string, blockedTaskId: string, type: DependencyType = 'blocks') => {
+    try {
+      const res = await fetch('/api/tasks/dependencies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ blocker_task_id: blockerTaskId, blocked_task_id: blockedTaskId, dependency_type: type }),
+      })
+      const data = await res.json()
+      if (data.error) return { data: null, error: data.error }
+      await fetchData() // Refresh tasks to get updated counts
+      return { data: data.dependency, error: null }
+    } catch (e: any) {
+      return { data: null, error: e.message }
+    }
+  }
+
+  const removeDependency = async (dependencyId: string) => {
+    try {
+      await fetch(`/api/tasks/dependencies?id=${dependencyId}`, { method: 'DELETE' })
+      await fetchData()
+      return { error: null }
+    } catch (e: any) {
+      return { error: e.message }
+    }
+  }
+
+  const toggleEpic = async (taskId: string) => {
+    const task = tasks.find(t => t.id === taskId)
+    if (!task) return
+    return updateTask(taskId, { is_epic: !task.is_epic } as Partial<KanbanTask>)
+  }
+
   return {
     columns, tasks, projects, savedViews, loading,
     userId,
@@ -546,5 +587,7 @@ export function useTaskData() {
     filterTasks,
     // Project integration
     getProjectProgress, getAllProjectProgress, createProjectFromShipIt,
+    // Dependencies
+    fetchDependencies, addDependency, removeDependency, toggleEpic,
   }
 }

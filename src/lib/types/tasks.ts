@@ -43,6 +43,26 @@ export interface KanbanTask {
   completed_at: string | null
   created_at: string
   updated_at: string
+  // Hierarchy & dependency fields
+  parent_task_id: string | null
+  is_epic: boolean
+  blocks_count: number
+  blocked_by_count: number
+  subtasks_count: number
+  subtasks_complete: number
+}
+
+export type DependencyType = 'blocks' | 'related'
+
+export interface TaskDependency {
+  id: string
+  blocker_task_id: string
+  blocked_task_id: string
+  dependency_type: DependencyType
+  created_by: string | null
+  created_at: string
+  blocker_task?: KanbanTask
+  blocked_task?: KanbanTask
 }
 
 // Phase 1: Subtasks

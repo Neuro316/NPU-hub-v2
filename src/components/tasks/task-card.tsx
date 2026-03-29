@@ -24,7 +24,9 @@ export function TaskCard({ task, colorOverrides, onClick, onDragStart }: TaskCar
   const commentCount = task.custom_fields?.comment_count || 0
   const linkCount = task.custom_fields?.link_count || 0
   const isOverdue = task.due_date && new Date(task.due_date) < new Date()
-  const hasBlockers = task.blocked_by && task.blocked_by.length > 0
+  const hasBlockers = (task.blocked_by_count || 0) > 0 || (task.blocked_by && task.blocked_by.length > 0)
+  const isBlocking = (task.blocks_count || 0) > 0
+  const isReady = !hasBlockers && isBlocking  // has dependencies resolved, blocks others
   const isPrivate = task.visibility === 'private'
 
   // Subtask progress from cached custom_fields
@@ -50,8 +52,12 @@ export function TaskCard({ task, colorOverrides, onClick, onDragStart }: TaskCar
       draggable
       onDragStart={onDragStart}
       onClick={onClick}
-      className={`bg-white rounded-lg border p-3 cursor-pointer hover:shadow-md hover:border-gray-200 transition-all group ${
-        hasBlockers ? 'border-red-200 bg-red-50/30' : isPrivate ? 'border-violet-200 bg-violet-50/20' : 'border-gray-100'
+      className={`bg-white rounded-lg p-3 cursor-pointer hover:shadow-md transition-all group ${
+        task.is_epic ? 'border-2 border-blue-400 bg-blue-50/20' :
+        hasBlockers ? 'border-2 border-orange-300 bg-orange-50/30' :
+        isBlocking ? 'border-2 border-red-400' :
+        isPrivate ? 'border border-violet-200 bg-violet-50/20' :
+        'border border-gray-100 hover:border-gray-200'
       }`}
     >
       {/* Rock Tags */}
@@ -84,6 +90,14 @@ export function TaskCard({ task, colorOverrides, onClick, onDragStart }: TaskCar
               <Lock className="w-2.5 h-2.5" />
             </span>
           )}
+          {task.is_epic && (
+            <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">Epic</span>
+          )}
+          {isBlocking && (
+            <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700">
+              Blocking {task.blocks_count}
+            </span>
+          )}
         </div>
         {task.assignee && (
           <div
@@ -108,8 +122,8 @@ export function TaskCard({ task, colorOverrides, onClick, onDragStart }: TaskCar
 
       {/* Blocker warning */}
       {hasBlockers && (
-        <div className="flex items-center gap-1 text-[9px] text-red-600 font-medium mb-2 bg-red-50 px-2 py-1 rounded">
-          <AlertTriangle className="w-3 h-3" /> Blocked by {task.blocked_by.length} task{task.blocked_by.length > 1 ? 's' : ''}
+        <div className="flex items-center gap-1 text-[9px] text-orange-600 font-medium mb-2 bg-orange-50 px-2 py-1 rounded">
+          <AlertTriangle className="w-3 h-3" /> Blocked by {task.blocked_by_count || task.blocked_by?.length || 0} task{(task.blocked_by_count || task.blocked_by?.length || 0) > 1 ? 's' : ''}
         </div>
       )}
 

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import type { KanbanTask, KanbanColumn, TaskComment, Subtask, TaskActivity, Project } from '@/lib/types/tasks'
+import type { KanbanTask, KanbanColumn, TaskComment, Subtask, TaskActivity, Project, TaskDependency } from '@/lib/types/tasks'
 import { PRIORITY_CONFIG } from '@/lib/types/tasks'
 import { X, Trash2, MessageSquare, Plus, Link2, Calendar, User, Flag, Eye, FileText, ExternalLink, Clock, Zap, AlertTriangle, ListChecks, CheckSquare, Square, Activity, ChevronDown, ChevronUp, Lock, FolderOpen } from 'lucide-react'
 import { notifyTaskAssigned, notifyTaskMoved, notifyRACIAssigned } from '@/lib/slack-notifications'
@@ -25,6 +25,7 @@ interface TaskDetailProps {
   teamMembers: string[]
   orgId: string
   projects?: Project[]
+  allTasks?: KanbanTask[]
 }
 
 const RACI_ROLES = [
@@ -49,8 +50,9 @@ export function TaskDetail({
   fetchComments, addComment,
   fetchSubtasks, addSubtask, updateSubtask, deleteSubtask,
   fetchActivity,
-  currentUser, teamMembers, orgId, projects,
+  currentUser, teamMembers, orgId, projects, allTasks,
 }: TaskDetailProps) {
+  const tasks = allTasks || []
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [assignee, setAssignee] = useState('')
@@ -84,6 +86,13 @@ export function TaskDetail({
   const [loadingActivity, setLoadingActivity] = useState(false)
   const [activityExpanded, setActivityExpanded] = useState(false)
 
+  // Dependencies
+  const [depBlocks, setDepBlocks] = useState<TaskDependency[]>([])
+  const [depBlockedBy, setDepBlockedBy] = useState<TaskDependency[]>([])
+  const [depsExpanded, setDepsExpanded] = useState(true)
+  const [addingDep, setAddingDep] = useState(false)
+  const [depSearch, setDepSearch] = useState('')
+
   useEffect(() => {
     if (task) {
       setTitle(task.title)
@@ -106,6 +115,7 @@ export function TaskDetail({
       loadComments(task.id)
       loadSubtasks(task.id)
       loadActivity(task.id)
+      loadDependencies(task.id)
     }
   }, [task])
 
@@ -128,6 +138,35 @@ export function TaskDetail({
     const data = await fetchActivity(taskId)
     setActivities(data)
     setLoadingActivity(false)
+  }
+
+  const loadDependencies = async (taskId: string) => {
+    try {
+      const res = await fetch(`/api/tasks/dependencies?task_id=${taskId}`)
+      const data = await res.json()
+      setDepBlocks(data.blocks || [])
+      setDepBlockedBy(data.blocked_by || [])
+    } catch {}
+  }
+
+  const handleAddDependency = async (blockedTaskId: string) => {
+    if (!task) return
+    const res = await fetch('/api/tasks/dependencies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ blocker_task_id: task.id, blocked_task_id: blockedTaskId, dependency_type: 'blocks' }),
+    })
+    const data = await res.json()
+    if (data.error) { alert(data.error); return }
+    setAddingDep(false)
+    setDepSearch('')
+    loadDependencies(task.id)
+  }
+
+  const handleRemoveDependency = async (depId: string) => {
+    if (!task) return
+    await fetch(`/api/tasks/dependencies?id=${depId}`, { method: 'DELETE' })
+    loadDependencies(task.id)
   }
 
   if (!task) return null
@@ -607,6 +646,89 @@ export function TaskDetail({
                   Post
                 </button>
               </div>
+            </div>
+
+            {/* ═══ DEPENDENCIES ═══ */}
+            <div>
+              <button onClick={() => setDepsExpanded(!depsExpanded)} className="flex items-center gap-1.5 w-full mb-2">
+                <Link2 className="w-3.5 h-3.5 text-gray-400" />
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                  Dependencies ({depBlocks.length + depBlockedBy.length})
+                </span>
+                {depsExpanded ? <ChevronUp className="w-3 h-3 text-gray-300 ml-auto" /> : <ChevronDown className="w-3 h-3 text-gray-300 ml-auto" />}
+              </button>
+              {depsExpanded && (
+                <div className="space-y-2">
+                  {/* Blocked by */}
+                  {depBlockedBy.length > 0 && (
+                    <div>
+                      <p className="text-[9px] text-orange-600 font-semibold mb-1">BLOCKED BY ({depBlockedBy.length})</p>
+                      {depBlockedBy.map(dep => (
+                        <div key={dep.id} className="bg-orange-50 border border-orange-200 rounded-lg p-2 mb-1.5 flex items-center gap-2">
+                          <AlertTriangle className="w-3 h-3 text-orange-500 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[10px] font-medium text-np-dark truncate">{(dep as any).blocker_task?.title || 'Unknown'}</p>
+                            <p className="text-[9px] text-gray-400">
+                              {(dep as any).blocker_task?.assignee || 'Unassigned'} · {columns.find(c => c.id === (dep as any).blocker_task?.column_id)?.title || ''}
+                            </p>
+                          </div>
+                          <button onClick={() => handleRemoveDependency(dep.id)} className="text-gray-400 hover:text-red-500 flex-shrink-0">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {/* This task blocks */}
+                  {depBlocks.length > 0 && (
+                    <div>
+                      <p className="text-[9px] text-red-600 font-semibold mb-1">THIS BLOCKS ({depBlocks.length})</p>
+                      {depBlocks.map(dep => (
+                        <div key={dep.id} className="bg-red-50 border border-red-200 rounded-lg p-2 mb-1.5 flex items-center gap-2">
+                          <Lock className="w-3 h-3 text-red-500 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[10px] font-medium text-np-dark truncate">{(dep as any).blocked_task?.title || 'Unknown'}</p>
+                            <p className="text-[9px] text-gray-400">
+                              {(dep as any).blocked_task?.assignee || 'Unassigned'} · {columns.find(c => c.id === (dep as any).blocked_task?.column_id)?.title || ''}
+                            </p>
+                          </div>
+                          <button onClick={() => handleRemoveDependency(dep.id)} className="text-gray-400 hover:text-red-500 flex-shrink-0">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {/* Add dependency */}
+                  {addingDep ? (
+                    <div className="border border-gray-200 rounded-lg p-2">
+                      <input value={depSearch} onChange={e => setDepSearch(e.target.value)}
+                        placeholder="Search tasks to add dependency..."
+                        spellCheck={false} autoComplete="off"
+                        className="w-full text-[10px] border border-gray-200 rounded px-2 py-1.5 mb-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30" autoFocus />
+                      <div className="max-h-32 overflow-y-auto space-y-0.5">
+                        {depSearch.trim() && tasks
+                          .filter(t => t.id !== task?.id && t.title.toLowerCase().includes(depSearch.toLowerCase()))
+                          .slice(0, 8)
+                          .map(t => (
+                            <button key={t.id} onClick={() => handleAddDependency(t.id)}
+                              className="w-full text-left text-[10px] px-2 py-1.5 rounded hover:bg-gray-50 truncate">
+                              {t.title} <span className="text-gray-400">· {columns.find(c => c.id === t.column_id)?.title}</span>
+                            </button>
+                          ))
+                        }
+                      </div>
+                      <button onClick={() => { setAddingDep(false); setDepSearch('') }}
+                        className="text-[9px] text-gray-400 mt-1 hover:text-gray-600">Cancel</button>
+                    </div>
+                  ) : (
+                    <button onClick={() => setAddingDep(true)}
+                      className="flex items-center gap-1 text-[10px] text-np-blue hover:underline">
+                      <Plus className="w-3 h-3" /> Add dependency (this task blocks...)
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* ═══ ACTIVITY FEED ═══ */}
