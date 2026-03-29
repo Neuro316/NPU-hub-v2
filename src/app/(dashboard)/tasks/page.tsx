@@ -616,7 +616,10 @@ function TasksPageInner() {
               teamMembers={teamMemberNames}
               colorOverrides={colorOverrides}
               onTaskClick={setSelectedTask}
-              onAddTask={addTask}
+              onAddTask={(columnId, title, extras) => {
+                const projId = activeProject !== 'all' && activeProject !== 'none' ? activeProject : undefined
+                return addTask(columnId, title, projId ? { ...extras, project_id: projId } : extras)
+              }}
               onDragStart={setDraggedTaskId}
               onDrop={handleDrop}
               onUpdateColumn={updateColumn}
