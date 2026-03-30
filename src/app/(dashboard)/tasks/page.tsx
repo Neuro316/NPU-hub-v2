@@ -148,7 +148,8 @@ function TasksPageInner() {
       filtered = filtered.filter(t =>
         t.title.toLowerCase().includes(q) || t.description?.toLowerCase().includes(q) ||
         t.assignee?.toLowerCase().includes(q) || t.priority?.toLowerCase().includes(q) ||
-        t.rock_tags?.some(tag => tag.toLowerCase().includes(q))
+        t.rock_tags?.some(tag => tag.toLowerCase().includes(q)) ||
+        t.custom_fields?.contact_name?.toLowerCase().includes(q)
       )
     }
     if (aiSearchResults) filtered = filtered.filter(t => aiSearchResults.includes(t.id))

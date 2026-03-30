@@ -3,7 +3,7 @@
 import type { KanbanTask } from '@/lib/types/tasks'
 import { PRIORITY_CONFIG } from '@/lib/types/tasks'
 import { getUserColor, getUserInitials, type ColorOverrides } from '@/lib/user-colors'
-import { Clock, MessageSquare, Link2, Zap, AlertTriangle, ListChecks, Lock, FileText } from 'lucide-react'
+import { Clock, MessageSquare, Link2, Zap, AlertTriangle, ListChecks, Lock, FileText, User } from 'lucide-react'
 
 interface TaskCardProps {
   task: KanbanTask
@@ -123,6 +123,13 @@ export function TaskCard({ task, colorOverrides, onClick, onDragStart }: TaskCar
       {/* Description preview */}
       {task.description && (
         <p className="text-[10px] text-gray-400 line-clamp-2 leading-snug mb-2">{task.description}</p>
+      )}
+
+      {/* Linked contact */}
+      {task.contact_id && task.custom_fields?.contact_name && (
+        <div className="flex items-center gap-1 text-[9px] text-teal-600 font-medium mb-1.5">
+          <User className="w-3 h-3" /> {task.custom_fields.contact_name}
+        </div>
       )}
 
       {/* Blocker warning */}

@@ -85,6 +85,12 @@ export function TaskDetail({
   const [estimatedHours, setEstimatedHours] = useState('')
   const [actualHours, setActualHours] = useState('')
   const [rockTags, setRockTags] = useState<string[]>([])
+  const [newTag, setNewTag] = useState('')
+  const [contactId, setContactId] = useState<string | null>(null)
+  const [contactName, setContactName] = useState('')
+  const [contactSearch, setContactSearch] = useState('')
+  const [contactResults, setContactResults] = useState<any[]>([])
+  const [showContactPicker, setShowContactPicker] = useState(false)
 
   // Phase 1: Subtasks
   const [subtasks, setSubtasks] = useState<Subtask[]>([])
@@ -130,6 +136,17 @@ export function TaskDetail({
       setEstimatedHours(task.estimated_hours?.toString() || '')
       setActualHours(task.actual_hours?.toString() || '')
       setRockTags(task.rock_tags || [])
+      setContactId(task.contact_id || null)
+      setContactName('')
+      setNewTag('')
+      setShowContactPicker(false)
+      // Load contact name if linked
+      if (task.contact_id) {
+        import('@/lib/supabase-browser').then(({ createClient }) => {
+          createClient().from('contacts').select('first_name, last_name').eq('id', task.contact_id!).maybeSingle()
+            .then(({ data }) => { if (data) setContactName(`${data.first_name || ''} ${data.last_name || ''}`.trim()) })
+        })
+      }
       loadComments(task.id)
       loadSubtasks(task.id)
       loadActivity(task.id)
@@ -316,16 +333,83 @@ export function TaskDetail({
         <div className="flex-1 overflow-y-auto">
           <div className="p-6 space-y-5">
 
-            {/* Rock Tags */}
-            {rockTags.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
+            {/* Tags */}
+            <div>
+              <div className="flex flex-wrap gap-1.5 mb-1.5">
                 {rockTags.map((tag, i) => (
-                  <span key={i} className="text-[9px] font-bold px-2 py-1 rounded-full bg-violet-50 text-violet-700 border border-violet-200">
-                    &#127919; {tag}
+                  <span key={i} className="text-[9px] font-bold px-2 py-1 rounded-full bg-violet-50 text-violet-700 border border-violet-200 flex items-center gap-1">
+                    {tag}
+                    <button onClick={() => {
+                      const updated = rockTags.filter((_, idx) => idx !== i)
+                      setRockTags(updated)
+                      save('rock_tags', updated)
+                    }} className="text-violet-400 hover:text-red-500"><X className="w-2.5 h-2.5" /></button>
                   </span>
                 ))}
+                <div className="flex items-center gap-1">
+                  <input value={newTag} onChange={e => setNewTag(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && newTag.trim()) {
+                        e.preventDefault()
+                        const updated = [...rockTags, newTag.trim()]
+                        setRockTags(updated)
+                        save('rock_tags', updated)
+                        setNewTag('')
+                      }
+                    }}
+                    placeholder="+ Add tag"
+                    className="text-[10px] border border-dashed border-gray-300 rounded-full px-2.5 py-0.5 w-24 focus:outline-none focus:border-violet-400 placeholder-gray-400" />
+                </div>
               </div>
-            )}
+            </div>
+
+            {/* Linked Contact */}
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Contact:</span>
+              {contactId && contactName ? (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-medium text-np-blue">{contactName}</span>
+                  <button onClick={() => { setContactId(null); setContactName(''); save('contact_id', null); onUpdate(task!.id, { custom_fields: { ...task!.custom_fields, contact_name: null } } as any) }}
+                    className="text-gray-400 hover:text-red-500"><X className="w-3 h-3" /></button>
+                </div>
+              ) : showContactPicker ? (
+                <div className="relative flex-1">
+                  <input value={contactSearch} onChange={async (e) => {
+                    setContactSearch(e.target.value)
+                    if (e.target.value.trim().length >= 2) {
+                      const { createClient } = await import('@/lib/supabase-browser')
+                      const { data } = await createClient().from('contacts').select('id, first_name, last_name')
+                        .eq('org_id', orgId).is('archived_at', null)
+                        .or(`first_name.ilike.%${e.target.value}%,last_name.ilike.%${e.target.value}%`)
+                        .limit(8)
+                      setContactResults(data || [])
+                    } else { setContactResults([]) }
+                  }}
+                    placeholder="Search contacts..."
+                    className="w-full text-[10px] border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30" autoFocus />
+                  {contactResults.length > 0 && (
+                    <div className="absolute left-0 top-full mt-1 w-full bg-white border border-gray-100 rounded-lg shadow-lg z-50 max-h-32 overflow-y-auto">
+                      {contactResults.map((c: any) => (
+                        <button key={c.id} onClick={() => {
+                          setContactId(c.id); setContactName(`${c.first_name || ''} ${c.last_name || ''}`.trim())
+                          const name = `${c.first_name || ''} ${c.last_name || ''}`.trim()
+                          save('contact_id', c.id); onUpdate(task!.id, { custom_fields: { ...task!.custom_fields, contact_name: name } } as any)
+                          setShowContactPicker(false); setContactSearch(''); setContactResults([])
+                        }}
+                          className="w-full text-left px-3 py-1.5 text-[10px] hover:bg-gray-50 truncate">
+                          {c.first_name} {c.last_name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <button onClick={() => { setShowContactPicker(false); setContactSearch(''); setContactResults([]) }}
+                    className="absolute right-1 top-1 text-gray-400"><X className="w-3 h-3" /></button>
+                </div>
+              ) : (
+                <button onClick={() => setShowContactPicker(true)}
+                  className="text-[10px] text-np-blue hover:underline">+ Link contact</button>
+              )}
+            </div>
 
             {/* Title */}
             <input

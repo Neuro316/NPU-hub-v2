@@ -41,6 +41,7 @@ export interface KanbanTask {
   approved_by: string | null
   started_at: string | null
   completed_at: string | null
+  contact_id: string | null
   created_at: string
   updated_at: string
   // Hierarchy & dependency fields
