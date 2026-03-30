@@ -6,7 +6,7 @@ import { useWorkspace } from '@/lib/workspace-context'
 import type {
   KanbanColumn, KanbanTask, TaskComment, CardTaskLink,
   Subtask, TaskActivity, Project, SavedView, ViewFilters,
-  ProjectProgress, TaskDependency, DependencyType
+  ProjectProgress, TaskDependency, DependencyType, TaskAttachment
 } from '@/lib/types/tasks'
 
 // Fields worth logging in the activity feed
@@ -582,6 +582,76 @@ export function useTaskData() {
     return { projectId, tasksCreated }
   }
 
+  // ─── Attachments ─────────────────────────────────────────
+  const fetchAttachments = async (taskId: string): Promise<TaskAttachment[]> => {
+    const { data } = await supabase
+      .from('task_attachments').select('*').eq('task_id', taskId).order('created_at', { ascending: false })
+    return (data || []) as TaskAttachment[]
+  }
+
+  const uploadAttachments = async (taskId: string, files: FileList) => {
+    if (!currentOrg) return { data: [], errors: ['No org selected'] }
+    const uploaded: TaskAttachment[] = []
+    const errors: string[] = []
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      if (file.size > 50 * 1024 * 1024) { errors.push(`${file.name}: Too large (max 50MB)`); continue }
+
+      try {
+        const path = `${currentOrg.id}/${taskId}/${Date.now()}-${file.name.replace(/[^a-z0-9._-]/gi, '-')}`
+        const { error: stErr } = await supabase.storage.from('task-attachments').upload(path, file)
+        if (stErr) { errors.push(`${file.name}: ${stErr.message}`); continue }
+
+        const { data: rec, error: dbErr } = await supabase.from('task_attachments').insert({
+          task_id: taskId, org_id: currentOrg.id,
+          file_name: file.name, file_size: file.size, file_type: file.type,
+          storage_path: path, uploaded_by: userId, uploaded_by_name: currentUserName,
+        }).select().single()
+
+        if (dbErr) {
+          errors.push(`${file.name}: ${dbErr.message}`)
+          await supabase.storage.from('task-attachments').remove([path])
+          continue
+        }
+        if (rec) { uploaded.push(rec as TaskAttachment); logActivity(taskId, 'attachment_added', undefined, undefined, file.name) }
+      } catch { errors.push(`${file.name}: Upload failed`) }
+    }
+
+    // Update attachment count cache
+    const task = tasks.find(t => t.id === taskId)
+    if (task && uploaded.length > 0) {
+      const count = (task.custom_fields?.attachment_count || 0) + uploaded.length
+      await supabase.from('kanban_tasks').update({ custom_fields: { ...task.custom_fields, attachment_count: count } }).eq('id', taskId)
+    }
+
+    return { data: uploaded, errors: errors.length > 0 ? errors : null }
+  }
+
+  const deleteAttachment = async (attachmentId: string, taskId: string) => {
+    const { data: att } = await supabase.from('task_attachments').select('storage_path, file_name').eq('id', attachmentId).single()
+    if (!att) return
+    await supabase.storage.from('task-attachments').remove([att.storage_path])
+    await supabase.from('task_attachments').delete().eq('id', attachmentId)
+    logActivity(taskId, 'attachment_removed', undefined, att.file_name, undefined)
+
+    const task = tasks.find(t => t.id === taskId)
+    if (task) {
+      const count = Math.max(0, (task.custom_fields?.attachment_count || 1) - 1)
+      await supabase.from('kanban_tasks').update({ custom_fields: { ...task.custom_fields, attachment_count: count } }).eq('id', taskId)
+    }
+  }
+
+  const downloadAttachment = async (attachment: TaskAttachment) => {
+    const { data, error } = await supabase.storage.from('task-attachments').download(attachment.storage_path)
+    if (error || !data) { console.error('Download failed:', error); return }
+    const url = URL.createObjectURL(data)
+    const a = document.createElement('a')
+    a.href = url; a.download = attachment.file_name
+    document.body.appendChild(a); a.click()
+    document.body.removeChild(a); URL.revokeObjectURL(url)
+  }
+
   // ─── Dependencies ─────────────────────────────────────────
   const fetchDependencies = async (taskId: string): Promise<{ blocks: TaskDependency[]; blocked_by: TaskDependency[] }> => {
     try {
@@ -644,5 +714,7 @@ export function useTaskData() {
     fetchDependencies, addDependency, removeDependency, toggleEpic,
     // Linked subtasks
     fetchLinkedSubtasks, linkTaskAsSubtask, unlinkSubtask,
+    // Attachments
+    fetchAttachments, uploadAttachments, deleteAttachment, downloadAttachment,
   }
 }

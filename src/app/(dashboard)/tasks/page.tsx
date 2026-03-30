@@ -57,6 +57,7 @@ function TasksPageInner() {
     addSavedView, updateSavedView, deleteSavedView,
     filterTasks,
     fetchLinkedSubtasks, linkTaskAsSubtask, unlinkSubtask,
+    fetchAttachments, uploadAttachments, deleteAttachment, downloadAttachment,
   } = useTaskData()
 
   const [selectedTask, setSelectedTask] = useState<KanbanTask | null>(null)
@@ -648,6 +649,10 @@ function TasksPageInner() {
         fetchLinkedSubtasks={fetchLinkedSubtasks}
         linkTaskAsSubtask={linkTaskAsSubtask}
         unlinkSubtask={unlinkSubtask}
+        fetchAttachments={fetchAttachments}
+        uploadAttachments={uploadAttachments}
+        deleteAttachment={deleteAttachment}
+        downloadAttachment={downloadAttachment}
         fetchActivity={fetchActivity}
         currentUser={currentUser} teamMembers={teamMemberNames}
         orgId={currentOrg?.id || ''} projects={projects}

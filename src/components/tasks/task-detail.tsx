@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import type { KanbanTask, KanbanColumn, TaskComment, Subtask, TaskActivity, Project, TaskDependency } from '@/lib/types/tasks'
+import type { KanbanTask, KanbanColumn, TaskComment, Subtask, TaskActivity, Project, TaskDependency, TaskAttachment } from '@/lib/types/tasks'
 import { PRIORITY_CONFIG } from '@/lib/types/tasks'
 import { X, Trash2, MessageSquare, Plus, Link2, Calendar, User, Flag, Eye, FileText, ExternalLink, Clock, Zap, AlertTriangle, ListChecks, CheckSquare, Square, Activity, ChevronDown, ChevronUp, Lock, FolderOpen, Loader2 } from 'lucide-react'
 import { LinkTaskModal } from './link-task-modal'
+import { TaskAttachments } from './task-attachments'
 import { notifyTaskAssigned, notifyTaskMoved, notifyRACIAssigned } from '@/lib/slack-notifications'
 
 interface TaskDetailProps {
@@ -30,6 +31,10 @@ interface TaskDetailProps {
   fetchLinkedSubtasks?: (taskId: string) => Promise<KanbanTask[]>
   linkTaskAsSubtask?: (parentId: string, childId: string) => Promise<any>
   unlinkSubtask?: (childId: string, parentId: string) => Promise<any>
+  fetchAttachments?: (taskId: string) => Promise<TaskAttachment[]>
+  uploadAttachments?: (taskId: string, files: FileList) => Promise<any>
+  deleteAttachment?: (attachmentId: string, taskId: string) => Promise<any>
+  downloadAttachment?: (attachment: TaskAttachment) => Promise<void>
 }
 
 const RACI_ROLES = [
@@ -56,6 +61,7 @@ export function TaskDetail({
   fetchActivity,
   currentUser, teamMembers, orgId, projects, allTasks,
   fetchLinkedSubtasks, linkTaskAsSubtask, unlinkSubtask,
+  fetchAttachments, uploadAttachments, deleteAttachment, downloadAttachment,
 }: TaskDetailProps) {
   const tasks = allTasks || []
   const [title, setTitle] = useState('')
@@ -102,6 +108,9 @@ export function TaskDetail({
   const [linkedSubtasks, setLinkedSubtasks] = useState<KanbanTask[]>([])
   const [showLinkTaskModal, setShowLinkTaskModal] = useState(false)
 
+  // Attachments
+  const [attachments, setAttachments] = useState<TaskAttachment[]>([])
+
   useEffect(() => {
     if (task) {
       setTitle(task.title)
@@ -126,6 +135,7 @@ export function TaskDetail({
       loadActivity(task.id)
       loadDependencies(task.id)
       if (fetchLinkedSubtasks) fetchLinkedSubtasks(task.id).then(setLinkedSubtasks)
+      if (fetchAttachments) fetchAttachments(task.id).then(setAttachments)
     }
   }, [task])
 
@@ -623,10 +633,29 @@ export function TaskDetail({
               </div>
             </div>
 
+            {/* File Attachments */}
+            {uploadAttachments && deleteAttachment && downloadAttachment && (
+              <TaskAttachments
+                taskId={task.id}
+                attachments={attachments}
+                onUpload={async (files) => {
+                  const result = await uploadAttachments(task.id, files)
+                  if (result.errors) alert(result.errors.join('\n'))
+                  if (fetchAttachments) setAttachments(await fetchAttachments(task.id))
+                }}
+                onDelete={async (id) => {
+                  if (!confirm('Delete this attachment?')) return
+                  await deleteAttachment(id, task.id)
+                  if (fetchAttachments) setAttachments(await fetchAttachments(task.id))
+                }}
+                onDownload={downloadAttachment}
+              />
+            )}
+
             {/* Linked Resources */}
             <div>
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">
-                <Link2 className="w-3 h-3 inline mr-0.5" /> Linked Resources
+                <Link2 className="w-3 h-3 inline mr-0.5" /> Linked URLs
               </label>
               <div className="space-y-2">
                 {['Google Sheet', 'Google Doc', 'Drive Folder', 'Other URL'].map(resType => {

@@ -3,7 +3,7 @@
 import type { KanbanTask } from '@/lib/types/tasks'
 import { PRIORITY_CONFIG } from '@/lib/types/tasks'
 import { getUserColor, getUserInitials, type ColorOverrides } from '@/lib/user-colors'
-import { Clock, MessageSquare, Link2, Zap, AlertTriangle, ListChecks, Lock } from 'lucide-react'
+import { Clock, MessageSquare, Link2, Zap, AlertTriangle, ListChecks, Lock, FileText } from 'lucide-react'
 
 interface TaskCardProps {
   task: KanbanTask
@@ -22,7 +22,7 @@ const RACI_COLORS: Record<string, string> = {
 export function TaskCard({ task, colorOverrides, onClick, onDragStart }: TaskCardProps) {
   const priority = PRIORITY_CONFIG[task.priority]
   const commentCount = task.custom_fields?.comment_count || 0
-  const linkCount = task.custom_fields?.link_count || 0
+  const attachmentCount = task.custom_fields?.attachment_count || 0
   const isOverdue = task.due_date && new Date(task.due_date) < new Date()
   const hasBlockers = (task.blocked_by_count || 0) > 0 || (task.blocked_by && task.blocked_by.length > 0)
   const isBlocking = (task.blocks_count || 0) > 0
@@ -199,9 +199,9 @@ export function TaskCard({ task, colorOverrides, onClick, onDragStart }: TaskCar
             <MessageSquare className="w-3 h-3" /> {commentCount}
           </span>
         )}
-        {linkCount > 0 && (
-          <span className="flex items-center gap-0.5">
-            <Link2 className="w-3 h-3" /> {linkCount}
+        {attachmentCount > 0 && (
+          <span className="flex items-center gap-0.5" title={`${attachmentCount} attachment${attachmentCount > 1 ? 's' : ''}`}>
+            <FileText className="w-3 h-3" /> {attachmentCount}
           </span>
         )}
       </div>

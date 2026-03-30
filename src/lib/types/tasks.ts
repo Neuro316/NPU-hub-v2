@@ -166,6 +166,39 @@ export interface ViewFilters {
   show_completed?: boolean
 }
 
+export interface TaskAttachment {
+  id: string
+  task_id: string
+  org_id: string
+  file_name: string
+  file_size: number
+  file_type: string
+  storage_path: string
+  uploaded_by: string | null
+  uploaded_by_name: string | null
+  created_at: string
+}
+
+export const formatFileSize = (bytes: number): string => {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
+}
+
+export const getFileIcon = (fileType: string): string => {
+  if (fileType.startsWith('image/')) return '🖼️'
+  if (fileType.startsWith('video/')) return '🎥'
+  if (fileType.startsWith('audio/')) return '🎵'
+  if (fileType.includes('pdf')) return '📄'
+  if (fileType.includes('word') || fileType.includes('document')) return '📝'
+  if (fileType.includes('sheet') || fileType.includes('excel')) return '📊'
+  if (fileType.includes('presentation') || fileType.includes('powerpoint')) return '📽️'
+  if (fileType.includes('zip') || fileType.includes('rar')) return '📦'
+  return '📎'
+}
+
 export const PRIORITY_CONFIG = {
   low: { label: 'Low', color: '#9CA3AF', bg: '#F3F4F6' },
   medium: { label: 'Medium', color: '#3B82F6', bg: '#DBEAFE' },
