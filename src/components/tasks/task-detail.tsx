@@ -441,39 +441,27 @@ export function TaskDetail({
               </div>
             </div>
 
-            {/* Visibility + Sequence */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">
-                  <Eye className="w-3 h-3 inline mr-0.5" /> Visibility
-                </label>
-                <select value={visibility}
-                  onChange={e => {
-                    const newVis = e.target.value as KanbanTask['visibility']
-                    setVisibility(newVis)
-                    save('visibility', newVis)
-                  }}
-                  className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30">
-                  <option value="everyone">Everyone</option>
-                  <option value="private">Personal (only me)</option>
-                  <option value="specific">Specific People</option>
-                </select>
-                {isPrivate && (
-                  <p className="text-[9px] text-violet-500 mt-1 flex items-center gap-1">
-                    <Lock className="w-3 h-3" /> Only you can see this task
-                  </p>
-                )}
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">
-                  Sequence #
-                </label>
-                <input type="number" min="1"
-                  value={task.sequence_order ?? ''}
-                  onChange={e => save('sequence_order', e.target.value ? parseInt(e.target.value) : null)}
-                  placeholder="--"
-                  className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
-              </div>
+            {/* Visibility */}
+            <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">
+                <Eye className="w-3 h-3 inline mr-0.5" /> Visibility
+              </label>
+              <select value={visibility}
+                onChange={e => {
+                  const newVis = e.target.value as KanbanTask['visibility']
+                  setVisibility(newVis)
+                  save('visibility', newVis)
+                }}
+                className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30">
+                <option value="everyone">Everyone</option>
+                <option value="private">Personal (only me)</option>
+                <option value="specific">Specific People</option>
+              </select>
+              {isPrivate && (
+                <p className="text-[9px] text-violet-500 mt-1 flex items-center gap-1">
+                  <Lock className="w-3 h-3" /> Only you can see this task
+                </p>
+              )}
             </div>
 
             {/* Description */}

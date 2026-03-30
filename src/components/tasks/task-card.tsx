@@ -204,9 +204,6 @@ export function TaskCard({ task, colorOverrides, onClick, onDragStart }: TaskCar
             <Link2 className="w-3 h-3" /> {linkCount}
           </span>
         )}
-        {task.sequence_order != null && (
-          <span className="ml-auto text-[8px] text-gray-300 font-mono">#{task.sequence_order}</span>
-        )}
       </div>
     </div>
   )
