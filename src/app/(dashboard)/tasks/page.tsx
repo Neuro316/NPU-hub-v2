@@ -56,6 +56,7 @@ function TasksPageInner() {
     addProject, updateProject, deleteProject,
     addSavedView, updateSavedView, deleteSavedView,
     filterTasks,
+    fetchLinkedSubtasks, linkTaskAsSubtask, unlinkSubtask,
   } = useTaskData()
 
   const [selectedTask, setSelectedTask] = useState<KanbanTask | null>(null)
@@ -644,6 +645,9 @@ function TasksPageInner() {
         fetchComments={fetchComments} addComment={addComment}
         fetchSubtasks={fetchSubtasks} addSubtask={addSubtask}
         updateSubtask={updateSubtask} deleteSubtask={deleteSubtask}
+        fetchLinkedSubtasks={fetchLinkedSubtasks}
+        linkTaskAsSubtask={linkTaskAsSubtask}
+        unlinkSubtask={unlinkSubtask}
         fetchActivity={fetchActivity}
         currentUser={currentUser} teamMembers={teamMemberNames}
         orgId={currentOrg?.id || ''} projects={projects}

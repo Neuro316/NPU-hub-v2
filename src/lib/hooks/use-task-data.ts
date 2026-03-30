@@ -291,6 +291,59 @@ export function useTaskData() {
     return { data, error }
   }
 
+  // ─── Linked Subtasks (parent-child via parent_task_id) ────
+  const fetchLinkedSubtasks = async (taskId: string): Promise<KanbanTask[]> => {
+    const { data } = await supabase
+      .from('kanban_tasks')
+      .select('*')
+      .eq('parent_task_id', taskId)
+      .order('sort_order')
+    return (data || []) as KanbanTask[]
+  }
+
+  const linkTaskAsSubtask = async (parentTaskId: string, childTaskId: string) => {
+    const { data, error } = await supabase
+      .from('kanban_tasks')
+      .update({ parent_task_id: parentTaskId })
+      .eq('id', childTaskId)
+      .select().single()
+    if (!error) {
+      await updateTaskSubtaskCounts(parentTaskId)
+      await fetchData()
+    }
+    return { data, error }
+  }
+
+  const unlinkSubtask = async (childTaskId: string, parentTaskId: string) => {
+    const { data, error } = await supabase
+      .from('kanban_tasks')
+      .update({ parent_task_id: null })
+      .eq('id', childTaskId)
+      .select().single()
+    if (!error) {
+      await updateTaskSubtaskCounts(parentTaskId)
+      await fetchData()
+    }
+    return { data, error }
+  }
+
+  const updateTaskSubtaskCounts = async (taskId: string) => {
+    const { count: inlineTotal } = await supabase
+      .from('subtasks').select('*', { count: 'exact', head: true }).eq('task_id', taskId)
+    const { count: inlineComplete } = await supabase
+      .from('subtasks').select('*', { count: 'exact', head: true }).eq('task_id', taskId).eq('completed', true)
+    const { count: linkedTotal } = await supabase
+      .from('kanban_tasks').select('*', { count: 'exact', head: true }).eq('parent_task_id', taskId)
+    const doneCol = columns.find(c => c.title.toLowerCase().includes('done'))
+    const { count: linkedComplete } = doneCol
+      ? await supabase.from('kanban_tasks').select('*', { count: 'exact', head: true }).eq('parent_task_id', taskId).eq('column_id', doneCol.id)
+      : { count: 0 }
+    await supabase.from('kanban_tasks').update({
+      subtasks_count: (inlineTotal || 0) + (linkedTotal || 0),
+      subtasks_complete: (inlineComplete || 0) + (linkedComplete || 0),
+    }).eq('id', taskId)
+  }
+
   // ─── Card-Task Links ──────────────────────────────────────
   const fetchCardLinks = async (taskId: string): Promise<CardTaskLink[]> => {
     const { data } = await supabase
@@ -589,5 +642,7 @@ export function useTaskData() {
     getProjectProgress, getAllProjectProgress, createProjectFromShipIt,
     // Dependencies
     fetchDependencies, addDependency, removeDependency, toggleEpic,
+    // Linked subtasks
+    fetchLinkedSubtasks, linkTaskAsSubtask, unlinkSubtask,
   }
 }

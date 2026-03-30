@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react'
 import type { KanbanTask, KanbanColumn, TaskComment, Subtask, TaskActivity, Project, TaskDependency } from '@/lib/types/tasks'
 import { PRIORITY_CONFIG } from '@/lib/types/tasks'
-import { X, Trash2, MessageSquare, Plus, Link2, Calendar, User, Flag, Eye, FileText, ExternalLink, Clock, Zap, AlertTriangle, ListChecks, CheckSquare, Square, Activity, ChevronDown, ChevronUp, Lock, FolderOpen } from 'lucide-react'
+import { X, Trash2, MessageSquare, Plus, Link2, Calendar, User, Flag, Eye, FileText, ExternalLink, Clock, Zap, AlertTriangle, ListChecks, CheckSquare, Square, Activity, ChevronDown, ChevronUp, Lock, FolderOpen, Loader2 } from 'lucide-react'
+import { LinkTaskModal } from './link-task-modal'
 import { notifyTaskAssigned, notifyTaskMoved, notifyRACIAssigned } from '@/lib/slack-notifications'
 
 interface TaskDetailProps {
@@ -26,6 +27,9 @@ interface TaskDetailProps {
   orgId: string
   projects?: Project[]
   allTasks?: KanbanTask[]
+  fetchLinkedSubtasks?: (taskId: string) => Promise<KanbanTask[]>
+  linkTaskAsSubtask?: (parentId: string, childId: string) => Promise<any>
+  unlinkSubtask?: (childId: string, parentId: string) => Promise<any>
 }
 
 const RACI_ROLES = [
@@ -51,6 +55,7 @@ export function TaskDetail({
   fetchSubtasks, addSubtask, updateSubtask, deleteSubtask,
   fetchActivity,
   currentUser, teamMembers, orgId, projects, allTasks,
+  fetchLinkedSubtasks, linkTaskAsSubtask, unlinkSubtask,
 }: TaskDetailProps) {
   const tasks = allTasks || []
   const [title, setTitle] = useState('')
@@ -93,6 +98,10 @@ export function TaskDetail({
   const [addingDep, setAddingDep] = useState(false)
   const [depSearch, setDepSearch] = useState('')
 
+  // Linked subtasks
+  const [linkedSubtasks, setLinkedSubtasks] = useState<KanbanTask[]>([])
+  const [showLinkTaskModal, setShowLinkTaskModal] = useState(false)
+
   useEffect(() => {
     if (task) {
       setTitle(task.title)
@@ -116,6 +125,7 @@ export function TaskDetail({
       loadSubtasks(task.id)
       loadActivity(task.id)
       loadDependencies(task.id)
+      if (fetchLinkedSubtasks) fetchLinkedSubtasks(task.id).then(setLinkedSubtasks)
     }
   }, [task])
 
@@ -250,7 +260,7 @@ export function TaskDetail({
   const subtaskPct = subtasks.length > 0 ? Math.round((subtaskDone / subtasks.length) * 100) : 0
   const isPrivate = visibility === 'private'
 
-  return (
+  return (<>
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
 
@@ -474,74 +484,111 @@ export function TaskDetail({
             </div>
 
             {/* ═══ SUBTASKS / CHECKLIST ═══ */}
-            <div>
-              <button
-                onClick={() => setSubtasksExpanded(!subtasksExpanded)}
-                className="flex items-center gap-1.5 w-full mb-2 group"
-              >
-                <ListChecks className="w-3.5 h-3.5 text-gray-400" />
-                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                  Subtasks ({subtaskDone}/{subtasks.length})
-                </span>
-                {subtasks.length > 0 && (
-                  <div className="flex-1 max-w-[120px] h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all duration-300"
-                      style={{
-                        width: subtaskPct + '%',
-                        backgroundColor: subtaskPct === 100 ? '#10B981' : '#3B82F6',
-                      }}
-                    />
-                  </div>
-                )}
-                {subtasksExpanded ? <ChevronUp className="w-3 h-3 text-gray-300 ml-auto" /> : <ChevronDown className="w-3 h-3 text-gray-300 ml-auto" />}
-              </button>
-
-              {subtasksExpanded && (
-                <div className="space-y-1 mb-2">
-                  {loadingSubtasks ? (
-                    <p className="text-xs text-gray-400">Loading...</p>
-                  ) : subtasks.length === 0 && !newSubtask ? (
-                    <p className="text-xs text-gray-400 pl-5">No subtasks yet</p>
-                  ) : (
-                    subtasks.map(st => (
-                      <div key={st.id} className="flex items-center gap-2 group/st px-1 py-1 rounded hover:bg-gray-50">
-                        <button onClick={() => handleToggleSubtask(st)} className="flex-shrink-0">
-                          {st.completed
-                            ? <CheckSquare className="w-4 h-4 text-green-500" />
-                            : <Square className="w-4 h-4 text-gray-300 hover:text-np-blue" />
-                          }
-                        </button>
-                        <span className={`text-xs flex-1 ${st.completed ? 'line-through text-gray-400' : 'text-np-dark'}`}>
-                          {st.title}
-                        </span>
-                        <button
-                          onClick={() => handleDeleteSubtask(st)}
-                          className="opacity-0 group-hover/st:opacity-100 text-gray-300 hover:text-red-400 transition-opacity"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
+            {(() => {
+              const linkedDone = linkedSubtasks.filter(t => {
+                const doneCol = columns.find(c => c.title.toLowerCase().includes('done'))
+                return t.column_id === doneCol?.id
+              }).length
+              const totalDone = subtaskDone + linkedDone
+              const totalAll = subtasks.length + linkedSubtasks.length
+              const pct = totalAll > 0 ? Math.round((totalDone / totalAll) * 100) : 0
+              return (
+                <div>
+                  <button onClick={() => setSubtasksExpanded(!subtasksExpanded)} className="flex items-center gap-1.5 w-full mb-2">
+                    <ListChecks className="w-3.5 h-3.5 text-gray-400" />
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                      Subtasks ({totalDone}/{totalAll})
+                    </span>
+                    {totalAll > 0 && (
+                      <div className="flex-1 max-w-[120px] h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full transition-all duration-300"
+                          style={{ width: pct + '%', backgroundColor: pct === 100 ? '#10B981' : '#3B82F6' }} />
                       </div>
-                    ))
-                  )}
+                    )}
+                    {subtasksExpanded ? <ChevronUp className="w-3 h-3 text-gray-300 ml-auto" /> : <ChevronDown className="w-3 h-3 text-gray-300 ml-auto" />}
+                  </button>
 
-                  {/* Add subtask input */}
-                  <div className="flex items-center gap-2 pl-1 pt-1">
-                    <Plus className="w-4 h-4 text-gray-300 flex-shrink-0" />
-                    <input
-                      value={newSubtask}
-                      onChange={e => setNewSubtask(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter' && newSubtask.trim()) handleAddSubtask()
-                        if (e.key === 'Escape') setNewSubtask('')
-                      }}
-                      placeholder="Add subtask..."
-                      className="flex-1 text-xs border-none focus:outline-none placeholder-gray-300 bg-transparent"
-                    />
-                  </div>
+                  {subtasksExpanded && (
+                    <div className="space-y-1.5 mb-2">
+                      {/* Inline subtasks */}
+                      {loadingSubtasks ? (
+                        <p className="text-xs text-gray-400 pl-5">Loading...</p>
+                      ) : (
+                        subtasks.map(st => (
+                          <div key={st.id} className="flex items-center gap-2 group/st px-1 py-1 rounded hover:bg-gray-50">
+                            <button onClick={() => handleToggleSubtask(st)} className="flex-shrink-0">
+                              {st.completed ? <CheckSquare className="w-4 h-4 text-green-500" /> : <Square className="w-4 h-4 text-gray-300 hover:text-np-blue" />}
+                            </button>
+                            <span className={`text-xs flex-1 ${st.completed ? 'line-through text-gray-400' : 'text-np-dark'}`}>{st.title}</span>
+                            <button onClick={() => handleDeleteSubtask(st)} className="opacity-0 group-hover/st:opacity-100 text-gray-300 hover:text-red-400 transition-opacity">
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))
+                      )}
+
+                      {/* Linked task cards */}
+                      {linkedSubtasks.map(lt => {
+                        const ltDone = columns.find(c => c.title.toLowerCase().includes('done'))?.id === lt.column_id
+                        return (
+                          <div key={lt.id} className={`border rounded-lg p-2.5 transition-all ${ltDone ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-200'}`}>
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <Link2 className="w-3 h-3 text-blue-600" />
+                              <span className="text-[9px] font-bold text-blue-700 uppercase">Linked Task</span>
+                              {ltDone && <span className="text-[9px] font-bold text-green-600 ml-auto">Done</span>}
+                            </div>
+                            <p className="text-xs font-medium text-np-dark mb-1">{lt.title}</p>
+                            <div className="flex items-center gap-2 text-[10px] text-gray-500">
+                              {lt.assignee && <span>{lt.assignee}</span>}
+                              <span>{columns.find(c => c.id === lt.column_id)?.title}</span>
+                              {lt.priority && (
+                                <span className="px-1 py-0.5 rounded text-[9px] font-medium"
+                                  style={{ backgroundColor: PRIORITY_CONFIG[lt.priority]?.bg, color: PRIORITY_CONFIG[lt.priority]?.color }}>
+                                  {PRIORITY_CONFIG[lt.priority]?.label}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex gap-2 mt-2">
+                              <button onClick={() => { onClose(); setTimeout(() => window.dispatchEvent(new CustomEvent('openTaskDetail', { detail: lt })), 100) }}
+                                className="text-[10px] px-2 py-1 rounded border border-blue-300 text-blue-700 hover:bg-blue-100 font-medium">
+                                View Card
+                              </button>
+                              {unlinkSubtask && (
+                                <button onClick={() => unlinkSubtask(lt.id, task!.id).then(() => fetchLinkedSubtasks?.(task!.id).then(d => setLinkedSubtasks(d || [])))}
+                                  className="text-[10px] px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50 font-medium">
+                                  Unlink
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+
+                      {subtasks.length === 0 && linkedSubtasks.length === 0 && !newSubtask && (
+                        <p className="text-xs text-gray-400 pl-5">No subtasks yet</p>
+                      )}
+
+                      {/* Add inline subtask */}
+                      <div className="flex items-center gap-2 pl-1 pt-1">
+                        <Plus className="w-4 h-4 text-gray-300 flex-shrink-0" />
+                        <input value={newSubtask} onChange={e => setNewSubtask(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter' && newSubtask.trim()) handleAddSubtask(); if (e.key === 'Escape') setNewSubtask('') }}
+                          placeholder="Add subtask..." spellCheck autoCapitalize="sentences"
+                          className="flex-1 text-xs border-none focus:outline-none placeholder-gray-300 bg-transparent" />
+                      </div>
+
+                      {/* Link existing task */}
+                      {linkTaskAsSubtask && (
+                        <button onClick={() => setShowLinkTaskModal(true)}
+                          className="w-full flex items-center justify-center gap-1.5 px-3 py-2 border-2 border-dashed border-blue-300 text-blue-700 text-[10px] font-medium rounded-lg hover:bg-blue-50 transition-colors">
+                          <Link2 className="w-3.5 h-3.5" /> Link Existing Task as Subtask
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              )
+            })()}
 
             {/* RACI Assignment */}
             <div>
@@ -790,5 +837,24 @@ export function TaskDetail({
         </div>
       </div>
     </div>
+
+    {/* Link Task Modal */}
+    {showLinkTaskModal && task && linkTaskAsSubtask && (
+      <LinkTaskModal
+        isOpen={showLinkTaskModal}
+        onClose={() => setShowLinkTaskModal(false)}
+        currentTask={task}
+        allTasks={tasks}
+        columns={columns}
+        onLink={async (childId) => {
+          await linkTaskAsSubtask(task.id, childId)
+          if (fetchLinkedSubtasks) {
+            const updated = await fetchLinkedSubtasks(task.id)
+            setLinkedSubtasks(updated)
+          }
+        }}
+      />
+    )}
+  </>
   )
 }

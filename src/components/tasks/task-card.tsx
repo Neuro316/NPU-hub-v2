@@ -93,6 +93,11 @@ export function TaskCard({ task, colorOverrides, onClick, onDragStart }: TaskCar
           {task.is_epic && (
             <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">Epic</span>
           )}
+          {task.parent_task_id && (
+            <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 flex items-center gap-0.5">
+              <Link2 className="w-2.5 h-2.5" /> Subtask
+            </span>
+          )}
           {isBlocking && (
             <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700">
               Blocking {task.blocks_count}
