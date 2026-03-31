@@ -7,6 +7,7 @@ import { SidebarProvider, useSidebar } from '@/lib/sidebar-context'
 import { Sidebar } from '@/components/sidebar'
 import { TrackerInit } from '@/components/tracker-init'
 import { HelpBot } from '@/components/help-bot'
+import { DynamicFavicon } from '@/components/dynamic-favicon'
 import { Menu } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 
@@ -56,6 +57,7 @@ export default function DashboardLayout({
       <PermissionsProvider>
         <SidebarProvider>
           <TrackerInit />
+          <DynamicFavicon />
           <DashboardContent>{children}</DashboardContent>
           <HelpBot />
         </SidebarProvider>
