@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Route, CheckSquare, Brain, FileText, Lightbulb,
   Users, Target, Megaphone, Radio, Calendar, BarChart3, Settings,
-  BookOpen, TicketCheck, Image, Rocket, Contact2, DollarSign, Package,
+  BookOpen, TicketCheck, Image, Rocket, Contact2, DollarSign, Package, LayoutGrid,
 } from 'lucide-react'
 
 /* ───────────────────────────────────────────────────────────
@@ -61,6 +61,7 @@ export const navCategories: NavCategory[] = [
     label: 'OPERATE',
     collapsible: true,
     items: [
+      { label: 'Programs', href: '/programs', icon: LayoutGrid, moduleKey: 'programs' },
       { label: 'Meetings', href: '/meetings', icon: Calendar, moduleKey: 'meetings' },
       { label: 'Rocks', href: '/rocks', icon: Target, moduleKey: 'rocks' },
       { label: 'My Tasks', href: '/tasks/my-tasks', icon: CheckSquare, moduleKey: 'tasks' },
