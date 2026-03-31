@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react'
 import { useMediaData } from '@/lib/hooks/use-media-data'
 import type { MediaAsset } from '@/lib/hooks/use-media-data'
-import { uploadToStorage } from '@/lib/storage'
+// Upload handled via /api/media/upload route
 import { useWorkspace } from '@/lib/workspace-context'
 import { Plus, Search, Grid, List, Upload, Image, Film, FileText, Folder, X, ExternalLink, Trash2, Tag, Eye } from 'lucide-react'
 
@@ -32,7 +32,7 @@ function formatSize(bytes: number | null) {
 
 export default function MediaPage() {
   const { currentOrg, loading: orgLoading } = useWorkspace()
-  const { assets, collections, loading, addAsset, updateAsset, deleteAsset, addCollection, deleteCollection } = useMediaData()
+  const { assets, collections, loading, refresh: refreshAssets, addAsset, updateAsset, deleteAsset, addCollection, deleteCollection } = useMediaData()
 
   const [search, setSearch] = useState('')
   const [brandFilter, setBrandFilter] = useState('all')
@@ -76,18 +76,21 @@ export default function MediaPage() {
     const file = e.target.files?.[0]
     if (!file || !currentOrg) return
     try {
-      const result = await uploadToStorage(file, 'media-library', currentOrg.id, 'assets')
-      await addAsset({
-        name: file.name,
-        url: result.publicUrl,
-        storage_path: result.path,
-        mime_type: file.type,
-        file_size: file.size,
-        brand: 'np',
-        tags: [],
-      } as any)
-    } catch (e: any) {
-      alert('Upload failed: ' + e.message)
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('org_id', currentOrg.id)
+      formData.append('brand', currentOrg.slug || 'np')
+
+      const res = await fetch('/api/media/upload', { method: 'POST', body: formData })
+      const result = await res.json()
+
+      if (!res.ok || result.error) {
+        alert('Upload failed: ' + (result.error || 'Unknown error'))
+      } else {
+        refreshAssets()
+      }
+    } catch (err: any) {
+      alert('Upload failed: ' + err.message)
     }
     if (fileInputRef.current) fileInputRef.current.value = ''
   }

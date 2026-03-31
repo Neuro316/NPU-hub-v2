@@ -1,9 +1,11 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import type { KanbanTask, KanbanColumn, TaskComment, Subtask, TaskActivity, Project } from '@/lib/types/tasks'
+import type { KanbanTask, KanbanColumn, TaskComment, Subtask, TaskActivity, Project, TaskDependency, TaskAttachment } from '@/lib/types/tasks'
 import { PRIORITY_CONFIG } from '@/lib/types/tasks'
-import { X, Trash2, MessageSquare, Plus, Link2, Calendar, User, Flag, Eye, FileText, ExternalLink, Clock, Zap, AlertTriangle, ListChecks, CheckSquare, Square, Activity, ChevronDown, ChevronUp, Lock, FolderOpen } from 'lucide-react'
+import { X, Trash2, MessageSquare, Plus, Link2, Calendar, User, Flag, Eye, FileText, ExternalLink, Clock, Zap, AlertTriangle, ListChecks, CheckSquare, Square, Activity, ChevronDown, ChevronUp, Lock, FolderOpen, Loader2 } from 'lucide-react'
+import { LinkTaskModal } from './link-task-modal'
+import { TaskAttachments } from './task-attachments'
 import { notifyTaskAssigned, notifyTaskMoved, notifyRACIAssigned } from '@/lib/slack-notifications'
 
 interface TaskDetailProps {
@@ -25,6 +27,14 @@ interface TaskDetailProps {
   teamMembers: string[]
   orgId: string
   projects?: Project[]
+  allTasks?: KanbanTask[]
+  fetchLinkedSubtasks?: (taskId: string) => Promise<KanbanTask[]>
+  linkTaskAsSubtask?: (parentId: string, childId: string) => Promise<any>
+  unlinkSubtask?: (childId: string, parentId: string) => Promise<any>
+  fetchAttachments?: (taskId: string) => Promise<TaskAttachment[]>
+  uploadAttachments?: (taskId: string, files: FileList) => Promise<any>
+  deleteAttachment?: (attachmentId: string, taskId: string) => Promise<any>
+  downloadAttachment?: (attachment: TaskAttachment) => Promise<void>
 }
 
 const RACI_ROLES = [
@@ -49,8 +59,11 @@ export function TaskDetail({
   fetchComments, addComment,
   fetchSubtasks, addSubtask, updateSubtask, deleteSubtask,
   fetchActivity,
-  currentUser, teamMembers, orgId, projects,
+  currentUser, teamMembers, orgId, projects, allTasks,
+  fetchLinkedSubtasks, linkTaskAsSubtask, unlinkSubtask,
+  fetchAttachments, uploadAttachments, deleteAttachment, downloadAttachment,
 }: TaskDetailProps) {
+  const tasks = allTasks || []
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [assignee, setAssignee] = useState('')
@@ -72,6 +85,12 @@ export function TaskDetail({
   const [estimatedHours, setEstimatedHours] = useState('')
   const [actualHours, setActualHours] = useState('')
   const [rockTags, setRockTags] = useState<string[]>([])
+  const [newTag, setNewTag] = useState('')
+  const [contactId, setContactId] = useState<string | null>(null)
+  const [contactName, setContactName] = useState('')
+  const [contactSearch, setContactSearch] = useState('')
+  const [contactResults, setContactResults] = useState<any[]>([])
+  const [showContactPicker, setShowContactPicker] = useState(false)
 
   // Phase 1: Subtasks
   const [subtasks, setSubtasks] = useState<Subtask[]>([])
@@ -83,6 +102,20 @@ export function TaskDetail({
   const [activities, setActivities] = useState<TaskActivity[]>([])
   const [loadingActivity, setLoadingActivity] = useState(false)
   const [activityExpanded, setActivityExpanded] = useState(false)
+
+  // Dependencies
+  const [depBlocks, setDepBlocks] = useState<TaskDependency[]>([])
+  const [depBlockedBy, setDepBlockedBy] = useState<TaskDependency[]>([])
+  const [depsExpanded, setDepsExpanded] = useState(true)
+  const [addingDepType, setAddingDepType] = useState<'blocks' | 'blocked_by' | 'related' | null>(null)
+  const [depSearch, setDepSearch] = useState('')
+
+  // Linked subtasks
+  const [linkedSubtasks, setLinkedSubtasks] = useState<KanbanTask[]>([])
+  const [showLinkTaskModal, setShowLinkTaskModal] = useState(false)
+
+  // Attachments
+  const [attachments, setAttachments] = useState<TaskAttachment[]>([])
 
   useEffect(() => {
     if (task) {
@@ -103,9 +136,23 @@ export function TaskDetail({
       setEstimatedHours(task.estimated_hours?.toString() || '')
       setActualHours(task.actual_hours?.toString() || '')
       setRockTags(task.rock_tags || [])
+      setContactId(task.contact_id || null)
+      setContactName('')
+      setNewTag('')
+      setShowContactPicker(false)
+      // Load contact name if linked
+      if (task.contact_id) {
+        import('@/lib/supabase-browser').then(({ createClient }) => {
+          createClient().from('contacts').select('first_name, last_name').eq('id', task.contact_id!).maybeSingle()
+            .then(({ data }) => { if (data) setContactName(`${data.first_name || ''} ${data.last_name || ''}`.trim()) })
+        })
+      }
       loadComments(task.id)
       loadSubtasks(task.id)
       loadActivity(task.id)
+      loadDependencies(task.id)
+      if (fetchLinkedSubtasks) fetchLinkedSubtasks(task.id).then(setLinkedSubtasks)
+      if (fetchAttachments) fetchAttachments(task.id).then(setAttachments)
     }
   }, [task])
 
@@ -128,6 +175,39 @@ export function TaskDetail({
     const data = await fetchActivity(taskId)
     setActivities(data)
     setLoadingActivity(false)
+  }
+
+  const loadDependencies = async (taskId: string) => {
+    try {
+      const res = await fetch(`/api/tasks/dependencies?task_id=${taskId}`)
+      const data = await res.json()
+      setDepBlocks(data.blocks || [])
+      setDepBlockedBy(data.blocked_by || [])
+    } catch {}
+  }
+
+  const handleAddDependency = async (targetTaskId: string) => {
+    if (!task || !addingDepType) return
+    // Determine direction based on type
+    const blocker = addingDepType === 'blocked_by' ? targetTaskId : task.id
+    const blocked = addingDepType === 'blocked_by' ? task.id : targetTaskId
+    const depType = addingDepType === 'related' ? 'related' : 'blocks'
+    const res = await fetch('/api/tasks/dependencies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ blocker_task_id: blocker, blocked_task_id: blocked, dependency_type: depType }),
+    })
+    const data = await res.json()
+    if (data.error) { alert(data.error); return }
+    setAddingDepType(null)
+    setDepSearch('')
+    loadDependencies(task.id)
+  }
+
+  const handleRemoveDependency = async (depId: string) => {
+    if (!task) return
+    await fetch(`/api/tasks/dependencies?id=${depId}`, { method: 'DELETE' })
+    loadDependencies(task.id)
   }
 
   if (!task) return null
@@ -211,7 +291,7 @@ export function TaskDetail({
   const subtaskPct = subtasks.length > 0 ? Math.round((subtaskDone / subtasks.length) * 100) : 0
   const isPrivate = visibility === 'private'
 
-  return (
+  return (<>
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
 
@@ -253,16 +333,83 @@ export function TaskDetail({
         <div className="flex-1 overflow-y-auto">
           <div className="p-6 space-y-5">
 
-            {/* Rock Tags */}
-            {rockTags.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
+            {/* Tags */}
+            <div>
+              <div className="flex flex-wrap gap-1.5 mb-1.5">
                 {rockTags.map((tag, i) => (
-                  <span key={i} className="text-[9px] font-bold px-2 py-1 rounded-full bg-violet-50 text-violet-700 border border-violet-200">
-                    &#127919; {tag}
+                  <span key={i} className="text-[9px] font-bold px-2 py-1 rounded-full bg-violet-50 text-violet-700 border border-violet-200 flex items-center gap-1">
+                    {tag}
+                    <button onClick={() => {
+                      const updated = rockTags.filter((_, idx) => idx !== i)
+                      setRockTags(updated)
+                      save('rock_tags', updated)
+                    }} className="text-violet-400 hover:text-red-500"><X className="w-2.5 h-2.5" /></button>
                   </span>
                 ))}
+                <div className="flex items-center gap-1">
+                  <input value={newTag} onChange={e => setNewTag(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && newTag.trim()) {
+                        e.preventDefault()
+                        const updated = [...rockTags, newTag.trim()]
+                        setRockTags(updated)
+                        save('rock_tags', updated)
+                        setNewTag('')
+                      }
+                    }}
+                    placeholder="+ Add tag"
+                    className="text-[10px] border border-dashed border-gray-300 rounded-full px-2.5 py-0.5 w-24 focus:outline-none focus:border-violet-400 placeholder-gray-400" />
+                </div>
               </div>
-            )}
+            </div>
+
+            {/* Linked Contact */}
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Contact:</span>
+              {contactId && contactName ? (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-medium text-np-blue">{contactName}</span>
+                  <button onClick={() => { setContactId(null); setContactName(''); save('contact_id', null); onUpdate(task!.id, { custom_fields: { ...task!.custom_fields, contact_name: null } } as any) }}
+                    className="text-gray-400 hover:text-red-500"><X className="w-3 h-3" /></button>
+                </div>
+              ) : showContactPicker ? (
+                <div className="relative flex-1">
+                  <input value={contactSearch} onChange={async (e) => {
+                    setContactSearch(e.target.value)
+                    if (e.target.value.trim().length >= 2) {
+                      const { createClient } = await import('@/lib/supabase-browser')
+                      const { data } = await createClient().from('contacts').select('id, first_name, last_name')
+                        .eq('org_id', orgId).is('archived_at', null)
+                        .or(`first_name.ilike.%${e.target.value}%,last_name.ilike.%${e.target.value}%`)
+                        .limit(8)
+                      setContactResults(data || [])
+                    } else { setContactResults([]) }
+                  }}
+                    placeholder="Search contacts..."
+                    className="w-full text-[10px] border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30" autoFocus />
+                  {contactResults.length > 0 && (
+                    <div className="absolute left-0 top-full mt-1 w-full bg-white border border-gray-100 rounded-lg shadow-lg z-50 max-h-32 overflow-y-auto">
+                      {contactResults.map((c: any) => (
+                        <button key={c.id} onClick={() => {
+                          setContactId(c.id); setContactName(`${c.first_name || ''} ${c.last_name || ''}`.trim())
+                          const name = `${c.first_name || ''} ${c.last_name || ''}`.trim()
+                          save('contact_id', c.id); onUpdate(task!.id, { custom_fields: { ...task!.custom_fields, contact_name: name } } as any)
+                          setShowContactPicker(false); setContactSearch(''); setContactResults([])
+                        }}
+                          className="w-full text-left px-3 py-1.5 text-[10px] hover:bg-gray-50 truncate">
+                          {c.first_name} {c.last_name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <button onClick={() => { setShowContactPicker(false); setContactSearch(''); setContactResults([]) }}
+                    className="absolute right-1 top-1 text-gray-400"><X className="w-3 h-3" /></button>
+                </div>
+              ) : (
+                <button onClick={() => setShowContactPicker(true)}
+                  className="text-[10px] text-np-blue hover:underline">+ Link contact</button>
+              )}
+            </div>
 
             {/* Title */}
             <input
@@ -388,39 +535,27 @@ export function TaskDetail({
               </div>
             </div>
 
-            {/* Visibility + Sequence */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">
-                  <Eye className="w-3 h-3 inline mr-0.5" /> Visibility
-                </label>
-                <select value={visibility}
-                  onChange={e => {
-                    const newVis = e.target.value as KanbanTask['visibility']
-                    setVisibility(newVis)
-                    save('visibility', newVis)
-                  }}
-                  className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30">
-                  <option value="everyone">Everyone</option>
-                  <option value="private">Personal (only me)</option>
-                  <option value="specific">Specific People</option>
-                </select>
-                {isPrivate && (
-                  <p className="text-[9px] text-violet-500 mt-1 flex items-center gap-1">
-                    <Lock className="w-3 h-3" /> Only you can see this task
-                  </p>
-                )}
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">
-                  Sequence #
-                </label>
-                <input type="number" min="1"
-                  value={task.sequence_order ?? ''}
-                  onChange={e => save('sequence_order', e.target.value ? parseInt(e.target.value) : null)}
-                  placeholder="--"
-                  className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30" />
-              </div>
+            {/* Visibility */}
+            <div>
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">
+                <Eye className="w-3 h-3 inline mr-0.5" /> Visibility
+              </label>
+              <select value={visibility}
+                onChange={e => {
+                  const newVis = e.target.value as KanbanTask['visibility']
+                  setVisibility(newVis)
+                  save('visibility', newVis)
+                }}
+                className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30">
+                <option value="everyone">Everyone</option>
+                <option value="private">Personal (only me)</option>
+                <option value="specific">Specific People</option>
+              </select>
+              {isPrivate && (
+                <p className="text-[9px] text-violet-500 mt-1 flex items-center gap-1">
+                  <Lock className="w-3 h-3" /> Only you can see this task
+                </p>
+              )}
             </div>
 
             {/* Description */}
@@ -435,74 +570,111 @@ export function TaskDetail({
             </div>
 
             {/* ═══ SUBTASKS / CHECKLIST ═══ */}
-            <div>
-              <button
-                onClick={() => setSubtasksExpanded(!subtasksExpanded)}
-                className="flex items-center gap-1.5 w-full mb-2 group"
-              >
-                <ListChecks className="w-3.5 h-3.5 text-gray-400" />
-                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                  Subtasks ({subtaskDone}/{subtasks.length})
-                </span>
-                {subtasks.length > 0 && (
-                  <div className="flex-1 max-w-[120px] h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all duration-300"
-                      style={{
-                        width: subtaskPct + '%',
-                        backgroundColor: subtaskPct === 100 ? '#10B981' : '#3B82F6',
-                      }}
-                    />
-                  </div>
-                )}
-                {subtasksExpanded ? <ChevronUp className="w-3 h-3 text-gray-300 ml-auto" /> : <ChevronDown className="w-3 h-3 text-gray-300 ml-auto" />}
-              </button>
-
-              {subtasksExpanded && (
-                <div className="space-y-1 mb-2">
-                  {loadingSubtasks ? (
-                    <p className="text-xs text-gray-400">Loading...</p>
-                  ) : subtasks.length === 0 && !newSubtask ? (
-                    <p className="text-xs text-gray-400 pl-5">No subtasks yet</p>
-                  ) : (
-                    subtasks.map(st => (
-                      <div key={st.id} className="flex items-center gap-2 group/st px-1 py-1 rounded hover:bg-gray-50">
-                        <button onClick={() => handleToggleSubtask(st)} className="flex-shrink-0">
-                          {st.completed
-                            ? <CheckSquare className="w-4 h-4 text-green-500" />
-                            : <Square className="w-4 h-4 text-gray-300 hover:text-np-blue" />
-                          }
-                        </button>
-                        <span className={`text-xs flex-1 ${st.completed ? 'line-through text-gray-400' : 'text-np-dark'}`}>
-                          {st.title}
-                        </span>
-                        <button
-                          onClick={() => handleDeleteSubtask(st)}
-                          className="opacity-0 group-hover/st:opacity-100 text-gray-300 hover:text-red-400 transition-opacity"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
+            {(() => {
+              const linkedDone = linkedSubtasks.filter(t => {
+                const doneCol = columns.find(c => c.title.toLowerCase().includes('done'))
+                return t.column_id === doneCol?.id
+              }).length
+              const totalDone = subtaskDone + linkedDone
+              const totalAll = subtasks.length + linkedSubtasks.length
+              const pct = totalAll > 0 ? Math.round((totalDone / totalAll) * 100) : 0
+              return (
+                <div>
+                  <button onClick={() => setSubtasksExpanded(!subtasksExpanded)} className="flex items-center gap-1.5 w-full mb-2">
+                    <ListChecks className="w-3.5 h-3.5 text-gray-400" />
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                      Subtasks ({totalDone}/{totalAll})
+                    </span>
+                    {totalAll > 0 && (
+                      <div className="flex-1 max-w-[120px] h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full transition-all duration-300"
+                          style={{ width: pct + '%', backgroundColor: pct === 100 ? '#10B981' : '#3B82F6' }} />
                       </div>
-                    ))
-                  )}
+                    )}
+                    {subtasksExpanded ? <ChevronUp className="w-3 h-3 text-gray-300 ml-auto" /> : <ChevronDown className="w-3 h-3 text-gray-300 ml-auto" />}
+                  </button>
 
-                  {/* Add subtask input */}
-                  <div className="flex items-center gap-2 pl-1 pt-1">
-                    <Plus className="w-4 h-4 text-gray-300 flex-shrink-0" />
-                    <input
-                      value={newSubtask}
-                      onChange={e => setNewSubtask(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter' && newSubtask.trim()) handleAddSubtask()
-                        if (e.key === 'Escape') setNewSubtask('')
-                      }}
-                      placeholder="Add subtask..."
-                      className="flex-1 text-xs border-none focus:outline-none placeholder-gray-300 bg-transparent"
-                    />
-                  </div>
+                  {subtasksExpanded && (
+                    <div className="space-y-1.5 mb-2">
+                      {/* Inline subtasks */}
+                      {loadingSubtasks ? (
+                        <p className="text-xs text-gray-400 pl-5">Loading...</p>
+                      ) : (
+                        subtasks.map(st => (
+                          <div key={st.id} className="flex items-center gap-2 group/st px-1 py-1 rounded hover:bg-gray-50">
+                            <button onClick={() => handleToggleSubtask(st)} className="flex-shrink-0">
+                              {st.completed ? <CheckSquare className="w-4 h-4 text-green-500" /> : <Square className="w-4 h-4 text-gray-300 hover:text-np-blue" />}
+                            </button>
+                            <span className={`text-xs flex-1 ${st.completed ? 'line-through text-gray-400' : 'text-np-dark'}`}>{st.title}</span>
+                            <button onClick={() => handleDeleteSubtask(st)} className="opacity-0 group-hover/st:opacity-100 text-gray-300 hover:text-red-400 transition-opacity">
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))
+                      )}
+
+                      {/* Linked task cards */}
+                      {linkedSubtasks.map(lt => {
+                        const ltDone = columns.find(c => c.title.toLowerCase().includes('done'))?.id === lt.column_id
+                        return (
+                          <div key={lt.id} className={`border rounded-lg p-2.5 transition-all ${ltDone ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-200'}`}>
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <Link2 className="w-3 h-3 text-blue-600" />
+                              <span className="text-[9px] font-bold text-blue-700 uppercase">Linked Task</span>
+                              {ltDone && <span className="text-[9px] font-bold text-green-600 ml-auto">Done</span>}
+                            </div>
+                            <p className="text-xs font-medium text-np-dark mb-1">{lt.title}</p>
+                            <div className="flex items-center gap-2 text-[10px] text-gray-500">
+                              {lt.assignee && <span>{lt.assignee}</span>}
+                              <span>{columns.find(c => c.id === lt.column_id)?.title}</span>
+                              {lt.priority && (
+                                <span className="px-1 py-0.5 rounded text-[9px] font-medium"
+                                  style={{ backgroundColor: PRIORITY_CONFIG[lt.priority]?.bg, color: PRIORITY_CONFIG[lt.priority]?.color }}>
+                                  {PRIORITY_CONFIG[lt.priority]?.label}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex gap-2 mt-2">
+                              <button onClick={() => { onClose(); setTimeout(() => window.dispatchEvent(new CustomEvent('openTaskDetail', { detail: lt })), 100) }}
+                                className="text-[10px] px-2 py-1 rounded border border-blue-300 text-blue-700 hover:bg-blue-100 font-medium">
+                                View Card
+                              </button>
+                              {unlinkSubtask && (
+                                <button onClick={() => unlinkSubtask(lt.id, task!.id).then(() => fetchLinkedSubtasks?.(task!.id).then(d => setLinkedSubtasks(d || [])))}
+                                  className="text-[10px] px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50 font-medium">
+                                  Unlink
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+
+                      {subtasks.length === 0 && linkedSubtasks.length === 0 && !newSubtask && (
+                        <p className="text-xs text-gray-400 pl-5">No subtasks yet</p>
+                      )}
+
+                      {/* Add inline subtask */}
+                      <div className="flex items-center gap-2 pl-1 pt-1">
+                        <Plus className="w-4 h-4 text-gray-300 flex-shrink-0" />
+                        <input value={newSubtask} onChange={e => setNewSubtask(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter' && newSubtask.trim()) handleAddSubtask(); if (e.key === 'Escape') setNewSubtask('') }}
+                          placeholder="Add subtask..." spellCheck autoCapitalize="sentences"
+                          className="flex-1 text-xs border-none focus:outline-none placeholder-gray-300 bg-transparent" />
+                      </div>
+
+                      {/* Link existing task */}
+                      {linkTaskAsSubtask && (
+                        <button onClick={() => setShowLinkTaskModal(true)}
+                          className="w-full flex items-center justify-center gap-1.5 px-3 py-2 border-2 border-dashed border-blue-300 text-blue-700 text-[10px] font-medium rounded-lg hover:bg-blue-50 transition-colors">
+                          <Link2 className="w-3.5 h-3.5" /> Link Existing Task as Subtask
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              )
+            })()}
 
             {/* RACI Assignment */}
             <div>
@@ -545,10 +717,29 @@ export function TaskDetail({
               </div>
             </div>
 
+            {/* File Attachments */}
+            {uploadAttachments && deleteAttachment && downloadAttachment && (
+              <TaskAttachments
+                taskId={task.id}
+                attachments={attachments}
+                onUpload={async (files) => {
+                  const result = await uploadAttachments(task.id, files)
+                  if (result.errors) alert(result.errors.join('\n'))
+                  if (fetchAttachments) setAttachments(await fetchAttachments(task.id))
+                }}
+                onDelete={async (id) => {
+                  if (!confirm('Delete this attachment?')) return
+                  await deleteAttachment(id, task.id)
+                  if (fetchAttachments) setAttachments(await fetchAttachments(task.id))
+                }}
+                onDownload={downloadAttachment}
+              />
+            )}
+
             {/* Linked Resources */}
             <div>
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">
-                <Link2 className="w-3 h-3 inline mr-0.5" /> Linked Resources
+                <Link2 className="w-3 h-3 inline mr-0.5" /> Linked URLs
               </label>
               <div className="space-y-2">
                 {['Google Sheet', 'Google Doc', 'Drive Folder', 'Other URL'].map(resType => {
@@ -607,6 +798,118 @@ export function TaskDetail({
                   Post
                 </button>
               </div>
+            </div>
+
+            {/* ═══ DEPENDENCIES ═══ */}
+            <div>
+              <button onClick={() => setDepsExpanded(!depsExpanded)} className="flex items-center gap-1.5 w-full mb-3">
+                <Link2 className="w-3.5 h-3.5 text-gray-400" />
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                  Dependencies ({depBlocks.length + depBlockedBy.length})
+                </span>
+                {depsExpanded ? <ChevronUp className="w-3 h-3 text-gray-300 ml-auto" /> : <ChevronDown className="w-3 h-3 text-gray-300 ml-auto" />}
+              </button>
+              {depsExpanded && (
+                <div className="space-y-4">
+
+                  {/* THIS TASK BLOCKS */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-[10px] font-semibold text-gray-700 uppercase tracking-wide">This task blocks</p>
+                      <button onClick={() => setAddingDepType('blocks')} className="text-[10px] text-blue-600 hover:text-blue-700 font-medium">
+                        + Add task that must wait for this
+                      </button>
+                    </div>
+                    {depBlocks.length > 0 ? (
+                      <div className="space-y-1.5">
+                        {depBlocks.map(dep => (
+                          <div key={dep.id} className="bg-red-50 border border-red-200 rounded-lg p-2 flex items-center gap-2">
+                            <Lock className="w-3 h-3 text-red-500 flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[10px] font-medium text-np-dark truncate">{(dep as any).blocked_task?.title || 'Unknown'}</p>
+                              <p className="text-[9px] text-gray-400">
+                                {(dep as any).blocked_task?.assignee || 'Unassigned'} · {columns.find(c => c.id === (dep as any).blocked_task?.column_id)?.title || ''}
+                              </p>
+                            </div>
+                            <button onClick={() => handleRemoveDependency(dep.id)} className="text-gray-400 hover:text-red-500 flex-shrink-0"><X className="w-3 h-3" /></button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[10px] text-gray-400 italic">No tasks waiting on this one</p>
+                    )}
+                  </div>
+
+                  {/* BLOCKED BY */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-[10px] font-semibold text-gray-700 uppercase tracking-wide">Blocked by</p>
+                      <button onClick={() => setAddingDepType('blocked_by')} className="text-[10px] text-blue-600 hover:text-blue-700 font-medium">
+                        + Add task this must wait for
+                      </button>
+                    </div>
+                    {depBlockedBy.length > 0 ? (
+                      <div className="space-y-1.5">
+                        {depBlockedBy.map(dep => (
+                          <div key={dep.id} className="bg-orange-50 border border-orange-200 rounded-lg p-2 flex items-center gap-2">
+                            <AlertTriangle className="w-3 h-3 text-orange-500 flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[10px] font-medium text-np-dark truncate">{(dep as any).blocker_task?.title || 'Unknown'}</p>
+                              <p className="text-[9px] text-gray-400">
+                                {(dep as any).blocker_task?.assignee || 'Unassigned'} · {columns.find(c => c.id === (dep as any).blocker_task?.column_id)?.title || ''}
+                              </p>
+                            </div>
+                            <button onClick={() => handleRemoveDependency(dep.id)} className="text-gray-400 hover:text-red-500 flex-shrink-0"><X className="w-3 h-3" /></button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[10px] text-gray-400 italic">No blockers — ready to start!</p>
+                    )}
+                  </div>
+
+                  {/* RELATED TASKS */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-[10px] font-semibold text-gray-700 uppercase tracking-wide">Related tasks</p>
+                      <button onClick={() => setAddingDepType('related')} className="text-[10px] text-blue-600 hover:text-blue-700 font-medium">
+                        + Add related task
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-gray-400 italic">Link tasks for reference (no blocking)</p>
+                  </div>
+
+                  {/* Search panel — shared for all three add types */}
+                  {addingDepType && (
+                    <div className="border border-blue-200 bg-blue-50/50 rounded-lg p-2.5">
+                      <p className="text-[10px] font-semibold text-blue-700 mb-1.5">
+                        {addingDepType === 'blocks' ? 'Select task that must wait for this one:' :
+                         addingDepType === 'blocked_by' ? 'Select task this one must wait for:' :
+                         'Select related task:'}
+                      </p>
+                      <input value={depSearch} onChange={e => setDepSearch(e.target.value)}
+                        placeholder="Search tasks..."
+                        spellCheck={false} autoComplete="off"
+                        className="w-full text-[10px] border border-gray-200 rounded px-2 py-1.5 mb-1.5 focus:outline-none focus:ring-1 focus:ring-blue-300" autoFocus />
+                      <div className="max-h-36 overflow-y-auto space-y-0.5">
+                        {depSearch.trim() && tasks
+                          .filter(t => t.id !== task?.id && t.title.toLowerCase().includes(depSearch.toLowerCase()))
+                          .slice(0, 10)
+                          .map(t => (
+                            <button key={t.id} onClick={() => handleAddDependency(t.id)}
+                              className="w-full text-left text-[10px] px-2 py-1.5 rounded hover:bg-blue-100 truncate text-np-dark">
+                              {t.title} <span className="text-gray-400">· {columns.find(c => c.id === t.column_id)?.title}</span>
+                            </button>
+                          ))
+                        }
+                      </div>
+                      <button onClick={() => { setAddingDepType(null); setDepSearch('') }}
+                        className="text-[9px] text-gray-500 mt-1.5 hover:text-gray-700">Cancel</button>
+                    </div>
+                  )}
+
+                </div>
+              )}
             </div>
 
             {/* ═══ ACTIVITY FEED ═══ */}
@@ -668,5 +971,24 @@ export function TaskDetail({
         </div>
       </div>
     </div>
+
+    {/* Link Task Modal */}
+    {showLinkTaskModal && task && linkTaskAsSubtask && (
+      <LinkTaskModal
+        isOpen={showLinkTaskModal}
+        onClose={() => setShowLinkTaskModal(false)}
+        currentTask={task}
+        allTasks={tasks}
+        columns={columns}
+        onLink={async (childId) => {
+          await linkTaskAsSubtask(task.id, childId)
+          if (fetchLinkedSubtasks) {
+            const updated = await fetchLinkedSubtasks(task.id)
+            setLinkedSubtasks(updated)
+          }
+        }}
+      />
+    )}
+  </>
   )
 }

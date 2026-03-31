@@ -56,6 +56,8 @@ function TasksPageInner() {
     addProject, updateProject, deleteProject,
     addSavedView, updateSavedView, deleteSavedView,
     filterTasks,
+    fetchLinkedSubtasks, linkTaskAsSubtask, unlinkSubtask,
+    fetchAttachments, uploadAttachments, deleteAttachment, downloadAttachment,
   } = useTaskData()
 
   const [selectedTask, setSelectedTask] = useState<KanbanTask | null>(null)
@@ -146,7 +148,8 @@ function TasksPageInner() {
       filtered = filtered.filter(t =>
         t.title.toLowerCase().includes(q) || t.description?.toLowerCase().includes(q) ||
         t.assignee?.toLowerCase().includes(q) || t.priority?.toLowerCase().includes(q) ||
-        t.rock_tags?.some(tag => tag.toLowerCase().includes(q))
+        t.rock_tags?.some(tag => tag.toLowerCase().includes(q)) ||
+        t.custom_fields?.contact_name?.toLowerCase().includes(q)
       )
     }
     if (aiSearchResults) filtered = filtered.filter(t => aiSearchResults.includes(t.id))
@@ -638,11 +641,19 @@ function TasksPageInner() {
       {/* ── Modals ── */}
       <TaskDetail
         task={selectedTask} columns={columns}
+        allTasks={tasks}
         onClose={() => setSelectedTask(null)}
         onUpdate={updateTask} onDelete={deleteTask}
         fetchComments={fetchComments} addComment={addComment}
         fetchSubtasks={fetchSubtasks} addSubtask={addSubtask}
         updateSubtask={updateSubtask} deleteSubtask={deleteSubtask}
+        fetchLinkedSubtasks={fetchLinkedSubtasks}
+        linkTaskAsSubtask={linkTaskAsSubtask}
+        unlinkSubtask={unlinkSubtask}
+        fetchAttachments={fetchAttachments}
+        uploadAttachments={uploadAttachments}
+        deleteAttachment={deleteAttachment}
+        downloadAttachment={downloadAttachment}
         fetchActivity={fetchActivity}
         currentUser={currentUser} teamMembers={teamMemberNames}
         orgId={currentOrg?.id || ''} projects={projects}

@@ -41,8 +41,29 @@ export interface KanbanTask {
   approved_by: string | null
   started_at: string | null
   completed_at: string | null
+  contact_id: string | null
   created_at: string
   updated_at: string
+  // Hierarchy & dependency fields
+  parent_task_id: string | null
+  is_epic: boolean
+  blocks_count: number
+  blocked_by_count: number
+  subtasks_count: number
+  subtasks_complete: number
+}
+
+export type DependencyType = 'blocks' | 'related'
+
+export interface TaskDependency {
+  id: string
+  blocker_task_id: string
+  blocked_task_id: string
+  dependency_type: DependencyType
+  created_by: string | null
+  created_at: string
+  blocker_task?: KanbanTask
+  blocked_task?: KanbanTask
 }
 
 // Phase 1: Subtasks
@@ -144,6 +165,39 @@ export interface ViewFilters {
   search?: string | null
   tags?: string[]
   show_completed?: boolean
+}
+
+export interface TaskAttachment {
+  id: string
+  task_id: string
+  org_id: string
+  file_name: string
+  file_size: number
+  file_type: string
+  storage_path: string
+  uploaded_by: string | null
+  uploaded_by_name: string | null
+  created_at: string
+}
+
+export const formatFileSize = (bytes: number): string => {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
+}
+
+export const getFileIcon = (fileType: string): string => {
+  if (fileType.startsWith('image/')) return '🖼️'
+  if (fileType.startsWith('video/')) return '🎥'
+  if (fileType.startsWith('audio/')) return '🎵'
+  if (fileType.includes('pdf')) return '📄'
+  if (fileType.includes('word') || fileType.includes('document')) return '📝'
+  if (fileType.includes('sheet') || fileType.includes('excel')) return '📊'
+  if (fileType.includes('presentation') || fileType.includes('powerpoint')) return '📽️'
+  if (fileType.includes('zip') || fileType.includes('rar')) return '📦'
+  return '📎'
 }
 
 export const PRIORITY_CONFIG = {
