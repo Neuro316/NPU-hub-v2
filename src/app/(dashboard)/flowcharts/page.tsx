@@ -436,6 +436,8 @@ export default function FlowchartsPage() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      const active = document.activeElement
+      if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (editingNodeRef.current) return
         if (editingConnRef.current) { setEditingConn(null); return }
