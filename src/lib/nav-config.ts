@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Route, CheckSquare, Brain, FileText, Lightbulb,
   Users, Target, Megaphone, Radio, Calendar, BarChart3, Settings,
-  BookOpen, TicketCheck, Image, Rocket, Contact2, DollarSign, Package,
+  BookOpen, TicketCheck, Image, Rocket, Contact2, DollarSign, Package, GitBranch,
 } from 'lucide-react'
 
 /* ───────────────────────────────────────────────────────────
@@ -66,6 +66,7 @@ export const navCategories: NavCategory[] = [
       { label: 'My Tasks', href: '/tasks/my-tasks', icon: CheckSquare, moduleKey: 'tasks' },
       { label: 'Task Manager', href: '/tasks', icon: CheckSquare, moduleKey: 'tasks' },
       { label: 'Journey Builder', href: '/journeys', icon: Route, moduleKey: 'journeys' },
+      { label: 'Flow Builder', href: '/flowcharts', icon: GitBranch, moduleKey: 'flowcharts' },
       { label: 'SOPs', href: '/sops', icon: FileText, moduleKey: 'sops' },
       { label: 'Support Tickets', href: '/tickets', icon: TicketCheck, moduleKey: 'tickets' },
       { label: 'Equipment', href: '/equipment', icon: Package, moduleKey: 'equipment' },
