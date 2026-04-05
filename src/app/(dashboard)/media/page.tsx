@@ -108,6 +108,7 @@ export default function MediaPage() {
   const [brandFilter, setBrandFilter] = useState('all')
   const [collectionFilter, setCollectionFilter] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+  const [gridSize, setGridSize] = useState<'sm' | 'md' | 'lg'>('md')
   const [selectedAsset, setSelectedAsset] = useState<MediaAsset | null>(null)
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
@@ -322,14 +323,26 @@ export default function MediaPage() {
           ))}
         </div>
 
-        {/* View toggle */}
-        <div className="flex bg-gray-100 rounded-lg p-0.5">
-          <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded ${viewMode === 'grid' ? 'bg-white shadow-sm' : ''}`}>
-            <Grid className="w-3.5 h-3.5 text-gray-600" />
-          </button>
-          <button onClick={() => setViewMode('list')} className={`p-1.5 rounded ${viewMode === 'list' ? 'bg-white shadow-sm' : ''}`}>
-            <List className="w-3.5 h-3.5 text-gray-600" />
-          </button>
+        {/* Size + View toggle */}
+        <div className="flex items-center gap-2">
+          {viewMode === 'grid' && (
+            <div className="flex bg-gray-100 rounded-lg p-0.5">
+              {(['sm', 'md', 'lg'] as const).map(s => (
+                <button key={s} onClick={() => setGridSize(s)}
+                  className={`px-2 py-1 text-[9px] font-bold rounded ${gridSize === s ? 'bg-white shadow-sm text-np-dark' : 'text-gray-500'}`}>
+                  {s === 'sm' ? 'S' : s === 'md' ? 'M' : 'L'}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex bg-gray-100 rounded-lg p-0.5">
+            <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded ${viewMode === 'grid' ? 'bg-white shadow-sm' : ''}`}>
+              <Grid className="w-3.5 h-3.5 text-gray-600" />
+            </button>
+            <button onClick={() => setViewMode('list')} className={`p-1.5 rounded ${viewMode === 'list' ? 'bg-white shadow-sm' : ''}`}>
+              <List className="w-3.5 h-3.5 text-gray-600" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -347,7 +360,11 @@ export default function MediaPage() {
 
       {/* Grid View */}
       {viewMode === 'grid' && filtered.length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+        <div className={`grid gap-3 ${
+          gridSize === 'sm' ? 'grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8' :
+          gridSize === 'lg' ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3' :
+          'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'
+        }`}>
           {filtered.map(asset => (
             <div key={asset.id} onClick={() => setSelectedAsset(asset)}
               className="bg-white border border-gray-100 rounded-xl overflow-hidden cursor-pointer hover:shadow-md hover:border-gray-200 transition-all group">
