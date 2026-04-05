@@ -16,11 +16,40 @@ const BRAND_OPTIONS = [
 
 const COLLECTION_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16']
 
-function getTypeIcon(mime: string | null) {
-  if (!mime) return <FileText className="w-5 h-5" />
-  if (mime.startsWith('image')) return <Image className="w-5 h-5" />
-  if (mime.startsWith('video')) return <Film className="w-5 h-5" />
-  return <FileText className="w-5 h-5" />
+function getTypeIcon(mime: string | null, size?: 'sm' | 'lg') {
+  const cls = size === 'lg' ? 'w-10 h-10' : 'w-5 h-5'
+  if (!mime) return <FileText className={cls} />
+  if (mime.startsWith('image')) return <Image className={cls} />
+  if (mime.startsWith('video')) return <Film className={cls} />
+  if (mime.includes('pdf')) return <FileText className={cls} />
+  return <FileText className={cls} />
+}
+
+function getTypeEmoji(mime: string | null): string {
+  if (!mime) return '📎'
+  if (mime.startsWith('image')) return '🖼️'
+  if (mime.startsWith('video')) return '🎥'
+  if (mime.startsWith('audio')) return '🎵'
+  if (mime.includes('pdf')) return '📄'
+  if (mime.includes('word') || mime.includes('document')) return '📝'
+  if (mime.includes('sheet') || mime.includes('excel')) return '📊'
+  if (mime.includes('presentation') || mime.includes('powerpoint')) return '📽️'
+  if (mime.includes('zip') || mime.includes('rar')) return '📦'
+  return '📎'
+}
+
+function getTypeColor(mime: string | null): string {
+  if (!mime) return '#6B7280'
+  if (mime.startsWith('image')) return '#3B82F6'
+  if (mime.startsWith('video')) return '#EF4444'
+  if (mime.includes('pdf')) return '#DC2626'
+  if (mime.includes('word') || mime.includes('document')) return '#2563EB'
+  if (mime.includes('sheet') || mime.includes('excel')) return '#16A34A'
+  return '#6B7280'
+}
+
+function getFileExt(name: string): string {
+  return name.split('.').pop()?.toUpperCase() || ''
 }
 
 function formatSize(bytes: number | null) {
@@ -57,16 +86,39 @@ export default function MediaPage() {
 
   const handleAddUrl = async () => {
     if (!newUrl.trim() || !newName.trim()) return
-    const isImage = /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(newUrl)
-    const isVideo = /\.(mp4|mov|webm)$/i.test(newUrl)
-    await addAsset({
+    const url = newUrl.trim()
+    const isImage = /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(url)
+    const isVideo = /\.(mp4|mov|webm)$/i.test(url)
+    const isYouTube = url.includes('youtube.com') || url.includes('youtu.be')
+    const isVimeo = url.includes('vimeo.com')
+
+    // Auto-generate thumbnail for YouTube/Vimeo
+    let thumb: string | null = null
+    if (isImage) {
+      thumb = url
+    } else if (isYouTube) {
+      const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&?/]+)/)
+      if (match) thumb = `https://img.youtube.com/vi/${match[1]}/maxresdefault.jpg`
+    }
+
+    const result = await addAsset({
       name: newName.trim(),
-      url: newUrl.trim(),
-      thumbnail_url: isImage ? newUrl.trim() : null,
-      mime_type: isImage ? 'image/jpeg' : isVideo ? 'video/mp4' : 'application/octet-stream',
+      url,
+      thumbnail_url: thumb,
+      mime_type: isImage ? 'image/jpeg' : (isVideo || isYouTube || isVimeo) ? 'video/mp4' : 'application/octet-stream',
       brand: newBrand,
       tags: [],
     } as any)
+
+    // For Vimeo and other links, try async thumbnail generation
+    if (!thumb && result && (result as any).id) {
+      fetch('/api/media/generate-thumbnail', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assetId: (result as any).id }),
+      }).catch(() => {})
+    }
+
     setNewUrl('')
     setNewName('')
     setAddingUrl(false)
@@ -250,10 +302,18 @@ export default function MediaPage() {
               className="bg-white border border-gray-100 rounded-xl overflow-hidden cursor-pointer hover:shadow-md hover:border-gray-200 transition-all group">
               {/* Thumbnail */}
               <div className="aspect-square bg-gray-50 flex items-center justify-center relative overflow-hidden">
-                {asset.mime_type?.startsWith('image') && asset.url ? (
-                  <img src={asset.thumbnail_url || asset.url} alt={asset.name} className="w-full h-full object-cover" />
+                {asset.thumbnail_url || (asset.mime_type?.startsWith('image') && asset.url) ? (
+                  <img src={asset.thumbnail_url || asset.url} alt={asset.name}
+                    className="w-full h-full object-cover"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
                 ) : (
-                  <div className="text-gray-300">{getTypeIcon(asset.mime_type)}</div>
+                  <div className="flex flex-col items-center gap-2">
+                    <span className="text-3xl">{getTypeEmoji(asset.mime_type)}</span>
+                    <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded"
+                      style={{ backgroundColor: getTypeColor(asset.mime_type) + '20', color: getTypeColor(asset.mime_type) }}>
+                      {getFileExt(asset.name) || asset.mime_type?.split('/')[1]?.toUpperCase() || 'FILE'}
+                    </span>
+                  </div>
                 )}
                 <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
                   <Eye className="w-4 h-4 text-white drop-shadow-lg" />
@@ -288,10 +348,11 @@ export default function MediaPage() {
               <button key={asset.id} onClick={() => setSelectedAsset(asset)}
                 className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left">
                 <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
-                  {asset.mime_type?.startsWith('image') && asset.url ? (
-                    <img src={asset.thumbnail_url || asset.url} alt="" className="w-full h-full object-cover" />
+                  {asset.thumbnail_url || (asset.mime_type?.startsWith('image') && asset.url) ? (
+                    <img src={asset.thumbnail_url || asset.url} alt="" className="w-full h-full object-cover"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
                   ) : (
-                    <span className="text-gray-400">{getTypeIcon(asset.mime_type)}</span>
+                    <span className="text-lg">{getTypeEmoji(asset.mime_type)}</span>
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
