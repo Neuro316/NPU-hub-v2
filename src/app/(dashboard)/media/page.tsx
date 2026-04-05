@@ -5,7 +5,7 @@ import { useMediaData } from '@/lib/hooks/use-media-data'
 import type { MediaAsset } from '@/lib/hooks/use-media-data'
 // Upload handled via /api/media/upload route
 import { useWorkspace } from '@/lib/workspace-context'
-import { Plus, Search, Grid, List, Upload, Image, Film, FileText, Folder, X, ExternalLink, Trash2, Tag, Eye } from 'lucide-react'
+import { Plus, Search, Grid, List, Upload, Image, Film, FileText, Folder, X, ExternalLink, Trash2, Tag, Eye, Download, Play, Maximize2 } from 'lucide-react'
 
 const BRAND_OPTIONS = [
   { value: 'all', label: 'All Brands', color: '#6B7280' },
@@ -50,6 +50,47 @@ function getTypeColor(mime: string | null): string {
 
 function getFileExt(name: string): string {
   return name.split('.').pop()?.toUpperCase() || ''
+}
+
+function getEmbedUrl(url: string, mime: string | null): { type: 'image' | 'video' | 'pdf' | 'office' | 'iframe' | 'none'; src: string } {
+  if (!url) return { type: 'none', src: '' }
+
+  // Images
+  if (mime?.startsWith('image/')) return { type: 'image', src: url }
+
+  // YouTube
+  if (url.includes('youtube.com') || url.includes('youtu.be')) {
+    const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&?/]+)/)
+    if (match) return { type: 'video', src: `https://www.youtube.com/embed/${match[1]}` }
+  }
+
+  // Vimeo
+  if (url.includes('vimeo.com')) {
+    const match = url.match(/vimeo\.com\/(\d+)/)
+    if (match) return { type: 'video', src: `https://player.vimeo.com/video/${match[1]}` }
+  }
+
+  // HTML5 video
+  if (mime?.startsWith('video/')) return { type: 'video', src: url }
+
+  // PDFs
+  if (mime?.includes('pdf') || url.toLowerCase().endsWith('.pdf')) {
+    return { type: 'pdf', src: url }
+  }
+
+  // Office docs — use Microsoft Online Viewer
+  const officeExts = ['.docx', '.doc', '.xlsx', '.xls', '.pptx', '.ppt']
+  if (officeExts.some(ext => url.toLowerCase().endsWith(ext))) {
+    return { type: 'office', src: `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url)}` }
+  }
+
+  // Google Docs/Sheets/Slides
+  if (url.includes('docs.google.com') || url.includes('sheets.google.com') || url.includes('slides.google.com')) {
+    const embedUrl = url.replace(/\/edit.*$/, '/preview').replace(/\/view.*$/, '/preview')
+    return { type: 'iframe', src: embedUrl }
+  }
+
+  return { type: 'none', src: '' }
 }
 
 function formatSize(bytes: number | null) {
@@ -393,13 +434,57 @@ export default function MediaPage() {
             </div>
             <div className="flex-1 overflow-y-auto p-5 space-y-4">
               {/* Preview */}
-              <div className="bg-gray-50 rounded-xl overflow-hidden">
-                {selectedAsset.mime_type?.startsWith('image') ? (
-                  <img src={selectedAsset.url} alt={selectedAsset.name} className="w-full" />
-                ) : (
-                  <div className="flex items-center justify-center py-12 text-gray-300">{getTypeIcon(selectedAsset.mime_type)}</div>
-                )}
-              </div>
+              {(() => {
+                const embed = getEmbedUrl(selectedAsset.url, selectedAsset.mime_type)
+                return (
+                  <div className="bg-gray-50 rounded-xl overflow-hidden">
+                    {embed.type === 'image' && (
+                      <img src={selectedAsset.url} alt={selectedAsset.name} className="w-full" />
+                    )}
+                    {embed.type === 'video' && (
+                      selectedAsset.mime_type?.startsWith('video/') && !embed.src.includes('youtube') && !embed.src.includes('vimeo') ? (
+                        <video src={embed.src} controls className="w-full" preload="metadata" />
+                      ) : (
+                        <div className="aspect-video">
+                          <iframe src={embed.src} className="w-full h-full border-0" allowFullScreen
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" />
+                        </div>
+                      )
+                    )}
+                    {embed.type === 'pdf' && (
+                      <div className="aspect-[3/4]">
+                        <iframe src={embed.src} className="w-full h-full border-0" />
+                      </div>
+                    )}
+                    {embed.type === 'office' && (
+                      <div className="aspect-[3/4]">
+                        <iframe src={embed.src} className="w-full h-full border-0" />
+                      </div>
+                    )}
+                    {embed.type === 'iframe' && (
+                      <div className="aspect-video">
+                        <iframe src={embed.src} className="w-full h-full border-0" allowFullScreen />
+                      </div>
+                    )}
+                    {embed.type === 'none' && (
+                      <div className="flex flex-col items-center justify-center py-12 gap-3">
+                        <span className="text-4xl">{getTypeEmoji(selectedAsset.mime_type)}</span>
+                        <span className="text-xs font-bold uppercase tracking-wider px-3 py-1 rounded"
+                          style={{ backgroundColor: getTypeColor(selectedAsset.mime_type) + '20', color: getTypeColor(selectedAsset.mime_type) }}>
+                          {getFileExt(selectedAsset.name) || 'FILE'}
+                        </span>
+                        <p className="text-xs text-gray-400">Preview not available</p>
+                        {selectedAsset.url && (
+                          <a href={selectedAsset.url} target="_blank" rel="noopener"
+                            className="flex items-center gap-1.5 text-xs text-np-blue hover:underline mt-1">
+                            <Download className="w-3.5 h-3.5" /> Download to view
+                          </a>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
               {/* Fields */}
               <div className="space-y-3">
                 <div>
