@@ -5,7 +5,7 @@ import { useMediaData } from '@/lib/hooks/use-media-data'
 import type { MediaAsset } from '@/lib/hooks/use-media-data'
 // Upload handled via /api/media/upload route
 import { useWorkspace } from '@/lib/workspace-context'
-import { Plus, Search, Grid, List, Upload, Image, Film, FileText, Folder, X, ExternalLink, Trash2, Tag, Eye, Download, Play, Maximize2 } from 'lucide-react'
+import { Plus, Search, Grid, List, Upload, Image, Film, FileText, Folder, X, ExternalLink, Trash2, Tag, Eye, Download, Play, Maximize2, MoreVertical, Link2, CheckCircle2, Copy } from 'lucide-react'
 
 const BRAND_OPTIONS = [
   { value: 'all', label: 'All Brands', color: '#6B7280' },
@@ -109,6 +109,16 @@ export default function MediaPage() {
   const [collectionFilter, setCollectionFilter] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [selectedAsset, setSelectedAsset] = useState<MediaAsset | null>(null)
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  const copyAssetUrl = (e: React.MouseEvent, asset: MediaAsset) => {
+    e.stopPropagation()
+    navigator.clipboard.writeText(asset.url)
+    setCopiedId(asset.id)
+    setMenuOpenId(null)
+    setTimeout(() => setCopiedId(null), 1500)
+  }
   const [addingUrl, setAddingUrl] = useState(false)
   const [newUrl, setNewUrl] = useState('')
   const [newName, setNewName] = useState('')
@@ -201,7 +211,7 @@ export default function MediaPage() {
   }
 
   return (
-    <div>
+    <div onClick={() => setMenuOpenId(null)}>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -356,9 +366,35 @@ export default function MediaPage() {
                     </span>
                   </div>
                 )}
-                <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Eye className="w-4 h-4 text-white drop-shadow-lg" />
+                {/* 3-dot menu */}
+                <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                  <button onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === asset.id ? null : asset.id) }}
+                    className="p-1 bg-black/50 hover:bg-black/70 rounded-md transition-colors">
+                    <MoreVertical className="w-3.5 h-3.5 text-white" />
+                  </button>
+                  {menuOpenId === asset.id && (
+                    <div className="absolute right-0 top-full mt-1 w-40 bg-white rounded-lg shadow-xl border border-gray-100 py-1 z-50">
+                      <button onClick={(e) => copyAssetUrl(e, asset)}
+                        className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 flex items-center gap-2">
+                        <Copy className="w-3.5 h-3.5 text-gray-500" /> Copy Link
+                      </button>
+                      <a href={asset.url} target="_blank" rel="noopener" onClick={e => e.stopPropagation()}
+                        className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 flex items-center gap-2">
+                        <ExternalLink className="w-3.5 h-3.5 text-gray-500" /> Open in New Tab
+                      </a>
+                      <button onClick={(e) => { e.stopPropagation(); if (confirm('Delete this asset?')) { deleteAsset(asset.id); setMenuOpenId(null) } }}
+                        className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-600 flex items-center gap-2">
+                        <Trash2 className="w-3.5 h-3.5" /> Delete
+                      </button>
+                    </div>
+                  )}
                 </div>
+                {/* Copied toast */}
+                {copiedId === asset.id && (
+                  <div className="absolute top-2 left-2 bg-green-500 text-white text-[9px] font-bold px-2 py-1 rounded-md flex items-center gap-1 z-10">
+                    <CheckCircle2 className="w-3 h-3" /> Copied!
+                  </div>
+                )}
                 {/* Brand badge */}
                 <div className="absolute bottom-2 left-2">
                   <span className="text-[7px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-black/50 text-white">
@@ -409,9 +445,19 @@ export default function MediaPage() {
                     ))}
                   </div>
                 </div>
-                <div className="text-[9px] text-gray-400 flex-shrink-0">
+                <div className="text-[9px] text-gray-400 flex-shrink-0 mr-2">
                   {formatSize(asset.file_size)}
-                  {asset.width && asset.height && <span className="ml-2">{asset.width}×{asset.height}</span>}
+                </div>
+                {/* Copy link button */}
+                <div className="flex-shrink-0" onClick={e => e.stopPropagation()}>
+                  {copiedId === asset.id ? (
+                    <span className="text-[9px] text-green-600 font-bold flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Copied</span>
+                  ) : (
+                    <button onClick={(e) => copyAssetUrl(e, asset)}
+                      className="p-1.5 text-gray-400 hover:text-np-blue hover:bg-gray-100 rounded transition-colors" title="Copy link">
+                      <Copy className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
               </button>
             ))}
@@ -541,10 +587,16 @@ export default function MediaPage() {
                     className="w-full text-xs border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300" />
                 </div>
                 {selectedAsset.url && (
-                  <a href={selectedAsset.url} target="_blank" rel="noopener"
-                    className="flex items-center gap-1 text-xs text-np-blue hover:underline">
-                    <ExternalLink className="w-3 h-3" /> Open original
-                  </a>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => { navigator.clipboard.writeText(selectedAsset.url); setCopiedId(selectedAsset.id); setTimeout(() => setCopiedId(null), 1500) }}
+                      className="flex items-center gap-1 text-xs text-np-blue hover:underline">
+                      {copiedId === selectedAsset.id ? <><CheckCircle2 className="w-3 h-3 text-green-500" /> Copied!</> : <><Copy className="w-3 h-3" /> Copy embed link</>}
+                    </button>
+                    <a href={selectedAsset.url} target="_blank" rel="noopener"
+                      className="flex items-center gap-1 text-xs text-gray-500 hover:text-np-blue hover:underline">
+                      <ExternalLink className="w-3 h-3" /> Open original
+                    </a>
+                  </div>
                 )}
                 <div className="grid grid-cols-3 gap-2 text-[9px] text-gray-400">
                   {selectedAsset.width && selectedAsset.height && <div><span className="font-medium text-gray-500">Size:</span> {selectedAsset.width}×{selectedAsset.height}</div>}
