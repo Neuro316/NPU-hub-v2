@@ -210,11 +210,12 @@ export default function CampaignsPage() {
   const loadData = useCallback(async () => {
     if (!currentOrg) return
 
+    // Load each table independently — some may not exist yet
     const [autoRes, campRes, teamRes, emailRes] = await Promise.all([
-      supabase.from('campaign_automations').select('*').eq('org_id', currentOrg.id).order('updated_at', { ascending: false }),
-      supabase.from('campaigns').select('*').eq('org_id', currentOrg.id).order('created_at', { ascending: false }),
-      supabase.from('team_profiles').select('id, display_name').eq('org_id', currentOrg.id).eq('status', 'active'),
-      supabase.from('email_campaigns').select('*').eq('org_id', currentOrg.id).order('created_at', { ascending: false }),
+      supabase.from('campaign_automations').select('*').eq('org_id', currentOrg.id).order('updated_at', { ascending: false }).then(r => r).catch(() => ({ data: null })),
+      supabase.from('campaigns').select('*').eq('org_id', currentOrg.id).order('created_at', { ascending: false }).then(r => r).catch(() => ({ data: null })),
+      supabase.from('team_profiles').select('id, display_name').eq('org_id', currentOrg.id).eq('status', 'active').then(r => r).catch(() => ({ data: null })),
+      supabase.from('email_campaigns').select('*').eq('org_id', currentOrg.id).order('created_at', { ascending: false }).then(r => r).catch(() => ({ data: null })),
     ])
 
     if (autoRes.data) setAutomations(autoRes.data as Automation[])
