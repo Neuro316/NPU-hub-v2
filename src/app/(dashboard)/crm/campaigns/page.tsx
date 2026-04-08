@@ -151,23 +151,10 @@ export default function CampaignsPage() {
               <button onClick={() => setShowCreate(false)} className="p-1 rounded hover:bg-gray-50"><MessageCircle size={14} /></button>
             </div>
 
-            {/* Channel Toggle */}
-            <div className="flex gap-1 mb-4 p-1 bg-gray-50 rounded-lg">
-              {(['email','sms'] as const).map(ch => (
-                <button key={ch} onClick={() => setForm(p => ({ ...p, channel: ch }))}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-xs font-medium transition-all ${
-                    form.channel === ch ? 'bg-white shadow-sm text-np-dark' : 'text-gray-400 hover:text-gray-600'
-                  }`}>
-                  {ch === 'email' ? <Mail size={12} /> : <MessageCircle size={12} />}
-                  {ch === 'email' ? 'Email' : 'SMS'}
-                </button>
-              ))}
-            </div>
-
             <div className="space-y-3">
               {/* Channel Toggle */}
               <div>
-                <label className="text-[10px] font-semibold uppercase text-gray-400">Channel</label>
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Channel</label>
                 <div className="flex gap-2 mt-1">
                   <button onClick={() => setForm(p => ({ ...p, channel: 'email' }))} className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border-2 text-xs font-medium transition-all ${form.channel === 'email' ? 'border-np-blue bg-np-blue/5 text-np-blue' : 'border-gray-100 text-gray-400 hover:border-gray-200'}`}>
                     <Mail size={14} /> Email
@@ -179,12 +166,9 @@ export default function CampaignsPage() {
               </div>
 
               <div>
-                <label className="text-[10px] font-semibold uppercase text-gray-400">Campaign Name *</label>
-                <input value={form.name} onChange={e => setForm(p=>({...p,name:e.target.value}))} placeholder="Q1 Mastermind Outreach" className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" />
-              </div>
-              <div>
                 <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Campaign Name *</label>
                 <input value={form.name} onChange={e => setForm(p=>({...p,name:e.target.value}))} placeholder="Q1 Mastermind Outreach"
+                  spellCheck autoCapitalize="sentences" autoCorrect="on"
                   className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30" />
               </div>
 
