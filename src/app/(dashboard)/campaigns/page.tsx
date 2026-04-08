@@ -211,11 +211,12 @@ export default function CampaignsPage() {
     if (!currentOrg) return
 
     // Load each table independently — some may not exist yet
+    const safe = (p: PromiseLike<any>) => Promise.resolve(p).catch(() => ({ data: null }))
     const [autoRes, campRes, teamRes, emailRes] = await Promise.all([
-      supabase.from('campaign_automations').select('*').eq('org_id', currentOrg.id).order('updated_at', { ascending: false }).then(r => r).catch(() => ({ data: null })),
-      supabase.from('campaigns').select('*').eq('org_id', currentOrg.id).order('created_at', { ascending: false }).then(r => r).catch(() => ({ data: null })),
-      supabase.from('team_profiles').select('id, display_name').eq('org_id', currentOrg.id).eq('status', 'active').then(r => r).catch(() => ({ data: null })),
-      supabase.from('email_campaigns').select('*').eq('org_id', currentOrg.id).order('created_at', { ascending: false }).then(r => r).catch(() => ({ data: null })),
+      safe(supabase.from('campaign_automations').select('*').eq('org_id', currentOrg.id).order('updated_at', { ascending: false })),
+      safe(supabase.from('campaigns').select('*').eq('org_id', currentOrg.id).order('created_at', { ascending: false })),
+      safe(supabase.from('team_profiles').select('id, display_name').eq('org_id', currentOrg.id).eq('status', 'active')),
+      safe(supabase.from('email_campaigns').select('*').eq('org_id', currentOrg.id).order('created_at', { ascending: false })),
     ])
 
     if (autoRes.data) setAutomations(autoRes.data as Automation[])
