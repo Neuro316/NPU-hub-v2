@@ -178,6 +178,7 @@ export default function CampaignsPage() {
 
   // Marketing campaign form
   const [showCreateCampaign, setShowCreateCampaign] = useState(false)
+  const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null)
   const [campForm, setCampForm] = useState({
     name: '', status: 'planning', type: 'lead-gen', platform: 'meta',
     startDate: '', endDate: '', objective: '', budget: '', brand: 'np',
@@ -298,19 +299,52 @@ export default function CampaignsPage() {
 
   const createMarketingCampaign = async () => {
     if (!campForm.name.trim() || !currentOrg) return
-    const { data, error } = await supabase.from('campaigns').insert({
+    const payload = {
       org_id: currentOrg.id, name: campForm.name.trim(), brand: campForm.brand,
       description: campForm.objective || null, status: campForm.status,
       budget: campForm.budget ? parseFloat(campForm.budget) : null,
       start_date: campForm.startDate || null, end_date: campForm.endDate || null,
       goals: { objective: campForm.objective, type: campForm.type },
       ai_suggestions: {}, custom_fields: { platform: campForm.platform, type: campForm.type },
-    }).select().single()
-    if (data && !error) {
-      setCampaigns(prev => [data, ...prev])
-      setShowCreateCampaign(false)
-      setCampForm({ name: '', status: 'planning', type: 'lead-gen', platform: 'meta', startDate: '', endDate: '', objective: '', budget: '', brand: 'np' })
     }
+
+    if (editingCampaign) {
+      // Update existing
+      const { data, error } = await supabase.from('campaigns')
+        .update(payload).eq('id', editingCampaign.id).select().single()
+      if (error) { console.error('Campaign update error:', error); alert('Failed to save: ' + error.message); return }
+      if (data) {
+        setCampaigns(prev => prev.map(c => c.id === data.id ? data : c))
+        setShowCreateCampaign(false)
+        setEditingCampaign(null)
+        setCampForm({ name: '', status: 'planning', type: 'lead-gen', platform: 'meta', startDate: '', endDate: '', objective: '', budget: '', brand: 'np' })
+      }
+    } else {
+      // Create new
+      const { data, error } = await supabase.from('campaigns').insert(payload).select().single()
+      if (error) { console.error('Campaign create error:', error); alert('Failed to create: ' + error.message); return }
+      if (data) {
+        setCampaigns(prev => [data, ...prev])
+        setShowCreateCampaign(false)
+        setCampForm({ name: '', status: 'planning', type: 'lead-gen', platform: 'meta', startDate: '', endDate: '', objective: '', budget: '', brand: 'np' })
+      }
+    }
+  }
+
+  const openCampaign = (camp: Campaign) => {
+    setEditingCampaign(camp)
+    setCampForm({
+      name: camp.name || '',
+      status: camp.status || 'planning',
+      type: camp.custom_fields?.type || 'lead-gen',
+      platform: camp.custom_fields?.platform || 'meta',
+      startDate: camp.start_date || '',
+      endDate: camp.end_date || '',
+      objective: camp.description || '',
+      budget: camp.budget?.toString() || '',
+      brand: camp.brand || 'np',
+    })
+    setShowCreateCampaign(true)
   }
 
   // ─── Filtered automations ───
@@ -545,7 +579,7 @@ export default function CampaignsPage() {
                 </span>
               ))}
             </div>
-            <button onClick={() => setShowCreateCampaign(true)}
+            <button onClick={() => { setEditingCampaign(null); setCampForm({ name: '', status: 'planning', type: 'lead-gen', platform: 'meta', startDate: '', endDate: '', objective: '', budget: '', brand: 'np' }); setShowCreateCampaign(true) }}
               className="flex items-center gap-1.5 px-3 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark">
               <Plus size={13} /> New Campaign
             </button>
@@ -556,7 +590,7 @@ export default function CampaignsPage() {
               const st = CAMPAIGN_STATUS[camp.status] || CAMPAIGN_STATUS.planning
               const platform = PLATFORMS.find(p => p.id === camp.custom_fields?.platform)
               return (
-                <div key={camp.id} className="bg-white rounded-xl border border-gray-100 p-4 hover:shadow-md transition-all cursor-pointer">
+                <div key={camp.id} onClick={() => openCampaign(camp)} className="bg-white rounded-xl border border-gray-100 p-4 hover:shadow-md transition-all cursor-pointer">
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex-1 min-w-0">
                       <h4 className="text-xs font-bold text-np-dark truncate">{camp.name}</h4>
@@ -704,8 +738,8 @@ export default function CampaignsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) setShowCreateCampaign(false) }}>
           <div className="w-full max-w-md bg-white rounded-xl shadow-2xl p-5 animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-bold text-np-dark">New Marketing Campaign</h3>
-              <button onClick={() => setShowCreateCampaign(false)} className="p-1 rounded hover:bg-gray-50"><X size={14} className="text-gray-400" /></button>
+              <h3 className="text-sm font-bold text-np-dark">{editingCampaign ? 'Edit Campaign' : 'New Marketing Campaign'}</h3>
+              <button onClick={() => { setShowCreateCampaign(false); setEditingCampaign(null); setCampForm({ name: '', status: 'planning', type: 'lead-gen', platform: 'meta', startDate: '', endDate: '', objective: '', budget: '', brand: 'np' }) }} className="p-1 rounded hover:bg-gray-50"><X size={14} className="text-gray-400" /></button>
             </div>
             <div className="space-y-3">
               <div>
@@ -749,7 +783,7 @@ export default function CampaignsPage() {
               <button onClick={() => setShowCreateCampaign(false)} className="px-3 py-2 text-xs text-gray-400">Cancel</button>
               <button onClick={createMarketingCampaign} disabled={!campForm.name.trim()}
                 className="px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark disabled:opacity-40">
-                Create Campaign
+                {editingCampaign ? 'Save Changes' : 'Create Campaign'}
               </button>
             </div>
           </div>
