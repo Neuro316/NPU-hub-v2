@@ -53,8 +53,7 @@ type TabId = 'marketing' | 'automations' | 'social'
 // ─── CONFIG ───
 
 const CAMPAIGN_STATUS: Record<string, { label: string; color: string; bg: string }> = {
-  planning:      { label: 'Planning',    color: '#8b5cf6', bg: '#8b5cf620' },
-  'in-progress': { label: 'In Progress', color: '#3b82f6', bg: '#3b82f620' },
+  draft:         { label: 'Draft',       color: '#8b5cf6', bg: '#8b5cf620' },
   active:        { label: 'Active',      color: '#10b981', bg: '#10b98120' },
   paused:        { label: 'Paused',      color: '#f59e0b', bg: '#f59e0b20' },
   completed:     { label: 'Completed',   color: '#386797', bg: '#38679720' },
@@ -180,7 +179,7 @@ export default function CampaignsPage() {
   const [showCreateCampaign, setShowCreateCampaign] = useState(false)
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null)
   const [campForm, setCampForm] = useState({
-    name: '', status: 'planning', type: 'lead-gen', platform: 'meta',
+    name: '', status: 'draft', type: 'lead-gen', platform: 'meta',
     startDate: '', endDate: '', objective: '', budget: '', brand: 'np',
   })
 
@@ -317,7 +316,7 @@ export default function CampaignsPage() {
         setCampaigns(prev => prev.map(c => c.id === data.id ? data : c))
         setShowCreateCampaign(false)
         setEditingCampaign(null)
-        setCampForm({ name: '', status: 'planning', type: 'lead-gen', platform: 'meta', startDate: '', endDate: '', objective: '', budget: '', brand: 'np' })
+        setCampForm({ name: '', status: 'draft', type: 'lead-gen', platform: 'meta', startDate: '', endDate: '', objective: '', budget: '', brand: 'np' })
       }
     } else {
       // Create new
@@ -326,7 +325,7 @@ export default function CampaignsPage() {
       if (data) {
         setCampaigns(prev => [data, ...prev])
         setShowCreateCampaign(false)
-        setCampForm({ name: '', status: 'planning', type: 'lead-gen', platform: 'meta', startDate: '', endDate: '', objective: '', budget: '', brand: 'np' })
+        setCampForm({ name: '', status: 'draft', type: 'lead-gen', platform: 'meta', startDate: '', endDate: '', objective: '', budget: '', brand: 'np' })
       }
     }
   }
@@ -579,7 +578,7 @@ export default function CampaignsPage() {
                 </span>
               ))}
             </div>
-            <button onClick={() => { setEditingCampaign(null); setCampForm({ name: '', status: 'planning', type: 'lead-gen', platform: 'meta', startDate: '', endDate: '', objective: '', budget: '', brand: 'np' }); setShowCreateCampaign(true) }}
+            <button onClick={() => { setEditingCampaign(null); setCampForm({ name: '', status: 'draft', type: 'lead-gen', platform: 'meta', startDate: '', endDate: '', objective: '', budget: '', brand: 'np' }); setShowCreateCampaign(true) }}
               className="flex items-center gap-1.5 px-3 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark">
               <Plus size={13} /> New Campaign
             </button>
@@ -739,7 +738,7 @@ export default function CampaignsPage() {
           <div className="w-full max-w-md bg-white rounded-xl shadow-2xl p-5 animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-bold text-np-dark">{editingCampaign ? 'Edit Campaign' : 'New Marketing Campaign'}</h3>
-              <button onClick={() => { setShowCreateCampaign(false); setEditingCampaign(null); setCampForm({ name: '', status: 'planning', type: 'lead-gen', platform: 'meta', startDate: '', endDate: '', objective: '', budget: '', brand: 'np' }) }} className="p-1 rounded hover:bg-gray-50"><X size={14} className="text-gray-400" /></button>
+              <button onClick={() => { setShowCreateCampaign(false); setEditingCampaign(null); setCampForm({ name: '', status: 'draft', type: 'lead-gen', platform: 'meta', startDate: '', endDate: '', objective: '', budget: '', brand: 'np' }) }} className="p-1 rounded hover:bg-gray-50"><X size={14} className="text-gray-400" /></button>
             </div>
             <div className="space-y-3">
               <div>
