@@ -178,6 +178,8 @@ export default function CampaignsPage() {
   // Marketing campaign form
   const [showCreateCampaign, setShowCreateCampaign] = useState(false)
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null)
+  const [campFormTouched, setCampFormTouched] = useState(false)
+  const [campSaving, setCampSaving] = useState(false)
   const [campForm, setCampForm] = useState({
     name: '', status: 'draft', type: 'lead-gen', platform: 'meta',
     startDate: '', endDate: '', objective: '', budget: '', brand: 'np',
@@ -296,8 +298,16 @@ export default function CampaignsPage() {
 
   // ─── Marketing Campaign CRUD ───
 
+  const resetCampForm = () => {
+    setCampForm({ name: '', status: 'draft', type: 'lead-gen', platform: 'meta', startDate: '', endDate: '', objective: '', budget: '', brand: 'np' })
+    setCampFormTouched(false)
+    setEditingCampaign(null)
+  }
+
   const createMarketingCampaign = async () => {
+    setCampFormTouched(true)
     if (!campForm.name.trim() || !currentOrg) return
+    setCampSaving(true)
     const payload = {
       org_id: currentOrg.id, name: campForm.name.trim(), brand: campForm.brand,
       description: campForm.objective || null, status: campForm.status,
@@ -308,26 +318,26 @@ export default function CampaignsPage() {
     }
 
     if (editingCampaign) {
-      // Update existing
       const { data, error } = await supabase.from('campaigns')
         .update(payload).eq('id', editingCampaign.id).select().single()
+      setCampSaving(false)
       if (error) { console.error('Campaign update error:', error); alert('Failed to save: ' + error.message); return }
-      if (data) {
-        setCampaigns(prev => prev.map(c => c.id === data.id ? data : c))
-        setShowCreateCampaign(false)
-        setEditingCampaign(null)
-        setCampForm({ name: '', status: 'draft', type: 'lead-gen', platform: 'meta', startDate: '', endDate: '', objective: '', budget: '', brand: 'np' })
-      }
+      if (data) { setCampaigns(prev => prev.map(c => c.id === data.id ? data : c)); setShowCreateCampaign(false); resetCampForm() }
     } else {
-      // Create new
       const { data, error } = await supabase.from('campaigns').insert(payload).select().single()
+      setCampSaving(false)
       if (error) { console.error('Campaign create error:', error); alert('Failed to create: ' + error.message); return }
-      if (data) {
-        setCampaigns(prev => [data, ...prev])
-        setShowCreateCampaign(false)
-        setCampForm({ name: '', status: 'draft', type: 'lead-gen', platform: 'meta', startDate: '', endDate: '', objective: '', budget: '', brand: 'np' })
-      }
+      if (data) { setCampaigns(prev => [data, ...prev]); setShowCreateCampaign(false); resetCampForm() }
     }
+  }
+
+  const deleteCampaign = async (id: string) => {
+    if (!confirm('Delete this campaign? This cannot be undone.')) return
+    const { error } = await supabase.from('campaigns').delete().eq('id', id)
+    if (error) { alert('Failed to delete: ' + error.message); return }
+    setCampaigns(prev => prev.filter(c => c.id !== id))
+    setShowCreateCampaign(false)
+    resetCampForm()
   }
 
   const openCampaign = (camp: Campaign) => {
@@ -734,18 +744,35 @@ export default function CampaignsPage() {
 
       {/* ═══ Create Marketing Campaign Modal ═══ */}
       {showCreateCampaign && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) setShowCreateCampaign(false) }}>
-          <div className="w-full max-w-md bg-white rounded-xl shadow-2xl p-5 animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) { setShowCreateCampaign(false); resetCampForm() } }}>
+          <div className="w-full max-w-md bg-white rounded-xl shadow-2xl p-5 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-bold text-np-dark">{editingCampaign ? 'Edit Campaign' : 'New Marketing Campaign'}</h3>
-              <button onClick={() => { setShowCreateCampaign(false); setEditingCampaign(null); setCampForm({ name: '', status: 'draft', type: 'lead-gen', platform: 'meta', startDate: '', endDate: '', objective: '', budget: '', brand: 'np' }) }} className="p-1 rounded hover:bg-gray-50"><X size={14} className="text-gray-400" /></button>
+              <button onClick={() => { setShowCreateCampaign(false); resetCampForm() }} className="p-1 rounded hover:bg-gray-50"><X size={14} className="text-gray-400" /></button>
             </div>
             <div className="space-y-3">
+              {/* Name — required */}
               <div>
                 <label className="text-[9px] font-semibold uppercase text-gray-400">Campaign Name *</label>
                 <input value={campForm.name} onChange={e => setCampForm(p => ({ ...p, name: e.target.value }))} placeholder="Q1 Mastermind Launch"
-                  className="w-full mt-1 px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#386797]/30" />
+                  spellCheck autoCapitalize="words" autoCorrect="on"
+                  className={`w-full mt-1 px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#386797]/30 ${campFormTouched && !campForm.name.trim() ? 'border-red-400 bg-red-50/50' : 'border-gray-200'}`} />
+                {campFormTouched && !campForm.name.trim() && (
+                  <p className="text-[9px] text-red-500 mt-1">Campaign name is required</p>
+                )}
               </div>
+
+              {/* Status — only when editing */}
+              {editingCampaign && (
+                <div>
+                  <label className="text-[9px] font-semibold uppercase text-gray-400">Status</label>
+                  <select value={campForm.status} onChange={e => setCampForm(p => ({ ...p, status: e.target.value }))}
+                    className="w-full mt-1 px-3 py-2 text-xs border border-gray-200 rounded-lg">
+                    {Object.entries(CAMPAIGN_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                  </select>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[9px] font-semibold uppercase text-gray-400">Platform</label>
@@ -755,7 +782,7 @@ export default function CampaignsPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-[9px] font-semibold uppercase text-gray-400">Budget</label>
+                  <label className="text-[9px] font-semibold uppercase text-gray-400">Budget ($)</label>
                   <input type="number" value={campForm.budget} onChange={e => setCampForm(p => ({ ...p, budget: e.target.value }))} placeholder="5000"
                     className="w-full mt-1 px-3 py-2 text-xs border border-gray-200 rounded-lg" />
                 </div>
@@ -763,6 +790,7 @@ export default function CampaignsPage() {
               <div>
                 <label className="text-[9px] font-semibold uppercase text-gray-400">Objective</label>
                 <textarea value={campForm.objective} onChange={e => setCampForm(p => ({ ...p, objective: e.target.value }))} rows={2}
+                  spellCheck autoCapitalize="sentences" autoCorrect="on"
                   className="w-full mt-1 px-3 py-2 text-xs border border-gray-200 rounded-lg resize-none" placeholder="Drive enrollments for Immersive Mastermind" />
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -777,13 +805,34 @@ export default function CampaignsPage() {
                     className="w-full mt-1 px-3 py-2 text-xs border border-gray-200 rounded-lg" />
                 </div>
               </div>
+
+              {/* Brand */}
+              <div>
+                <label className="text-[9px] font-semibold uppercase text-gray-400">Brand</label>
+                <div className="flex gap-1.5 mt-1">
+                  {(['np', 'sensorium'] as const).map(b => (
+                    <button key={b} onClick={() => setCampForm(p => ({ ...p, brand: b }))}
+                      className={`text-[10px] font-medium px-3 py-1.5 rounded-lg border ${campForm.brand === b ? 'border-np-blue bg-np-blue/10 text-np-blue' : 'border-gray-200 text-gray-500'}`}>
+                      {b === 'np' ? 'Neuro Progeny' : 'Sensorium'}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
-            <div className="flex justify-end gap-2 mt-4">
-              <button onClick={() => setShowCreateCampaign(false)} className="px-3 py-2 text-xs text-gray-400">Cancel</button>
-              <button onClick={createMarketingCampaign} disabled={!campForm.name.trim()}
-                className="px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark disabled:opacity-40">
-                {editingCampaign ? 'Save Changes' : 'Create Campaign'}
-              </button>
+
+            <div className="flex items-center justify-between mt-5 pt-4 border-t border-gray-100">
+              {editingCampaign ? (
+                <button onClick={() => deleteCampaign(editingCampaign.id)}
+                  className="text-xs text-red-500 hover:text-red-700 font-medium">Delete Campaign</button>
+              ) : <div />}
+              <div className="flex gap-2">
+                <button onClick={() => { setShowCreateCampaign(false); resetCampForm() }} className="px-3 py-2 text-xs text-gray-400">Cancel</button>
+                <button onClick={createMarketingCampaign} disabled={!campForm.name.trim() || campSaving}
+                  className="px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark disabled:opacity-40"
+                  title={!campForm.name.trim() ? 'Campaign name is required' : ''}>
+                  {campSaving ? 'Saving...' : editingCampaign ? 'Save Changes' : 'Create Campaign'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
