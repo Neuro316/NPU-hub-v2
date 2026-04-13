@@ -9,6 +9,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
 import CampaignFlowBuilder, { type FlowNode, type FlowEdge } from '@/components/campaigns/campaign-flow-builder'
+import { CampaignPhaseView } from '@/components/campaigns/campaign-phase-view'
 import {
   Plus, Wand2, Target, TrendingUp, Calendar, DollarSign, Zap, X, Send, Bot,
   ArrowLeft, ArrowRight, CheckCircle2, Loader2, Edit3, Trash2, ExternalLink,
@@ -178,6 +179,7 @@ export default function CampaignsPage() {
   // Marketing campaign form
   const [showCreateCampaign, setShowCreateCampaign] = useState(false)
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null)
+  const [viewingCampaign, setViewingCampaign] = useState<Campaign | null>(null)
   const [campFormTouched, setCampFormTouched] = useState(false)
   const [campSaving, setCampSaving] = useState(false)
   const [campForm, setCampForm] = useState({
@@ -447,6 +449,11 @@ export default function CampaignsPage() {
 
   // ─── Main View ───
 
+  // Campaign phase view takes over the page
+  if (viewingCampaign && currentOrg) {
+    return <CampaignPhaseView campaign={viewingCampaign} orgId={currentOrg.id} onClose={() => setViewingCampaign(null)} />
+  }
+
   return (
     <div className="space-y-4 animate-in fade-in duration-300">
       {/* Header */}
@@ -599,7 +606,7 @@ export default function CampaignsPage() {
               const st = CAMPAIGN_STATUS[camp.status] || CAMPAIGN_STATUS.planning
               const platform = PLATFORMS.find(p => p.id === camp.custom_fields?.platform)
               return (
-                <div key={camp.id} onClick={() => openCampaign(camp)} className="bg-white rounded-xl border border-gray-100 p-4 hover:shadow-md transition-all cursor-pointer">
+                <div key={camp.id} onClick={() => setViewingCampaign(camp)} className="bg-white rounded-xl border border-gray-100 p-4 hover:shadow-md transition-all cursor-pointer">
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex-1 min-w-0">
                       <h4 className="text-xs font-bold text-np-dark truncate">{camp.name}</h4>

@@ -29,7 +29,7 @@ interface JourneyCard {
   phase_id: string
   title: string
   description: string
-  status: 'not_started' | 'in_progress' | 'done'
+  status: string
   row_index: number
   sort_order: number
   tags?: string[]
@@ -38,11 +38,11 @@ interface JourneyCard {
   updated_at: string
 }
 
-const STATUS_CONFIG = {
+const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any; bg: string }> = {
   not_started: { label: 'Not Started', color: '#9CA3AF', icon: Circle, bg: '#F3F4F6' },
   in_progress: { label: 'In Progress', color: '#F59E0B', icon: Clock, bg: '#FFFBEB' },
   done:        { label: 'Done',        color: '#10B981', icon: CheckCircle2, bg: '#ECFDF5' },
-} as const
+}
 
 const TAG_COLORS: Record<string, { bg: string; text: string }> = {
   'PAID TRAFFIC':   { bg: '#FCE7F3', text: '#DB2777' },
@@ -199,7 +199,7 @@ export default function JourneysPage() {
   }
 
   const cycleStatus = (card: JourneyCard) => {
-    const order: JourneyCard['status'][] = ['not_started', 'in_progress', 'done']
+    const order = ['not_started', 'in_progress', 'done']
     const next = order[(order.indexOf(card.status) + 1) % order.length]
     updateCard(card.id, { status: next })
   }
