@@ -140,7 +140,7 @@ export default function JourneysPage() {
     setLoading(true)
     const [pRes, cRes] = await Promise.all([
       supabase.from('journey_phases').select('*').eq('org_id', currentOrg.id).order('sort_order'),
-      supabase.from('journey_cards').select('*').eq('org_id', currentOrg.id).order('sort_order'),
+      supabase.from('journey_cards').select('*').eq('org_id', currentOrg.id).is('campaign_id', null).order('sort_order'),
     ])
     if (pRes.data) setPhases(pRes.data)
     if (cRes.data) setCards(cRes.data)
