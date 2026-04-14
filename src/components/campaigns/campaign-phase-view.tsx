@@ -36,7 +36,7 @@ export function CampaignPhaseView({ campaign, orgId, onClose }: Props) {
 
   const fetchCards = async () => {
     const { data } = await supabase
-      .from('journey_cards')
+      .from('campaign_cards')
       .select('*')
       .eq('campaign_id', campaign.id)
       .order('sort_order')
@@ -50,15 +50,13 @@ export function CampaignPhaseView({ campaign, orgId, onClose }: Props) {
 
   const handleAddCard = async (phaseId: string, title: string) => {
     const phaseCards = getPhaseCards(phaseId)
-    const { data } = await supabase.from('journey_cards').insert({
+    const { data } = await supabase.from('campaign_cards').insert({
       org_id: orgId,
       campaign_id: campaign.id,
       campaign_phase: phaseId,
-      phase_id: phaseId,
       title,
       status: 'not_started',
       sort_order: phaseCards.length,
-      row_index: 0,
       checklist: [],
       testers: [],
       asset_urls: {},
@@ -68,12 +66,15 @@ export function CampaignPhaseView({ campaign, orgId, onClose }: Props) {
   }
 
   const handleUpdateCard = async (cardId: string, updates: Partial<JourneyCard>) => {
-    await supabase.from('journey_cards').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', cardId)
+    const { campaign_phase, ...rest } = updates as any
+    const payload: any = { ...rest, updated_at: new Date().toISOString() }
+    if (campaign_phase !== undefined) payload.campaign_phase = campaign_phase
+    await supabase.from('campaign_cards').update(payload).eq('id', cardId)
     setCards(prev => prev.map(c => c.id === cardId ? { ...c, ...updates } : c))
   }
 
   const handleDeleteCard = async (cardId: string) => {
-    await supabase.from('journey_cards').delete().eq('id', cardId)
+    await supabase.from('campaign_cards').delete().eq('id', cardId)
     setCards(prev => prev.filter(c => c.id !== cardId))
     setEditingCard(null)
   }
