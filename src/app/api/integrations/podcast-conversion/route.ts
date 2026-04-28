@@ -8,7 +8,9 @@ const supabase = createClient(
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
+    const rawBody = await req.json()
+    // Support both direct API payloads (flat) and GHL workflow payloads (nested in customData)
+    const body = rawBody.customData ? { ...rawBody.customData, ...rawBody } : rawBody
     const {
       org_id,
       email,
