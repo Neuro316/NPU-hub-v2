@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Only process podcast-attributed conversions
-    if (utm_source !== 'podcast' && !promo_code?.startsWith('PODCAST-')) {
+    if (utm_source !== 'podcast' && !promo_code) {
       return NextResponse.json(
         { message: 'Not a podcast conversion, skipping' },
         { status: 200 }
