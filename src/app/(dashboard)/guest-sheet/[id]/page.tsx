@@ -146,6 +146,21 @@ export default function GuestSheetPage() {
     })
   }, [id, currentOrg?.id])
 
+  const showSlug = (appearance?.platform || appearance?.title || 'show').toLowerCase().replace(/[^a-z0-9]+/g, '-')
+
+  useEffect(() => {
+    if (!appearance?.id || appearance.utm_campaign) return
+    supabase
+      .from('media_appearances')
+      .update({ utm_campaign: showSlug })
+      .eq('id', appearance.id)
+      .is('utm_campaign', null)
+      .then(({ error }) => {
+        if (error) console.error('Failed to backfill utm_campaign:', error)
+      })
+    setAppearance(prev => prev ? { ...prev, utm_campaign: showSlug } : prev)
+  }, [appearance?.id, appearance?.utm_campaign, showSlug])
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -162,7 +177,6 @@ export default function GuestSheetPage() {
     )
   }
 
-  const showSlug = (appearance.platform || appearance.title || 'show').toLowerCase().replace(/[^a-z0-9]+/g, '-')
   const ctaLink = `${guestProfile.cta_base_url}?utm_source=podcast&utm_medium=audio&utm_campaign=${showSlug}`
   const formatDate = (d: string | null) => d ? new Date(d).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : 'TBD'
   const topics = appearance.key_topics?.length > 0 ? appearance.key_topics : []
