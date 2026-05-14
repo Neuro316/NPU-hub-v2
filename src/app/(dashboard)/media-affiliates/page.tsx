@@ -1134,7 +1134,6 @@ function MediaAffiliatesContent() {
                       <th className="text-left px-4 py-3 font-medium text-gray-500">Type</th>
                       <th className="text-left px-4 py-3 font-medium text-gray-500">Show</th>
                       <th className="text-left px-4 py-3 font-medium text-gray-500">Source</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-500">Value</th>
                       <th className="text-left px-4 py-3 font-medium text-gray-500">Outreach</th>
                       <th className="text-left px-4 py-3 font-medium text-gray-500">Date</th>
                     </tr>
@@ -1142,11 +1141,19 @@ function MediaAffiliatesContent() {
                   <tbody className="divide-y divide-gray-50">
                     {conversions.map(c => (
                       <tr key={c.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 font-medium text-np-dark">{c.contact_name || c.contact_email}</td>
+                        <td className="px-4 py-3">
+                          {c.contact_name ? (
+                            <>
+                              <div className="font-medium text-np-dark">{c.contact_name}</div>
+                              <div className="text-sm text-gray-500">{c.contact_email}</div>
+                            </>
+                          ) : (
+                            <span className="font-medium text-np-dark">{c.contact_email}</span>
+                          )}
+                        </td>
                         <td className="px-4 py-3 text-gray-600">{c.conversion_type}</td>
                         <td className="px-4 py-3 text-gray-600">{c.media_appearances?.title || '—'}</td>
                         <td className="px-4 py-3 text-gray-500 text-xs font-mono">{c.promo_code || c.utm_campaign || c.source}</td>
-                        <td className="px-4 py-3 text-gray-600">{c.value ? `$${c.value}` : '-'}</td>
                         <td className="px-4 py-3">
                           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                             c.personal_outreach_status === 'converted' ? 'bg-green-100 text-green-700' :
