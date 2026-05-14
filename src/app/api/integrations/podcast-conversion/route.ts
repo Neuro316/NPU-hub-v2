@@ -22,6 +22,33 @@ export async function POST(req: NextRequest) {
       value = 0,
     } = body
 
+    // Resolve appearance_id from utm_campaign or promo_code
+    let appearance_id: string | null = null
+    if (org_id && utm_campaign) {
+      const { data: campaignMatch } = await supabase
+        .from('media_appearances')
+        .select('id')
+        .eq('org_id', org_id)
+        .ilike('utm_campaign', utm_campaign)
+        .limit(1)
+        .maybeSingle()
+      if (campaignMatch) {
+        appearance_id = campaignMatch.id
+      }
+    }
+    if (!appearance_id && org_id && promo_code) {
+      const { data: promoMatch } = await supabase
+        .from('media_appearances')
+        .select('id')
+        .eq('org_id', org_id)
+        .eq('promo_code', promo_code)
+        .limit(1)
+        .maybeSingle()
+      if (promoMatch) {
+        appearance_id = promoMatch.id
+      }
+    }
+
     if (!org_id || !email) {
       return NextResponse.json(
         { error: 'org_id and email are required' },
@@ -56,10 +83,11 @@ export async function POST(req: NextRequest) {
       .insert({
         org_id,
         contact_id,
+        appearance_id,
         contact_name: name || null,
         contact_email: email,
         conversion_type,
-        source: promo_code ? 'promo_code' : 'utm',
+        source: promo_code ? 'promo_code' : (appearance_id ? 'podcast' : 'direct'),
         utm_campaign: utm_campaign || null,
         utm_content: utm_content || null,
         promo_code: promo_code || null,
