@@ -68,6 +68,12 @@ interface Conversion {
   personal_outreach_status: string
   notified: boolean
   created_at: string
+  media_appearances?: {
+    id: string
+    title: string | null
+    host: string | null
+    platform: string | null
+  } | null
 }
 
 interface ContentPiece {
@@ -334,7 +340,7 @@ function MediaAffiliatesContent() {
         .order('created_at', { ascending: false }),
       supabase
         .from('podcast_conversions')
-        .select('*')
+        .select('*, media_appearances(id, title, host, platform)')
         .eq('org_id', orgId)
         .order('created_at', { ascending: false }),
       supabase
@@ -1126,6 +1132,7 @@ function MediaAffiliatesContent() {
                     <tr>
                       <th className="text-left px-4 py-3 font-medium text-gray-500">Contact</th>
                       <th className="text-left px-4 py-3 font-medium text-gray-500">Type</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500">Show</th>
                       <th className="text-left px-4 py-3 font-medium text-gray-500">Source</th>
                       <th className="text-left px-4 py-3 font-medium text-gray-500">Value</th>
                       <th className="text-left px-4 py-3 font-medium text-gray-500">Outreach</th>
@@ -1137,6 +1144,7 @@ function MediaAffiliatesContent() {
                       <tr key={c.id} className="hover:bg-gray-50">
                         <td className="px-4 py-3 font-medium text-np-dark">{c.contact_name || c.contact_email}</td>
                         <td className="px-4 py-3 text-gray-600">{c.conversion_type}</td>
+                        <td className="px-4 py-3 text-gray-600">{c.media_appearances?.title || '—'}</td>
                         <td className="px-4 py-3 text-gray-500 text-xs font-mono">{c.promo_code || c.utm_campaign || c.source}</td>
                         <td className="px-4 py-3 text-gray-600">{c.value ? `$${c.value}` : '-'}</td>
                         <td className="px-4 py-3">
