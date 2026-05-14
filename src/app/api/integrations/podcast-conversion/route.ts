@@ -11,10 +11,17 @@ export async function POST(req: NextRequest) {
     const rawBody = await req.json()
     // Support both direct API payloads (flat) and GHL workflow payloads (nested in customData)
     const body = rawBody.customData ? { ...rawBody.customData, ...rawBody } : rawBody
+    // TEMP: log raw payload while we verify GHL contact-name field shape — remove once confirmed
+    console.log('Podcast conversion webhook body:', JSON.stringify(body, null, 2))
     const {
       org_id,
       email,
       name,
+      full_name,
+      first_name,
+      last_name,
+      firstName,
+      lastName,
       utm_source,
       utm_medium,
       utm_campaign,
@@ -23,6 +30,17 @@ export async function POST(req: NextRequest) {
       conversion_type = 'course_enroll',
       value = 0,
     } = body
+
+    // Resolve contact name from GHL's various payload shapes (flat, snake, camel, nested contact)
+    const contactName: string | null =
+      name ||
+      full_name ||
+      body.contact?.name ||
+      [
+        first_name || firstName || body.contact?.firstName,
+        last_name || lastName || body.contact?.lastName,
+      ].filter(Boolean).join(' ').trim() ||
+      null
 
     // Resolve appearance_id from utm_campaign or promo_code
     let appearance_id: string | null = null
@@ -86,7 +104,7 @@ export async function POST(req: NextRequest) {
         org_id,
         contact_id,
         appearance_id,
-        contact_name: name || null,
+        contact_name: contactName,
         contact_email: email,
         conversion_type,
         source: promo_code ? 'promo_code' : (appearance_id ? 'podcast' : 'direct'),
@@ -148,7 +166,7 @@ export async function POST(req: NextRequest) {
         .insert({
           org_id,
           column_id: defaultCol.id,
-          title: `Personally reach out to ${name || email} from ${showName}`,
+          title: `Personally reach out to ${contactName || email} from ${showName}`,
           description: `New podcast-attributed enrollment via ${promo_code || utm_campaign || 'UTM link'}. They heard you on ${showName} and just enrolled. Reach out within 24 hours.\n\nEmail: ${email}\nSource: ${promo_code ? `Promo code ${promo_code}` : `UTM campaign ${utm_campaign}`}`,
           priority: 'high',
           due_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
@@ -184,7 +202,7 @@ export async function POST(req: NextRequest) {
           body: new URLSearchParams({
             From: process.env.TWILIO_PHONE_NUMBER,
             To: process.env.NOTIFICATION_PHONE,
-            Body: `New podcast lead: ${name || email} from ${showName}. Source: ${promo_code || utm_campaign || 'UTM'}`,
+            Body: `New podcast lead: ${contactName || email} from ${showName}. Source: ${promo_code || utm_campaign || 'UTM'}`,
           }),
         })
       } catch (smsErr) {
