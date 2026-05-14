@@ -2,7 +2,6 @@
 
 import { useEffect } from 'react'
 import { useWorkspace } from '@/lib/workspace-context'
-import { createClient } from '@/lib/supabase-browser'
 
 export function DynamicFavicon() {
   const { currentOrg } = useWorkspace()
@@ -12,14 +11,9 @@ export function DynamicFavicon() {
 
     const updateFavicon = async () => {
       try {
-        const supabase = createClient()
-        const { data } = await supabase
-          .from('org_settings')
-          .select('setting_value')
-          .eq('org_id', currentOrg.id)
-          .eq('setting_key', 'branding')
-          .maybeSingle()
-
+        // Use API route to bypass RLS
+        const res = await fetch(`/api/settings/read?org_id=${currentOrg.id}&key=branding`)
+        const data = await res.json()
         const faviconUrl = data?.setting_value?.favicon_url || '/favicon.ico'
 
         let link = document.querySelector("link[rel*='icon']") as HTMLLinkElement

@@ -15,7 +15,8 @@ export async function POST(request: NextRequest) {
     const file = formData.get('file') as File
     const orgId = formData.get('org_id') as string
     const collectionId = formData.get('collection_id') as string | null
-    const brand = formData.get('brand') as string || 'np'
+    // Map org to correct brand value (CHECK constraint: 'np', 'sensorium', 'both')
+    const brandValue = orgId === 'b9fd8b2e-ded6-468b-ab1e-10b50ca40629' ? 'sensorium' : 'np'
 
     if (!file || !orgId) {
       return NextResponse.json({ error: 'Missing file or org_id' }, { status: 400 })
@@ -44,6 +45,13 @@ export async function POST(request: NextRequest) {
     // Get public URL
     const { data: urlData } = admin.storage.from('media-library').getPublicUrl(filePath)
 
+    // Generate thumbnail URL based on file type
+    let thumbnailUrl: string | null = null
+    if (file.type.startsWith('image/')) {
+      // Supabase image transforms — resize to 400x300
+      thumbnailUrl = urlData.publicUrl + '?width=400&height=300&resize=cover'
+    }
+
     // Create database record
     const { data: assetData, error: dbError } = await admin
       .from('media_assets')
@@ -52,10 +60,11 @@ export async function POST(request: NextRequest) {
         collection_id: collectionId || null,
         name: file.name,
         url: urlData.publicUrl,
+        thumbnail_url: thumbnailUrl,
         storage_path: filePath,
         mime_type: file.type,
         file_size: file.size,
-        brand,
+        brand: brandValue,
         created_by: userId,
       })
       .select()
