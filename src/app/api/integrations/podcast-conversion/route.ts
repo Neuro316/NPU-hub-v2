@@ -11,8 +11,6 @@ export async function POST(req: NextRequest) {
     const rawBody = await req.json()
     // Support both direct API payloads (flat) and GHL workflow payloads (nested in customData)
     const body = rawBody.customData ? { ...rawBody.customData, ...rawBody } : rawBody
-    // TEMP: log raw payload while we verify GHL contact-name field shape — remove once confirmed
-    console.log('Podcast conversion webhook body:', JSON.stringify(body, null, 2))
     const {
       org_id,
       email,
