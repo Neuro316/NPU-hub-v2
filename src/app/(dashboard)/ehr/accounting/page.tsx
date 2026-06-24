@@ -187,7 +187,7 @@ function calcSplit(
   const drAmt = r2(amt - snwAmt)
   return { snw: Math.max(snwAmt, 0), dr: Math.max(drAmt, 0), cc: ccAmt, snwService: r2(snwAmt - ccAmt), clinicAmts: {} as Record<string, number> }
 }
-function getPayoutDate(d: string) { const dt = new Date(d+'T12:00:00'); const day = dt.getDate(); const m = dt.getMonth(); const y = dt.getFullYear(); return day <= 15 ? new Date(y,m+1,1).toISOString().split('T')[0] : new Date(y,m+1,15).toISOString().split('T')[0] }
+function getPayoutDate(d: string) { const dt = new Date(d+'T12:00:00'); const day = dt.getDate(); const m = dt.getMonth(); const y = dt.getFullYear(); return day <= 15 ? new Date(y,m,25).toISOString().split('T')[0] : new Date(y,m+1,10).toISOString().split('T')[0] }
 
 /* ── tiny components ─────────────────────────────── */
 function Stat({label,value,color,sub,icon:Icon}:any) {
@@ -1109,8 +1109,7 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onDeleteCheck}
     </div>)}
 
     {showAdd&&<Mdl title="Record Check Payment" onClose={()=>setAdd(false)}>
-      <FS label="Pay To" value={cf.payeeType} onChange={(v:string)=>setCF(p=>({...p,payeeType:v,clinicId:v==='clinic'?(clinics[0]?.id||''):'select'}))} options={[{v:'dr',l:'Dr. Yonce'},...clinics.map(c=>({v:'clinic',l:c.name}))]}/>
-      {cf.payeeType==='clinic'&&clinics.length>1&&<FS label="Clinic" value={cf.clinicId} onChange={(v:string)=>setCF(p=>({...p,clinicId:v}))} options={clinics.map(c=>({v:c.id,l:c.name}))}/>}
+      <FS label="Pay To" value={cf.payeeType==='dr'?'dr':'clinic:'+cf.clinicId} onChange={(v:string)=>{if(v==='dr'){setCF(p=>({...p,payeeType:'dr',clinicId:''}))}else{setCF(p=>({...p,payeeType:'clinic',clinicId:v.slice(7)}))}}} options={[{v:'dr',l:'Dr. Yonce'},...clinics.map(c=>({v:'clinic:'+c.id,l:c.name.split('(')[0].trim()}))]}/>
       <div className="flex gap-3"><FI half label="Check #" value={cf.checkNum} onChange={(v:string)=>setCF(p=>({...p,checkNum:v}))} placeholder="e.g. 1042"/><FI half label="Check Date" value={cf.date} onChange={(v:string)=>setCF(p=>({...p,date:v}))} type="date"/></div>
       <FI label="Amount ($)" value={cf.amount} onChange={(v:string)=>setCF(p=>({...p,amount:v}))} type="number"/>
       <FI label="Memo / Note" value={cf.memo} onChange={(v:string)=>setCF(p=>({...p,memo:v}))} placeholder="Optional"/>
@@ -1354,7 +1353,7 @@ export default function AccountingPage() {
   const addService=async(cid:string,svc:any)=>{if(!orgId)return;await supabase.from('acct_services').insert({org_id:orgId,client_id:cid,...svc});loadData()}
   const editService=async(svcId:string,data:any)=>{if(!orgId)return;await supabase.from('acct_services').update(data).eq('id',svcId);loadData()}
   const addPayment=async(cid:string,sid:string,pmt:any)=>{if(!orgId)return;await supabase.from('acct_payments').insert({org_id:orgId,service_id:sid,client_id:cid,...pmt});loadData()}
-  const editPayment=async(pmtId:string,data:any)=>{if(!orgId)return;await supabase.from('acct_payments').update(data).eq('id',pmtId);loadData()}
+  const editPayment=async(pmtId:string,data:any)=>{if(!orgId)return;const{data:upd,error}=await supabase.from('acct_payments').update(data).eq('id',pmtId).select();if(error){console.error('editPayment failed',error);alert('Could not save payment: '+error.message)}else if(!upd||upd.length===0){console.warn('editPayment matched 0 rows',pmtId);alert('Save updated 0 rows. The payment was not matched. Please reload and try again.')}loadData()}
   const deletePayment=async(pmtId:string)=>{if(!orgId)return;await supabase.from('acct_payments').delete().eq('id',pmtId);loadData()}
   const saveConfig=async()=>{if(!orgId)return;await supabase.from('org_settings').upsert({org_id:orgId,setting_key:'acct_config',setting_value:config},{onConflict:'org_id,setting_key'})}
   const saveLoc=async(id:string|null,data:any)=>{if(!orgId)return;if(id)await supabase.from('acct_locations').update(data).eq('id',id);else await supabase.from('acct_locations').insert({id:data.short_code,org_id:orgId,...data});loadData()}
