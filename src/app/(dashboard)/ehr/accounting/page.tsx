@@ -1017,9 +1017,10 @@ function ReconView({clients,locs,clinics,cfg}:{clients:AcctClient[];locs:AcctLoc
 }
 
 /* ── Payouts (checks + marketing + ledger) ─────────── */
-function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onDeleteCheck}:
-  {clients:AcctClient[];locs:AcctLocation[];clinics:AcctClinic[];cfg:AcctConfig;checks:AcctCheck[];mktg:AcctMktgCharge[];onAddCheck:(d:any)=>void;onDeleteCheck:(id:string)=>void}) {
+function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,onDeleteCheck}:
+  {clients:AcctClient[];locs:AcctLocation[];clinics:AcctClinic[];cfg:AcctConfig;checks:AcctCheck[];mktg:AcctMktgCharge[];onAddCheck:(d:any)=>void;onEditCheck:(id:string,d:any)=>void;onDeleteCheck:(id:string)=>void}) {
   const [showAdd,setAdd]=useState(false)
+  const [editId,setEditId]=useState<string|null>(null)
   const [cf,setCF]=useState({payeeType:'dr' as string,clinicId:'',checkNum:'',date:td(),amount:'',memo:''})
 
   // Compute total owed per payee from revenue splits
@@ -1058,9 +1059,11 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onDeleteCheck}
 
   const doAdd=async()=>{
     const a=parseFloat(cf.amount)||0;if(a<=0)return
-    await onAddCheck({payee_type:cf.payeeType,payee_clinic_id:cf.payeeType==='clinic'?cf.clinicId:null,check_number:cf.checkNum,check_date:cf.date,amount:a,memo:cf.memo})
-    setAdd(false);setCF({payeeType:'dr',clinicId:'',checkNum:'',date:td(),amount:'',memo:''})
+    const payload={payee_type:cf.payeeType,payee_clinic_id:cf.payeeType==='clinic'?cf.clinicId:null,check_number:cf.checkNum,check_date:cf.date,amount:a,memo:cf.memo}
+    if(editId){await onEditCheck(editId,payload)}else{await onAddCheck(payload)}
+    setAdd(false);setEditId(null);setCF({payeeType:'dr',clinicId:'',checkNum:'',date:td(),amount:'',memo:''})
   }
+  const openEditCheck=(ch:any)=>{setEditId(ch.id);setCF({payeeType:ch.payee_type,clinicId:ch.payee_clinic_id||'',checkNum:ch.check_number||'',date:ch.check_date,amount:String(ch.amount),memo:ch.memo||''});setAdd(true)}
 
   // Get payee name for check display
   const payeeName=(ch:AcctCheck)=>ch.payee_type==='dr'?'Dr. Yonce':clinics.find(c=>c.id===ch.payee_clinic_id)?.name.split('(')[0].trim()||'Clinic'
@@ -1100,7 +1103,7 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onDeleteCheck}
                   <td className="py-2 px-3 text-xs font-semibold text-np-dark">{ch.check_number||'\u2014'}</td>
                   <td className="py-2 px-3 text-xs font-semibold text-green-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(ch.amount)}</td>
                   <td className="py-2 px-3 text-[11px] text-gray-400">{ch.memo}</td>
-                  <td className="py-2 px-1"><button onClick={()=>{if(confirm('Delete this check?'))onDeleteCheck(ch.id)}} className="p-1 rounded hover:bg-red-50"><Trash2 className="w-3 h-3 text-gray-300 hover:text-red-400"/></button></td>
+                  <td className="py-2 px-1"><div className="flex items-center gap-0.5"><button onClick={()=>openEditCheck(ch)} className="p-1 rounded hover:bg-np-blue/10" title="Edit"><Pencil className="w-3 h-3 text-gray-400 hover:text-np-blue"/></button><button onClick={()=>{if(confirm('Delete this check?'))onDeleteCheck(ch.id)}} className="p-1 rounded hover:bg-red-50" title="Delete"><Trash2 className="w-3 h-3 text-gray-300 hover:text-red-400"/></button></div></td>
                 </tr>)}</tbody></table></div>}
             {pChecks.length===0&&pMktg.length===0&&<p className="text-xs text-gray-400 italic">No checks or deductions recorded yet.</p>}
           </div>
@@ -1108,7 +1111,7 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onDeleteCheck}
       </div>
     </div>)}
 
-    {showAdd&&<Mdl title="Record Check Payment" onClose={()=>setAdd(false)}>
+    {showAdd&&<Mdl title={editId?'Edit Check':'Record Check Payment'} onClose={()=>{setAdd(false);setEditId(null)}}>
       <FS label="Pay To" value={cf.payeeType==='dr'?'dr':'clinic:'+cf.clinicId} onChange={(v:string)=>{if(v==='dr'){setCF(p=>({...p,payeeType:'dr',clinicId:''}))}else{setCF(p=>({...p,payeeType:'clinic',clinicId:v.slice(7)}))}}} options={[{v:'dr',l:'Dr. Yonce'},...clinics.map(c=>({v:'clinic:'+c.id,l:c.name.split('(')[0].trim()}))]}/>
       <div className="flex gap-3"><FI half label="Check #" value={cf.checkNum} onChange={(v:string)=>setCF(p=>({...p,checkNum:v}))} placeholder="e.g. 1042"/><FI half label="Check Date" value={cf.date} onChange={(v:string)=>setCF(p=>({...p,date:v}))} type="date"/></div>
       <FI label="Amount ($)" value={cf.amount} onChange={(v:string)=>setCF(p=>({...p,amount:v}))} type="number"/>
@@ -1124,7 +1127,7 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onDeleteCheck}
           <div className="flex justify-between text-xs pt-1 border-t border-gray-200"><span className="text-gray-500 font-semibold">New balance:</span>
             <span className={`font-bold ${newNet>0.01?'text-amber-600':newNet<-0.01?'text-green-600':'text-gray-400'}`} style={{fontFeatureSettings:'"tnum"'}}>{$$(newNet)}{newNet<-0.01?' (overpaid)':''}</span></div>
         </div>})()}
-      <div className="flex gap-2 mt-4 justify-end"><Btn outline onClick={()=>setAdd(false)}>Cancel</Btn><Btn onClick={doAdd}>Record Check</Btn></div>
+      <div className="flex gap-2 mt-4 justify-end"><Btn outline onClick={()=>{setAdd(false);setEditId(null)}}>Cancel</Btn><Btn onClick={doAdd}>{editId?'Save Changes':'Record Check'}</Btn></div>
     </Mdl>}
   </div>
 }
@@ -1360,6 +1363,7 @@ export default function AccountingPage() {
   const deleteLoc=async(id:string)=>{await supabase.from('acct_locations').delete().eq('id',id);loadData()}
   const saveClinic=async(id:string|null,data:any)=>{if(!orgId)return;if(id)await supabase.from('acct_clinics').update(data).eq('id',id);else await supabase.from('acct_clinics').insert({id:`clinic-${Date.now()}`,org_id:orgId,...data});loadData()}
   const addCheck=async(data:any)=>{if(!orgId)return;await supabase.from('acct_checks').insert({org_id:orgId,...data});loadData()}
+  const editCheck=async(id:string,data:any)=>{if(!orgId)return;const{error}=await supabase.from('acct_checks').update(data).eq('id',id);if(error){console.error('editCheck failed',error);alert('Could not save check: '+error.message)}loadData()}
   const deleteCheck=async(id:string)=>{await supabase.from('acct_checks').delete().eq('id',id);loadData()}
   const addMktg=async(month:string)=>{
     if(!orgId)return
@@ -1399,7 +1403,7 @@ export default function AccountingPage() {
                 <div className="flex gap-1"><div className="w-1.5 h-1.5 rounded-full" style={{background:lo?.color||'#999'}}/><div className="w-1.5 h-1.5 rounded-full" style={{background:sc?.tx==='text-green-700'?'#34A853':sc?.tx==='text-amber-700'?'#FBBC04':sc?.tx==='text-red-600'?'#EA4335':'#999'}}/></div></div></div></button>})}</div></div>
       <div className="flex-1 overflow-y-auto p-5">
         {ac?<DetView cl={ac} locs={locs} clinics={clinics} cfg={config} onBack={()=>sS(null)} onAddSvc={addService} onEditSvc={editService} onAddPmt={addPayment} onEditPmt={editPayment} onDeletePmt={deletePayment}/>
-          :vw==='payouts'?<PayView clients={clients} locs={locs} clinics={clinics} cfg={config} checks={checks} mktg={mktg} onAddCheck={addCheck} onDeleteCheck={deleteCheck}/>
+          :vw==='payouts'?<PayView clients={clients} locs={locs} clinics={clinics} cfg={config} checks={checks} mktg={mktg} onAddCheck={addCheck} onEditCheck={editCheck} onDeleteCheck={deleteCheck}/>
           :vw==='recon'?<ReconView clients={clients} locs={locs} clinics={clinics} cfg={config}/>
           :vw==='reports'?<ReportView clients={clients} locs={locs} clinics={clinics} cfg={config} checks={checks} mktg={mktg}/>
           :vw==='settings'?<SetView locs={locs} clinics={clinics} config={config} setConfig={setConfig} clients={clients} agreement={config.payout_agreement} setAgreement={(v:string)=>setConfig(p=>({...p,payout_agreement:v}))} onSaveConfig={saveConfig} onSaveLoc={saveLoc} onDeleteLoc={deleteLoc} onSaveClinic={saveClinic} mktg={mktg} onAddMktg={addMktg} onDeleteMktg={deleteMktg} onToggleWaive={toggleWaive}/>
