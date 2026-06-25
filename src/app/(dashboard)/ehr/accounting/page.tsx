@@ -1197,7 +1197,7 @@ function SetView({locs,clinics,clients,agreement,setAgreement,config,setConfig,o
   const open=(type:string,data:any)=>{setMo({type});setF(data||{})};const close=()=>{setMo(null);setF({})}
   const saveLoc=async()=>{if(!form.name?.trim()||!form.short?.trim())return;await onSaveLoc(modal.type==='addLoc'?null:form.id,{name:form.name.trim(),short_code:form.short.trim().toUpperCase(),color:form.color||COLORS[locs.length%COLORS.length],clinic_id:form.clinicId||null});close()}
   const deleteLoc=async(lid:string)=>{const n=clients.filter((c:AcctClient)=>c.location_id===lid).length;if(n>0){alert(`Cannot delete: ${n} client(s) assigned.`);return};await onDeleteLoc(lid);close()}
-  const saveClinic=async()=>{if(!form.name?.trim())return;await onSaveClinic(modal.type==='addClinic'?null:form.id,{name:form.name.trim(),contact_name:form.contactName||'',ein:form.ein||'',corp_type:form.corpType||'',has_w9:!!form.hasW9,has_1099:!!form.has1099,address:form.address||'',city:form.city||'',state:form.state||'',zip:form.zip||'',phone:form.phone||'',email:form.email||'',website:form.website||'',notes:form.notes||'',split_snw:form.snw||26,split_clinic:form.clinic||55.01,split_dr:form.drY||18.99,flat_snw:form.flatSnw||0,flat_clinic:form.flatClinic||0,flat_dr:form.flatDr||0});close()}
+  const saveClinic=async()=>{if(!form.name?.trim())return;await onSaveClinic(modal.type==='addClinic'?null:form.id,{name:form.name.trim(),contact_name:form.contactName||'',ein:form.ein||'',corp_type:form.corpType||'',has_w9:!!form.hasW9,has_1099:!!form.has1099,address:form.address||'',city:form.city||'',state:form.state||'',zip:form.zip||'',phone:form.phone||'',email:form.email||'',website:form.website||'',notes:form.notes||'',split_snw:form.snw||26,split_clinic:form.clinic||55.01,split_dr:form.drY||18.99,flat_snw:form.flatSnw||0,flat_clinic:form.flatClinic||0,flat_dr:form.flatDr||0,is_neuro_progeny:!!form.isNP});close()}
   const addMktgMonth=async()=>{await onAddMktg(mktgMonth);setMM(curMonth())}
 
   // Group marketing charges by month
@@ -1314,7 +1314,7 @@ function SetView({locs,clinics,clients,agreement,setAgreement,config,setConfig,o
             :<><span className="text-np-blue">SNW {cl.split_snw}%</span> / <span className="text-amber-600">Clinic {cl.split_clinic}%</span> / <span className="text-purple-600">Dr.Y {cl.split_dr}%</span></>
           }</p>
           <p className="text-[11px] text-gray-400 mt-0.5">Locations: {locsUsing.length>0?locsUsing.map((l:AcctLocation)=>l.name).join(', '):<span className="text-amber-500">None</span>}</p>
-        </div><Btn sm outline onClick={()=>open('editClinic',{...cl,contactName:cl.contact_name,corpType:cl.corp_type,hasW9:cl.has_w9,has1099:cl.has_1099,snw:cl.split_snw,clinic:cl.split_clinic,drY:cl.split_dr,flatSnw:cl.flat_snw||0,flatClinic:cl.flat_clinic||0,flatDr:cl.flat_dr||0})}>Edit</Btn></div></div>})}</div>
+        </div><Btn sm outline onClick={()=>open('editClinic',{...cl,contactName:cl.contact_name,corpType:cl.corp_type,hasW9:cl.has_w9,has1099:cl.has_1099,snw:cl.split_snw,clinic:cl.split_clinic,drY:cl.split_dr,flatSnw:cl.flat_snw||0,flatClinic:cl.flat_clinic||0,flatDr:cl.flat_dr||0,isNP:cl.is_neuro_progeny})}>Edit</Btn></div></div>})}</div>
     {/* Locations */}
     <div className="rounded-xl border border-gray-100 bg-white overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50/50"><h3 className="text-sm font-semibold text-np-dark">Locations</h3><button onClick={()=>open('addLoc',{color:COLORS[locs.length%COLORS.length]})} className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold text-np-blue bg-np-blue/10 rounded-md hover:bg-np-blue/20"><Plus className="w-3 h-3"/>Add Location</button></div>
@@ -1343,6 +1343,8 @@ function SetView({locs,clinics,clients,agreement,setAgreement,config,setConfig,o
         <label className="flex items-center gap-2 text-xs cursor-pointer mb-1"><input type="checkbox" checked={!!form.hasW9} onChange={e=>setF((p:any)=>({...p,hasW9:e.target.checked}))} className="accent-np-blue"/>W-9 on file</label>
         <label className="flex items-center gap-2 text-xs cursor-pointer"><input type="checkbox" checked={!!form.has1099} onChange={e=>setF((p:any)=>({...p,has1099:e.target.checked}))} className="accent-np-blue"/>1099 issued</label></div>}
       <p className="text-[10px] font-semibold uppercase tracking-wider text-np-blue mt-4 mb-3">Program Revenue Splits</p>
+      <label className="flex items-center gap-2 text-xs cursor-pointer mb-3 p-2.5 bg-blue-50 rounded-lg border border-blue-100"><input type="checkbox" checked={!!form.isNP} onChange={e=>setF((p:any)=>({...p,isNP:e.target.checked}))} className="accent-np-blue"/><span className="font-semibold text-np-dark">This is the Neuro Progeny entity</span><span className="text-gray-400">— uses two-way split (Sensorium % + Neuro Progeny remainder), no Dr. Yonce</span></label>
+      {!form.isNP && <>
       {/* Mode toggle */}
       <div className="flex gap-2 mb-3">{[{k:'waterfall',l:'Waterfall (Flat Clinic + % Remainder)'},{k:'pct',l:'All Percentages'}].map(m=>{
         const active=(m.k==='waterfall')?((form.flatClinic||0)>0):((form.flatClinic||0)===0)
@@ -1383,6 +1385,7 @@ function SetView({locs,clinics,clients,agreement,setAgreement,config,setConfig,o
         <p className="text-[10px] text-gray-400 mb-2">All three parties split the gross by percentage. SNW's % includes {config?.cc_processing_fee??3}% CC processing internally.</p>
         <SplitIn label="SNW" value={form.snw||0} onChange={v=>setF((p:any)=>({...p,snw:v}))}/><SplitIn label="Clinic" value={form.clinic||0} onChange={v=>setF((p:any)=>({...p,clinic:v}))}/><SplitIn label="Dr. Yonce" value={form.drY||0} onChange={v=>setF((p:any)=>({...p,drY:v}))}/>
         {(()=>{const pT=(form.snw||0)+(form.clinic||0)+(form.drY||0);return<p className={`text-xs font-semibold mt-2 ${Math.abs(pT-100)<0.1?'text-green-600':'text-red-500'}`}>Pct Total: {pT.toFixed(2)}%{Math.abs(pT-100)>=0.1&&' (should be 100%)'}</p>})()}
+      </>}
       </>}
       <FI label="Notes" value={form.notes||''} onChange={(v:string)=>setF((p:any)=>({...p,notes:v}))}/>
       <div className="flex gap-2 mt-4 justify-end"><Btn outline onClick={close}>Cancel</Btn><Btn onClick={saveClinic}>Save</Btn></div></Mdl>}
