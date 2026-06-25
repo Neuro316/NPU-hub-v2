@@ -761,10 +761,24 @@ export default function PipelinesPage() {
     createClient().from('team_profiles').select('id,display_name,email').eq('org_id', currentOrg.id).order('display_name').then(({data})=>setTeam(data||[]))
   }, [currentOrg?.id])
 
+  const fireStageEmails = async (contactId: string, stageName: string) => {
+    try {
+      const stage = activePipeline.stages.find(s => s.name === stageName)
+      const emails = (stage as any)?.stage_emails
+      if (!emails || emails.length === 0) return
+      await fetch('/api/crm/stage-emails', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ org_id: currentOrg?.id, contact_id: contactId, emails }),
+      })
+    } catch (e) { console.error('fireStageEmails failed', e) }
+  }
+
   const moveContact = async (id: string, stage: string) => {
     try {
       await updateContact(id, { pipeline_stage: stage, pipeline_id: activePipelineId } as any)
       setContacts(prev => prev.map(c => c.id === id ? { ...c, pipeline_stage: stage, pipeline_id: activePipelineId } : c))
+      fireStageEmails(id, stage)
     } catch (e) { console.error(e) }
   }
 
