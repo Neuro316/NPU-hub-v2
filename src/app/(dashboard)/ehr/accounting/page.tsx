@@ -6,17 +6,18 @@ import { createClient } from '@/lib/supabase-browser'
 import { DollarSign, Users, TrendingUp, ChevronLeft, Plus, X, Settings as SettingsIcon, BarChart3, LayoutDashboard, Search, Wallet, Megaphone, Trash2, Pencil, Download, FileText, Building2, Calendar as CalendarIcon } from 'lucide-react'
 
 interface AcctLocation { id: string; name: string; short_code: string; color: string; clinic_id: string | null; org_id: string }
-interface AcctClinic { id: string; org_id: string; name: string; contact_name: string; ein: string; corp_type: string; has_w9: boolean; has_1099: boolean; address: string; city: string; state: string; zip: string; phone: string; email: string; website: string; notes: string; split_snw: number; split_clinic: number; split_dr: number; flat_snw: number; flat_clinic: number; flat_dr: number }
+interface AcctClinic { id: string; org_id: string; name: string; contact_name: string; ein: string; corp_type: string; has_w9: boolean; has_1099: boolean; address: string; city: string; state: string; zip: string; phone: string; email: string; website: string; notes: string; split_snw: number; split_clinic: number; split_dr: number; flat_snw: number; flat_clinic: number; flat_dr: number; is_neuro_progeny?: boolean }
 interface AcctPayment { id: string; service_id: string; client_id: string; amount: number; payment_date: string; notes: string; split_snw: number; split_clinic: number; split_dr: number; clinic_id: string | null; payout_date: string; payout_period: string; is_paid_out: boolean }
-interface AcctService { id: string; client_id: string; service_type: 'Map' | 'Program'; amount: number; service_date: string; notes: string; payments: AcctPayment[] }
+interface AcctService { id: string; client_id: string; service_type: 'Map' | 'Program' | 'Clarity' | 'qEEG'; amount: number; service_date: string; notes: string; payments: AcctPayment[] }
 interface AcctClient { id: string; name: string; location_id: string; org_id: string; notes: string; services: AcctService[] }
-interface AcctConfig { map_splits: { snw: number; dr: number; snw_flat: number; dr_flat: number }; cc_processing_fee: number; snw_base_pct: number; snw_base_flat: number; default_map_price: number; default_program_price: number; payout_agreement: string; marketing?: { monthly_total: number; clinic_share: number; dr_share: number } }
+interface AcctConfig { map_splits: { snw: number; dr: number; snw_flat: number; dr_flat: number }; cc_processing_fee: number; snw_base_pct: number; snw_base_flat: number; default_map_price: number; default_program_price: number; np_splits?: { clarity_snw_pct: number; qeeg_snw_pct: number }; payout_agreement: string; marketing?: { monthly_total: number; clinic_share: number; dr_share: number } }
 interface AcctCheck { id: string; org_id: string; payee_type: 'clinic' | 'dr'; payee_clinic_id: string | null; check_number: string; check_date: string; amount: number; memo: string; created_at: string }
 interface AcctMktgCharge { id: string; org_id: string; month: string; payee_type: 'clinic' | 'dr'; payee_clinic_id: string | null; amount: number; description: string; waived: boolean }
 
 const $$ = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n)
 const r2 = (n: number) => Math.round(n * 100) / 100
 const fD = (d: string) => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''
+const svcLabel=(t:string)=>t==='Map'?'Initial Map':t==='Program'?'Neuro Program':t==='Clarity'?'Clarity Protocol':t==='qEEG'?'qEEG':t
 const fMoL = (m: string) => { const [y, mo] = m.split('-'); return new Date(+y, +mo - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) }
 const gI = (n: string) => n.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
 const td = () => new Date().toISOString().split('T')[0]
@@ -77,6 +78,15 @@ function calcSplit(
   // ── PROGRAM ──
   const loc = locs.find(l => l.id === locId)
   const cl = loc?.clinic_id ? clinics.find(c => c.id === loc.clinic_id) : null
+
+  // ── NEURO PROGENY: two-way split (Sensorium % + NP remainder), no Dr/waterfall ──
+  if (cl && cl.is_neuro_progeny) {
+    const np = cfg.np_splits || { clarity_snw_pct: 16.6945, qeeg_snw_pct: 23.0 }
+    const snwPct = svcType === 'qEEG' ? np.qeeg_snw_pct : np.clarity_snw_pct
+    const snwAmt = r2(amt * snwPct / 100)
+    const npAmt = r2(amt - snwAmt)
+    return { snw: Math.max(snwAmt, 0), dr: 0, cc: ccAmt, snwService: r2(Math.max(snwAmt - ccAmt, 0)), clinicAmts: { [cl.id]: Math.max(npAmt, 0) } as Record<string, number> }
+  }
 
   if (cl) {
     const hasFlat = (cl.flat_clinic || 0) > 0
@@ -334,7 +344,7 @@ function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onEditSvc,onAddPmt,onEditP
   const [editPm,setEditPm]=useState<AcctPayment|null>(null)
   const [ef,setEF]=useState({a:'',d:'',n:''})
   const st=getStatus(cl);const tO=cl.services.reduce((s:number,v:AcctService)=>s+v.amount,0);const tP=cl.services.reduce((s:number,v:AcctService)=>s+v.payments.reduce((p:number,x:AcctPayment)=>p+x.amount,0),0);const bal=tO-tP;const pct=tO>0?(tP/tO)*100:100
-  const doAS=async()=>{await onAddSvc(cl.id,{service_type:sf.t,amount:parseFloat(sf.a)||0,service_date:sf.d,notes:sf.n});setSAS(false);setSF({t:'Map',a:'600',d:td(),n:''})}
+  const doAS=async()=>{await onAddSvc(cl.id,{service_type:sf.t,amount:parseFloat(sf.a)||0,service_date:sf.d,notes:sf.n});setSAS(false);setSF({t:isNP?'Clarity':'Map',a:isNP?'1797':'600',d:td(),n:''})}
   const doAP=async(sid:string)=>{const a=parseFloat(pf.a)||0;if(a<=0)return;await onAddPmt(cl.id,sid,{amount:a,payment_date:pf.d,notes:pf.n});setSAP(null);setPF({a:'',d:td(),n:''})}
   const openEdit=(pm:AcctPayment)=>{setEditPm(pm);setEF({a:String(pm.amount),d:pm.payment_date,n:pm.notes||''})}
   const doEdit=async()=>{if(!editPm)return;const a=parseFloat(ef.a)||0;if(a<=0)return;await onEditPmt(editPm.id,{amount:a,payment_date:ef.d,notes:ef.n});setEditPm(null)}
@@ -342,6 +352,7 @@ function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onEditSvc,onAddPmt,onEditP
   const tSvc=showAP?cl.services.find((s:AcctService)=>s.id===showAP):null
   const editSvc=editPm?cl.services.find((s:AcctService)=>s.id===editPm.service_id):null
   const loc=locs.find((l:AcctLocation)=>l.id===cl.location_id);const clObj=loc?.clinic_id?clinics.find((c:AcctClinic)=>c.id===loc.clinic_id):null
+  const isNP=!!clObj?.is_neuro_progeny
 
   return <div className="space-y-5">
     <button onClick={onBack} className="flex items-center gap-1 text-xs text-gray-400 hover:text-np-dark transition-colors"><ChevronLeft className="w-3.5 h-3.5"/>Back</button>
@@ -358,12 +369,12 @@ function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onEditSvc,onAddPmt,onEditP
     </div>
     <div className="flex items-center justify-between border-b border-gray-100">
       <div className="flex">{['svc','pmt'].map(t=><button key={t} onClick={()=>setTab(t)} className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors ${tab===t?'border-np-blue text-np-blue':'border-transparent text-gray-400 hover:text-gray-600'}`}>{t==='svc'?'Services':'Payments'}</button>)}</div>
-      {tab==='svc'&&<button onClick={()=>setSAS(true)} className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold text-np-blue bg-np-blue/10 rounded-md hover:bg-np-blue/20 mb-1"><Plus className="w-3 h-3"/>Add Service</button>}
+      {tab==='svc'&&<button onClick={()=>{setSF({t:isNP?'Clarity':'Map',a:isNP?'1797':'600',d:td(),n:''});setSAS(true)}} className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold text-np-blue bg-np-blue/10 rounded-md hover:bg-np-blue/20 mb-1"><Plus className="w-3 h-3"/>Add Service</button>}
     </div>
     {tab==='svc'&&cl.services.map((sv:AcctService)=>{
       const svP=sv.payments.reduce((s:number,p:AcctPayment)=>s+p.amount,0);const sp=sv.payments.reduce((acc,pm)=>{const s=calcSplit(pm.amount,sv.service_type,cl.location_id,locs,clinics,cfg,sv.amount,sv.service_date);return{snw:r2(acc.snw+s.snw),dr:r2(acc.dr+s.dr),cc:r2(acc.cc+s.cc),snwService:r2(acc.snwService+s.snwService),clinicAmts:Object.fromEntries(Object.entries(s.clinicAmts).map(([k,v])=>[k,r2((acc.clinicAmts[k]||0)+v)]))}},{snw:0,dr:0,cc:0,snwService:0,clinicAmts:{}} as ReturnType<typeof calcSplit>);const rem=sv.amount-svP;const clAmt=Object.values(sp.clinicAmts).reduce((s,v)=>s+v,0)
       return <div key={sv.id} className="rounded-xl border border-gray-100 bg-white overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50/50"><div className="flex items-center gap-2"><h4 className="text-xs font-bold text-np-dark">{sv.service_type==='Map'?'Initial Map':'Neuro Program'}</h4><button onClick={()=>{setEditingSvc(editingSvc===sv.id?null:sv.id);setEsSF({a:String(sv.amount),d:sv.service_date,n:sv.notes||''})}} className="p-0.5 rounded hover:bg-np-blue/10" title="Edit service"><Pencil className="w-3 h-3 text-gray-300 hover:text-np-blue"/></button></div><span className="text-xs font-bold text-np-dark" style={{fontFeatureSettings:'"tnum"'}}>{$$(sv.amount)}</span></div>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50/50"><div className="flex items-center gap-2"><h4 className="text-xs font-bold text-np-dark">{svcLabel(sv.service_type)}</h4><button onClick={()=>{setEditingSvc(editingSvc===sv.id?null:sv.id);setEsSF({a:String(sv.amount),d:sv.service_date,n:sv.notes||''})}} className="p-0.5 rounded hover:bg-np-blue/10" title="Edit service"><Pencil className="w-3 h-3 text-gray-300 hover:text-np-blue"/></button></div><span className="text-xs font-bold text-np-dark" style={{fontFeatureSettings:'"tnum"'}}>{$$(sv.amount)}</span></div>
         {editingSvc===sv.id&&<div className="px-4 py-3 bg-blue-50/50 border-b border-blue-100 space-y-2">
           <div className="flex gap-2 items-end flex-wrap">
             <div><label className="block text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-0.5">Total Price</label><input type="number" step="0.01" value={esSF.a} onChange={e=>setEsSF(p=>({...p,a:e.target.value}))} className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg w-28 focus:outline-none focus:ring-1 focus:ring-np-blue/30" placeholder="e.g. 5400"/></div>
@@ -407,7 +418,7 @@ function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onEditSvc,onAddPmt,onEditP
             </div>
           </td></tr>})}</tbody></table></div></div>}
     {showAS&&<Mdl title="Add Service" onClose={()=>setSAS(false)}>
-      <FS label="Type" value={sf.t} onChange={(v:string)=>setSF(p=>({...p,t:v,a:v==='Map'?'600':'5400'}))} options={[{v:'Map',l:'Initial Map (qEEG)'},{v:'Program',l:'Neuro Program'}]}/>
+      <FS label="Type" value={sf.t} onChange={(v:string)=>setSF(p=>({...p,t:v,a:v==='Map'?'600':v==='Clarity'?'1797':v==='qEEG'?'600':'5400'}))} options={isNP?[{v:'Clarity',l:'Clarity Protocol'},{v:'qEEG',l:'qEEG'}]:[{v:'Map',l:'Initial Map (qEEG)'},{v:'Program',l:'Neuro Program'}]}/>
       <FI label="Amount ($)" value={sf.a} onChange={(v:string)=>setSF(p=>({...p,a:v}))} type="number"/><FI label="Date" value={sf.d} onChange={(v:string)=>setSF(p=>({...p,d:v}))} type="date"/><FI label="Notes" value={sf.n} onChange={(v:string)=>setSF(p=>({...p,n:v}))}/>
       <SplitPrev amt={parseFloat(sf.a)||0} svcType={sf.t} locId={cl.location_id} locs={locs} clinics={clinics} cfg={cfg} serviceTotal={parseFloat(sf.a)||0}/>
       <div className="flex gap-2 mt-4 justify-end"><Btn outline onClick={()=>setSAS(false)}>Cancel</Btn><Btn onClick={doAS}>Add</Btn></div></Mdl>}
@@ -421,7 +432,7 @@ function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onEditSvc,onAddPmt,onEditP
       <div className="flex gap-2 mt-4 justify-end"><Btn outline onClick={()=>setSAP(null)}>Cancel</Btn><Btn onClick={()=>doAP(showAP!)}>Record</Btn></div></Mdl>}
     {editPm&&<Mdl title="Edit Payment" onClose={()=>setEditPm(null)}>
       {editSvc&&<div className="p-3 bg-gray-50 rounded-xl border border-gray-100 mb-4 space-y-1">
-        <div className="flex justify-between text-xs"><span className="text-gray-400">Service:</span><span className="font-semibold">{editSvc.service_type==='Map'?'Initial Map':'Neuro Program'} ({$$(editSvc.amount)})</span></div>
+        <div className="flex justify-between text-xs"><span className="text-gray-400">Service:</span><span className="font-semibold">{svcLabel(editSvc.service_type)} ({$$(editSvc.amount)})</span></div>
         <div className="flex justify-between text-xs"><span className="text-gray-400">Original amount:</span><span className="font-semibold text-green-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(editPm.amount)}</span></div>
         <div className="flex justify-between text-xs"><span className="text-gray-400">Original date:</span><span className="text-gray-600">{fD(editPm.payment_date)}</span></div></div>}
       <FI label="Amount ($)" value={ef.a} onChange={(v:string)=>setEF(p=>({...p,a:v}))} type="number"/>
@@ -1165,7 +1176,7 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,on
         <tbody>{[...drill.rows].sort((a:any,b:any)=>a.clientName.localeCompare(b.clientName)).map((r:any,i:number)=><tr key={i} className="border-b border-gray-50">
           <td className="py-2 px-3 text-xs font-semibold text-np-dark">{r.clientName}</td>
           <td className="py-2 px-3 text-xs text-gray-500">{fD(r.paymentDate)}</td>
-          <td className="py-2 px-3 text-xs text-gray-500">{r.svc==='Map'?'Initial Map':'Neuro Program'}</td>
+          <td className="py-2 px-3 text-xs text-gray-500">{svcLabel(r.svc)}</td>
           <td className="py-2 px-3 text-xs text-gray-500 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r.amount)}</td>
           <td className="py-2 px-3 text-xs font-bold text-np-dark text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r.share)}</td>
         </tr>)}</tbody>
@@ -1268,6 +1279,14 @@ function SetView({locs,clinics,clients,agreement,setAgreement,config,setConfig,o
             <span className="text-xs text-gray-400">% of gross</span>
           </div>
           <p className="text-[10px] text-gray-400 mt-1">This is NOT an additional deduction. It's the portion of SNW's total % allocated to credit card processing.</p>
+        </div>
+        <div className="mt-4 pt-4 border-t border-gray-100">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Neuro Progeny Splits (Sensorium %)</p>
+          <div className="flex items-center justify-between mb-2"><span className="text-sm text-gray-600">Clarity Protocol — Sensorium %</span>
+            <input type="number" value={config.np_splits?.clarity_snw_pct??16.6945} onChange={e=>setConfig((p:any)=>({...p,np_splits:{...(p.np_splits||{clarity_snw_pct:16.6945,qeeg_snw_pct:23.0}),clarity_snw_pct:parseFloat(e.target.value)||0}}))} step={0.0001} className="w-24 px-2 py-1.5 text-sm font-semibold border border-gray-200 rounded-md bg-white text-np-dark text-right focus:outline-none focus:ring-2 focus:ring-np-blue/20" style={{fontFeatureSettings:'"tnum"'}}/></div>
+          <div className="flex items-center justify-between"><span className="text-sm text-gray-600">qEEG — Sensorium %</span>
+            <input type="number" value={config.np_splits?.qeeg_snw_pct??23.0} onChange={e=>setConfig((p:any)=>({...p,np_splits:{...(p.np_splits||{clarity_snw_pct:16.6945,qeeg_snw_pct:23.0}),qeeg_snw_pct:parseFloat(e.target.value)||0}}))} step={0.01} className="w-24 px-2 py-1.5 text-sm font-semibold border border-gray-200 rounded-md bg-white text-np-dark text-right focus:outline-none focus:ring-2 focus:ring-np-blue/20" style={{fontFeatureSettings:'"tnum"'}}/></div>
+          <p className="text-[10px] text-gray-400 mt-2">Neuro Progeny receives the remainder. Stored as percentages so splits scale if prices change.</p>
         </div>
         <div className="mt-2"><Btn sm onClick={onSaveConfig}>Save</Btn></div>
       </div>
@@ -1372,7 +1391,7 @@ function SetView({locs,clinics,clients,agreement,setAgreement,config,setConfig,o
 export default function AccountingPage() {
   const {currentOrg}=useWorkspace();const supabase=createClient()
   const [clients,setClients]=useState<AcctClient[]>([]);const [locs,setLocs]=useState<AcctLocation[]>([]);const [clinics,setClinics]=useState<AcctClinic[]>([])
-  const [config,setConfig]=useState<AcctConfig>({map_splits:{snw:23,dr:77,snw_flat:0,dr_flat:0},cc_processing_fee:3,snw_base_pct:0,snw_base_flat:0,default_map_price:600,default_program_price:5400,payout_agreement:''})
+  const [config,setConfig]=useState<AcctConfig>({map_splits:{snw:23,dr:77,snw_flat:0,dr_flat:0},cc_processing_fee:3,snw_base_pct:0,snw_base_flat:0,default_map_price:600,default_program_price:5400,np_splits:{clarity_snw_pct:16.6945,qeeg_snw_pct:23.0},payout_agreement:''})
   const [checks,setChecks]=useState<AcctCheck[]>([]);const [mktg,setMktg]=useState<AcctMktgCharge[]>([])
   const [loading,setLoading]=useState(true);const [vw,sV]=useState('dash');const [sel,sS]=useState<string|null>(null);const [q,sQ]=useState('')
   const [showAC,setSAC]=useState(false);const [nc,setNC]=useState({nm:'',loc:''})
