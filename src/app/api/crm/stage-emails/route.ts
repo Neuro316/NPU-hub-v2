@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
       const result = await resp.json().catch(() => ({ success: false, error: 'bad response' }));
 
       // log the send
-      await supabase.from('email_sends').insert({ contact_id, to_email: toEmail, status: result.success ? 'sent' : 'failed', provider_message_id: result.provider_message_id || null, error_message: result.error || null, sent_at: result.success ? new Date().toISOString() : null });
+      await supabase.from('email_sends').insert({ contact_id, status: result.success ? 'sent' : 'failed', external_message_id: result.provider_message_id || null, error_message: result.error || null, sent_at: result.success ? new Date().toISOString() : null });
 
       if (result.success) sent++;
       results.push({ to: toEmail, recipient: em.recipient, success: !!result.success, error: result.error });
