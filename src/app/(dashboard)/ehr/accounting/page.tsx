@@ -312,7 +312,7 @@ function DashView({clients,locs,onSel,onAdd}:{clients:AcctClient[];locs:AcctLoca
   const tO=clients.reduce((s,c)=>s+c.services.reduce((a,v)=>a+v.amount,0),0)
   const tC=clients.reduce((s,c)=>s+c.services.reduce((a,v)=>a+v.payments.reduce((p,x)=>p+x.amount,0),0),0)
   const prg=clients.filter(c=>c.services.some(s=>s.service_type==='Program'))
-  const mpo=clients.filter(c=>!c.services.some(s=>s.service_type==='Program')&&c.services.some(s=>s.amount>0))
+  const mpo=clients.filter(c=>!c.services.some(s=>s.service_type==='Program')&&c.services.some(s=>s.service_type==='Map'&&s.amount>0))
   return <div className="space-y-5">
     <div className="flex items-center justify-between"><h2 className="text-base font-bold text-np-dark">Dashboard</h2>
       <button onClick={onAdd} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-np-blue rounded-lg hover:bg-np-accent transition-colors"><Plus className="w-3.5 h-3.5"/>Add Client</button></div>
@@ -330,9 +330,17 @@ function DashView({clients,locs,onSel,onAdd}:{clients:AcctClient[];locs:AcctLoca
     {mpo.length>0&&<div className="rounded-xl border border-gray-100 bg-white overflow-hidden">
       <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50"><h3 className="text-sm font-semibold text-np-dark">Map Only ({mpo.length})</h3></div>
       <div className="overflow-auto"><table className="w-full text-left"><thead><tr className="border-b border-gray-100 bg-gray-50/30"><TH>Client</TH><TH>Location</TH><TH>Date</TH><TH className="text-right">Amount</TH></tr></thead>
-        <tbody>{mpo.map(c=>{const m=c.services.find(s=>s.service_type==='Map')!;return<tr key={c.id} onClick={()=>onSel(c.id)} className="border-b border-gray-50 hover:bg-gray-50/50 cursor-pointer transition-colors">
+        <tbody>{mpo.map(c=>{const m=c.services.find(s=>s.service_type==='Map');if(!m)return null;return<tr key={c.id} onClick={()=>onSel(c.id)} className="border-b border-gray-50 hover:bg-gray-50/50 cursor-pointer transition-colors">
           <td className="py-2.5 px-4 text-xs font-semibold text-np-dark">{c.name}</td><td className="py-2.5 px-4"><LocTag loc={c.location_id} locs={locs}/></td>
           <td className="py-2.5 px-4 text-xs text-gray-400">{fD(m.service_date)}</td><td className="py-2.5 px-4 text-xs font-semibold text-np-dark text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(m.amount)}</td></tr>})}</tbody></table></div></div>}
+    {(()=>{const npc=clients.filter(c=>!c.services.some(s=>s.service_type==='Program')&&!c.services.some(s=>s.service_type==='Map')&&c.services.some(s=>s.amount>0));return npc.length>0&&<div className="rounded-xl border border-gray-100 bg-white overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50"><h3 className="text-sm font-semibold text-np-dark">Neuro Progeny ({npc.length})</h3></div>
+      <div className="overflow-auto"><table className="w-full text-left"><thead><tr className="border-b border-gray-100 bg-gray-50/30"><TH>Client</TH><TH>Location</TH><TH>Service</TH><TH className="text-right">Amount</TH><TH className="text-right">Paid</TH></tr></thead>
+        <tbody>{npc.map(c=>{const sv=c.services.find(s=>s.amount>0);if(!sv)return null;const pd=sv.payments.reduce((s,x)=>s+x.amount,0);return<tr key={c.id} onClick={()=>onSel(c.id)} className="border-b border-gray-50 hover:bg-gray-50/50 cursor-pointer transition-colors">
+          <td className="py-2.5 px-4 text-xs font-semibold text-np-dark">{c.name}</td><td className="py-2.5 px-4"><LocTag loc={c.location_id} locs={locs}/></td>
+          <td className="py-2.5 px-4 text-xs text-gray-500">{sv.service_type==='Clarity'?'Clarity Protocol':sv.service_type==='qEEG'?'qEEG':sv.service_type}</td>
+          <td className="py-2.5 px-4 text-xs font-semibold text-np-dark text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(sv.amount)}</td>
+          <td className="py-2.5 px-4 text-xs font-semibold text-green-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(pd)}</td></tr>})}</tbody></table></div></div>})()}
   </div>
 }
 
