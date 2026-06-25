@@ -238,6 +238,7 @@ function FS({label,value,onChange,options}:any) {
 function SplitPrev({amt,svcType,locId,locs,clinics,cfg,serviceTotal,serviceStartDate}:any) {
   if (!amt||amt<=0) return null; const sp=calcSplit(amt,svcType,locId,locs,clinics,cfg,serviceTotal,serviceStartDate)
   const cl=(()=>{const loc=locs.find((l:any)=>l.id===locId);return loc?.clinic_id?clinics.find((c:any)=>c.id===loc.clinic_id):null})()
+  const isNP = !!cl?.is_neuro_progeny
   const isWaterfall = svcType==='Program' && cl && (cl.flat_clinic||0)>0
   const clAmt = Object.values(sp.clinicAmts).reduce((s:number,v:any)=>s+v,0)
   const ccPct = cfg.cc_processing_fee ?? 3
@@ -270,13 +271,14 @@ function SplitPrev({amt,svcType,locId,locs,clinics,cfg,serviceTotal,serviceStart
         <p className="text-sm font-bold text-amber-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(ca as number)}</p>
         <p className="text-[9px] text-gray-400 mt-0.5" style={{fontFeatureSettings:'"tnum"'}}>{r2((ca as number)/amt*100)}% of gross</p>
       </div>})}
-      <div className="flex-1 text-center p-2 bg-white rounded-lg border border-gray-100 min-w-[80px]">
+      {!isNP && <div className="flex-1 text-center p-2 bg-white rounded-lg border border-gray-100 min-w-[80px]">
         <p className="text-[10px] font-semibold text-purple-600 mb-0.5">Dr. Yonce</p>
         <p className="text-sm font-bold text-purple-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(sp.dr)}</p>
         <p className="text-[9px] text-gray-400 mt-0.5" style={{fontFeatureSettings:'"tnum"'}}>{r2(sp.dr/amt*100)}% of gross</p>
-      </div>
+      </div>}
     </div>
     {svcType==='Map'&&<p className="text-[10px] text-gray-400 mt-2">Maps: SNW + Dr. Yonce only</p>}
+    {isNP&&<p className="text-[10px] text-gray-400 mt-2">Neuro Progeny: Sensorium + Neuro Progeny only</p>}
     {svcType==='Program'&&!cl&&<p className="text-[10px] text-amber-600 mt-2">No clinic assigned. Clinic share goes to SNW.</p>}
     <div className="mt-2 pt-2 border-t border-gray-100 flex justify-between text-[10px]">
       <span className="text-gray-400">Sum check</span>
