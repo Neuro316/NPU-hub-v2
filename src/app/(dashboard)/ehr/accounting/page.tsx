@@ -9,7 +9,7 @@ interface AcctLocation { id: string; name: string; short_code: string; color: st
 interface AcctClinic { id: string; org_id: string; name: string; contact_name: string; ein: string; corp_type: string; has_w9: boolean; has_1099: boolean; address: string; city: string; state: string; zip: string; phone: string; email: string; website: string; notes: string; split_snw: number; split_clinic: number; split_dr: number; flat_snw: number; flat_clinic: number; flat_dr: number; is_neuro_progeny?: boolean }
 interface AcctPayment { id: string; service_id: string; client_id: string; amount: number; payment_date: string; notes: string; split_snw: number; split_clinic: number; split_dr: number; clinic_id: string | null; payout_date: string; payout_period: string; is_paid_out: boolean }
 interface AcctService { id: string; client_id: string; service_type: 'Map' | 'Program' | 'Clarity' | 'qEEG'; amount: number; service_date: string; notes: string; payments: AcctPayment[] }
-interface AcctClient { id: string; name: string; location_id: string; org_id: string; notes: string; services: AcctService[] }
+interface AcctClient { id: string; name: string; location_id: string; org_id: string; notes: string; date_of_birth?: string | null; phone?: string | null; email?: string | null; address_street?: string | null; address_city?: string | null; address_state?: string | null; address_zip?: string | null; services: AcctService[] }
 interface AcctConfig { map_splits: { snw: number; dr: number; snw_flat: number; dr_flat: number }; cc_processing_fee: number; snw_base_pct: number; snw_base_flat: number; default_map_price: number; default_program_price: number; np_splits?: { clarity_snw_pct: number; qeeg_snw_pct: number }; payout_agreement: string; marketing?: { monthly_total: number; clinic_share: number; dr_share: number } }
 interface AcctCheck { id: string; org_id: string; payee_type: 'clinic' | 'dr'; payee_clinic_id: string | null; check_number: string; check_date: string; amount: number; memo: string; created_at: string }
 interface AcctMktgCharge { id: string; org_id: string; month: string; payee_type: 'clinic' | 'dr'; payee_clinic_id: string | null; amount: number; description: string; waived: boolean }
@@ -1399,7 +1399,7 @@ export default function AccountingPage() {
   const [config,setConfig]=useState<AcctConfig>({map_splits:{snw:23,dr:77,snw_flat:0,dr_flat:0},cc_processing_fee:3,snw_base_pct:0,snw_base_flat:0,default_map_price:600,default_program_price:5400,np_splits:{clarity_snw_pct:16.6945,qeeg_snw_pct:23.0},payout_agreement:''})
   const [checks,setChecks]=useState<AcctCheck[]>([]);const [mktg,setMktg]=useState<AcctMktgCharge[]>([])
   const [loading,setLoading]=useState(true);const [vw,sV]=useState('dash');const [sel,sS]=useState<string|null>(null);const [q,sQ]=useState('')
-  const [showAC,setSAC]=useState(false);const [nc,setNC]=useState({nm:'',loc:''})
+  const [showAC,setSAC]=useState(false);const [nc,setNC]=useState({nm:'',loc:'',dob:'',phone:'',email:'',street:'',city:'',state:'',zip:''})
   const orgId=currentOrg?.id
 
   const loadData=useCallback(async()=>{
@@ -1419,7 +1419,7 @@ export default function AccountingPage() {
 
   useEffect(()=>{loadData()},[loadData])
 
-  const addClient=async()=>{if(!nc.nm.trim()||!nc.loc||!orgId)return;await supabase.from('acct_clients').insert({org_id:orgId,name:nc.nm.trim(),location_id:nc.loc});setSAC(false);setNC({nm:'',loc:''});loadData()}
+  const addClient=async()=>{if(!nc.nm.trim()||!nc.loc||!orgId)return;await supabase.from('acct_clients').insert({org_id:orgId,name:nc.nm.trim(),location_id:nc.loc,date_of_birth:nc.dob||null,phone:nc.phone||null,email:nc.email||null,address_street:nc.street||null,address_city:nc.city||null,address_state:nc.state||null,address_zip:nc.zip||null});setSAC(false);setNC({nm:'',loc:'',dob:'',phone:'',email:'',street:'',city:'',state:'',zip:''});loadData()}
   const addService=async(cid:string,svc:any)=>{if(!orgId)return;await supabase.from('acct_services').insert({org_id:orgId,client_id:cid,...svc});loadData()}
   const editService=async(svcId:string,data:any)=>{if(!orgId)return;await supabase.from('acct_services').update(data).eq('id',svcId);loadData()}
   const addPayment=async(cid:string,sid:string,pmt:any)=>{if(!orgId)return;await supabase.from('acct_payments').insert({org_id:orgId,service_id:sid,client_id:cid,...pmt});loadData()}
@@ -1461,7 +1461,7 @@ export default function AccountingPage() {
         </div>
         <div className="p-2.5"><div className="relative"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-300"/><input placeholder="Search..." value={q} onChange={e=>sQ(e.target.value)} className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white text-np-dark focus:outline-none focus:ring-2 focus:ring-np-blue/20"/></div></div>
         <div className="px-2 space-y-0.5">{navItems.map(n=>{const Icon=n.icon;const active=vw===n.k&&!sel;return<button key={n.k} onClick={()=>{sV(n.k);sS(null)}} className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs transition-colors ${active?'bg-np-blue/10 text-np-blue font-semibold':'text-gray-500 hover:bg-gray-50 hover:text-np-dark'}`}><Icon className="w-3.5 h-3.5"/>{n.l}</button>})}</div>
-        <div className="flex items-center justify-between px-3 pt-4 pb-1"><span className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Accounts ({fl.length})</span><button onClick={()=>{setSAC(true);setNC({nm:'',loc:locs[0]?.id||''})}} className="text-[10px] font-semibold text-np-blue hover:underline">+ Add</button></div>
+        <div className="flex items-center justify-between px-3 pt-4 pb-1"><span className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Accounts ({fl.length})</span><button onClick={()=>{setSAC(true);setNC({nm:'',loc:locs[0]?.id||'',dob:'',phone:'',email:'',street:'',city:'',state:'',zip:''})}} className="text-[10px] font-semibold text-np-blue hover:underline">+ Add</button></div>
         <div className="flex-1 overflow-y-auto">{fl.map(c=>{const s=getStatus(c);const t=c.services.reduce((s2,v)=>s2+v.payments.reduce((p,x)=>p+x.amount,0),0);const lo=locs.find(l=>l.id===c.location_id);const sc=stClr[s]
           return<button key={c.id} onClick={()=>{sS(c.id);sV('dash')}} className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors ${sel===c.id?'bg-np-blue/10 border-l-2 border-np-blue':'border-l-2 border-transparent hover:bg-gray-50'}`}>
             <div className="w-7 h-7 rounded-lg flex items-center justify-center text-[9px] font-bold flex-shrink-0" style={{background:(lo?.color||'#386797')+'18',color:lo?.color||'#386797'}}>{gI(c.name)}</div>
@@ -1474,11 +1474,16 @@ export default function AccountingPage() {
           :vw==='recon'?<ReconView clients={clients} locs={locs} clinics={clinics} cfg={config}/>
           :vw==='reports'?<ReportView clients={clients} locs={locs} clinics={clinics} cfg={config} checks={checks} mktg={mktg}/>
           :vw==='settings'?<SetView locs={locs} clinics={clinics} config={config} setConfig={setConfig} clients={clients} agreement={config.payout_agreement} setAgreement={(v:string)=>setConfig(p=>({...p,payout_agreement:v}))} onSaveConfig={saveConfig} onSaveLoc={saveLoc} onDeleteLoc={deleteLoc} onSaveClinic={saveClinic} mktg={mktg} onAddMktg={addMktg} onDeleteMktg={deleteMktg} onToggleWaive={toggleWaive}/>
-          :<DashView clients={clients} locs={locs} onSel={id=>{sS(id);sV('dash')}} onAdd={()=>{setSAC(true);setNC({nm:'',loc:locs[0]?.id||''})}}/>}
+          :<DashView clients={clients} locs={locs} onSel={id=>{sS(id);sV('dash')}} onAdd={()=>{setSAC(true);setNC({nm:'',loc:locs[0]?.id||'',dob:'',phone:'',email:'',street:'',city:'',state:'',zip:''})}}/>}
       </div></div>
     {showAC&&<Mdl title="Add Client" onClose={()=>setSAC(false)}>
       <FI label="Name" value={nc.nm} onChange={(v:string)=>setNC(p=>({...p,nm:v}))} placeholder="First and Last Name"/>
       <FS label="Location" value={nc.loc} onChange={(v:string)=>setNC(p=>({...p,loc:v}))} options={locs.map(l=>({v:l.id,l:l.name}))}/>
+      <FI label="Date of Birth" value={nc.dob} onChange={(v:string)=>setNC(p=>({...p,dob:v}))} type="date"/>
+      <div className="flex gap-3"><FI half label="Phone" value={nc.phone} onChange={(v:string)=>setNC(p=>({...p,phone:v}))}/><FI half label="Email" value={nc.email} onChange={(v:string)=>setNC(p=>({...p,email:v}))}/></div>
+      <FI label="Street Address" value={nc.street} onChange={(v:string)=>setNC(p=>({...p,street:v}))}/>
+      <div className="flex gap-3"><FI half label="City" value={nc.city} onChange={(v:string)=>setNC(p=>({...p,city:v}))}/><FI half label="State" value={nc.state} onChange={(v:string)=>setNC(p=>({...p,state:v}))}/></div>
+      <FI label="Zip" value={nc.zip} onChange={(v:string)=>setNC(p=>({...p,zip:v}))}/>
       <div className="flex gap-2 mt-4 justify-end"><Btn outline onClick={()=>setSAC(false)}>Cancel</Btn><Btn onClick={addClient}>Add Client</Btn></div></Mdl>}
   </div>
 }
