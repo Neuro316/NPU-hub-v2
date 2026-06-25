@@ -345,7 +345,7 @@ function DashView({clients,locs,onSel,onAdd}:{clients:AcctClient[];locs:AcctLoca
 }
 
 /* ── Detail ────────────────────────────────────────── */
-function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onEditSvc,onAddPmt,onEditPmt,onDeletePmt}:any) {
+function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onEditSvc,onAddPmt,onEditPmt,onDeletePmt,onDeleteClient}:any) {
   const [tab,setTab]=useState('svc');const [showAS,setSAS]=useState(false);const [showAP,setSAP]=useState<string|null>(null)
   const [sf,setSF]=useState({t:'Map',a:'600',d:td(),n:''})
   const [editingSvc,setEditingSvc]=useState<string|null>(null)
@@ -365,7 +365,10 @@ function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onEditSvc,onAddPmt,onEditP
   const isNP=!!clObj?.is_neuro_progeny
 
   return <div className="space-y-5">
-    <button onClick={onBack} className="flex items-center gap-1 text-xs text-gray-400 hover:text-np-dark transition-colors"><ChevronLeft className="w-3.5 h-3.5"/>Back</button>
+    <div className="flex items-center justify-between">
+      <button onClick={onBack} className="flex items-center gap-1 text-xs text-gray-400 hover:text-np-dark transition-colors"><ChevronLeft className="w-3.5 h-3.5"/>Back</button>
+      <button onClick={()=>{const n=cl.services.reduce((s:number,v:AcctService)=>s+v.payments.length,0);if(confirm(`Delete "${cl.name}"? This permanently removes the client, ${cl.services.length} service(s), and ${n} payment(s). This cannot be undone.`))onDeleteClient(cl.id)}} className="flex items-center gap-1 text-xs text-red-400 hover:text-red-600 transition-colors"><Trash2 className="w-3.5 h-3.5"/>Delete Account</button>
+    </div>
     <div className="flex items-center gap-3">
       <div className="w-11 h-11 rounded-xl flex items-center justify-center text-sm font-bold" style={{background:(loc?.color||'#386797')+'18',color:loc?.color||'#386797'}}>{gI(cl.name)}</div>
       <div><h2 className="text-base font-bold text-np-dark">{cl.name}</h2><div className="flex items-center gap-2 mt-0.5"><Badge s={st}/><LocTag loc={cl.location_id} locs={locs}/>{clObj&&<span className="text-[10px] text-gray-400">via {clObj.name}</span>}</div></div></div>
@@ -1433,6 +1436,14 @@ export default function AccountingPage() {
   const addPayment=async(cid:string,sid:string,pmt:any)=>{if(!orgId)return;await supabase.from('acct_payments').insert({org_id:orgId,service_id:sid,client_id:cid,...pmt});loadData()}
   const editPayment=async(pmtId:string,data:any)=>{if(!orgId)return;const{data:upd,error}=await supabase.from('acct_payments').update(data).eq('id',pmtId).select();if(error){console.error('editPayment failed',error);alert('Could not save payment: '+error.message)}else if(!upd||upd.length===0){console.warn('editPayment matched 0 rows',pmtId);alert('Save updated 0 rows. The payment was not matched. Please reload and try again.')}loadData()}
   const deletePayment=async(pmtId:string)=>{if(!orgId)return;await supabase.from('acct_payments').delete().eq('id',pmtId);loadData()}
+  const deleteClient=async(clientId:string)=>{if(!orgId)return;
+    const{error:pe}=await supabase.from('acct_payments').delete().eq('client_id',clientId)
+    if(pe){console.error('delete payments failed',pe);alert('Could not delete payments: '+pe.message);return}
+    const{error:se}=await supabase.from('acct_services').delete().eq('client_id',clientId)
+    if(se){console.error('delete services failed',se);alert('Could not delete services: '+se.message);return}
+    const{error:ce}=await supabase.from('acct_clients').delete().eq('id',clientId)
+    if(ce){console.error('delete client failed',ce);alert('Could not delete client: '+ce.message);return}
+    sS(null);loadData()}
   const saveConfig=async()=>{if(!orgId)return;await supabase.from('org_settings').upsert({org_id:orgId,setting_key:'acct_config',setting_value:config},{onConflict:'org_id,setting_key'})}
   const saveLoc=async(id:string|null,data:any)=>{if(!orgId)return;if(id)await supabase.from('acct_locations').update(data).eq('id',id);else await supabase.from('acct_locations').insert({id:data.short_code,org_id:orgId,...data});loadData()}
   const deleteLoc=async(id:string)=>{await supabase.from('acct_locations').delete().eq('id',id);loadData()}
@@ -1477,7 +1488,7 @@ export default function AccountingPage() {
               <div className="flex items-center justify-between"><span className="text-[10px] text-gray-400" style={{fontFeatureSettings:'"tnum"'}}>{$$(t)}</span>
                 <div className="flex gap-1"><div className="w-1.5 h-1.5 rounded-full" style={{background:lo?.color||'#999'}}/><div className="w-1.5 h-1.5 rounded-full" style={{background:sc?.tx==='text-green-700'?'#34A853':sc?.tx==='text-amber-700'?'#FBBC04':sc?.tx==='text-red-600'?'#EA4335':'#999'}}/></div></div></div></button>})}</div></div>
       <div className="flex-1 overflow-y-auto p-5">
-        {ac?<DetView cl={ac} locs={locs} clinics={clinics} cfg={config} onBack={()=>sS(null)} onAddSvc={addService} onEditSvc={editService} onAddPmt={addPayment} onEditPmt={editPayment} onDeletePmt={deletePayment}/>
+        {ac?<DetView cl={ac} locs={locs} clinics={clinics} cfg={config} onBack={()=>sS(null)} onAddSvc={addService} onEditSvc={editService} onAddPmt={addPayment} onEditPmt={editPayment} onDeletePmt={deletePayment} onDeleteClient={deleteClient}/>
           :vw==='payouts'?<PayView clients={clients} locs={locs} clinics={clinics} cfg={config} checks={checks} mktg={mktg} onAddCheck={addCheck} onEditCheck={editCheck} onDeleteCheck={deleteCheck}/>
           :vw==='recon'?<ReconView clients={clients} locs={locs} clinics={clinics} cfg={config}/>
           :vw==='reports'?<ReportView clients={clients} locs={locs} clinics={clinics} cfg={config} checks={checks} mktg={mktg}/>
