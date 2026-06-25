@@ -51,7 +51,8 @@ const PRE_AUG_CUTOFF = '2025-08-01'
 const PRE_AUG_SNW_PCT = 10
 const NP_ORG_ID = '00000000-0000-0000-0000-000000000001'
 const NP_PIPELINE_ID = 'pipeline-1771530511407'
-const NP_ENROLL_STAGE = 'Paid'
+const NP_STAGE_SIGNED_UP = 'Signed up - add user email used to sign up in Circle; dependency has to be joined circle '
+const NP_STAGE_PAID = 'Paid'
 
 function calcSplit(
   amt: number,
@@ -1449,48 +1450,41 @@ export default function AccountingPage() {
 
   useEffect(()=>{loadData()},[loadData])
 
-  const addClient=async()=>{if(!nc.nm.trim()||!nc.loc||!orgId)return;await supabase.from('acct_clients').insert({org_id:orgId,name:nc.nm.trim(),location_id:nc.loc,date_of_birth:nc.dob||null,phone:nc.phone||null,email:nc.email||null,address_street:nc.street||null,address_city:nc.city||null,address_state:nc.state||null,address_zip:nc.zip||null});setSAC(false);setNC({nm:'',loc:'',dob:'',phone:'',email:'',street:'',city:'',state:'',zip:''});loadData()}
+  const isNPClient=(client:AcctClient)=>{const loc=locs.find(l=>l.id===client.location_id);const clinic=loc?.clinic_id?clinics.find(c=>c.id===loc.clinic_id):null;return !!clinic?.is_neuro_progeny}
+  const createNPContactSignedUp=async(clientId:string,name:string,email:string|null,phone:string|null,dob:string|null,street:string|null,city:string|null,state:string|null,zip:string|null)=>{
+    const parts=(name||'').trim().split(/\s+/);const first=parts[0]||name||'Unknown';const last=parts.slice(1).join(' ')||''
+    try{
+      const payload={org_id:NP_ORG_ID,first_name:first,last_name:last,email:email||null,phone:phone||null,date_of_birth:dob||null,address_street:street||null,address_city:city||null,address_state:state||null,address_zip:zip||null,pipeline_id:NP_PIPELINE_ID,pipeline_stage:NP_STAGE_SIGNED_UP,tags:[],sms_consent:false,email_consent:true,do_not_contact:false}
+      const{data,error}=await supabase.from('contacts').insert(payload).select('id').single()
+      if(error){console.error('NP signup contact failed',error);alert('CRM enroll failed: '+error.message);return}
+      if(data?.id)await supabase.from('acct_clients').update({enrolled_contact_id:data.id}).eq('id',clientId)
+    }catch(e:any){console.error('NP signup exception',e);alert('CRM enroll error: '+(e?.message||e))}
+  }
+  const addClient=async()=>{if(!nc.nm.trim()||!nc.loc||!orgId)return;
+    const{data,error}=await supabase.from('acct_clients').insert({org_id:orgId,name:nc.nm.trim(),location_id:nc.loc,date_of_birth:nc.dob||null,phone:nc.phone||null,email:nc.email||null,address_street:nc.street||null,address_city:nc.city||null,address_state:nc.state||null,address_zip:nc.zip||null}).select('id').single()
+    if(error){console.error('addClient failed',error);alert('Could not add client: '+error.message);return}
+    // if this location belongs to the Neuro Progeny clinic, enroll at Signed up
+    const loc=locs.find(l=>l.id===nc.loc);const clinic=loc?.clinic_id?clinics.find(c=>c.id===loc.clinic_id):null
+    if(clinic?.is_neuro_progeny&&data?.id){await createNPContactSignedUp(data.id,nc.nm.trim(),nc.email||null,nc.phone||null,nc.dob||null,nc.street||null,nc.city||null,nc.state||null,nc.zip||null)}
+    setSAC(false);setNC({nm:'',loc:'',dob:'',phone:'',email:'',street:'',city:'',state:'',zip:''});loadData()}
   const addService=async(cid:string,svc:any)=>{if(!orgId)return;await supabase.from('acct_services').insert({org_id:orgId,client_id:cid,...svc});loadData()}
   const editService=async(svcId:string,data:any)=>{if(!orgId)return;await supabase.from('acct_services').update(data).eq('id',svcId);loadData()}
-  const enrollNPContact=async(client:AcctClient)=>{
-    // already enrolled? skip
-    if(client.enrolled_contact_id)return
-    // resolve clinic; only proceed for Neuro Progeny clinics
-    const loc=locs.find(l=>l.id===client.location_id)
-    const clinic=loc?.clinic_id?clinics.find(c=>c.id===loc.clinic_id):null
-    if(!clinic?.is_neuro_progeny)return
-    // split name
-    const parts=(client.name||'').trim().split(/\s+/)
-    const first=parts[0]||client.name||'Unknown'
-    const last=parts.slice(1).join(' ')||''
-    try{
-      // match existing contact in the NP org by email then phone
-      let existing:any=null
-      if(client.email){const{data}=await supabase.from('contacts').select('id').eq('org_id',NP_ORG_ID).eq('email',client.email).limit(1);if(data&&data.length)existing=data[0]}
-      if(!existing&&client.phone){const{data}=await supabase.from('contacts').select('id').eq('org_id',NP_ORG_ID).eq('phone',client.phone).limit(1);if(data&&data.length)existing=data[0]}
-      const fields={first_name:first,last_name:last,email:client.email||null,phone:client.phone||null,date_of_birth:client.date_of_birth||null,address_street:client.address_street||null,address_city:client.address_city||null,address_state:client.address_state||null,address_zip:client.address_zip||null,pipeline_id:NP_PIPELINE_ID,pipeline_stage:NP_ENROLL_STAGE}
-      let contactId:string|null=null
-      if(existing){
-        const{error}=await supabase.from('contacts').update(fields).eq('id',existing.id)
-        if(error){console.error('NP enroll update failed',error);alert('CRM enroll failed: '+error.message);return}
-        contactId=existing.id
-      }else{
-        const payload={org_id:NP_ORG_ID,...fields,tags:[],sms_consent:false,email_consent:true,do_not_contact:false}
-        const{data,error}=await supabase.from('contacts').insert(payload).select('id').single()
-        if(error){console.error('NP enroll insert failed',error);alert('CRM enroll failed: '+error.message);return}
-        contactId=data?.id||null
-      }
-      // write guard back on the accounting client
-      if(contactId){await supabase.from('acct_clients').update({enrolled_contact_id:contactId}).eq('id',client.id)}
-    }catch(e:any){console.error('NP enroll exception',e);alert('CRM enroll error: '+(e?.message||e))}
-  }
   const addPayment=async(cid:string,sid:string,pmt:any)=>{if(!orgId)return;
     await supabase.from('acct_payments').insert({org_id:orgId,service_id:sid,client_id:cid,...pmt})
     const client=clients.find(c=>c.id===cid)
-    if(client){
+    if(client&&isNPClient(client)){
       const priorPayments=client.services.reduce((n,s)=>n+s.payments.length,0)
-      // this insert is the first payment if there were zero before
-      if(priorPayments===0)await enrollNPContact(client)
+      if(priorPayments===0){
+        let contactId=client.enrolled_contact_id
+        // fallback: if no contact yet (e.g. client created before this feature), create one now at Paid-ready then move
+        if(!contactId){
+          // create the signed-up contact first so we have an id, then advance below
+          await createNPContactSignedUp(client.id,client.name,client.email||null,client.phone||null,client.date_of_birth||null,client.address_street||null,client.address_city||null,client.address_state||null,client.address_zip||null)
+          const{data}=await supabase.from('acct_clients').select('enrolled_contact_id').eq('id',client.id).single()
+          contactId=data?.enrolled_contact_id||null
+        }
+        if(contactId){const{error}=await supabase.from('contacts').update({pipeline_stage:NP_STAGE_PAID}).eq('id',contactId);if(error){console.error('NP move to Paid failed',error);alert('CRM move-to-Paid failed: '+error.message)}}
+      }
     }
     loadData()}
   const editPayment=async(pmtId:string,data:any)=>{if(!orgId)return;const{data:upd,error}=await supabase.from('acct_payments').update(data).eq('id',pmtId).select();if(error){console.error('editPayment failed',error);alert('Could not save payment: '+error.message)}else if(!upd||upd.length===0){console.warn('editPayment matched 0 rows',pmtId);alert('Save updated 0 rows. The payment was not matched. Please reload and try again.')}loadData()}
