@@ -9,7 +9,7 @@ interface AcctLocation { id: string; name: string; short_code: string; color: st
 interface AcctClinic { id: string; org_id: string; name: string; contact_name: string; ein: string; corp_type: string; has_w9: boolean; has_1099: boolean; address: string; city: string; state: string; zip: string; phone: string; email: string; website: string; notes: string; split_snw: number; split_clinic: number; split_dr: number; flat_snw: number; flat_clinic: number; flat_dr: number; is_neuro_progeny?: boolean }
 interface AcctPayment { id: string; service_id: string; client_id: string; amount: number; payment_date: string; notes: string; split_snw: number; split_clinic: number; split_dr: number; clinic_id: string | null; payout_date: string; payout_period: string; is_paid_out: boolean }
 interface AcctService { id: string; client_id: string; service_type: 'Map' | 'Program' | 'Clarity' | 'qEEG'; amount: number; service_date: string; notes: string; payments: AcctPayment[] }
-interface AcctClient { id: string; name: string; location_id: string; org_id: string; notes: string; date_of_birth?: string | null; phone?: string | null; email?: string | null; address_street?: string | null; address_city?: string | null; address_state?: string | null; address_zip?: string | null; services: AcctService[] }
+interface AcctClient { id: string; name: string; location_id: string; org_id: string; notes: string; date_of_birth?: string | null; phone?: string | null; email?: string | null; address_street?: string | null; address_city?: string | null; address_state?: string | null; address_zip?: string | null; enrolled_contact_id?: string | null; services: AcctService[] }
 interface AcctConfig { map_splits: { snw: number; dr: number; snw_flat: number; dr_flat: number }; cc_processing_fee: number; snw_base_pct: number; snw_base_flat: number; default_map_price: number; default_program_price: number; np_splits?: { clarity_snw_pct: number; qeeg_snw_pct: number }; payout_agreement: string; marketing?: { monthly_total: number; clinic_share: number; dr_share: number } }
 interface AcctCheck { id: string; org_id: string; payee_type: 'clinic' | 'dr'; payee_clinic_id: string | null; check_number: string; check_date: string; amount: number; memo: string; created_at: string }
 interface AcctMktgCharge { id: string; org_id: string; month: string; payee_type: 'clinic' | 'dr'; payee_clinic_id: string | null; amount: number; description: string; waived: boolean }
@@ -49,6 +49,9 @@ function getStatus(c: AcctClient) {
 // ══════════════════════════════════════════════════════════════
 const PRE_AUG_CUTOFF = '2025-08-01'
 const PRE_AUG_SNW_PCT = 10
+const NP_ORG_ID = '00000000-0000-0000-0000-000000000001'
+const NP_PIPELINE_ID = 'pipeline-1771530511407'
+const NP_ENROLL_STAGE = 'Paid'
 
 function calcSplit(
   amt: number,
@@ -1449,7 +1452,47 @@ export default function AccountingPage() {
   const addClient=async()=>{if(!nc.nm.trim()||!nc.loc||!orgId)return;await supabase.from('acct_clients').insert({org_id:orgId,name:nc.nm.trim(),location_id:nc.loc,date_of_birth:nc.dob||null,phone:nc.phone||null,email:nc.email||null,address_street:nc.street||null,address_city:nc.city||null,address_state:nc.state||null,address_zip:nc.zip||null});setSAC(false);setNC({nm:'',loc:'',dob:'',phone:'',email:'',street:'',city:'',state:'',zip:''});loadData()}
   const addService=async(cid:string,svc:any)=>{if(!orgId)return;await supabase.from('acct_services').insert({org_id:orgId,client_id:cid,...svc});loadData()}
   const editService=async(svcId:string,data:any)=>{if(!orgId)return;await supabase.from('acct_services').update(data).eq('id',svcId);loadData()}
-  const addPayment=async(cid:string,sid:string,pmt:any)=>{if(!orgId)return;await supabase.from('acct_payments').insert({org_id:orgId,service_id:sid,client_id:cid,...pmt});loadData()}
+  const enrollNPContact=async(client:AcctClient)=>{
+    // already enrolled? skip
+    if(client.enrolled_contact_id)return
+    // resolve clinic; only proceed for Neuro Progeny clinics
+    const loc=locs.find(l=>l.id===client.location_id)
+    const clinic=loc?.clinic_id?clinics.find(c=>c.id===loc.clinic_id):null
+    if(!clinic?.is_neuro_progeny)return
+    // split name
+    const parts=(client.name||'').trim().split(/\s+/)
+    const first=parts[0]||client.name||'Unknown'
+    const last=parts.slice(1).join(' ')||''
+    try{
+      // match existing contact in the NP org by email then phone
+      let existing:any=null
+      if(client.email){const{data}=await supabase.from('contacts').select('id').eq('org_id',NP_ORG_ID).eq('email',client.email).limit(1);if(data&&data.length)existing=data[0]}
+      if(!existing&&client.phone){const{data}=await supabase.from('contacts').select('id').eq('org_id',NP_ORG_ID).eq('phone',client.phone).limit(1);if(data&&data.length)existing=data[0]}
+      const fields={first_name:first,last_name:last,email:client.email||null,phone:client.phone||null,date_of_birth:client.date_of_birth||null,address_street:client.address_street||null,address_city:client.address_city||null,address_state:client.address_state||null,address_zip:client.address_zip||null,pipeline_id:NP_PIPELINE_ID,pipeline_stage:NP_ENROLL_STAGE}
+      let contactId:string|null=null
+      if(existing){
+        const{error}=await supabase.from('contacts').update(fields).eq('id',existing.id)
+        if(error){console.error('NP enroll update failed',error);alert('CRM enroll failed: '+error.message);return}
+        contactId=existing.id
+      }else{
+        const payload={org_id:NP_ORG_ID,...fields,tags:[],sms_consent:false,email_consent:true,do_not_contact:false}
+        const{data,error}=await supabase.from('contacts').insert(payload).select('id').single()
+        if(error){console.error('NP enroll insert failed',error);alert('CRM enroll failed: '+error.message);return}
+        contactId=data?.id||null
+      }
+      // write guard back on the accounting client
+      if(contactId){await supabase.from('acct_clients').update({enrolled_contact_id:contactId}).eq('id',client.id)}
+    }catch(e:any){console.error('NP enroll exception',e);alert('CRM enroll error: '+(e?.message||e))}
+  }
+  const addPayment=async(cid:string,sid:string,pmt:any)=>{if(!orgId)return;
+    await supabase.from('acct_payments').insert({org_id:orgId,service_id:sid,client_id:cid,...pmt})
+    const client=clients.find(c=>c.id===cid)
+    if(client){
+      const priorPayments=client.services.reduce((n,s)=>n+s.payments.length,0)
+      // this insert is the first payment if there were zero before
+      if(priorPayments===0)await enrollNPContact(client)
+    }
+    loadData()}
   const editPayment=async(pmtId:string,data:any)=>{if(!orgId)return;const{data:upd,error}=await supabase.from('acct_payments').update(data).eq('id',pmtId).select();if(error){console.error('editPayment failed',error);alert('Could not save payment: '+error.message)}else if(!upd||upd.length===0){console.warn('editPayment matched 0 rows',pmtId);alert('Save updated 0 rows. The payment was not matched. Please reload and try again.')}loadData()}
   const deletePayment=async(pmtId:string)=>{if(!orgId)return;await supabase.from('acct_payments').delete().eq('id',pmtId);loadData()}
   const editClient=async(clientId:string,data:any)=>{if(!orgId)return;const{error}=await supabase.from('acct_clients').update(data).eq('id',clientId);if(error){console.error('editClient failed',error);alert('Could not save account: '+error.message);return}loadData()}
