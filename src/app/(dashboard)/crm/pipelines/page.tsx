@@ -14,13 +14,17 @@ import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
 import { ContactCommsButtons } from '@/components/crm/twilio-comms'
 
+interface StageEmail {
+  id: string
+  recipient: 'client' | 'internal'
+  team_id?: string | null   // when recipient==='internal'
+  subject: string
+  body: string
+}
+
 interface PipelineStageConfig {
   id: string; name: string; color: string; is_closed_won?: boolean; is_closed_lost?: boolean; position: number
-  email_enabled?: boolean
-  email_recipient?: 'client' | 'internal'
-  email_to_team_id?: string | null
-  email_subject?: string
-  email_body?: string
+  stage_emails?: StageEmail[]
 }
 
 interface PipelineCustomField {
@@ -271,6 +275,10 @@ function StageEditor({ stages, team, onSave, onClose }: { stages: PipelineStageC
   const [colorFor, setColorFor] = useState<string | null>(null)
   const [emailOpenFor, setEmailOpenFor] = useState<string | null>(null)
   const update = (id: string, u: Partial<PipelineStageConfig>) => setEditing(prev => prev.map(s => s.id === id ? { ...s, ...u } : s))
+  const updateEmails = (stageId: string, emails: StageEmail[]) => update(stageId, { stage_emails: emails } as Partial<PipelineStageConfig>)
+  const addEmail = (stage: PipelineStageConfig) => updateEmails(stage.id, [...(stage.stage_emails||[]), { id:`email-${Date.now()}`, recipient:'client', team_id:null, subject:'', body:'' }])
+  const removeEmail = (stage: PipelineStageConfig, emailId: string) => updateEmails(stage.id, (stage.stage_emails||[]).filter(e => e.id !== emailId))
+  const patchEmail = (stage: PipelineStageConfig, emailId: string, patch: Partial<StageEmail>) => updateEmails(stage.id, (stage.stage_emails||[]).map(e => e.id===emailId ? { ...e, ...patch } : e))
   const remove = (id: string) => { if (editing.length <= 2) return; setEditing(prev => prev.filter(s => s.id !== id).map((s,i) => ({ ...s, position:i }))) }
   const move = (id: string, dir: -1|1) => setEditing(prev => {
     const idx = prev.findIndex(s => s.id === id); if ((dir===-1&&idx===0)||(dir===1&&idx===prev.length-1)) return prev
@@ -296,29 +304,36 @@ function StageEditor({ stages, team, onSave, onClose }: { stages: PipelineStageC
               <input value={stage.name} onChange={e => update(stage.id, { name: e.target.value })} className="flex-1 text-xs font-medium px-2 py-1 border border-gray-100 rounded-md focus:outline-none focus:ring-1 focus:ring-teal/30" />
               <label className="flex items-center gap-1 text-[9px] text-gray-400"><input type="checkbox" checked={!!stage.is_closed_won} onChange={e => update(stage.id, { is_closed_won:e.target.checked, is_closed_lost:false })} className="accent-green-500 w-3 h-3" /> Won</label>
               <label className="flex items-center gap-1 text-[9px] text-gray-400"><input type="checkbox" checked={!!stage.is_closed_lost} onChange={e => update(stage.id, { is_closed_lost:e.target.checked, is_closed_won:false })} className="accent-red-500 w-3 h-3" /> Lost</label>
-              <button onClick={() => setEmailOpenFor(emailOpenFor===stage.id?null:stage.id)} className={`p-0.5 ${stage.email_enabled?'text-np-blue':'text-gray-300'} hover:text-np-blue`} title="Stage email"><Mail size={12} /></button>
+              <button onClick={() => setEmailOpenFor(emailOpenFor===stage.id?null:stage.id)} className={`p-0.5 ${(stage.stage_emails&&stage.stage_emails.length>0)?'text-np-blue':'text-gray-300'} hover:text-np-blue`} title="Stage email"><Mail size={12} /></button>
               <button onClick={() => move(stage.id,-1)} disabled={i===0} className="p-0.5 text-gray-300 hover:text-np-dark disabled:opacity-20">▲</button>
               <button onClick={() => move(stage.id,1)} disabled={i===editing.length-1} className="p-0.5 text-gray-300 hover:text-np-dark disabled:opacity-20">▼</button>
               <button onClick={() => remove(stage.id)} disabled={editing.length<=2} className="p-0.5 text-gray-300 hover:text-red-500 disabled:opacity-20"><Trash2 size={11} /></button>
             </div>
             {emailOpenFor === stage.id && (
-              <div className="ml-8 mb-2 p-3 bg-gray-50 rounded-lg border border-gray-100 space-y-2">
-                <label className="flex items-center gap-2 text-[11px] font-medium text-np-dark"><input type="checkbox" checked={!!stage.email_enabled} onChange={e => update(stage.id, { email_enabled: e.target.checked })} className="accent-np-blue w-3 h-3" /> Send an email when a contact enters this stage</label>
-                {stage.email_enabled && <>
-                  <div className="flex gap-2 text-[11px]">
-                    <label className="flex items-center gap-1"><input type="radio" name={`recip-${stage.id}`} checked={(stage.email_recipient||'client')==='client'} onChange={() => update(stage.id, { email_recipient:'client' })} /> To client</label>
-                    <label className="flex items-center gap-1"><input type="radio" name={`recip-${stage.id}`} checked={stage.email_recipient==='internal'} onChange={() => update(stage.id, { email_recipient:'internal' })} /> Internal (team member)</label>
+              <div className="ml-8 mb-2 p-3 bg-gray-50 rounded-lg border border-gray-100 space-y-3">
+                {(stage.stage_emails||[]).length===0 && <p className="text-[10px] text-gray-400">No emails configured for this stage yet.</p>}
+                {(stage.stage_emails||[]).map((em, ei) => (
+                  <div key={em.id} className="p-2.5 bg-white rounded-md border border-gray-100 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Email {ei+1}</span>
+                      <button onClick={() => removeEmail(stage, em.id)} className="p-0.5 text-gray-300 hover:text-red-500" title="Remove email"><Trash2 size={11} /></button>
+                    </div>
+                    <div className="flex gap-2 text-[11px]">
+                      <label className="flex items-center gap-1"><input type="radio" name={`recip-${em.id}`} checked={em.recipient==='client'} onChange={() => patchEmail(stage, em.id, { recipient:'client', team_id:null })} /> To client</label>
+                      <label className="flex items-center gap-1"><input type="radio" name={`recip-${em.id}`} checked={em.recipient==='internal'} onChange={() => patchEmail(stage, em.id, { recipient:'internal' })} /> Internal (team member)</label>
+                    </div>
+                    {em.recipient==='internal' && (
+                      <select value={em.team_id||''} onChange={e => patchEmail(stage, em.id, { team_id: e.target.value||null })} className="w-full text-[11px] px-2 py-1.5 border border-gray-200 rounded-md bg-white">
+                        <option value="">Select team member…</option>
+                        {team.map(t => <option key={t.id} value={t.id}>{t.display_name}{t.email?` (${t.email})`:''}</option>)}
+                      </select>
+                    )}
+                    <input value={em.subject} onChange={e => patchEmail(stage, em.id, { subject: e.target.value })} placeholder="Email subject" className="w-full text-[11px] px-2 py-1.5 border border-gray-200 rounded-md" />
+                    <textarea value={em.body} onChange={e => patchEmail(stage, em.id, { body: e.target.value })} placeholder="Email body — supports {{first_name}}, {{last_name}} merge tags" rows={4} className="w-full text-[11px] px-2 py-1.5 border border-gray-200 rounded-md resize-y" />
                   </div>
-                  {stage.email_recipient==='internal' && (
-                    <select value={stage.email_to_team_id||''} onChange={e => update(stage.id, { email_to_team_id: e.target.value||null })} className="w-full text-[11px] px-2 py-1.5 border border-gray-200 rounded-md bg-white">
-                      <option value="">Select team member…</option>
-                      {team.map(t => <option key={t.id} value={t.id}>{t.display_name}{t.email?` (${t.email})`:''}</option>)}
-                    </select>
-                  )}
-                  <input value={stage.email_subject||''} onChange={e => update(stage.id, { email_subject: e.target.value })} placeholder="Email subject" className="w-full text-[11px] px-2 py-1.5 border border-gray-200 rounded-md" />
-                  <textarea value={stage.email_body||''} onChange={e => update(stage.id, { email_body: e.target.value })} placeholder="Email body — supports {{first_name}}, {{last_name}} merge tags" rows={4} className="w-full text-[11px] px-2 py-1.5 border border-gray-200 rounded-md resize-y" />
-                  <p className="text-[9px] text-gray-400">Merge tags: {`{{first_name}}`}, {`{{last_name}}`}. Sending is wired in the next step.</p>
-                </>}
+                ))}
+                <button onClick={() => addEmail(stage)} className="w-full py-1.5 border border-dashed border-gray-200 rounded-md text-[11px] text-gray-400 hover:text-np-blue hover:border-np-blue/40 transition-colors"><Plus size={11} className="inline mr-1" /> Add email to this stage</button>
+                <p className="text-[9px] text-gray-400">Each email fires when a contact enters this stage. Merge tags: {`{{first_name}}`}, {`{{last_name}}`}. Sending is wired in the next step.</p>
               </div>
             )}
             </div>
