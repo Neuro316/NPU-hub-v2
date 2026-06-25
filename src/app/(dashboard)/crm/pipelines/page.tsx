@@ -5,7 +5,7 @@ import ContactDetail from '@/components/crm/contact-detail'
 import {
   Plus, MoreHorizontal, ChevronDown, GripVertical,
   X, DollarSign, Trash2, Settings, BarChart3,
-  Clock, TrendingUp, Target, Percent, Save, User, ArrowRightLeft, LayoutGrid, Sliders
+  Clock, TrendingUp, Target, Percent, Save, User, ArrowRightLeft, LayoutGrid, Sliders, Mail
 } from 'lucide-react'
 import { fetchContacts, updateContact, createContact } from '@/lib/crm-client'
 import type { CrmContact } from '@/types/crm'
@@ -16,6 +16,11 @@ import { ContactCommsButtons } from '@/components/crm/twilio-comms'
 
 interface PipelineStageConfig {
   id: string; name: string; color: string; is_closed_won?: boolean; is_closed_lost?: boolean; position: number
+  email_enabled?: boolean
+  email_recipient?: 'client' | 'internal'
+  email_to_team_id?: string | null
+  email_subject?: string
+  email_body?: string
 }
 
 interface PipelineCustomField {
@@ -261,9 +266,10 @@ function PipelineMetrics({ contacts, stages }: { contacts: CrmContact[]; stages:
   )
 }
 
-function StageEditor({ stages, onSave, onClose }: { stages: PipelineStageConfig[]; onSave: (s: PipelineStageConfig[]) => void; onClose: () => void }) {
+function StageEditor({ stages, team, onSave, onClose }: { stages: PipelineStageConfig[]; team: {id:string;display_name:string;email:string|null}[]; onSave: (s: PipelineStageConfig[]) => void; onClose: () => void }) {
   const [editing, setEditing] = useState<PipelineStageConfig[]>(stages.map(s => ({ ...s })))
   const [colorFor, setColorFor] = useState<string | null>(null)
+  const [emailOpenFor, setEmailOpenFor] = useState<string | null>(null)
   const update = (id: string, u: Partial<PipelineStageConfig>) => setEditing(prev => prev.map(s => s.id === id ? { ...s, ...u } : s))
   const remove = (id: string) => { if (editing.length <= 2) return; setEditing(prev => prev.filter(s => s.id !== id).map((s,i) => ({ ...s, position:i }))) }
   const move = (id: string, dir: -1|1) => setEditing(prev => {
@@ -276,7 +282,8 @@ function StageEditor({ stages, onSave, onClose }: { stages: PipelineStageConfig[
         <div className="flex items-center justify-between mb-4"><h3 className="text-base font-bold text-np-dark">Edit Pipeline Stages</h3><button onClick={onClose} className="p-1 rounded hover:bg-gray-50"><X size={14} /></button></div>
         <div className="space-y-2 mb-4">
           {editing.map((stage, i) => (
-            <div key={stage.id} className="flex items-center gap-2 p-2 rounded-lg border border-gray-100 hover:border-np-blue/20 transition-colors">
+            <div key={stage.id}>
+            <div className="flex items-center gap-2 p-2 rounded-lg border border-gray-100 hover:border-np-blue/20 transition-colors">
               <GripVertical size={12} className="text-gray-300" />
               <div className="relative">
                 <button onClick={() => setColorFor(colorFor===stage.id?null:stage.id)} className="w-6 h-6 rounded-full border-2 border-white shadow-sm" style={{ background: stage.color }} />
@@ -289,9 +296,31 @@ function StageEditor({ stages, onSave, onClose }: { stages: PipelineStageConfig[
               <input value={stage.name} onChange={e => update(stage.id, { name: e.target.value })} className="flex-1 text-xs font-medium px-2 py-1 border border-gray-100 rounded-md focus:outline-none focus:ring-1 focus:ring-teal/30" />
               <label className="flex items-center gap-1 text-[9px] text-gray-400"><input type="checkbox" checked={!!stage.is_closed_won} onChange={e => update(stage.id, { is_closed_won:e.target.checked, is_closed_lost:false })} className="accent-green-500 w-3 h-3" /> Won</label>
               <label className="flex items-center gap-1 text-[9px] text-gray-400"><input type="checkbox" checked={!!stage.is_closed_lost} onChange={e => update(stage.id, { is_closed_lost:e.target.checked, is_closed_won:false })} className="accent-red-500 w-3 h-3" /> Lost</label>
+              <button onClick={() => setEmailOpenFor(emailOpenFor===stage.id?null:stage.id)} className={`p-0.5 ${stage.email_enabled?'text-np-blue':'text-gray-300'} hover:text-np-blue`} title="Stage email"><Mail size={12} /></button>
               <button onClick={() => move(stage.id,-1)} disabled={i===0} className="p-0.5 text-gray-300 hover:text-np-dark disabled:opacity-20">▲</button>
               <button onClick={() => move(stage.id,1)} disabled={i===editing.length-1} className="p-0.5 text-gray-300 hover:text-np-dark disabled:opacity-20">▼</button>
               <button onClick={() => remove(stage.id)} disabled={editing.length<=2} className="p-0.5 text-gray-300 hover:text-red-500 disabled:opacity-20"><Trash2 size={11} /></button>
+            </div>
+            {emailOpenFor === stage.id && (
+              <div className="ml-8 mb-2 p-3 bg-gray-50 rounded-lg border border-gray-100 space-y-2">
+                <label className="flex items-center gap-2 text-[11px] font-medium text-np-dark"><input type="checkbox" checked={!!stage.email_enabled} onChange={e => update(stage.id, { email_enabled: e.target.checked })} className="accent-np-blue w-3 h-3" /> Send an email when a contact enters this stage</label>
+                {stage.email_enabled && <>
+                  <div className="flex gap-2 text-[11px]">
+                    <label className="flex items-center gap-1"><input type="radio" name={`recip-${stage.id}`} checked={(stage.email_recipient||'client')==='client'} onChange={() => update(stage.id, { email_recipient:'client' })} /> To client</label>
+                    <label className="flex items-center gap-1"><input type="radio" name={`recip-${stage.id}`} checked={stage.email_recipient==='internal'} onChange={() => update(stage.id, { email_recipient:'internal' })} /> Internal (team member)</label>
+                  </div>
+                  {stage.email_recipient==='internal' && (
+                    <select value={stage.email_to_team_id||''} onChange={e => update(stage.id, { email_to_team_id: e.target.value||null })} className="w-full text-[11px] px-2 py-1.5 border border-gray-200 rounded-md bg-white">
+                      <option value="">Select team member…</option>
+                      {team.map(t => <option key={t.id} value={t.id}>{t.display_name}{t.email?` (${t.email})`:''}</option>)}
+                    </select>
+                  )}
+                  <input value={stage.email_subject||''} onChange={e => update(stage.id, { email_subject: e.target.value })} placeholder="Email subject" className="w-full text-[11px] px-2 py-1.5 border border-gray-200 rounded-md" />
+                  <textarea value={stage.email_body||''} onChange={e => update(stage.id, { email_body: e.target.value })} placeholder="Email body — supports {{first_name}}, {{last_name}} merge tags" rows={4} className="w-full text-[11px] px-2 py-1.5 border border-gray-200 rounded-md resize-y" />
+                  <p className="text-[9px] text-gray-400">Merge tags: {`{{first_name}}`}, {`{{last_name}}`}. Sending is wired in the next step.</p>
+                </>}
+              </div>
+            )}
             </div>
           ))}
         </div>
@@ -663,6 +692,7 @@ function NewContactModal({ pipeline, firstStage, onSave, onClose }: { pipeline: 
 export default function PipelinesPage() {
   const { currentOrg } = useWorkspace()
   const [contacts, setContacts] = useState<CrmContact[]>([])
+  const [team, setTeam] = useState<{id:string;display_name:string;email:string|null}[]>([])
   const [loading, setLoading] = useState(true)
   const [pipelines, setPipelines] = useState<PipelineConfig[]>([DEFAULT_PIPELINE])
   const [activePipelineId, setActivePipelineId] = useState('default')
@@ -709,6 +739,11 @@ export default function PipelinesPage() {
   useEffect(() => {
     if (!currentOrg) return
     fetchContacts({ org_id: currentOrg.id, limit: 500 }).then(r => setContacts(r.contacts)).catch(console.error).finally(() => setLoading(false))
+  }, [currentOrg?.id])
+
+  useEffect(() => {
+    if (!currentOrg) return
+    createClient().from('team_profiles').select('id,display_name,email').eq('org_id', currentOrg.id).order('display_name').then(({data})=>setTeam(data||[]))
   }, [currentOrg?.id])
 
   const moveContact = async (id: string, stage: string) => {
@@ -817,7 +852,7 @@ export default function PipelinesPage() {
         })}
       </div>
 
-      {showStageEditor && <StageEditor stages={activePipeline.stages} onSave={s => { savePipelines(pipelines.map(p => p.id===activePipelineId ? { ...p, stages:s } : p)); setShowStageEditor(false) }} onClose={() => setShowStageEditor(false)} />}
+      {showStageEditor && <StageEditor stages={activePipeline.stages} team={team} onSave={s => { savePipelines(pipelines.map(p => p.id===activePipelineId ? { ...p, stages:s } : p)); setShowStageEditor(false) }} onClose={() => setShowStageEditor(false)} />}
       {showNewPipeline && <NewPipelineModal onSave={p => { savePipelines([...pipelines, p], p.id); setShowNewPipeline(false) }} onClose={() => setShowNewPipeline(false)} />}
       {showCardConfig && <CardConfigEditor pipeline={activePipeline} onSave={cfg => { savePipelines(pipelines.map(p => p.id===activePipelineId ? { ...p, card_config:cfg } : p)); setShowCardConfig(false) }} onClose={() => setShowCardConfig(false)} />}
       {showCustomFieldEditor && <CustomFieldEditor pipeline={activePipeline} onSave={fields => { savePipelines(pipelines.map(p => p.id===activePipelineId ? { ...p, custom_fields:fields } : p)); setShowCustomFieldEditor(false) }} onClose={() => setShowCustomFieldEditor(false)} />}
