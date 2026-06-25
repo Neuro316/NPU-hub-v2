@@ -345,7 +345,7 @@ function DashView({clients,locs,onSel,onAdd}:{clients:AcctClient[];locs:AcctLoca
 }
 
 /* ── Detail ────────────────────────────────────────── */
-function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onEditSvc,onAddPmt,onEditPmt,onDeletePmt,onDeleteClient}:any) {
+function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onEditSvc,onAddPmt,onEditPmt,onDeletePmt,onDeleteClient,onEditClient}:any) {
   const [tab,setTab]=useState('svc');const [showAS,setSAS]=useState(false);const [showAP,setSAP]=useState<string|null>(null)
   const [sf,setSF]=useState({t:'Map',a:'600',d:td(),n:''})
   const [editingSvc,setEditingSvc]=useState<string|null>(null)
@@ -353,6 +353,10 @@ function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onEditSvc,onAddPmt,onEditP
   const [pf,setPF]=useState({a:'',d:td(),n:''})
   const [editPm,setEditPm]=useState<AcctPayment|null>(null)
   const [ef,setEF]=useState({a:'',d:'',n:''})
+  const [showEditCl,setShowEditCl]=useState(false)
+  const [ecf,setEcf]=useState({nm:'',loc:'',dob:'',phone:'',email:'',street:'',city:'',state:'',zip:''})
+  const openEditClient=()=>{setEcf({nm:cl.name||'',loc:cl.location_id||'',dob:cl.date_of_birth||'',phone:cl.phone||'',email:cl.email||'',street:cl.address_street||'',city:cl.address_city||'',state:cl.address_state||'',zip:cl.address_zip||''});setShowEditCl(true)}
+  const doEditClient=async()=>{if(!ecf.nm.trim()||!ecf.loc)return;await onEditClient(cl.id,{name:ecf.nm.trim(),location_id:ecf.loc,date_of_birth:ecf.dob||null,phone:ecf.phone||null,email:ecf.email||null,address_street:ecf.street||null,address_city:ecf.city||null,address_state:ecf.state||null,address_zip:ecf.zip||null});setShowEditCl(false)}
   const st=getStatus(cl);const tO=cl.services.reduce((s:number,v:AcctService)=>s+v.amount,0);const tP=cl.services.reduce((s:number,v:AcctService)=>s+v.payments.reduce((p:number,x:AcctPayment)=>p+x.amount,0),0);const bal=tO-tP;const pct=tO>0?(tP/tO)*100:100
   const doAS=async()=>{await onAddSvc(cl.id,{service_type:sf.t,amount:parseFloat(sf.a)||0,service_date:sf.d,notes:sf.n});setSAS(false);setSF({t:isNP?'Clarity':'Map',a:isNP?'1797':'600',d:td(),n:''})}
   const doAP=async(sid:string)=>{const a=parseFloat(pf.a)||0;if(a<=0)return;await onAddPmt(cl.id,sid,{amount:a,payment_date:pf.d,notes:pf.n});setSAP(null);setPF({a:'',d:td(),n:''})}
@@ -371,7 +375,10 @@ function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onEditSvc,onAddPmt,onEditP
     </div>
     <div className="flex items-center gap-3">
       <div className="w-11 h-11 rounded-xl flex items-center justify-center text-sm font-bold" style={{background:(loc?.color||'#386797')+'18',color:loc?.color||'#386797'}}>{gI(cl.name)}</div>
-      <div><h2 className="text-base font-bold text-np-dark">{cl.name}</h2><div className="flex items-center gap-2 mt-0.5"><Badge s={st}/><LocTag loc={cl.location_id} locs={locs}/>{clObj&&<span className="text-[10px] text-gray-400">via {clObj.name}</span>}</div></div></div>
+      <div className="flex-1"><div className="flex items-center gap-2"><h2 className="text-base font-bold text-np-dark">{cl.name}</h2><button onClick={openEditClient} className="p-0.5 rounded hover:bg-np-blue/10" title="Edit account"><Pencil className="w-3.5 h-3.5 text-gray-300 hover:text-np-blue"/></button></div>
+        <div className="flex items-center gap-2 mt-0.5"><Badge s={st}/><LocTag loc={cl.location_id} locs={locs}/>{clObj&&<span className="text-[10px] text-gray-400">via {clObj.name}</span>}</div>
+        {(cl.phone||cl.email||cl.date_of_birth||cl.address_street)&&<div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-[11px] text-gray-400">{cl.date_of_birth&&<span>DOB: {fD(cl.date_of_birth)}</span>}{cl.phone&&<span>{cl.phone}</span>}{cl.email&&<span>{cl.email}</span>}{cl.address_street&&<span>{[cl.address_street,cl.address_city,cl.address_state,cl.address_zip].filter(Boolean).join(', ')}</span>}</div>}
+      </div></div>
     <div className="flex gap-3 flex-wrap">
       <Stat label="Owed" value={$$(tO)}/>
       <div className="relative overflow-hidden rounded-xl border border-gray-100 bg-white p-4 flex-1 min-w-[140px]"><div className="absolute top-0 left-0 right-0 h-0.5 bg-green-500"/>
@@ -430,6 +437,15 @@ function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onEditSvc,onAddPmt,onEditP
               <button onClick={()=>doDelete(pm._orig)} className="p-1 rounded hover:bg-red-50" title="Delete"><Trash2 className="w-3 h-3 text-gray-300 hover:text-red-500"/></button>
             </div>
           </td></tr>})}</tbody></table></div></div>}
+    {showEditCl&&<Mdl title="Edit Account" onClose={()=>setShowEditCl(false)}>
+      <FI label="Name" value={ecf.nm} onChange={(v:string)=>setEcf(p=>({...p,nm:v}))} placeholder="First and Last Name"/>
+      <FS label="Location" value={ecf.loc} onChange={(v:string)=>setEcf(p=>({...p,loc:v}))} options={locs.map((l:AcctLocation)=>({v:l.id,l:l.name}))}/>
+      <FI label="Date of Birth" value={ecf.dob} onChange={(v:string)=>setEcf(p=>({...p,dob:v}))} type="date"/>
+      <div className="flex gap-3"><FI half label="Phone" value={ecf.phone} onChange={(v:string)=>setEcf(p=>({...p,phone:v}))}/><FI half label="Email" value={ecf.email} onChange={(v:string)=>setEcf(p=>({...p,email:v}))}/></div>
+      <FI label="Street Address" value={ecf.street} onChange={(v:string)=>setEcf(p=>({...p,street:v}))}/>
+      <div className="flex gap-3"><FI half label="City" value={ecf.city} onChange={(v:string)=>setEcf(p=>({...p,city:v}))}/><FI half label="State" value={ecf.state} onChange={(v:string)=>setEcf(p=>({...p,state:v}))}/></div>
+      <FI label="Zip" value={ecf.zip} onChange={(v:string)=>setEcf(p=>({...p,zip:v}))}/>
+      <div className="flex gap-2 mt-4 justify-end"><Btn outline onClick={()=>setShowEditCl(false)}>Cancel</Btn><Btn onClick={doEditClient}>Save Changes</Btn></div></Mdl>}
     {showAS&&<Mdl title="Add Service" onClose={()=>setSAS(false)}>
       <FS label="Type" value={sf.t} onChange={(v:string)=>setSF(p=>({...p,t:v,a:v==='Map'?'600':v==='Clarity'?'1797':v==='qEEG'?'600':'5400'}))} options={isNP?[{v:'Clarity',l:'Clarity Protocol'},{v:'qEEG',l:'qEEG'}]:[{v:'Map',l:'Initial Map (qEEG)'},{v:'Program',l:'Neuro Program'}]}/>
       <FI label="Amount ($)" value={sf.a} onChange={(v:string)=>setSF(p=>({...p,a:v}))} type="number"/><FI label="Date" value={sf.d} onChange={(v:string)=>setSF(p=>({...p,d:v}))} type="date"/><FI label="Notes" value={sf.n} onChange={(v:string)=>setSF(p=>({...p,n:v}))}/>
@@ -1436,6 +1452,7 @@ export default function AccountingPage() {
   const addPayment=async(cid:string,sid:string,pmt:any)=>{if(!orgId)return;await supabase.from('acct_payments').insert({org_id:orgId,service_id:sid,client_id:cid,...pmt});loadData()}
   const editPayment=async(pmtId:string,data:any)=>{if(!orgId)return;const{data:upd,error}=await supabase.from('acct_payments').update(data).eq('id',pmtId).select();if(error){console.error('editPayment failed',error);alert('Could not save payment: '+error.message)}else if(!upd||upd.length===0){console.warn('editPayment matched 0 rows',pmtId);alert('Save updated 0 rows. The payment was not matched. Please reload and try again.')}loadData()}
   const deletePayment=async(pmtId:string)=>{if(!orgId)return;await supabase.from('acct_payments').delete().eq('id',pmtId);loadData()}
+  const editClient=async(clientId:string,data:any)=>{if(!orgId)return;const{error}=await supabase.from('acct_clients').update(data).eq('id',clientId);if(error){console.error('editClient failed',error);alert('Could not save account: '+error.message);return}loadData()}
   const deleteClient=async(clientId:string)=>{if(!orgId)return;
     const{error:pe}=await supabase.from('acct_payments').delete().eq('client_id',clientId)
     if(pe){console.error('delete payments failed',pe);alert('Could not delete payments: '+pe.message);return}
@@ -1488,7 +1505,7 @@ export default function AccountingPage() {
               <div className="flex items-center justify-between"><span className="text-[10px] text-gray-400" style={{fontFeatureSettings:'"tnum"'}}>{$$(t)}</span>
                 <div className="flex gap-1"><div className="w-1.5 h-1.5 rounded-full" style={{background:lo?.color||'#999'}}/><div className="w-1.5 h-1.5 rounded-full" style={{background:sc?.tx==='text-green-700'?'#34A853':sc?.tx==='text-amber-700'?'#FBBC04':sc?.tx==='text-red-600'?'#EA4335':'#999'}}/></div></div></div></button>})}</div></div>
       <div className="flex-1 overflow-y-auto p-5">
-        {ac?<DetView cl={ac} locs={locs} clinics={clinics} cfg={config} onBack={()=>sS(null)} onAddSvc={addService} onEditSvc={editService} onAddPmt={addPayment} onEditPmt={editPayment} onDeletePmt={deletePayment} onDeleteClient={deleteClient}/>
+        {ac?<DetView cl={ac} locs={locs} clinics={clinics} cfg={config} onBack={()=>sS(null)} onAddSvc={addService} onEditSvc={editService} onAddPmt={addPayment} onEditPmt={editPayment} onDeletePmt={deletePayment} onDeleteClient={deleteClient} onEditClient={editClient}/>
           :vw==='payouts'?<PayView clients={clients} locs={locs} clinics={clinics} cfg={config} checks={checks} mktg={mktg} onAddCheck={addCheck} onEditCheck={editCheck} onDeleteCheck={deleteCheck}/>
           :vw==='recon'?<ReconView clients={clients} locs={locs} clinics={clinics} cfg={config}/>
           :vw==='reports'?<ReportView clients={clients} locs={locs} clinics={clinics} cfg={config} checks={checks} mktg={mktg}/>
