@@ -1022,6 +1022,7 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,on
   const [showAdd,setAdd]=useState(false)
   const [editId,setEditId]=useState<string|null>(null)
   const [cf,setCF]=useState({payeeType:'dr' as string,clinicId:'',checkNum:'',date:td(),amount:'',memo:''})
+  const [drill,setDrill]=useState<{payee:string;label:string;date:string|null;rows:any[]}|null>(null)
 
   // Compute total owed per payee from revenue splits
   const owed=useMemo(()=>{
@@ -1036,19 +1037,23 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,on
   // Bucket owed splits by upcoming payout date (gross, ignores checks)
   const payoutBuckets=useMemo(()=>{
     const today=td()
-    const acc:Record<string,Record<string,number>>={}
-    const add=(key:string,payDate:string,amt:number)=>{if(payDate<today)return;if(!acc[key])acc[key]={};acc[key][payDate]=(acc[key][payDate]||0)+amt}
+    type Row={clientName:string;paymentDate:string;svc:string;amount:number;share:number}
+    const acc:Record<string,Record<string,{total:number;rows:Row[]}>>={}
+    const add=(key:string,payDate:string,share:number,row:Row)=>{if(payDate<today)return;if(!acc[key])acc[key]={};if(!acc[key][payDate])acc[key][payDate]={total:0,rows:[]};acc[key][payDate].total+=share;acc[key][payDate].rows.push(row)}
     clients.forEach(cl=>cl.services.forEach(sv=>sv.payments.forEach(pm=>{
       if(pm.amount===0)return
       const pd=pm.payout_date||getPayoutDate(pm.payment_date)
       const sp=calcSplit(pm.amount,sv.service_type,cl.location_id,locs,clinics,cfg,sv.amount,sv.service_date)
-      if(sp.dr>0)add('dr',pd,sp.dr)
-      Object.entries(sp.clinicAmts).forEach(([cid,ca])=>{if(ca>0)add(cid,pd,ca)})
+      if(sp.dr>0)add('dr',pd,sp.dr,{clientName:cl.name,paymentDate:pm.payment_date,svc:sv.service_type,amount:pm.amount,share:sp.dr})
+      Object.entries(sp.clinicAmts).forEach(([cid,ca])=>{if(ca>0)add(cid,pd,ca,{clientName:cl.name,paymentDate:pm.payment_date,svc:sv.service_type,amount:pm.amount,share:ca})})
     })))
-    const out:Record<string,{nextDate:string|null;nextAmt:number;followDate:string|null;followAmt:number}>={}
+    const out:Record<string,{nextDate:string|null;nextAmt:number;nextRows:Row[];followDate:string|null;followAmt:number;followRows:Row[]}>={}
     Object.entries(acc).forEach(([key,byDate])=>{
       const dates=Object.keys(byDate).sort()
-      out[key]={nextDate:dates[0]||null,nextAmt:dates[0]?byDate[dates[0]]:0,followDate:dates[1]||null,followAmt:dates[1]?byDate[dates[1]]:0}
+      out[key]={
+        nextDate:dates[0]||null,nextAmt:dates[0]?byDate[dates[0]].total:0,nextRows:dates[0]?byDate[dates[0]].rows:[],
+        followDate:dates[1]||null,followAmt:dates[1]?byDate[dates[1]].total:0,followRows:dates[1]?byDate[dates[1]].rows:[]
+      }
     })
     return out
   },[clients,locs,clinics,cfg])
@@ -1106,8 +1111,8 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,on
         <div className="flex gap-3 flex-wrap mb-4">
           <div className="flex-1 min-w-[120px] p-3 rounded-lg bg-gray-50 border border-gray-100 text-center"><p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Split Owed</p><p className="text-base font-bold" style={{color:p.color,fontFeatureSettings:'"tnum"'}}>{$$(p.owedAmt)}</p></div>
           {(()=>{const b=payoutBuckets[p.id||'dr'];return <>
-            <div className="flex-1 min-w-[120px] p-3 rounded-lg bg-blue-50 border border-blue-100 text-center"><p className="text-[9px] font-semibold uppercase tracking-wider text-blue-400 mb-1">Next Payout{b?.nextDate?' · '+fD(b.nextDate):''}</p><p className="text-base font-bold text-blue-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(b?.nextAmt||0)}</p></div>
-            <div className="flex-1 min-w-[120px] p-3 rounded-lg bg-indigo-50 border border-indigo-100 text-center"><p className="text-[9px] font-semibold uppercase tracking-wider text-indigo-400 mb-1">Following Payout{b?.followDate?' · '+fD(b.followDate):''}</p><p className="text-base font-bold text-indigo-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(b?.followAmt||0)}</p></div>
+            <button onClick={()=>b?.nextDate&&setDrill({payee:p.name,label:'Next Payout',date:b.nextDate,rows:b.nextRows})} className="flex-1 min-w-[120px] p-3 rounded-lg bg-blue-50 border border-blue-100 text-center hover:bg-blue-100 transition-colors cursor-pointer disabled:cursor-default" disabled={!b?.nextDate}><p className="text-[9px] font-semibold uppercase tracking-wider text-blue-400 mb-1">Next Payout{b?.nextDate?' · '+fD(b.nextDate):''}</p><p className="text-base font-bold text-blue-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(b?.nextAmt||0)}</p></button>
+            <button onClick={()=>b?.followDate&&setDrill({payee:p.name,label:'Following Payout',date:b.followDate,rows:b.followRows})} className="flex-1 min-w-[120px] p-3 rounded-lg bg-indigo-50 border border-indigo-100 text-center hover:bg-indigo-100 transition-colors cursor-pointer disabled:cursor-default" disabled={!b?.followDate}><p className="text-[9px] font-semibold uppercase tracking-wider text-indigo-400 mb-1">Following Payout{b?.followDate?' · '+fD(b.followDate):''}</p><p className="text-base font-bold text-indigo-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(b?.followAmt||0)}</p></button>
           </>})()}
           <div className="flex-1 min-w-[120px] p-3 rounded-lg bg-red-50 border border-red-100 text-center"><p className="text-[9px] font-semibold uppercase tracking-wider text-red-400 mb-1">Marketing Ded.</p><p className="text-base font-bold text-red-600" style={{fontFeatureSettings:'"tnum"'}}>-{$$(p.mktgAmt)}</p></div>
           <div className="flex-1 min-w-[120px] p-3 rounded-lg bg-green-50 border border-green-100 text-center"><p className="text-[9px] font-semibold uppercase tracking-wider text-green-500 mb-1">Checks Paid</p><p className="text-base font-bold text-green-600" style={{fontFeatureSettings:'"tnum"'}}>-{$$(p.checkAmt)}</p></div>
@@ -1152,6 +1157,20 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,on
             <span className={`font-bold ${newNet>0.01?'text-amber-600':newNet<-0.01?'text-green-600':'text-gray-400'}`} style={{fontFeatureSettings:'"tnum"'}}>{$$(newNet)}{newNet<-0.01?' (overpaid)':''}</span></div>
         </div>})()}
       <div className="flex gap-2 mt-4 justify-end"><Btn outline onClick={()=>{setAdd(false);setEditId(null)}}>Cancel</Btn><Btn onClick={doAdd}>{editId?'Save Changes':'Record Check'}</Btn></div>
+    </Mdl>}
+
+    {drill&&<Mdl wide title={`${drill.payee} — ${drill.label}${drill.date?' · '+fD(drill.date):''}`} onClose={()=>setDrill(null)}>
+      <table className="w-full text-left">
+        <thead><tr className="border-b border-gray-100"><TH>Client</TH><TH>Payment Date</TH><TH>Service</TH><TH className="text-right">Payment</TH><TH className="text-right">This Payout</TH></tr></thead>
+        <tbody>{[...drill.rows].sort((a:any,b:any)=>a.clientName.localeCompare(b.clientName)).map((r:any,i:number)=><tr key={i} className="border-b border-gray-50">
+          <td className="py-2 px-3 text-xs font-semibold text-np-dark">{r.clientName}</td>
+          <td className="py-2 px-3 text-xs text-gray-500">{fD(r.paymentDate)}</td>
+          <td className="py-2 px-3 text-xs text-gray-500">{r.svc==='Map'?'Initial Map':'Neuro Program'}</td>
+          <td className="py-2 px-3 text-xs text-gray-500 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r.amount)}</td>
+          <td className="py-2 px-3 text-xs font-bold text-np-dark text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r.share)}</td>
+        </tr>)}</tbody>
+        <tfoot><tr className="border-t border-gray-200"><td className="py-2 px-3 text-xs font-bold text-np-dark" colSpan={4}>Total</td><td className="py-2 px-3 text-sm font-bold text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(drill.rows.reduce((s:number,r:any)=>s+r.share,0))}</td></tr></tfoot>
+      </table>
     </Mdl>}
   </div>
 }
