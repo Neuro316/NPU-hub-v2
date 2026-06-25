@@ -393,8 +393,8 @@ function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onEditSvc,onAddPmt,onEditP
           <div className="p-3 bg-gray-50 rounded-lg"><p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Splits (on collected)</p>
             <div className="flex gap-3 text-xs flex-wrap">
               <span><span className="text-gray-400">SNW: </span><span className="font-semibold text-np-blue" style={{fontFeatureSettings:'"tnum"'}}>{$$(sp.snw)}</span>{sp.snwService>0&&<span className="text-[9px] text-gray-400 ml-0.5">({$$(sp.cc)} CC + {$$(sp.snwService)} svc)</span>}</span>
-              {clAmt>0&&<span><span className="text-gray-400">Clinic: </span><span className="font-semibold text-amber-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(clAmt)}</span></span>}
-              <span><span className="text-gray-400">Dr.Y: </span><span className="font-semibold text-purple-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(sp.dr)}</span></span>
+              {clAmt>0&&<span><span className="text-gray-400">{isNP?'Neuro Progeny: ':'Clinic: '}</span><span className="font-semibold text-amber-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(clAmt)}</span></span>}
+              {!isNP&&<span><span className="text-gray-400">Dr.Y: </span><span className="font-semibold text-purple-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(sp.dr)}</span></span>}
             </div></div>
           {sv.payments.length>0&&<div><p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Payments</p>
             {sv.payments.map(pm=><div key={pm.id} className="group flex items-center justify-between py-1.5 border-b border-gray-50 text-xs">
@@ -406,13 +406,13 @@ function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onEditSvc,onAddPmt,onEditP
             </div>)}</div>}
           <button onClick={()=>{setSAP(sv.id);setPF({a:rem>0?String(rem):'',d:td(),n:''})}} className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold text-np-blue border border-np-blue/30 rounded-md hover:bg-np-blue/5"><Plus className="w-3 h-3"/>Add Payment</button>
         </div></div>})}
-    {tab==='pmt'&&<div className="rounded-xl border border-gray-100 bg-white overflow-hidden"><div className="overflow-auto"><table className="w-full text-left"><thead><tr className="border-b border-gray-100 bg-gray-50/30"><TH>Date</TH><TH>Service</TH><TH className="text-right">Amount</TH><TH className="text-right text-np-blue">SNW</TH>{clObj&&<TH className="text-right text-amber-600">Clinic</TH>}<TH className="text-right text-purple-600">Dr.Y</TH><TH>Payout</TH><TH></TH></tr></thead>
+    {tab==='pmt'&&<div className="rounded-xl border border-gray-100 bg-white overflow-hidden"><div className="overflow-auto"><table className="w-full text-left"><thead><tr className="border-b border-gray-100 bg-gray-50/30"><TH>Date</TH><TH>Service</TH><TH className="text-right">Amount</TH><TH className="text-right text-np-blue">SNW</TH>{clObj&&<TH className="text-right text-amber-600">{isNP?'Neuro Progeny':'Clinic'}</TH>}{!isNP&&<TH className="text-right text-purple-600">Dr.Y</TH>}<TH>Payout</TH><TH></TH></tr></thead>
       <tbody>{cl.services.flatMap((sv:AcctService)=>sv.payments.map((pm:AcctPayment)=>{const sp=calcSplit(pm.amount,sv.service_type,cl.location_id,locs,clinics,cfg,sv.amount,sv.service_date);return{...pm,svc:sv.service_type,...sp,_orig:pm}})).sort((a:any,b:any)=>a.payment_date.localeCompare(b.payment_date)).map((pm:any,i:number)=>{
         const clA=Object.values(pm.clinicAmts).reduce((s:number,v:any)=>s+v,0) as number
         return <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50 group"><td className="py-2 px-3 text-xs text-gray-600">{fD(pm.payment_date)}</td><td className="py-2 px-3 text-xs text-gray-400">{pm.svc}</td>
           <td className="py-2 px-3 text-xs font-semibold text-green-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(pm.amount)}</td><td className="py-2 px-3 text-xs text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(pm.snw)}</td>
           {clObj&&<td className="py-2 px-3 text-xs text-right" style={{color:clA>0?'#d97706':'#d1d5db',fontFeatureSettings:'"tnum"'}}>{clA>0?$$(clA):'\u2014'}</td>}
-          <td className="py-2 px-3 text-xs text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(pm.dr)}</td><td className="py-2 px-3 text-[10px] text-gray-400">{fD(pm.payout_date||getPayoutDate(pm.payment_date))}</td>
+          {!isNP&&<td className="py-2 px-3 text-xs text-purple-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(pm.dr)}</td>}<td className="py-2 px-3 text-[10px] text-gray-400">{fD(pm.payout_date||getPayoutDate(pm.payment_date))}</td>
           <td className="py-2 px-1">
             <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
               <button onClick={()=>openEdit(pm._orig)} className="p-1 rounded hover:bg-np-blue/10" title="Edit"><Pencil className="w-3 h-3 text-gray-400 hover:text-np-blue"/></button>
