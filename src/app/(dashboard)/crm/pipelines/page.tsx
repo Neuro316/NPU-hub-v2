@@ -728,8 +728,11 @@ export default function PipelinesPage() {
   const removeFromPipeline = async (id: string) => {
     try {
       await updateContact(id, { pipeline_id: null, pipeline_stage: null } as any)
-      setContacts(prev => prev.map(c => c.id === id ? { ...c, pipeline_id: undefined as any, pipeline_stage: undefined as any } : c))
-    } catch (e) { console.error(e) }
+      setContacts(prev => prev.map(c => c.id === id ? { ...c, pipeline_id: null as any, pipeline_stage: null as any } : c))
+    } catch (e: any) {
+      console.error('removeFromPipeline failed', e)
+      alert('Could not remove from pipeline: ' + (e?.message || e))
+    }
   }
 
   const handleNewContact = (newContact: CrmContact) => {
