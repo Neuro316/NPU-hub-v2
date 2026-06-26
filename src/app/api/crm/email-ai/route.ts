@@ -38,9 +38,18 @@ Return ONLY a JSON object: {"html": "<the full new email body HTML>"}. No markdo
       body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 2000, messages: [{ role: 'user', content: prompt }] }),
     })
     const data = await res.json()
+    if (!res.ok) {
+      console.error('Anthropic API error:', res.status, data)
+      return NextResponse.json({ error: `AI API error ${res.status}: ${data?.error?.message || JSON.stringify(data)}` }, { status: 500 })
+    }
     const text = data.content?.[0]?.text || ''
+    if (!text) {
+      console.error('Anthropic empty response:', data)
+      return NextResponse.json({ error: 'AI returned an empty response' }, { status: 500 })
+    }
     const clean = text.replace(/```json|```/g, '').trim()
-    const parsed = JSON.parse(clean)
+    let parsed: any
+    try { parsed = JSON.parse(clean) } catch { return NextResponse.json({ error: 'AI returned non-JSON: ' + clean.slice(0, 200) }, { status: 500 }) }
     return NextResponse.json({ html: parsed.html || '' })
   } catch (e: any) {
     console.error('email-ai error:', e)
