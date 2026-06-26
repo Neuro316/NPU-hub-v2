@@ -270,6 +270,53 @@ function PipelineMetrics({ contacts, stages }: { contacts: CrmContact[]; stages:
   )
 }
 
+function RichEmailEditor({ value, onChange }: { value: string; onChange: (html: string) => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => { if (ref.current && ref.current.innerHTML !== value) ref.current.innerHTML = value || '' }, [])
+  const emit = () => { if (ref.current) onChange(ref.current.innerHTML) }
+  const exec = (cmd: string, arg?: string) => { document.execCommand(cmd, false, arg); emit() }
+  const addLink = () => { const url = prompt('Link URL (https://...)'); if (url) exec('createLink', url) }
+  const addColor = () => { const c = prompt('Text color (e.g. #386797 or red)'); if (c) exec('foreColor', c) }
+  const addImage = () => { const url = prompt('Image URL (must be a public https:// link)'); if (url) { document.execCommand('insertHTML', false, `<img src="${url}" alt="" style="max-width:100%;height:auto;border-radius:8px;" />`); emit() } }
+  const addButton = () => {
+    const text = prompt('Button text'); if (!text) return
+    const url = prompt('Button link URL (https://...)'); if (!url) return
+    const color = prompt('Button color (hex, e.g. #386797)', '#386797') || '#386797'
+    document.execCommand('insertHTML', false, `<a href="${url}" style="display:inline-block;padding:12px 24px;background:${color};color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600;margin:8px 0;">${text}</a>`)
+    emit()
+  }
+  const addVideo = () => {
+    const url = prompt('YouTube or Vimeo video URL'); if (!url) return
+    let thumb = '', watch = url
+    const yt = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})/)
+    const vimeo = url.match(/vimeo\.com\/(\d+)/)
+    if (yt) { thumb = `https://img.youtube.com/vi/${yt[1]}/maxresdefault.jpg`; watch = `https://youtu.be/${yt[1]}` }
+    else if (vimeo) { thumb = `https://vumbnail.com/${vimeo[1]}.jpg`; watch = `https://vimeo.com/${vimeo[1]}` }
+    else { alert('Please paste a YouTube or Vimeo URL.'); return }
+    document.execCommand('insertHTML', false, `<a href="${watch}" style="display:inline-block;position:relative;"><img src="${thumb}" alt="Watch video" style="max-width:100%;height:auto;border-radius:8px;" /><span style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:48px;color:#ffffff;text-shadow:0 2px 8px rgba(0,0,0,0.5);">▶</span></a>`)
+    emit()
+  }
+  const Btn = ({ onClick, title, children }: any) => <button type="button" onMouseDown={e => e.preventDefault()} onClick={onClick} title={title} className="px-2 py-1 text-[11px] rounded hover:bg-gray-100 text-gray-600 font-medium">{children}</button>
+  return (
+    <div className="border border-gray-200 rounded-md overflow-hidden">
+      <div className="flex flex-wrap items-center gap-0.5 px-1 py-1 border-b border-gray-100 bg-gray-50">
+        <Btn onClick={() => exec('bold')} title="Bold"><b>B</b></Btn>
+        <Btn onClick={() => exec('italic')} title="Italic"><i>I</i></Btn>
+        <Btn onClick={() => exec('underline')} title="Underline"><u>U</u></Btn>
+        <Btn onClick={() => exec('formatBlock', '<h2>')} title="Heading">H</Btn>
+        <Btn onClick={() => exec('insertUnorderedList')} title="Bullet list">• List</Btn>
+        <Btn onClick={() => exec('insertOrderedList')} title="Numbered list">1. List</Btn>
+        <Btn onClick={addColor} title="Text color">Color</Btn>
+        <Btn onClick={addLink} title="Link">Link</Btn>
+        <Btn onClick={addImage} title="Image">Image</Btn>
+        <Btn onClick={addButton} title="Button">Button</Btn>
+        <Btn onClick={addVideo} title="Video">Video</Btn>
+      </div>
+      <div ref={ref} contentEditable suppressContentEditableWarning onInput={emit} className="min-h-[140px] px-3 py-2 text-[12px] focus:outline-none" style={{ lineHeight: 1.5 }} />
+    </div>
+  )
+}
+
 function StageEditor({ stages, team, onSave, onClose }: { stages: PipelineStageConfig[]; team: {id:string;display_name:string;email:string|null}[]; onSave: (s: PipelineStageConfig[]) => void; onClose: () => void }) {
   const [editing, setEditing] = useState<PipelineStageConfig[]>(stages.map(s => ({ ...s })))
   const [colorFor, setColorFor] = useState<string | null>(null)
@@ -329,7 +376,7 @@ function StageEditor({ stages, team, onSave, onClose }: { stages: PipelineStageC
                       </select>
                     )}
                     <input value={em.subject} onChange={e => patchEmail(stage, em.id, { subject: e.target.value })} placeholder="Email subject" className="w-full text-[11px] px-2 py-1.5 border border-gray-200 rounded-md" />
-                    <textarea value={em.body} onChange={e => patchEmail(stage, em.id, { body: e.target.value })} placeholder="Email body — supports {{first_name}}, {{last_name}} merge tags" rows={4} className="w-full text-[11px] px-2 py-1.5 border border-gray-200 rounded-md resize-y" />
+                    <RichEmailEditor value={em.body} onChange={html => patchEmail(stage, em.id, { body: html })} />
                   </div>
                 ))}
                 <button onClick={() => addEmail(stage)} className="w-full py-1.5 border border-dashed border-gray-200 rounded-md text-[11px] text-gray-400 hover:text-np-blue hover:border-np-blue/40 transition-colors"><Plus size={11} className="inline mr-1" /> Add email to this stage</button>
