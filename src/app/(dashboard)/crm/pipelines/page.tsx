@@ -871,11 +871,11 @@ export default function PipelinesPage() {
 
       {showMetrics && <PipelineMetrics contacts={pipelineContacts} stages={activePipeline.stages} />}
 
-      <div className="flex gap-3 overflow-x-auto pb-4" style={{ minHeight: 'calc(100vh - 380px)' }}>
+      <div className="flex gap-3 overflow-x-auto overflow-y-hidden pb-2" style={{ height: 'calc(100vh - 300px)' }}>
         {activePipeline.stages.map(stage => {
           const sc = stageContacts(stage.name); const sv = stageValue(stage.name)
           return (
-            <div key={stage.id} className="flex-shrink-0 w-64">
+            <div key={stage.id} className="flex-shrink-0 w-64 flex flex-col h-full">
               <div className="flex items-center gap-2 mb-3 px-1">
                 <div className="w-2.5 h-2.5 rounded-full" style={{ background: stage.color }} />
                 <span className="text-xs font-semibold text-np-dark">{stage.name}</span>
@@ -884,7 +884,7 @@ export default function PipelinesPage() {
                 {sv > 0 && <span className="text-[10px] font-medium text-green-600">${(sv/1000).toFixed(0)}k</span>}
               </div>
               <div
-                className="space-y-2 min-h-[200px] rounded-xl bg-gray-50/50 p-2 border-2 border-dashed border-gray-100/50 transition-all duration-200"
+                className="space-y-2 flex-1 overflow-y-auto rounded-xl bg-gray-50/50 p-2 border-2 border-dashed border-gray-100/50 transition-all duration-200"
                 onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; e.currentTarget.classList.add('bg-np-blue/10', 'border-np-blue/40', 'scale-[1.01]'); e.currentTarget.classList.remove('bg-gray-50/50', 'border-gray-100/50') }}
                 onDragLeave={e => { e.currentTarget.classList.remove('bg-np-blue/10', 'border-np-blue/40', 'scale-[1.01]'); e.currentTarget.classList.add('bg-gray-50/50', 'border-gray-100/50') }}
                 onDrop={e => { e.preventDefault(); e.currentTarget.classList.remove('bg-np-blue/10', 'border-np-blue/40', 'scale-[1.01]'); e.currentTarget.classList.add('bg-gray-50/50', 'border-gray-100/50'); const cid = e.dataTransfer.getData('contactId'); if (cid) moveContact(cid, stage.name) }}
