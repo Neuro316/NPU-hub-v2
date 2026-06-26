@@ -815,7 +815,21 @@ export default function PipelinesPage() {
     }
     return false
   })
-  const stageContacts = (name: string) => pipelineContacts.filter(c => (c.pipeline_stage || activePipeline.stages[0]?.name || 'New Lead') === name)
+  const norm = (s: string | null | undefined) => (s || '').trim().toLowerCase()
+  const firstStageName = activePipeline.stages[0]?.name || 'New Lead'
+  const stageContacts = (name: string) => {
+    const isFirst = name === firstStageName
+    return pipelineContacts.filter(c => {
+      const cs = norm(c.pipeline_stage)
+      if (!cs) return isFirst  // no stage -> first column
+      // exact (normalized) match to THIS column
+      if (cs === norm(name)) return true
+      // if the contact's stage matches NO column in this pipeline, park it in the first column so it never disappears
+      const matchesAnyColumn = activePipeline.stages.some(s => norm(s.name) === cs)
+      if (!matchesAnyColumn && isFirst) return true
+      return false
+    })
+  }
   const stageValue = (name: string) => stageContacts(name).reduce((s,c) => s + ((c.custom_fields?.value as number)||0), 0)
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 rounded-lg bg-np-blue/20 animate-pulse" /></div>
