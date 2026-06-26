@@ -820,6 +820,8 @@ export default function PipelinesPage() {
   const stageContacts = (name: string) => {
     const isFirst = name === firstStageName
     return pipelineContacts.filter(c => {
+      // a fully-removed contact (no pipeline_id and no stage) should not be parked here unless this is the default pipeline
+      if (!c.pipeline_id && !c.pipeline_stage && !activePipeline.is_default) return false
       const cs = norm(c.pipeline_stage)
       if (!cs) return isFirst  // no stage -> first column
       // exact (normalized) match to THIS column
