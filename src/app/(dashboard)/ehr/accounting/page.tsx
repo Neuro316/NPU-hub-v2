@@ -12,6 +12,7 @@ interface AcctService { id: string; client_id: string; service_type: 'Map' | 'Pr
 interface AcctClient { id: string; name: string; location_id: string; org_id: string; notes: string; date_of_birth?: string | null; phone?: string | null; email?: string | null; address_street?: string | null; address_city?: string | null; address_state?: string | null; address_zip?: string | null; enrolled_contact_id?: string | null; services: AcctService[] }
 interface AcctConfig { map_splits: { snw: number; dr: number; snw_flat: number; dr_flat: number }; cc_processing_fee: number; snw_base_pct: number; snw_base_flat: number; default_map_price: number; default_program_price: number; np_splits?: { clarity_snw_pct: number; qeeg_snw_pct: number }; payout_agreement: string; marketing?: { monthly_total: number; clinic_share: number; dr_share: number } }
 interface AcctCheck { id: string; org_id: string; payee_type: 'clinic' | 'dr'; payee_clinic_id: string | null; check_number: string; check_date: string; amount: number; memo: string; created_at: string }
+interface AcctAdjustment { id: string; org_id: string; payee_type: 'clinic' | 'dr'; payee_clinic_id: string | null; direction: 'add' | 'subtract'; amount: number; memo: string; adj_date: string; is_applied: boolean; created_at: string }
 interface AcctMktgCharge { id: string; org_id: string; month: string; payee_type: 'clinic' | 'dr'; payee_clinic_id: string | null; amount: number; description: string; waived: boolean }
 
 const $$ = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n)
@@ -1068,12 +1069,28 @@ function ReconView({clients,locs,clinics,cfg}:{clients:AcctClient[];locs:AcctLoc
 }
 
 /* ── Payouts (checks + marketing + ledger) ─────────── */
-function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,onDeleteCheck}:
-  {clients:AcctClient[];locs:AcctLocation[];clinics:AcctClinic[];cfg:AcctConfig;checks:AcctCheck[];mktg:AcctMktgCharge[];onAddCheck:(d:any)=>void;onEditCheck:(id:string,d:any)=>void;onDeleteCheck:(id:string)=>void}) {
+function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,onDeleteCheck,adjustments,onAddAdjustment,onDeleteAdjustment,onMarkApplied}:
+  {clients:AcctClient[];locs:AcctLocation[];clinics:AcctClinic[];cfg:AcctConfig;checks:AcctCheck[];mktg:AcctMktgCharge[];onAddCheck:(d:any)=>void;onEditCheck:(id:string,d:any)=>void;onDeleteCheck:(id:string)=>void;adjustments:AcctAdjustment[];onAddAdjustment:(d:any)=>void;onDeleteAdjustment:(id:string)=>void;onMarkApplied:(id:string)=>void}) {
   const [showAdd,setAdd]=useState(false)
   const [editId,setEditId]=useState<string|null>(null)
   const [cf,setCF]=useState({payeeType:'dr' as string,clinicId:'',checkNum:'',date:td(),amount:'',memo:''})
   const [drill,setDrill]=useState<{payee:string;label:string;date:string|null;rows:any[]}|null>(null)
+  const [showAdj,setShowAdj]=useState(false)
+  const [af,setAF]=useState({payeeType:'clinic' as string,clinicId:'',direction:'add' as string,amount:'',memo:'',date:td()})
+
+  // Unapplied adjustment totals per payee (signed: +add, -subtract)
+  const adjTotals=useMemo(()=>{
+    const a:{dr:number;clinics:Record<string,number>}={dr:0,clinics:{}}
+    adjustments.filter(ad=>!ad.is_applied).forEach(ad=>{const signed=ad.direction==='add'?ad.amount:-ad.amount;if(ad.payee_type==='dr')a.dr+=signed;else if(ad.payee_clinic_id)a.clinics[ad.payee_clinic_id]=(a.clinics[ad.payee_clinic_id]||0)+signed})
+    return a
+  },[adjustments])
+  const adjForPayee=(type:'clinic'|'dr',id:string|null)=>adjustments.filter(ad=>ad.payee_type===type&&(type==='dr'||ad.payee_clinic_id===id))
+
+  const doAddAdj=async()=>{
+    const a=parseFloat(af.amount)||0;if(a<=0)return
+    await onAddAdjustment({payee_type:af.payeeType,payee_clinic_id:af.payeeType==='clinic'?af.clinicId:null,direction:af.direction,amount:a,memo:af.memo,adj_date:af.date})
+    setShowAdj(false);setAF({payeeType:'clinic',clinicId:'',direction:'add',amount:'',memo:'',date:td()})
+  }
 
   // Compute total owed per payee from revenue splits
   const owed=useMemo(()=>{
@@ -1146,8 +1163,11 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,on
 
   return <div className="space-y-5">
     <div className="flex items-center justify-between">
-      <div><h2 className="text-base font-bold text-np-dark">Payouts</h2><p className="text-xs text-gray-400 mt-0.5">Checks, marketing deductions, and running balances</p></div>
-      <button onClick={()=>setAdd(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-np-blue rounded-lg hover:bg-np-accent transition-colors"><Plus className="w-3.5 h-3.5"/>Record Check</button>
+      <div><h2 className="text-base font-bold text-np-dark">Payouts</h2><p className="text-xs text-gray-400 mt-0.5">Checks, marketing deductions, adjustments, and running balances</p></div>
+      <div className="flex items-center gap-2">
+        <button onClick={()=>setShowAdj(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-np-blue border border-np-blue/30 rounded-lg hover:bg-np-blue/5 transition-colors"><Plus className="w-3.5 h-3.5"/>Add Adjustment</button>
+        <button onClick={()=>setAdd(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-np-blue rounded-lg hover:bg-np-accent transition-colors"><Plus className="w-3.5 h-3.5"/>Record Check</button>
+      </div>
     </div>
 
     {/* Payee ledger cards */}
@@ -1161,8 +1181,8 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,on
       <div className="p-4">
         <div className="flex gap-3 flex-wrap mb-4">
           <div className="flex-1 min-w-[120px] p-3 rounded-lg bg-gray-50 border border-gray-100 text-center"><p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Split Owed</p><p className="text-base font-bold" style={{color:p.color,fontFeatureSettings:'"tnum"'}}>{$$(p.owedAmt)}</p></div>
-          {(()=>{const b=payoutBuckets[p.id||'dr'];return <>
-            <button onClick={()=>b?.nextDate&&setDrill({payee:p.name,label:'Next Payout',date:b.nextDate,rows:b.nextRows})} className="flex-1 min-w-[120px] p-3 rounded-lg bg-blue-50 border border-blue-100 text-center hover:bg-blue-100 transition-colors cursor-pointer disabled:cursor-default" disabled={!b?.nextDate}><p className="text-[9px] font-semibold uppercase tracking-wider text-blue-400 mb-1">Next Payout{b?.nextDate?' · '+fD(b.nextDate):''}</p><p className="text-base font-bold text-blue-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(b?.nextAmt||0)}</p></button>
+          {(()=>{const b=payoutBuckets[p.id||'dr'];const adj=p.type==='dr'?adjTotals.dr:(adjTotals.clinics[p.id||'']||0);const basePay=b?.nextAmt||0;const adjTotal=basePay+adj;return <>
+            <button onClick={()=>b?.nextDate&&setDrill({payee:p.name,label:'Next Payout',date:b.nextDate,rows:b.nextRows})} className="flex-1 min-w-[120px] p-3 rounded-lg bg-blue-50 border border-blue-100 text-center hover:bg-blue-100 transition-colors cursor-pointer disabled:cursor-default" disabled={!b?.nextDate}><p className="text-[9px] font-semibold uppercase tracking-wider text-blue-400 mb-1">Next Payout{b?.nextDate?' · '+fD(b.nextDate):''}</p><p className="text-base font-bold text-blue-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(adjTotal)}</p>{Math.abs(adj)>0.001&&<p className="text-[9px] text-gray-400 mt-0.5" style={{fontFeatureSettings:'"tnum"'}}>Pmts {$$(basePay)} · Adj {adj>=0?'+':'−'}{$$(Math.abs(adj))}</p>}</button>
             <button onClick={()=>b?.followDate&&setDrill({payee:p.name,label:'Following Payout',date:b.followDate,rows:b.followRows})} className="flex-1 min-w-[120px] p-3 rounded-lg bg-indigo-50 border border-indigo-100 text-center hover:bg-indigo-100 transition-colors cursor-pointer disabled:cursor-default" disabled={!b?.followDate}><p className="text-[9px] font-semibold uppercase tracking-wider text-indigo-400 mb-1">Following Payout{b?.followDate?' · '+fD(b.followDate):''}</p><p className="text-base font-bold text-indigo-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(b?.followAmt||0)}</p></button>
           </>})()}
           <div className="flex-1 min-w-[120px] p-3 rounded-lg bg-red-50 border border-red-100 text-center"><p className="text-[9px] font-semibold uppercase tracking-wider text-red-400 mb-1">Marketing Ded.</p><p className="text-base font-bold text-red-600" style={{fontFeatureSettings:'"tnum"'}}>-{$$(p.mktgAmt)}</p></div>
@@ -1172,7 +1192,17 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,on
         {/* Checks for this payee */}
         {(()=>{const pChecks=checks.filter(ch=>ch.payee_type===p.type&&(p.type==='dr'||ch.payee_clinic_id===p.id)).sort((a,b)=>a.check_date.localeCompare(b.check_date));
           const pMktg=mktg.filter(m=>m.payee_type===p.type&&(p.type==='dr'||m.payee_clinic_id===p.id)).sort((a,b)=>a.month.localeCompare(b.month))
+          const pAdj=adjForPayee(p.type,p.id).sort((a,b)=>a.adj_date.localeCompare(b.adj_date))
+          const pAdjActive=pAdj.filter(ad=>!ad.is_applied);const pAdjApplied=pAdj.filter(ad=>ad.is_applied)
           return <div className="space-y-3">
+            {pAdjActive.length>0&&<div><p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Adjustments (next payout)</p>
+              {pAdjActive.map(ad=><div key={ad.id} className="flex items-center justify-between py-1.5 border-b border-gray-50 text-xs">
+                <div className="flex items-center gap-2"><span className={`font-semibold ${ad.direction==='add'?'text-green-600':'text-red-500'}`} style={{fontFeatureSettings:'"tnum"'}}>{ad.direction==='add'?'+':'−'}{$$(ad.amount)}</span><span className="text-gray-500">{ad.memo||'—'}</span><span className="text-gray-400">{fD(ad.adj_date)}</span></div>
+                <div className="flex items-center gap-0.5"><button onClick={()=>onMarkApplied(ad.id)} className="px-2 py-0.5 rounded text-[10px] font-semibold text-np-blue border border-np-blue/30 hover:bg-np-blue/5" title="Mark applied">Mark applied</button><button onClick={()=>{if(confirm('Delete this adjustment?'))onDeleteAdjustment(ad.id)}} className="p-1 rounded hover:bg-red-50" title="Delete"><Trash2 className="w-3 h-3 text-gray-300 hover:text-red-400"/></button></div></div>)}</div>}
+            {pAdjApplied.length>0&&<div><p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Adjustments (applied)</p>
+              {pAdjApplied.map(ad=><div key={ad.id} className="flex items-center justify-between py-1.5 border-b border-gray-50 text-xs opacity-40">
+                <div className="flex items-center gap-2"><span className={`font-semibold ${ad.direction==='add'?'text-green-600':'text-red-500'}`} style={{fontFeatureSettings:'"tnum"'}}>{ad.direction==='add'?'+':'−'}{$$(ad.amount)}</span><span className="text-gray-500">{ad.memo||'—'}</span><span className="text-gray-400">{fD(ad.adj_date)}</span><span className="px-2 py-0.5 rounded bg-gray-100 text-gray-400 text-[10px] font-semibold">Applied</span></div>
+                <button onClick={()=>{if(confirm('Delete this adjustment?'))onDeleteAdjustment(ad.id)}} className="p-1 rounded hover:bg-red-50" title="Delete"><Trash2 className="w-3 h-3 text-gray-300 hover:text-red-400"/></button></div>)}</div>}
             {pMktg.length>0&&<div><p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Marketing Deductions</p>
               {pMktg.map(m=><div key={m.id} className={`flex items-center justify-between py-1.5 border-b border-gray-50 text-xs ${m.waived?'opacity-40':''}`}>
                 <span className="text-gray-400">{fMoL(m.month)}</span><span className="text-gray-500">{m.description}</span>{m.waived?<span className="px-2 py-0.5 rounded bg-gray-100 text-gray-400 text-[10px] font-semibold">Waived</span>:<span className="font-semibold text-red-500" style={{fontFeatureSettings:'"tnum"'}}>-{$$(m.amount)}</span>}</div>)}</div>}
@@ -1185,11 +1215,28 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,on
                   <td className="py-2 px-3 text-[11px] text-gray-400">{ch.memo}</td>
                   <td className="py-2 px-1"><div className="flex items-center gap-0.5"><button onClick={()=>openEditCheck(ch)} className="p-1 rounded hover:bg-np-blue/10" title="Edit"><Pencil className="w-3 h-3 text-gray-400 hover:text-np-blue"/></button><button onClick={()=>{if(confirm('Delete this check?'))onDeleteCheck(ch.id)}} className="p-1 rounded hover:bg-red-50" title="Delete"><Trash2 className="w-3 h-3 text-gray-300 hover:text-red-400"/></button></div></td>
                 </tr>)}</tbody></table></div>}
-            {pChecks.length===0&&pMktg.length===0&&<p className="text-xs text-gray-400 italic">No checks or deductions recorded yet.</p>}
+            {pChecks.length===0&&pMktg.length===0&&pAdj.length===0&&<p className="text-xs text-gray-400 italic">No checks, deductions, or adjustments recorded yet.</p>}
           </div>
         })()}
       </div>
     </div>)}
+
+    {showAdj&&<Mdl title="Add Adjustment" onClose={()=>setShowAdj(false)}>
+      <div className="mb-3"><label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Payee</label>
+        <div className="flex gap-2">
+          <button onClick={()=>setAF(p=>({...p,payeeType:'clinic'}))} className={`flex-1 px-3 py-2 text-xs font-semibold rounded-lg border transition-colors ${af.payeeType==='clinic'?'text-white bg-np-blue border-np-blue':'text-np-blue border-np-blue/30 hover:bg-np-blue/5'}`}>Clinic</button>
+          <button onClick={()=>setAF(p=>({...p,payeeType:'dr',clinicId:''}))} className={`flex-1 px-3 py-2 text-xs font-semibold rounded-lg border transition-colors ${af.payeeType==='dr'?'text-white bg-np-blue border-np-blue':'text-np-blue border-np-blue/30 hover:bg-np-blue/5'}`}>Practitioner (Dr)</button>
+        </div></div>
+      {af.payeeType==='clinic'&&<FS label="Clinic" value={af.clinicId} onChange={(v:string)=>setAF(p=>({...p,clinicId:v}))} options={[{v:'',l:'— Select clinic —'},...clinics.map(c=>({v:c.id,l:c.name.split('(')[0].trim()}))]}/>}
+      <div className="mb-3"><label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Direction</label>
+        <div className="flex gap-2">
+          <button onClick={()=>setAF(p=>({...p,direction:'add'}))} className={`flex-1 px-3 py-2 text-xs font-semibold rounded-lg border transition-colors ${af.direction==='add'?'text-white bg-green-600 border-green-600':'text-green-600 border-green-300 hover:bg-green-50'}`}>Add (+)</button>
+          <button onClick={()=>setAF(p=>({...p,direction:'subtract'}))} className={`flex-1 px-3 py-2 text-xs font-semibold rounded-lg border transition-colors ${af.direction==='subtract'?'text-white bg-red-500 border-red-500':'text-red-500 border-red-300 hover:bg-red-50'}`}>Subtract (−)</button>
+        </div></div>
+      <div className="flex gap-3"><FI half label="Amount ($)" value={af.amount} onChange={(v:string)=>setAF(p=>({...p,amount:v}))} type="number"/><FI half label="Date" value={af.date} onChange={(v:string)=>setAF(p=>({...p,date:v}))} type="date"/></div>
+      <FI label="Memo / Note" value={af.memo} onChange={(v:string)=>setAF(p=>({...p,memo:v}))} placeholder="Reason for adjustment"/>
+      <div className="flex gap-2 mt-4 justify-end"><Btn outline onClick={()=>setShowAdj(false)}>Cancel</Btn><Btn onClick={doAddAdj} disabled={(parseFloat(af.amount)||0)<=0||(af.payeeType==='clinic'&&!af.clinicId)}>Add Adjustment</Btn></div>
+    </Mdl>}
 
     {showAdd&&<Mdl title={editId?'Edit Check':'Record Check Payment'} onClose={()=>{setAdd(false);setEditId(null)}}>
       <FS label="Pay To" value={cf.payeeType==='dr'?'dr':'clinic:'+cf.clinicId} onChange={(v:string)=>{if(v==='dr'){setCF(p=>({...p,payeeType:'dr',clinicId:''}))}else{setCF(p=>({...p,payeeType:'clinic',clinicId:v.slice(7)}))}}} options={[{v:'dr',l:'Dr. Yonce'},...clinics.map(c=>({v:'clinic:'+c.id,l:c.name.split('(')[0].trim()}))]}/>
@@ -1436,21 +1483,23 @@ export default function AccountingPage() {
   const [clients,setClients]=useState<AcctClient[]>([]);const [locs,setLocs]=useState<AcctLocation[]>([]);const [clinics,setClinics]=useState<AcctClinic[]>([])
   const [config,setConfig]=useState<AcctConfig>({map_splits:{snw:23,dr:77,snw_flat:0,dr_flat:0},cc_processing_fee:3,snw_base_pct:0,snw_base_flat:0,default_map_price:600,default_program_price:5400,np_splits:{clarity_snw_pct:16.6945,qeeg_snw_pct:23.0},payout_agreement:''})
   const [checks,setChecks]=useState<AcctCheck[]>([]);const [mktg,setMktg]=useState<AcctMktgCharge[]>([])
+  const [adjustments,setAdjustments]=useState<AcctAdjustment[]>([])
   const [loading,setLoading]=useState(true);const [vw,sV]=useState('dash');const [sel,sS]=useState<string|null>(null);const [q,sQ]=useState('')
   const [showAC,setSAC]=useState(false);const [nc,setNC]=useState({nm:'',loc:'',dob:'',phone:'',email:'',street:'',city:'',state:'',zip:''})
   const orgId=currentOrg?.id
 
   const loadData=useCallback(async()=>{
     if(!orgId)return;setLoading(true)
-    try{const [locsR,clinicsR,clientsR,svcsR,pmtsR,cfgR,chkR,mkR]=await Promise.all([
+    try{const [locsR,clinicsR,clientsR,svcsR,pmtsR,cfgR,chkR,mkR,adjR]=await Promise.all([
       supabase.from('acct_locations').select('*').eq('org_id',orgId),supabase.from('acct_clinics').select('*').eq('org_id',orgId),
       supabase.from('acct_clients').select('*').eq('org_id',orgId).order('name'),supabase.from('acct_services').select('*').eq('org_id',orgId),
       supabase.from('acct_payments').select('*').eq('org_id',orgId).order('payment_date'),
       supabase.from('org_settings').select('setting_value').eq('org_id',orgId).eq('setting_key','acct_config').maybeSingle(),
       supabase.from('acct_checks').select('*').eq('org_id',orgId).order('check_date'),
-      supabase.from('acct_marketing_charges').select('*').eq('org_id',orgId)])
+      supabase.from('acct_marketing_charges').select('*').eq('org_id',orgId),
+      supabase.from('acct_adjustments').select('*').eq('org_id',orgId).order('adj_date')])
     setLocs(locsR.data||[]);setClinics(clinicsR.data||[]);if(cfgR.data?.setting_value)setConfig(cfgR.data.setting_value)
-    setChecks(chkR.data||[]);setMktg(mkR.data||[])
+    setChecks(chkR.data||[]);setMktg(mkR.data||[]);setAdjustments(adjR.data||[])
     const svcs=svcsR.data||[];const pmts=pmtsR.data||[]
     setClients((clientsR.data||[]).map((c:any)=>({...c,services:svcs.filter((s:any)=>s.client_id===c.id).map((s:any)=>({...s,payments:pmts.filter((p:any)=>p.service_id===s.id)}))})))}catch(e){console.error('Load failed',e)}
     setLoading(false)},[orgId])
@@ -1512,6 +1561,9 @@ export default function AccountingPage() {
   const addCheck=async(data:any)=>{if(!orgId)return;await supabase.from('acct_checks').insert({org_id:orgId,...data});loadData()}
   const editCheck=async(id:string,data:any)=>{if(!orgId)return;const{error}=await supabase.from('acct_checks').update(data).eq('id',id);if(error){console.error('editCheck failed',error);alert('Could not save check: '+error.message)}loadData()}
   const deleteCheck=async(id:string)=>{await supabase.from('acct_checks').delete().eq('id',id);loadData()}
+  const addAdjustment=async(data:any)=>{if(!orgId)return;const{error}=await supabase.from('acct_adjustments').insert({org_id:orgId,...data});if(error){console.error('addAdjustment failed',error);alert('Could not add adjustment: '+error.message);return}loadData()}
+  const deleteAdjustment=async(id:string)=>{const{error}=await supabase.from('acct_adjustments').delete().eq('id',id);if(error){alert('Could not delete: '+error.message);return}loadData()}
+  const markAdjustmentApplied=async(id:string)=>{const{error}=await supabase.from('acct_adjustments').update({is_applied:true}).eq('id',id);if(error){alert('Could not update: '+error.message);return}loadData()}
   const addMktg=async(month:string)=>{
     if(!orgId)return
     // For each clinic: clinic owes $500, Dr. Yonce owes $500 per clinic
@@ -1550,7 +1602,7 @@ export default function AccountingPage() {
                 <div className="flex gap-1"><div className="w-1.5 h-1.5 rounded-full" style={{background:lo?.color||'#999'}}/><div className="w-1.5 h-1.5 rounded-full" style={{background:sc?.tx==='text-green-700'?'#34A853':sc?.tx==='text-amber-700'?'#FBBC04':sc?.tx==='text-red-600'?'#EA4335':'#999'}}/></div></div></div></button>})}</div></div>
       <div className="flex-1 overflow-y-auto p-5">
         {ac?<DetView cl={ac} locs={locs} clinics={clinics} cfg={config} onBack={()=>sS(null)} onAddSvc={addService} onEditSvc={editService} onAddPmt={addPayment} onEditPmt={editPayment} onDeletePmt={deletePayment} onDeleteClient={deleteClient} onEditClient={editClient}/>
-          :vw==='payouts'?<PayView clients={clients} locs={locs} clinics={clinics} cfg={config} checks={checks} mktg={mktg} onAddCheck={addCheck} onEditCheck={editCheck} onDeleteCheck={deleteCheck}/>
+          :vw==='payouts'?<PayView clients={clients} locs={locs} clinics={clinics} cfg={config} checks={checks} mktg={mktg} onAddCheck={addCheck} onEditCheck={editCheck} onDeleteCheck={deleteCheck} adjustments={adjustments} onAddAdjustment={addAdjustment} onDeleteAdjustment={deleteAdjustment} onMarkApplied={markAdjustmentApplied}/>
           :vw==='recon'?<ReconView clients={clients} locs={locs} clinics={clinics} cfg={config}/>
           :vw==='reports'?<ReportView clients={clients} locs={locs} clinics={clinics} cfg={config} checks={checks} mktg={mktg}/>
           :vw==='settings'?<SetView locs={locs} clinics={clinics} config={config} setConfig={setConfig} clients={clients} agreement={config.payout_agreement} setAgreement={(v:string)=>setConfig(p=>({...p,payout_agreement:v}))} onSaveConfig={saveConfig} onSaveLoc={saveLoc} onDeleteLoc={deleteLoc} onSaveClinic={saveClinic} mktg={mktg} onAddMktg={addMktg} onDeleteMktg={deleteMktg} onToggleWaive={toggleWaive}/>
