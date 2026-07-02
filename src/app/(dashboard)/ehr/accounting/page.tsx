@@ -86,8 +86,15 @@ function calcSplit(
   // ── NEURO PROGENY: two-way split (Sensorium % + NP remainder), no Dr/waterfall ──
   if (cl && cl.is_neuro_progeny) {
     const np = cfg.np_splits || { clarity_snw_pct: 16.6945, qeeg_snw_pct: 23.0 }
-    const snwPct = svcType === 'qEEG' ? np.qeeg_snw_pct : np.clarity_snw_pct
-    const snwAmt = r2(amt * snwPct / 100)
+    let snwAmt: number
+    if (svcType === 'qEEG') {
+      snwAmt = r2(amt * np.qeeg_snw_pct / 100)
+    } else {
+      // Clarity/Program: Sensorium gets a flat $300 total across the whole service,
+      // allocated proportionally to each payment so partial payments sum to exactly $300.
+      const svcTotal = serviceTotal || 0
+      snwAmt = svcTotal > 0 ? r2(amt * (300 / svcTotal)) : r2(Math.min(300, amt))
+    }
     const npAmt = r2(amt - snwAmt)
     return { snw: Math.max(snwAmt, 0), dr: 0, cc: ccAmt, snwService: r2(Math.max(snwAmt - ccAmt, 0)), clinicAmts: { [cl.id]: Math.max(npAmt, 0) } as Record<string, number> }
   }
