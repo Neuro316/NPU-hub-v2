@@ -12,7 +12,7 @@ interface AcctService { id: string; client_id: string; service_type: 'Map' | 'Pr
 interface AcctClient { id: string; name: string; location_id: string; org_id: string; notes: string; date_of_birth?: string | null; phone?: string | null; email?: string | null; address_street?: string | null; address_city?: string | null; address_state?: string | null; address_zip?: string | null; enrolled_contact_id?: string | null; services: AcctService[] }
 interface AcctConfig { map_splits: { snw: number; dr: number; snw_flat: number; dr_flat: number }; cc_processing_fee: number; snw_base_pct: number; snw_base_flat: number; default_map_price: number; default_program_price: number; np_splits?: { clarity_snw_pct: number; qeeg_snw_pct: number }; payout_agreement: string; marketing?: { monthly_total: number; clinic_share: number; dr_share: number } }
 interface AcctCheck { id: string; org_id: string; payee_type: 'clinic' | 'dr'; payee_clinic_id: string | null; check_number: string; check_date: string; amount: number; memo: string; created_at: string }
-interface AcctAdjustment { id: string; org_id: string; payee_type: 'clinic' | 'dr'; payee_clinic_id: string | null; direction: 'add' | 'subtract'; amount: number; memo: string; adj_date: string; is_applied: boolean; created_at: string }
+interface AcctAdjustment { id: string; org_id: string; payee_type: 'clinic' | 'dr'; payee_clinic_id: string | null; direction: 'add' | 'subtract'; amount: number; memo: string; adj_date: string; is_applied: boolean; is_reconciliation: boolean; created_at: string }
 interface AcctMktgCharge { id: string; org_id: string; month: string; payee_type: 'clinic' | 'dr'; payee_clinic_id: string | null; amount: number; description: string; waived: boolean }
 
 const $$ = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n)
@@ -1076,20 +1076,20 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,on
   const [cf,setCF]=useState({payeeType:'dr' as string,clinicId:'',checkNum:'',date:td(),amount:'',memo:''})
   const [drill,setDrill]=useState<{payee:string;label:string;date:string|null;rows:any[]}|null>(null)
   const [showAdj,setShowAdj]=useState(false)
-  const [af,setAF]=useState({payeeType:'clinic' as string,clinicId:'',direction:'add' as string,amount:'',memo:'',date:td()})
+  const [af,setAF]=useState({payeeType:'clinic' as string,clinicId:'',direction:'add' as string,amount:'',memo:'',date:td(),isRecon:false})
 
   // Unapplied adjustment totals per payee (signed: +add, -subtract)
   const adjTotals=useMemo(()=>{
     const a:{dr:number;clinics:Record<string,number>}={dr:0,clinics:{}}
-    adjustments.filter(ad=>!ad.is_applied).forEach(ad=>{const signed=ad.direction==='add'?ad.amount:-ad.amount;if(ad.payee_type==='dr')a.dr+=signed;else if(ad.payee_clinic_id)a.clinics[ad.payee_clinic_id]=(a.clinics[ad.payee_clinic_id]||0)+signed})
+    adjustments.filter(ad=>!ad.is_applied && !ad.is_reconciliation).forEach(ad=>{const signed=ad.direction==='add'?ad.amount:-ad.amount;if(ad.payee_type==='dr')a.dr+=signed;else if(ad.payee_clinic_id)a.clinics[ad.payee_clinic_id]=(a.clinics[ad.payee_clinic_id]||0)+signed})
     return a
   },[adjustments])
   const adjForPayee=(type:'clinic'|'dr',id:string|null)=>adjustments.filter(ad=>ad.payee_type===type&&(type==='dr'||ad.payee_clinic_id===id))
 
   const doAddAdj=async()=>{
     const a=parseFloat(af.amount)||0;if(a<=0)return
-    await onAddAdjustment({payee_type:af.payeeType,payee_clinic_id:af.payeeType==='clinic'?af.clinicId:null,direction:af.direction,amount:a,memo:af.memo,adj_date:af.date})
-    setShowAdj(false);setAF({payeeType:'clinic',clinicId:'',direction:'add',amount:'',memo:'',date:td()})
+    await onAddAdjustment({payee_type:af.payeeType,payee_clinic_id:af.payeeType==='clinic'?af.clinicId:null,direction:af.direction,amount:a,memo:af.memo,adj_date:af.date,is_reconciliation:af.isRecon})
+    setShowAdj(false);setAF({payeeType:'clinic',clinicId:'',direction:'add',amount:'',memo:'',date:td(),isRecon:false})
   }
 
   // Compute total owed per payee from revenue splits
@@ -1193,7 +1193,7 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,on
         {(()=>{const pChecks=checks.filter(ch=>ch.payee_type===p.type&&(p.type==='dr'||ch.payee_clinic_id===p.id)).sort((a,b)=>a.check_date.localeCompare(b.check_date));
           const pMktg=mktg.filter(m=>m.payee_type===p.type&&(p.type==='dr'||m.payee_clinic_id===p.id)).sort((a,b)=>a.month.localeCompare(b.month))
           const pAdj=adjForPayee(p.type,p.id).sort((a,b)=>a.adj_date.localeCompare(b.adj_date))
-          const pAdjActive=pAdj.filter(ad=>!ad.is_applied);const pAdjApplied=pAdj.filter(ad=>ad.is_applied)
+          const pAdjActive=pAdj.filter(ad=>!ad.is_applied && !ad.is_reconciliation);const pAdjRecon=pAdj.filter(ad=>ad.is_reconciliation);const pAdjApplied=pAdj.filter(ad=>ad.is_applied && !ad.is_reconciliation)
           return <div className="space-y-3">
             {pAdjActive.length>0&&<div><p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Adjustments (next payout)</p>
               {pAdjActive.map(ad=><div key={ad.id} className="flex items-center justify-between py-1.5 border-b border-gray-50 text-xs">
@@ -1202,6 +1202,10 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,on
             {pAdjApplied.length>0&&<div><p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Adjustments (applied)</p>
               {pAdjApplied.map(ad=><div key={ad.id} className="flex items-center justify-between py-1.5 border-b border-gray-50 text-xs opacity-40">
                 <div className="flex items-center gap-2"><span className={`font-semibold ${ad.direction==='add'?'text-green-600':'text-red-500'}`} style={{fontFeatureSettings:'"tnum"'}}>{ad.direction==='add'?'+':'−'}{$$(ad.amount)}</span><span className="text-gray-500">{ad.memo||'—'}</span><span className="text-gray-400">{fD(ad.adj_date)}</span><span className="px-2 py-0.5 rounded bg-gray-100 text-gray-400 text-[10px] font-semibold">Applied</span></div>
+                <button onClick={()=>{if(confirm('Delete this adjustment?'))onDeleteAdjustment(ad.id)}} className="p-1 rounded hover:bg-red-50" title="Delete"><Trash2 className="w-3 h-3 text-gray-300 hover:text-red-400"/></button></div>)}</div>}
+            {pAdjRecon.length>0&&<div><p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Past Reconciliation (record only)</p>
+              {pAdjRecon.map(ad=><div key={ad.id} className="flex items-center justify-between py-1.5 border-b border-gray-50 text-xs opacity-40">
+                <div className="flex items-center gap-2"><span className={`font-semibold ${ad.direction==='add'?'text-green-600':'text-red-500'}`} style={{fontFeatureSettings:'"tnum"'}}>{ad.direction==='add'?'+':'−'}{$$(ad.amount)}</span><span className="text-gray-500">{ad.memo||'—'}</span><span className="text-gray-400">{fD(ad.adj_date)}</span><span className="px-2 py-0.5 rounded bg-gray-100 text-gray-400 text-[10px] font-semibold">Reconciliation</span></div>
                 <button onClick={()=>{if(confirm('Delete this adjustment?'))onDeleteAdjustment(ad.id)}} className="p-1 rounded hover:bg-red-50" title="Delete"><Trash2 className="w-3 h-3 text-gray-300 hover:text-red-400"/></button></div>)}</div>}
             {pMktg.length>0&&<div><p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Marketing Deductions</p>
               {pMktg.map(m=><div key={m.id} className={`flex items-center justify-between py-1.5 border-b border-gray-50 text-xs ${m.waived?'opacity-40':''}`}>
@@ -1235,6 +1239,7 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,on
         </div></div>
       <div className="flex gap-3"><FI half label="Amount ($)" value={af.amount} onChange={(v:string)=>setAF(p=>({...p,amount:v}))} type="number"/><FI half label="Date" value={af.date} onChange={(v:string)=>setAF(p=>({...p,date:v}))} type="date"/></div>
       <FI label="Memo / Note" value={af.memo} onChange={(v:string)=>setAF(p=>({...p,memo:v}))} placeholder="Reason for adjustment"/>
+      <label className="flex items-center gap-2 text-xs text-np-dark mt-1 mb-2"><input type="checkbox" checked={af.isRecon} onChange={e=>setAF(p=>({...p,isRecon:e.target.checked}))} className="accent-np-blue w-3.5 h-3.5"/> Past reconciliation (record only, does not affect next payout)</label>
       <div className="flex gap-2 mt-4 justify-end"><Btn outline onClick={()=>setShowAdj(false)}>Cancel</Btn><Btn onClick={doAddAdj} disabled={(parseFloat(af.amount)||0)<=0||(af.payeeType==='clinic'&&!af.clinicId)}>Add Adjustment</Btn></div>
     </Mdl>}
 
