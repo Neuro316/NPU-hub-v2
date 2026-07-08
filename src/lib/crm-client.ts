@@ -226,7 +226,7 @@ export async function fetchNotes(contactId: string) {
     .from('contact_notes')
     .select('*')
     .eq('contact_id', contactId)
-    .order('is_pinned', { ascending: false })
+    .order('pinned', { ascending: false })
     .order('created_at', { ascending: false })
   if (error) throw error
   return (data || []) as ContactNote[]
