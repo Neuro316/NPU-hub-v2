@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabase, createServerSupabase } from '@/lib/supabase'
+import { ADMIN_ROLES } from '@/lib/org-settings-keys'
 
 /**
  * PUT /api/settings — upsert a single org_settings row (service role).
@@ -26,30 +27,31 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: 'org_id and setting_key are required' }, { status: 400 })
     }
 
-    // Verify user belongs to this org
-    const { data: membership, error: memberError } = await admin
+    // Verify user belongs to this org.
+    // NOTE: the column is organization_id. The previous `.eq('org_id', org_id)`
+    // always errored (no such column), so membership was always null and every
+    // caller fell through to the team_profiles branch below — which the orphan
+    // profiles minted by the workspace-context auto-join satisfied. (NPU R0.4)
+    const { data: membership } = await admin
       .from('org_members')
       .select('id, role')
-      .eq('org_id', org_id)
+      .eq('organization_id', org_id)
       .eq('user_id', user.id)
       .maybeSingle()
 
-    console.log('[API settings] membership check:', { membership, memberError: memberError?.message })
-
     if (!membership) {
-      // Fallback: check team_profiles (some users exist there but not in org_members)
-      const { data: profile } = await admin
-        .from('team_profiles')
-        .select('id, role')
-        .eq('org_id', org_id)
-        .eq('user_id', user.id)
-        .maybeSingle()
+      return NextResponse.json({ error: 'Not a member of this organization' }, { status: 403 })
+    }
 
-      console.log('[API settings] team_profiles fallback:', { profile })
+    // All org_settings writes require an admin role.
+    const { data: profile } = await admin
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .maybeSingle()
 
-      if (!profile) {
-        return NextResponse.json({ error: 'Not a member of this organization' }, { status: 403 })
-      }
+    if (!profile || !ADMIN_ROLES.has(profile.role)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     // Upsert with service role (bypasses RLS)

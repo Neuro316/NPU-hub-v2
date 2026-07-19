@@ -97,66 +97,17 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
             }
           }
         } else {
-          // No memberships: auto-join the default org
-          const { data: allOrgs } = await supabase
-            .from('organizations')
-            .select('id, name, slug')
-            .limit(1)
-            .single()
-
-          if (allOrgs) {
-            // Add user to org_members
-            await supabase.from('org_members').insert({
-              org_id: allOrgs.id,
-              user_id: user.id,
-              role: 'member',
-            })
-
-            // Create team profile
-            await supabase.from('team_profiles').insert({
-              org_id: allOrgs.id,
-              user_id: user.id,
-              display_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'New Member',
-              email: user.email,
-              role: 'team_member',
-              status: 'active',
-            })
-
-            setOrganizations([allOrgs])
-            setCurrentOrg(allOrgs)
-
-            // Auto-send team welcome email
-            try {
-              const { data: brandData } = await supabase
-                .from('brand_profiles')
-                .select('guidelines')
-                .eq('org_id', allOrgs.id)
-                .eq('brand_key', 'np')
-                .single()
-
-              const templates = brandData?.guidelines?.email_templates || []
-              const welcomeTmpl = templates.find((t: any) => t.trigger === 'team_join' && t.enabled)
-
-              if (welcomeTmpl && user.email) {
-                const recipientName = user.user_metadata?.full_name || user.email.split('@')[0] || 'there'
-                fetch('/api/send-resources', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    recipientName,
-                    recipientEmail: user.email,
-                    personalNote: welcomeTmpl.body
-                      .replace(/\{\{recipientName\}\}/g, recipientName)
-                      .replace(/\{\{senderName\}\}/g, 'Cameron Allen'),
-                    resources: [{ name: 'NPU Hub', url: 'https://hub.neuroprogeny.com', type: 'link' }],
-                    cardName: 'Team Welcome',
-                    orgId: allOrgs.id,
-                    useSenderFromSettings: true,
-                  }),
-                }).catch(() => {}) // fire and forget
-              }
-            } catch {} // non-blocking
-          }
+          // No memberships: leave the workspace empty.
+          //
+          // This branch used to auto-join the user to whatever organization an
+          // unordered `.limit(1)` returned. Its org_members insert always failed
+          // (it wrote `org_id`; the column is `organization_id`) and the error
+          // was never checked, so execution continued and minted an orphan
+          // team_profiles row — which /api/settings PUT then accepted as proof
+          // of membership. Membership comes from an invite, never a page load.
+          // (NPU R0.4)
+          setOrganizations([])
+          setCurrentOrg(null)
         }
       }
 
