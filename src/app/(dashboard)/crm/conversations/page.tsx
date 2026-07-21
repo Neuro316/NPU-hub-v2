@@ -6,7 +6,7 @@
 // Queries existing: conversations, crm_messages, call_logs
 // ═══════════════════════════════════════════════════════════════
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import {
   Search, Phone, MessageCircle, Mail, Filter, Send, X, Check, CheckCheck, Clock,
@@ -69,6 +69,9 @@ export default function ConversationsPage() {
   // Call-back: the contact currently being dialed via the existing VoipCall path.
   const [callBackContact, setCallBackContact] = useState<CrmContact | null>(null)
   const [callBackError, setCallBackError] = useState('')
+  // Read inside the stable handleCallBackEnded without making it a dependency.
+  const selectedThreadRef = useRef<ThreadItem | null>(null)
+  selectedThreadRef.current = selectedThread
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -184,6 +187,16 @@ export default function ConversationsPage() {
     }
     setCallBackContact(contact as CrmContact)
   }
+
+  // Call ended: unmount the dialer, then refresh the thread. Stable identity via
+  // useCallback so it can never destabilise VoipCall's effects.
+  const handleCallBackEnded = useCallback(() => {
+    const thread = selectedThreadRef.current
+    setTimeout(() => {
+      setCallBackContact(null)
+      if (thread) loadTimeline(thread)
+    }, 1200)   // let "Call ended" register before the panel disappears
+  }, [])
 
   // Opening a thread clears its unread badge (staff UPDATE, 067 WITH CHECK).
   async function openThread(thread: ThreadItem) {
@@ -466,9 +479,14 @@ export default function ConversationsPage() {
           auto-starts on mount and posts to /api/voice/token with contact_id. */}
       {callBackContact && (
         <VoipCall
+          key={callBackContact.id}
           contact={callBackContact}
           onClose={() => setCallBackContact(null)}
-          onEnded={() => { if (selectedThread) loadTimeline(selectedThread) }}
+          // Tear the panel down when the call ends so nothing can re-dial, then
+          // refresh the thread so the new outbound call appears. VoipCall now
+          // guards against redialing on its own; unmounting here is the second
+          // layer — a dead panel can't start anything.
+          onEnded={handleCallBackEnded}
         />
       )}
     </div>

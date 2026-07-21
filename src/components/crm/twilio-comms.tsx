@@ -151,6 +151,23 @@ export function VoipCall({ contact, onClose, onEnded }: {
   const callRef = useRef<any>(null)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
 
+  // ── REDIAL-LOOP GUARD ──────────────────────────────────────────────────────
+  // onEnded is held in a ref, NOT in startCall's dependency array, and the start
+  // effect fires at most once per mount.
+  //
+  // The bug this fixes: startCall used to depend on `onEnded`, and the mount
+  // effect depended on `startCall`. A caller passing an INLINE onEnded (a new
+  // function identity every render) made startCall a new identity every render
+  // too, so the effect re-ran — tearing down the device and IMMEDIATELY PLACING
+  // A NEW CALL. Since onEnded typically triggers a state update, each ended call
+  // re-rendered the parent and redialed: an infinite outbound loop, billed per
+  // call. It stayed hidden because ContactCommsButtons never passes onEnded
+  // (undefined is a stable identity); the Conversations call-back was the first
+  // caller to pass one.
+  const onEndedRef = useRef(onEnded)
+  onEndedRef.current = onEnded
+  const startedRef = useRef(false)
+
   const startCall = useCallback(async () => {
     setCallState('connecting')
     setError('')
@@ -192,7 +209,9 @@ export function VoipCall({ contact, onClose, onEnded }: {
       call.on('disconnect', () => {
         setCallState('ended')
         if (timerRef.current) clearInterval(timerRef.current)
-        onEnded?.()
+        // Via the ref: calling onEnded directly would put it in this callback's
+        // dependency chain and re-arm the redial loop.
+        onEndedRef.current?.()
       })
 
       call.on('cancel', () => {
@@ -212,23 +231,29 @@ export function VoipCall({ contact, onClose, onEnded }: {
       setError(e?.message || String(e) || 'Failed to set up call')
       setCallState('error')
     }
-  }, [contact.id, onEnded])
+  }, [contact.id])
 
   useEffect(() => {
+    // Exactly one dial per mount. Even if this effect were somehow re-run, the
+    // guard prevents a second call from being placed — a redial must require a
+    // deliberate remount (closing the panel and clicking Call again).
+    if (startedRef.current) return
+    startedRef.current = true
     startCall()
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
       if (callRef.current) try { callRef.current.disconnect() } catch {}
       if (deviceRef.current) try { deviceRef.current.destroy() } catch {}
     }
-  }, [startCall])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleHangup = () => {
     if (callRef.current) try { callRef.current.disconnect() } catch {}
     if (deviceRef.current) try { deviceRef.current.destroy() } catch {}
     setCallState('ended')
     if (timerRef.current) clearInterval(timerRef.current)
-    onEnded?.()
+    onEndedRef.current?.()
   }
 
   const toggleMute = () => {
