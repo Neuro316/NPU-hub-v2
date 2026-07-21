@@ -184,7 +184,12 @@ export async function POST(request: NextRequest) {
     response.record({
       maxLength: 120,
       playBeep: true,
-      ...(appUrl ? { recordingStatusCallback: `${appUrl}/api/twilio/recording-ready` } : {}),
+      ...(appUrl ? {
+        recordingStatusCallback: `${appUrl}/api/twilio/recording-ready`,
+        // Twilio built-in transcription -> posts to /transcription (v1, swappable).
+        transcribe: true,
+        transcribeCallback: `${appUrl}/api/twilio/transcription`,
+      } : {}),
     });
     response.say({ voice: 'Polly.Joanna' }, 'We did not receive a message. Goodbye.');
 
