@@ -11,6 +11,10 @@ import PipelineResourcesManager from '@/components/crm/pipeline-resources'
 import GuestProfileSettings from '@/components/settings/GuestProfileSettings'
 import VoicemailGreeting from '@/components/crm/voicemail-greeting'
 import BrowserCallingToggle from '@/components/crm/browser-calling-toggle'
+import {
+  clampRingTimeout, DEFAULT_RING_TIMEOUT_SECONDS,
+  MIN_RING_TIMEOUT_SECONDS, MAX_RING_TIMEOUT_SECONDS,
+} from '@/lib/inbound-voice'
 
 type Section = 'email' | 'twilio' | 'ai' | 'pipeline' | 'team' | 'notifications' | 'compliance' | 'general' | 'guest_profile'
 
@@ -45,7 +49,7 @@ export default function SettingsPage() {
 
   // Settings state
   const [email, setEmail] = useState({ sending_email: '', sending_name: '', daily_limit: 500, provider: 'gmail_workspace', warmup: true })
-  const [twilio, setTwilio] = useState({ account_sid: '', auth_token: '', messaging_service_sid: '', api_key: '', api_secret: '', twiml_app_sid: '', voice_caller_id: '' })
+  const [twilio, setTwilio] = useState({ account_sid: '', auth_token: '', messaging_service_sid: '', api_key: '', api_secret: '', twiml_app_sid: '', voice_caller_id: '', ring_timeout_seconds: DEFAULT_RING_TIMEOUT_SECONDS })
   const [twilioNumbers, setTwilioNumbers] = useState<TwilioNumber[]>([{ phone: '', nickname: 'Primary', purpose: 'general' }])
   const [ai, setAi] = useState({
     anthropic_key: '', openai_key: '', gemini_key: '',
@@ -70,7 +74,7 @@ export default function SettingsPage() {
         data?.forEach(row => {
           const v = row.setting_value
           if (row.setting_key === 'crm_twilio' && v) {
-            setTwilio({ account_sid: v.account_sid || '', auth_token: v.auth_token || '', messaging_service_sid: v.messaging_service_sid || '', api_key: v.api_key || '', api_secret: v.api_secret || '', twiml_app_sid: v.twiml_app_sid || '', voice_caller_id: v.voice_caller_id || '' })
+            setTwilio({ account_sid: v.account_sid || '', auth_token: v.auth_token || '', messaging_service_sid: v.messaging_service_sid || '', api_key: v.api_key || '', api_secret: v.api_secret || '', twiml_app_sid: v.twiml_app_sid || '', voice_caller_id: v.voice_caller_id || '', ring_timeout_seconds: clampRingTimeout(v.ring_timeout_seconds) })
             if (v.numbers?.length) setTwilioNumbers(v.numbers)
           }
           if (row.setting_key === 'crm_ai' && v) setAi(prev => ({ ...prev, ...v }))
@@ -107,7 +111,12 @@ export default function SettingsPage() {
           ? current.setting_value : {}
         await supabase.from('org_settings').upsert({
           org_id: currentOrg.id, setting_key: 'crm_twilio',
-          setting_value: { ...existing, ...twilio, numbers: twilioNumbers },
+          // clamp on write as well as read — the stored value is never outside
+          // the range that keeps browser ringing functional.
+          setting_value: {
+            ...existing, ...twilio, numbers: twilioNumbers,
+            ring_timeout_seconds: clampRingTimeout(twilio.ring_timeout_seconds),
+          },
         }, { onConflict: 'org_id,setting_key' })
       }
       if (active === 'ai') {
@@ -299,6 +308,34 @@ export default function SettingsPage() {
 
               {/* Registers this browser to receive inbound calls (Stage 2). */}
               <BrowserCallingToggle />
+
+              {/* Ring duration before the caller falls to voicemail. Slider starts
+                  at MIN so it cannot be dragged to a value that would silently
+                  disable ringing; the saved value is clamped as well. */}
+              <div className="border-t border-gray-100 pt-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-np-dark">Ring Duration</label>
+                  <span className="text-xs font-semibold text-np-blue tabular-nums">
+                    {twilio.ring_timeout_seconds} seconds
+                  </span>
+                </div>
+                <p className="text-[10px] text-gray-400 mt-1 mb-2">
+                  How long your browser rings before the caller hears your voicemail greeting.
+                </p>
+                <input
+                  type="range"
+                  min={MIN_RING_TIMEOUT_SECONDS}
+                  max={MAX_RING_TIMEOUT_SECONDS}
+                  step={1}
+                  value={twilio.ring_timeout_seconds}
+                  onChange={e => setTwilio(p => ({ ...p, ring_timeout_seconds: parseInt(e.target.value, 10) || DEFAULT_RING_TIMEOUT_SECONDS }))}
+                  className="w-full accent-np-blue"
+                />
+                <div className="flex justify-between text-[9px] text-gray-400">
+                  <span>{MIN_RING_TIMEOUT_SECONDS}s</span>
+                  <span>{MAX_RING_TIMEOUT_SECONDS}s</span>
+                </div>
+              </div>
 
               {/* Test Connection */}
               <div className="border-t border-gray-100 pt-4">

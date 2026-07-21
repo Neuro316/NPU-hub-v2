@@ -3,6 +3,7 @@ import { createAdminSupabase } from '@/lib/supabase';
 import { getOrgTwilioConfig, getVoiceCallerId } from '@/lib/twilio-org';
 import { toE164 } from '@/lib/phone';
 import { receiverIdentity } from '@/lib/voice-identity';
+import { resolveInboundOrgContext, appendVoicemail } from '@/lib/inbound-voice';
 import {
   findContactByPhoneNormalized, getOrCreateConversation, bumpConversation,
   logActivity, applyAutoAssignment,
@@ -93,36 +94,11 @@ export async function POST(request: NextRequest) {
     console.log('Inbound call from:', from, 'to:', to);
     const admin = createAdminSupabase();
 
-    // Resolve the receiving number's org + its forward target. Independent of
-    // crm_twilio_numbers (not seeded until step 1): match `to` against the numbers
-    // configured in org_settings.crm_twilio, and read forward_number from there.
-    let orgId: string | null = null;
-    let forwardNumber = '';
-    let greetingUrl = '';
-    try {
-      const { data: rows } = await admin
-        .from('org_settings')
-        .select('org_id, setting_value')
-        .eq('setting_key', 'crm_twilio');
-      const match = (rows || []).find((r: any) =>
-        Array.isArray(r.setting_value?.numbers) &&
-        r.setting_value.numbers.some((n: any) => n.phone === to));
-      if (match) {
-        orgId = match.org_id;
-        forwardNumber = String(match.setting_value?.forward_number || '').trim();
-        // Custom voicemail greeting (set in CRM Settings -> Twilio). Comes back in
-        // this same row, so no extra round-trip. Must be a URL Twilio's servers
-        // can fetch UNAUTHENTICATED — a public Storage object, never the
-        // session-gated /api/comms/recording proxy (Twilio would get a 401).
-        greetingUrl = String(match.setting_value?.greeting_url || '').trim();
-        if (greetingUrl && !/^https:\/\//i.test(greetingUrl)) {
-          console.warn('Ignoring non-https greeting_url:', greetingUrl);
-          greetingUrl = '';
-        }
-      }
-    } catch (e) {
-      console.warn('inbound org resolution failed:', e);
-    }
+    // Org + custom greeting + (dormant) forward number, resolved from the
+    // receiving number. Shared with the ring-complete action handler so both
+    // sides of the flow read the same config the same way.
+    const { orgId, greetingUrl, forwardNumber, ringTimeoutSeconds } =
+      await resolveInboundOrgContext(admin, to);
 
     // Normalized last-10 contact match (069 rpc) — same as inbound SMS. Exact
     // .eq('phone', from) missed contacts stored in non-E.164 formats (e.g. the
@@ -223,30 +199,53 @@ export async function POST(request: NextRequest) {
     // ── RING THE BROWSER FIRST ────────────────────────────────────────────────
     // Dial the org's registered browser receiver(s). Twilio forks this to EVERY
     // Device registered under the identity and the first to accept wins; if none
-    // is registered, or nobody answers within the timeout, the <Dial> simply ends
-    // and TwiML execution CONTINUES to the greeting + <Record> below. That verb
-    // ordering IS the "nobody's home" detection — there is nothing to query.
+    // is registered, or nobody answers within the timeout, the <Dial> ends and
+    // Twilio POSTs the outcome to the `action` URL below. "Nobody's home" is
+    // still detected implicitly — it arrives as DialCallStatus=no-answer rather
+    // than as verb fall-through — and /ring-complete sends those callers to
+    // voicemail. There is still nothing to query.
     //
-    // Two attributes are deliberately absent, and both matter:
-    //   * NO `action`  — with an action URL Twilio POSTs there when the dial ends
-    //                    and ABANDONS the rest of this document, so the greeting
-    //                    and <Record> would never run and the caller would get
-    //                    dead air. (The OUTBOUND branch above does set action —
-    //                    do not copy it down here.)
+    // `action` IS set here, and the reason is subtle — read before changing it.
+    // Without an action URL Twilio continues THIS document when the dial ends,
+    // identically whether the browser answered or not. So a browser hang-up sent
+    // the caller onward into the greeting + <Record>: hanging up promoted the
+    // caller to voicemail instead of ending their call. DialCallStatus is the
+    // only signal that distinguishes the two, and it exists only with an action.
+    //
+    // The rule that action must NOT strand the voicemail fallback still holds —
+    // it is satisfied by /ring-complete emitting the voicemail TwiML itself on
+    // the no-answer branch. That is why the verbs below are now reachable ONLY
+    // when no ring leg was dialled at all.
+    //
     //   * NO `callerId` — for a <Client> leg this would overwrite From, and the
     //                     browser needs From intact to show who is calling and to
     //                     run the normalized contact match.
     // The identity comes from receiverIdentity() — the same helper the token
     // route uses. Neither side spells the string.
     if (orgId) {
-      const ring = response.dial({ timeout: 20 });
+      const ring = response.dial({
+        // Configurable in CRM Settings -> Twilio; clamped to 5-30s on read so a
+        // stray 0 can't silently disable browser ringing. 20s when unset.
+        timeout: ringTimeoutSeconds,
+        ...(appUrl ? { action: `${appUrl}/api/twilio/ring-complete`, method: 'POST' } : {}),
+      });
       ring.client(receiverIdentity(orgId));
+
+      // With an action set, everything after this <Dial> is unreachable —
+      // ring-complete owns both outcomes. Return now so that is explicit rather
+      // than relying on dead verbs being harmless.
+      if (appUrl) {
+        return new NextResponse(response.toString(), {
+          headers: { 'Content-Type': 'text/xml' },
+        });
+      }
     }
 
     // DORMANT: legacy phone forwarding. forward_number is intentionally cleared —
-    // browser-ring REPLACES forwarding — so this never executes. Left in place
-    // rather than deleted, but note it would run as a SECOND leg after the browser
-    // ring if forward_number were ever repopulated.
+    // browser-ring REPLACES forwarding — so this never executes. It is now doubly
+    // unreachable: the ring branch above returns whenever an org resolved, and
+    // forward_number is only ever populated on a resolved org. Kept as a record
+    // of the old path rather than deleted.
     // callerId = the NP number that was dialed, so the staff phone shows a
     // business call rather than the raw external caller.
     if (forwardNumber) {
@@ -261,25 +260,10 @@ export async function POST(request: NextRequest) {
     // Voicemail fallback — runs when the forward does not connect (no-answer/busy),
     // or immediately if no forward number is configured. recordingStatusCallback ->
     // recording-ready, which attributes by CallSid and marks the row 'voicemail'.
-    // Greeting: the org's recorded <Play> when one is set, otherwise the default
-    // <Say>. Degrading to <Say> (rather than silence) means a missing/removed
-    // greeting still gives the caller a usable prompt.
-    if (greetingUrl) {
-      response.play(greetingUrl);
-    } else {
-      response.say({ voice: 'Polly.Joanna' }, 'Please leave a message after the tone.');
-    }
-    response.record({
-      maxLength: 120,
-      playBeep: true,
-      ...(appUrl ? {
-        recordingStatusCallback: `${appUrl}/api/twilio/recording-ready`,
-        // Twilio built-in transcription -> posts to /transcription (v1, swappable).
-        transcribe: true,
-        transcribeCallback: `${appUrl}/api/twilio/transcription`,
-      } : {}),
-    });
-    response.say({ voice: 'Polly.Joanna' }, 'We did not receive a message. Goodbye.');
+    // Reached only when NO ring leg was dialled (org unresolved, or no appUrl so
+    // no action URL could be built). Same voicemail TwiML the action handler
+    // emits — one implementation, so the two paths cannot drift.
+    appendVoicemail(response, { greetingUrl, appUrl });
 
     return new NextResponse(response.toString(), {
       headers: { 'Content-Type': 'text/xml' },
