@@ -1092,7 +1092,7 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,on
   const [showAdd,setAdd]=useState(false)
   const [editId,setEditId]=useState<string|null>(null)
   const [cf,setCF]=useState({payeeType:'dr' as string,clinicId:'',checkNum:'',date:td(),amount:'',memo:''})
-  const [drill,setDrill]=useState<{payee:string;label:string;date:string|null;rows:any[]}|null>(null)
+  const [drill,setDrill]=useState<{payee:string;label:string;date:string|null;rows:any[];recon?:{label:string;amount:number}[];net?:number}|null>(null)
   const [showAdj,setShowAdj]=useState(false)
   const [af,setAF]=useState({payeeType:'clinic' as string,clinicId:'',direction:'add' as string,amount:'',memo:'',date:td(),isRecon:false})
 
@@ -1131,12 +1131,17 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,on
     })));return o
   },[clients,locs,clinics,cfg])
 
-  // Bucket owed splits by upcoming payout date (gross, ignores checks)
+  // Bucket owed splits by payout date (gross, ignores checks).
+  // Dates already past are NOT dropped - they collect into `pastTotal`, which the
+  // current payout absorbs (see payoutView) so nothing falls out of the schedule.
   const payoutBuckets=useMemo(()=>{
     const today=td()
     type Row={clientName:string;paymentDate:string;svc:string;amount:number;share:number}
     const acc:Record<string,Record<string,{total:number;rows:Row[]}>>={}
-    const add=(key:string,payDate:string,share:number,row:Row)=>{if(payDate<today)return;if(!acc[key])acc[key]={};if(!acc[key][payDate])acc[key][payDate]={total:0,rows:[]};acc[key][payDate].total+=share;acc[key][payDate].rows.push(row)}
+    const pastAcc:Record<string,{total:number;rows:Row[]}>={}
+    const add=(key:string,payDate:string,share:number,row:Row)=>{
+      if(payDate<today){if(!pastAcc[key])pastAcc[key]={total:0,rows:[]};pastAcc[key].total+=share;pastAcc[key].rows.push(row);return}
+      if(!acc[key])acc[key]={};if(!acc[key][payDate])acc[key][payDate]={total:0,rows:[]};acc[key][payDate].total+=share;acc[key][payDate].rows.push(row)}
     clients.forEach(cl=>cl.services.forEach(sv=>sv.payments.forEach(pm=>{
       if(pm.amount===0)return
       const pd=pm.payout_date||getPayoutDate(pm.payment_date)
@@ -1144,12 +1149,16 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,on
       if(sp.dr>0)add('dr',pd,sp.dr,{clientName:cl.name,paymentDate:pm.payment_date,svc:sv.service_type,amount:pm.amount,share:sp.dr})
       Object.entries(sp.clinicAmts).forEach(([cid,ca])=>{if(ca>0)add(cid,pd,ca,{clientName:cl.name,paymentDate:pm.payment_date,svc:sv.service_type,amount:pm.amount,share:ca})})
     })))
-    const out:Record<string,{nextDate:string|null;nextAmt:number;nextRows:Row[];followDate:string|null;followAmt:number;followRows:Row[]}>={}
-    Object.entries(acc).forEach(([key,byDate])=>{
+    const out:Record<string,{nextDate:string|null;nextAmt:number;nextRows:Row[];followDate:string|null;followAmt:number;followRows:Row[];pastTotal:number;pastRows:Row[];futureTotal:number}>={}
+    // Union of keys: a payee can have only past shares and no upcoming ones.
+    Array.from(new Set([...Object.keys(acc),...Object.keys(pastAcc)])).forEach(key=>{
+      const byDate=acc[key]||{}
       const dates=Object.keys(byDate).sort()
       out[key]={
         nextDate:dates[0]||null,nextAmt:dates[0]?byDate[dates[0]].total:0,nextRows:dates[0]?byDate[dates[0]].rows:[],
-        followDate:dates[1]||null,followAmt:dates[1]?byDate[dates[1]].total:0,followRows:dates[1]?byDate[dates[1]].rows:[]
+        followDate:dates[1]||null,followAmt:dates[1]?byDate[dates[1]].total:0,followRows:dates[1]?byDate[dates[1]].rows:[],
+        pastTotal:pastAcc[key]?.total||0,pastRows:pastAcc[key]?.rows||[],
+        futureTotal:dates.reduce((s,d)=>s+byDate[d].total,0)
       }
     })
     return out
@@ -1170,14 +1179,46 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,on
   },[checks])
 
   // Build payee list
-  type Payee={type:'clinic'|'dr';id:string|null;name:string;color:string;owedAmt:number;mktgAmt:number;checkAmt:number;adjAmt:number;net:number}
+  type Payee={type:'clinic'|'dr';id:string|null;name:string;color:string;owedAmt:number;mktgAmt:number;checkAmt:number;adjAmt:number;net:number;isNP:boolean}
   const payees:Payee[]=useMemo(()=>{
     const list:Payee[]=[]
-    clinics.forEach(c=>{const o=owed.clinics[c.id]||0;const m=mktgTotals.clinics[c.id]||0;const ch=checkTotals.clinics[c.id]||0;const aj=adjTotals.balance.clinics[c.id]||0;list.push({type:'clinic',id:c.id,name:c.name.split('(')[0].trim(),color:'#d97706',owedAmt:o,mktgAmt:m,checkAmt:ch,adjAmt:aj,net:o+aj-m-ch})})
+    clinics.forEach(c=>{const o=owed.clinics[c.id]||0;const m=mktgTotals.clinics[c.id]||0;const ch=checkTotals.clinics[c.id]||0;const aj=adjTotals.balance.clinics[c.id]||0;list.push({type:'clinic',id:c.id,name:c.name.split('(')[0].trim(),color:'#d97706',owedAmt:o,mktgAmt:m,checkAmt:ch,adjAmt:aj,net:o+aj-m-ch,isNP:!!c.is_neuro_progeny})})
     const drO=owed.dr;const drM=mktgTotals.dr;const drC=checkTotals.dr;const drA=adjTotals.balance.dr
-    list.push({type:'dr',id:null,name:'Dr. Yonce',color:'#9333ea',owedAmt:drO,mktgAmt:drM,checkAmt:drC,adjAmt:drA,net:drO+drA-drM-drC})
+    list.push({type:'dr',id:null,name:'Dr. Yonce',color:'#9333ea',owedAmt:drO,mktgAmt:drM,checkAmt:drC,adjAmt:drA,net:drO+drA-drM-drC,isNP:false})
     return list
   },[clinics,owed,mktgTotals,checkTotals,adjTotals])
+
+  // Prior-period money rolls into the CURRENT payout: shares whose payout date has
+  // already passed, less checks written and unwaived marketing, plus applied
+  // adjustments. Checks and marketing carry no payout date, so they net globally
+  // against prior periods. The result is deliberately NOT clamped at zero - a
+  // negative is a real credit that keeps carrying forward until future earnings
+  // absorb it, and clamping would drop dollars the Net Balance still counts.
+  //
+  // SCOPED TO NEURO PROGENY for now. The other payees run through the flat-fee
+  // waterfall and carry years of unwaived marketing that has never hit a payout
+  // tile; rolling it in unverified could misstate a real check run. They keep the
+  // previous behaviour (scheduled + pending adj only) until their numbers are
+  // checked, which also means their payouts still won't tie to Net Balance -
+  // hence the identity guard below is NP-only too.
+  const payoutView=useMemo(()=>{
+    const out:Record<string,{pastDue:number;pastRows:any[];nextDate:string|null;nextScheduled:number;nextRows:any[];adj:number;nextTotal:number;followDate:string|null;followAmt:number;followRows:any[]}>={}
+    payees.forEach(p=>{
+      const key=p.id||'dr'
+      const b=payoutBuckets[key]
+      const pending=p.type==='dr'?adjTotals.pending.dr:(adjTotals.pending.clinics[p.id||'']||0)
+      const applied=p.adjAmt-pending
+      const roll=p.isNP
+      const pastDue=roll?r2((b?.pastTotal||0)-p.checkAmt-p.mktgAmt+applied):0
+      const nextScheduled=b?.nextAmt||0
+      // Nothing upcoming but money still outstanding: hang it on this period's date.
+      const nextDate=b?.nextDate||(roll&&Math.abs(pastDue)>=0.01?getPayoutDate(td()):null)
+      out[key]={pastDue,pastRows:roll?(b?.pastRows||[]):[],nextDate,nextScheduled,nextRows:b?.nextRows||[],
+        adj:pending,nextTotal:r2(pastDue+nextScheduled+pending),
+        followDate:b?.followDate||null,followAmt:b?.followAmt||0,followRows:b?.followRows||[]}
+    })
+    return out
+  },[payees,payoutBuckets,adjTotals])
 
   // Guard: NEXT PAYOUT's adj must be exactly the unapplied subset of the adj baked
   // into NET BALANCE. Recomputed from raw rows so a future refactor that drops
@@ -1192,9 +1233,18 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,on
       if(Math.abs(p.adjAmt-sum(rows))>=0.01)out.push(`${p.name}: net balance adj ${$$(p.adjAmt)} ≠ ledger ${$$(sum(rows))}`)
       if(Math.abs(inPayout-pend)>=0.01)out.push(`${p.name}: next payout adj ${$$(inPayout)} ≠ unapplied ${$$(pend)}`)
       if(Math.abs((p.adjAmt-inPayout)-appl)>=0.01)out.push(`${p.name}: applied adj not reconciled between payout and balance`)
+      // Full identity: now that the current payout absorbs prior periods, every
+      // dollar in Net Balance sits in exactly one payout bucket.
+      //   current payout + all remaining scheduled buckets == net balance
+      const v=payoutView[p.id||'dr'],b=payoutBuckets[p.id||'dr']
+      if(v&&p.isNP){
+        const scheduledAfterNext=(b?.futureTotal||0)-v.nextScheduled
+        const total=r2(v.nextTotal+scheduledAfterNext)
+        if(Math.abs(total-r2(p.net))>=0.01)out.push(`${p.name}: payouts ${$$(total)} ≠ net balance ${$$(p.net)}`)
+      }
     })
     return out
-  },[payees,adjustments,adjTotals])
+  },[payees,adjustments,adjTotals,payoutView,payoutBuckets])
 
   const doAdd=async()=>{
     const a=parseFloat(cf.amount)||0;if(a<=0)return
@@ -1231,9 +1281,16 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,on
       <div className="p-4">
         <div className="flex gap-3 flex-wrap mb-4">
           <div className="flex-1 min-w-[120px] p-3 rounded-lg bg-gray-50 border border-gray-100 text-center"><p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Split Owed</p><p className="text-base font-bold" style={{color:p.color,fontFeatureSettings:'"tnum"'}}>{$$(p.owedAmt)}</p></div>
-          {(()=>{const b=payoutBuckets[p.id||'dr'];const adj=p.type==='dr'?adjTotals.pending.dr:(adjTotals.pending.clinics[p.id||'']||0);const basePay=b?.nextAmt||0;const adjTotal=basePay+adj;return <>
-            <button onClick={()=>b?.nextDate&&setDrill({payee:p.name,label:'Next Payout',date:b.nextDate,rows:b.nextRows})} className="flex-1 min-w-[120px] p-3 rounded-lg bg-blue-50 border border-blue-100 text-center hover:bg-blue-100 transition-colors cursor-pointer disabled:cursor-default" disabled={!b?.nextDate}><p className="text-[9px] font-semibold uppercase tracking-wider text-blue-400 mb-1">Next Payout{b?.nextDate?' · '+fD(b.nextDate):''}</p><p className="text-base font-bold text-blue-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(adjTotal)}</p>{Math.abs(adj)>0.001&&<p className="text-[9px] text-gray-400 mt-0.5" style={{fontFeatureSettings:'"tnum"'}}>Pmts {$$(basePay)} · Adj {adj>=0?'+':'−'}{$$(Math.abs(adj))}</p>}</button>
-            <button onClick={()=>b?.followDate&&setDrill({payee:p.name,label:'Following Payout',date:b.followDate,rows:b.followRows})} className="flex-1 min-w-[120px] p-3 rounded-lg bg-indigo-50 border border-indigo-100 text-center hover:bg-indigo-100 transition-colors cursor-pointer disabled:cursor-default" disabled={!b?.followDate}><p className="text-[9px] font-semibold uppercase tracking-wider text-indigo-400 mb-1">Following Payout{b?.followDate?' · '+fD(b.followDate):''}</p><p className="text-base font-bold text-indigo-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(b?.followAmt||0)}</p></button>
+          {(()=>{const v=payoutView[p.id||'dr'];const adj=v?.adj||0;const basePay=v?.nextScheduled||0;const pastDue=v?.pastDue||0;const adjTotal=v?.nextTotal||0;
+            const drillRows=[...(v?.pastRows||[]),...(v?.nextRows||[])];return <>
+            <button onClick={()=>v?.nextDate&&setDrill({payee:p.name,label:'Next Payout',date:v.nextDate,rows:drillRows,
+              ...(p.isNP?{net:v.nextTotal,recon:[
+                {label:'Checks already written',amount:-p.checkAmt},
+                {label:'Marketing deductions',amount:-p.mktgAmt},
+                {label:'Adjustments (applied)',amount:p.adjAmt-adj},
+                {label:'Adjustments (pending)',amount:adj},
+              ].filter(r=>Math.abs(r.amount)>=0.01)}:{})})} className="flex-1 min-w-[120px] p-3 rounded-lg bg-blue-50 border border-blue-100 text-center hover:bg-blue-100 transition-colors cursor-pointer disabled:cursor-default" disabled={!v?.nextDate}><p className="text-[9px] font-semibold uppercase tracking-wider text-blue-400 mb-1">Next Payout{v?.nextDate?' · '+fD(v.nextDate):''}</p><p className={`text-base font-bold ${adjTotal<-0.01?'text-red-500':'text-blue-600'}`} style={{fontFeatureSettings:'"tnum"'}}>{$$(adjTotal)}{adjTotal<-0.01?' (credit)':''}</p>{(Math.abs(adj)>0.001||Math.abs(pastDue)>0.001)&&<p className="text-[9px] text-gray-400 mt-0.5" style={{fontFeatureSettings:'"tnum"'}}>{Math.abs(pastDue)>0.001?`Prior ${pastDue>=0?'+':'−'}${$$(Math.abs(pastDue))} · `:''}Pmts {$$(basePay)}{Math.abs(adj)>0.001?` · Adj ${adj>=0?'+':'−'}${$$(Math.abs(adj))}`:''}</p>}</button>
+            <button onClick={()=>v?.followDate&&setDrill({payee:p.name,label:'Following Payout',date:v.followDate,rows:v.followRows})} className="flex-1 min-w-[120px] p-3 rounded-lg bg-indigo-50 border border-indigo-100 text-center hover:bg-indigo-100 transition-colors cursor-pointer disabled:cursor-default" disabled={!v?.followDate}><p className="text-[9px] font-semibold uppercase tracking-wider text-indigo-400 mb-1">Following Payout{v?.followDate?' · '+fD(v.followDate):''}</p><p className="text-base font-bold text-indigo-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(v?.followAmt||0)}</p></button>
           </>})()}
           <div className="flex-1 min-w-[120px] p-3 rounded-lg bg-red-50 border border-red-100 text-center"><p className="text-[9px] font-semibold uppercase tracking-wider text-red-400 mb-1">Marketing Ded.</p><p className="text-base font-bold text-red-600" style={{fontFeatureSettings:'"tnum"'}}>-{$$(p.mktgAmt)}</p></div>
           <div className="flex-1 min-w-[120px] p-3 rounded-lg bg-green-50 border border-green-100 text-center"><p className="text-[9px] font-semibold uppercase tracking-wider text-green-500 mb-1">Checks Paid</p><p className="text-base font-bold text-green-600" style={{fontFeatureSettings:'"tnum"'}}>-{$$(p.checkAmt)}</p></div>
@@ -1322,7 +1379,11 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,on
           <td className="py-2 px-3 text-xs text-gray-500 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r.amount)}</td>
           <td className="py-2 px-3 text-xs font-bold text-np-dark text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(r.share)}</td>
         </tr>)}</tbody>
-        <tfoot><tr className="border-t border-gray-200"><td className="py-2 px-3 text-xs font-bold text-np-dark" colSpan={4}>Total</td><td className="py-2 px-3 text-sm font-bold text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(drill.rows.reduce((s:number,r:any)=>s+r.share,0))}</td></tr></tfoot>
+        <tfoot>
+          <tr className="border-t border-gray-200"><td className="py-2 px-3 text-xs font-bold text-np-dark" colSpan={4}>{drill.recon?'Gross shares (incl. prior periods)':'Total'}</td><td className="py-2 px-3 text-sm font-bold text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(drill.rows.reduce((s:number,r:any)=>s+r.share,0))}</td></tr>
+          {drill.recon?.map((r,i)=><tr key={i}><td className="py-1 px-3 text-[11px] text-gray-500" colSpan={4}>{r.label}</td><td className={`py-1 px-3 text-[11px] text-right ${r.amount<0?'text-red-500':'text-green-600'}`} style={{fontFeatureSettings:'"tnum"'}}>{r.amount>=0?'+':'−'}{$$(Math.abs(r.amount))}</td></tr>)}
+          {drill.net!==undefined&&<tr className="border-t border-gray-200"><td className="py-2 px-3 text-xs font-bold text-np-dark" colSpan={4}>Net this payout</td><td className={`py-2 px-3 text-sm font-bold text-right ${drill.net<-0.01?'text-red-500':'text-np-dark'}`} style={{fontFeatureSettings:'"tnum"'}}>{$$(drill.net)}</td></tr>}
+        </tfoot>
       </table>
     </Mdl>}
   </div>
