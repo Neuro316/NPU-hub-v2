@@ -10,7 +10,7 @@ interface AcctClinic { id: string; org_id: string; name: string; contact_name: s
 interface AcctPayment { id: string; service_id: string; client_id: string; amount: number; payment_date: string; notes: string; split_snw: number; split_clinic: number; split_dr: number; clinic_id: string | null; payout_date: string; payout_period: string; is_paid_out: boolean }
 interface AcctService { id: string; client_id: string; service_type: 'Map' | 'Program' | 'Clarity' | 'qEEG'; amount: number; service_date: string; notes: string; payments: AcctPayment[] }
 interface AcctClient { id: string; name: string; location_id: string; org_id: string; notes: string; date_of_birth?: string | null; phone?: string | null; email?: string | null; address_street?: string | null; address_city?: string | null; address_state?: string | null; address_zip?: string | null; enrolled_contact_id?: string | null; services: AcctService[] }
-interface AcctConfig { map_splits: { snw: number; dr: number; snw_flat: number; dr_flat: number }; cc_processing_fee: number; snw_base_pct: number; snw_base_flat: number; default_map_price: number; default_program_price: number; np_splits?: { clarity_snw_pct: number; qeeg_snw_pct: number }; payout_agreement: string; marketing?: { monthly_total: number; clinic_share: number; dr_share: number } }
+interface AcctConfig { map_splits: { snw: number; dr: number; snw_flat: number; dr_flat: number }; cc_processing_fee: number; snw_base_pct: number; snw_base_flat: number; default_map_price: number; default_program_price: number; np_splits?: { clarity_snw_pct?: number; qeeg_snw_pct: number }; payout_agreement: string; marketing?: { monthly_total: number; clinic_share: number; dr_share: number } }
 interface AcctCheck { id: string; org_id: string; payee_type: 'clinic' | 'dr'; payee_clinic_id: string | null; check_number: string; check_date: string; amount: number; memo: string; created_at: string }
 interface AcctAdjustment { id: string; org_id: string; payee_type: 'clinic' | 'dr'; payee_clinic_id: string | null; direction: 'add' | 'subtract'; amount: number; memo: string; adj_date: string; is_applied: boolean; is_reconciliation: boolean; created_at: string }
 interface AcctMktgCharge { id: string; org_id: string; month: string; payee_type: 'clinic' | 'dr'; payee_clinic_id: string | null; amount: number; description: string; waived: boolean }
@@ -50,10 +50,26 @@ function getStatus(c: AcctClient) {
 // ══════════════════════════════════════════════════════════════
 const PRE_AUG_CUTOFF = '2025-08-01'
 const PRE_AUG_SNW_PCT = 10
+// Sensorium's cut on a Neuro Progeny Clarity Protocol enrollment: flat, per
+// enrollment, never a % of price paid. NP keeps the entire remainder.
+const CLARITY_SNW_FLAT = 300
 const NP_ORG_ID = '00000000-0000-0000-0000-000000000001'
 const NP_PIPELINE_ID = 'pipeline-1771530511407'
 const NP_STAGE_SIGNED_UP = 'Signed up - add user email used to sign up in Circle; dependency has to be joined circle '
 const NP_STAGE_PAID = 'Paid'
+
+// Same ordering rule as priorPaidFor, for a payment still being composed in a
+// form (it has no id yet). Keeps the distribution preview honest about a flat
+// fee that earlier payments may already have satisfied.
+const priorPaidForDraft = (sv: AcctService, date: string, excludeId?: string) =>
+  sv.payments.filter(p => p.id !== excludeId && p.payment_date <= date).reduce((s, p) => s + p.amount, 0)
+
+// Payments on this service that land before `pm` (date, then id as tiebreak).
+// Order-independent, so callers can iterate payments in any order.
+const priorPaidFor = (sv: AcctService, pm: AcctPayment) => {
+  const k = (p: AcctPayment) => `${p.payment_date}|${p.id}`
+  return sv.payments.filter(p => k(p) < k(pm)).reduce((s, p) => s + p.amount, 0)
+}
 
 function calcSplit(
   amt: number,
@@ -64,6 +80,7 @@ function calcSplit(
   cfg: AcctConfig,
   serviceTotal?: number,
   serviceStartDate?: string, // if SERVICE started pre-Aug, ALL payments use 10%
+  priorPaid: number = 0,     // paid on this service before this payment; flat fees are taken once
 ) {
   if (amt <= 0) return { snw: 0, dr: 0, cc: 0, snwService: 0, clinicAmts: {} as Record<string, number> }
   const ccPct = cfg.cc_processing_fee ?? 3
@@ -86,15 +103,16 @@ function calcSplit(
 
   // ── NEURO PROGENY: two-way split (Sensorium % + NP remainder), no Dr/waterfall ──
   if (cl && cl.is_neuro_progeny) {
-    const np = cfg.np_splits || { clarity_snw_pct: 16.6945, qeeg_snw_pct: 23.0 }
+    const np = cfg.np_splits || { qeeg_snw_pct: 23.0 }
     let snwAmt: number
     if (svcType === 'qEEG') {
       snwAmt = r2(amt * np.qeeg_snw_pct / 100)
     } else {
-      // Clarity/Program: Sensorium gets a flat $300 total across the whole service,
-      // allocated proportionally to each payment so partial payments sum to exactly $300.
-      const svcTotal = serviceTotal || 0
-      snwAmt = svcTotal > 0 ? r2(amt * (300 / svcTotal)) : r2(Math.min(300, amt))
+      // Flat $300 per enrollment regardless of price paid. Collected off the
+      // earliest payments: on a payment plan each payment pays the fee down
+      // until $300 is satisfied, then NP keeps 100% of everything after.
+      const taken = Math.min(CLARITY_SNW_FLAT, priorPaid)
+      snwAmt = r2(Math.min(CLARITY_SNW_FLAT, priorPaid + amt) - taken)
     }
     const npAmt = r2(amt - snwAmt)
     return { snw: Math.max(snwAmt, 0), dr: 0, cc: ccAmt, snwService: r2(Math.max(snwAmt - ccAmt, 0)), clinicAmts: { [cl.id]: Math.max(npAmt, 0) } as Record<string, number> }
@@ -247,8 +265,8 @@ function FS({label,value,onChange,options}:any) {
       {options.map((o:any)=><option key={o.v} value={o.v}>{o.l}</option>)}
     </select></div>
 }
-function SplitPrev({amt,svcType,locId,locs,clinics,cfg,serviceTotal,serviceStartDate}:any) {
-  if (!amt||amt<=0) return null; const sp=calcSplit(amt,svcType,locId,locs,clinics,cfg,serviceTotal,serviceStartDate)
+function SplitPrev({amt,svcType,locId,locs,clinics,cfg,serviceTotal,serviceStartDate,priorPaid=0}:any) {
+  if (!amt||amt<=0) return null; const sp=calcSplit(amt,svcType,locId,locs,clinics,cfg,serviceTotal,serviceStartDate,priorPaid)
   const cl=(()=>{const loc=locs.find((l:any)=>l.id===locId);return loc?.clinic_id?clinics.find((c:any)=>c.id===loc.clinic_id):null})()
   const isNP = !!cl?.is_neuro_progeny
   const isWaterfall = svcType==='Program' && cl && (cl.flat_clinic||0)>0
@@ -404,7 +422,7 @@ function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onEditSvc,onAddPmt,onEditP
       {tab==='svc'&&<button onClick={()=>{setSF({t:isNP?'Clarity':'Map',a:isNP?'1797':'600',d:td(),n:''});setSAS(true)}} className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold text-np-blue bg-np-blue/10 rounded-md hover:bg-np-blue/20 mb-1"><Plus className="w-3 h-3"/>Add Service</button>}
     </div>
     {tab==='svc'&&cl.services.map((sv:AcctService)=>{
-      const svP=sv.payments.reduce((s:number,p:AcctPayment)=>s+p.amount,0);const sp=sv.payments.reduce((acc,pm)=>{const s=calcSplit(pm.amount,sv.service_type,cl.location_id,locs,clinics,cfg,sv.amount,sv.service_date);return{snw:r2(acc.snw+s.snw),dr:r2(acc.dr+s.dr),cc:r2(acc.cc+s.cc),snwService:r2(acc.snwService+s.snwService),clinicAmts:Object.fromEntries(Object.entries(s.clinicAmts).map(([k,v])=>[k,r2((acc.clinicAmts[k]||0)+v)]))}},{snw:0,dr:0,cc:0,snwService:0,clinicAmts:{}} as ReturnType<typeof calcSplit>);const rem=sv.amount-svP;const clAmt=Object.values(sp.clinicAmts).reduce((s,v)=>s+v,0)
+      const svP=sv.payments.reduce((s:number,p:AcctPayment)=>s+p.amount,0);const sp=sv.payments.reduce((acc,pm)=>{const s=calcSplit(pm.amount,sv.service_type,cl.location_id,locs,clinics,cfg,sv.amount,sv.service_date,priorPaidFor(sv,pm));return{snw:r2(acc.snw+s.snw),dr:r2(acc.dr+s.dr),cc:r2(acc.cc+s.cc),snwService:r2(acc.snwService+s.snwService),clinicAmts:Object.fromEntries(Object.entries(s.clinicAmts).map(([k,v])=>[k,r2((acc.clinicAmts[k]||0)+v)]))}},{snw:0,dr:0,cc:0,snwService:0,clinicAmts:{}} as ReturnType<typeof calcSplit>);const rem=sv.amount-svP;const clAmt=Object.values(sp.clinicAmts).reduce((s,v)=>s+v,0)
       return <div key={sv.id} className="rounded-xl border border-gray-100 bg-white overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50/50"><div className="flex items-center gap-2"><h4 className="text-xs font-bold text-np-dark">{svcLabel(sv.service_type)}</h4><button onClick={()=>{setEditingSvc(editingSvc===sv.id?null:sv.id);setEsSF({a:String(sv.amount),d:sv.service_date,n:sv.notes||''})}} className="p-0.5 rounded hover:bg-np-blue/10" title="Edit service"><Pencil className="w-3 h-3 text-gray-300 hover:text-np-blue"/></button></div><span className="text-xs font-bold text-np-dark" style={{fontFeatureSettings:'"tnum"'}}>{$$(sv.amount)}</span></div>
         {editingSvc===sv.id&&<div className="px-4 py-3 bg-blue-50/50 border-b border-blue-100 space-y-2">
@@ -437,7 +455,7 @@ function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onEditSvc,onAddPmt,onEditP
           <button onClick={()=>{setSAP(sv.id);setPF({a:rem>0?String(rem):'',d:td(),n:''})}} className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold text-np-blue border border-np-blue/30 rounded-md hover:bg-np-blue/5"><Plus className="w-3 h-3"/>Add Payment</button>
         </div></div>})}
     {tab==='pmt'&&<div className="rounded-xl border border-gray-100 bg-white overflow-hidden"><div className="overflow-auto"><table className="w-full text-left"><thead><tr className="border-b border-gray-100 bg-gray-50/30"><TH>Date</TH><TH>Service</TH><TH className="text-right">Amount</TH><TH className="text-right text-np-blue">SNW</TH>{clObj&&<TH className="text-right text-amber-600">{isNP?'Neuro Progeny':'Clinic'}</TH>}{!isNP&&<TH className="text-right text-purple-600">Dr.Y</TH>}<TH>Payout</TH><TH></TH></tr></thead>
-      <tbody>{cl.services.flatMap((sv:AcctService)=>sv.payments.map((pm:AcctPayment)=>{const sp=calcSplit(pm.amount,sv.service_type,cl.location_id,locs,clinics,cfg,sv.amount,sv.service_date);return{...pm,svc:sv.service_type,...sp,_orig:pm}})).sort((a:any,b:any)=>a.payment_date.localeCompare(b.payment_date)).map((pm:any,i:number)=>{
+      <tbody>{cl.services.flatMap((sv:AcctService)=>sv.payments.map((pm:AcctPayment)=>{const sp=calcSplit(pm.amount,sv.service_type,cl.location_id,locs,clinics,cfg,sv.amount,sv.service_date,priorPaidFor(sv,pm));return{...pm,svc:sv.service_type,...sp,_orig:pm}})).sort((a:any,b:any)=>a.payment_date.localeCompare(b.payment_date)).map((pm:any,i:number)=>{
         const clA=Object.values(pm.clinicAmts).reduce((s:number,v:any)=>s+v,0) as number
         return <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50 group"><td className="py-2 px-3 text-xs text-gray-600">{fD(pm.payment_date)}</td><td className="py-2 px-3 text-xs text-gray-400">{pm.svc}</td>
           <td className="py-2 px-3 text-xs font-semibold text-green-600 text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(pm.amount)}</td><td className="py-2 px-3 text-xs text-np-blue text-right" style={{fontFeatureSettings:'"tnum"'}}>{$$(pm.snw)}</td>
@@ -469,7 +487,7 @@ function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onEditSvc,onAddPmt,onEditP
         <div className="flex justify-between text-xs"><span className="text-gray-400">Paid:</span><span className="font-semibold text-green-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(tSvc.payments.reduce((s:number,p:AcctPayment)=>s+p.amount,0))}</span></div>
         <div className="flex justify-between text-xs"><span className="text-gray-400">Remaining:</span><span className="font-bold text-amber-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(tSvc.amount-tSvc.payments.reduce((s:number,p:AcctPayment)=>s+p.amount,0))}</span></div></div>
       <FI label="Amount ($)" value={pf.a} onChange={(v:string)=>setPF(p=>({...p,a:v}))} type="number"/><FI label="Date" value={pf.d} onChange={(v:string)=>setPF(p=>({...p,d:v}))} type="date"/><FI label="Note" value={pf.n} onChange={(v:string)=>setPF(p=>({...p,n:v}))}/>
-      <SplitPrev amt={parseFloat(pf.a)||0} svcType={tSvc.service_type} locId={cl.location_id} locs={locs} clinics={clinics} cfg={cfg} serviceTotal={tSvc.amount} serviceStartDate={tSvc.service_date}/>
+      <SplitPrev amt={parseFloat(pf.a)||0} svcType={tSvc.service_type} locId={cl.location_id} locs={locs} clinics={clinics} cfg={cfg} serviceTotal={tSvc.amount} serviceStartDate={tSvc.service_date} priorPaid={priorPaidForDraft(tSvc,pf.d)}/>
       <div className="flex gap-2 mt-4 justify-end"><Btn outline onClick={()=>setSAP(null)}>Cancel</Btn><Btn onClick={()=>doAP(showAP!)}>Record</Btn></div></Mdl>}
     {editPm&&<Mdl title="Edit Payment" onClose={()=>setEditPm(null)}>
       {editSvc&&<div className="p-3 bg-gray-50 rounded-xl border border-gray-100 mb-4 space-y-1">
@@ -479,7 +497,7 @@ function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onEditSvc,onAddPmt,onEditP
       <FI label="Amount ($)" value={ef.a} onChange={(v:string)=>setEF(p=>({...p,a:v}))} type="number"/>
       <FI label="Date" value={ef.d} onChange={(v:string)=>setEF(p=>({...p,d:v}))} type="date"/>
       <FI label="Note" value={ef.n} onChange={(v:string)=>setEF(p=>({...p,n:v}))}/>
-      {editSvc&&<SplitPrev amt={parseFloat(ef.a)||0} svcType={editSvc.service_type} locId={cl.location_id} locs={locs} clinics={clinics} cfg={cfg} serviceTotal={editSvc.amount} serviceStartDate={editSvc.service_date}/>}
+      {editSvc&&<SplitPrev amt={parseFloat(ef.a)||0} svcType={editSvc.service_type} locId={cl.location_id} locs={locs} clinics={clinics} cfg={cfg} serviceTotal={editSvc.amount} serviceStartDate={editSvc.service_date} priorPaid={priorPaidForDraft(editSvc,ef.d,editPm.id)}/>}
       <div className="flex gap-2 mt-4 justify-end">
         <BtnDanger onClick={()=>{doDelete(editPm);setEditPm(null)}}>Delete Payment</BtnDanger>
         <div className="flex-1"/>
@@ -529,7 +547,7 @@ function ReportView({ clients, locs, clinics, cfg, checks, mktg }: { clients: Ac
         if (dTo && pm.payment_date > dTo) return
         if (selCtr !== 'all' && cl.location_id !== selCtr) return
         if (selSvc !== 'all' && sv.service_type !== selSvc) return
-        const sp = calcSplit(pm.amount, sv.service_type, cl.location_id, locs, clinics, cfg, sv.amount, sv.service_date)
+        const sp = calcSplit(pm.amount, sv.service_type, cl.location_id, locs, clinics, cfg, sv.amount, sv.service_date, priorPaidFor(sv, pm))
         const clAmt = Object.values(sp.clinicAmts).reduce((s, v) => s + v, 0)
         rows.push({ client: cl.name, location: loc?.name || '', locationId: cl.location_id, clinic: clinic?.name || 'No clinic', clinicId: clinic?.id || '', serviceType: sv.service_type, serviceTotal: sv.amount, serviceDate: sv.service_date, paymentDate: pm.payment_date, paymentAmt: pm.amount, snw: sp.snw, cc: sp.cc, snwService: sp.snwService, clinicAmt: clAmt, dr: sp.dr, isLegacy: sv.service_date < PRE_AUG_CUTOFF, payoutDate: pm.payout_date || getPayoutDate(pm.payment_date), notes: pm.notes || '' })
       })})
@@ -1034,7 +1052,7 @@ function ReconView({clients,locs,clinics,cfg}:{clients:AcctClient[];locs:AcctLoc
     clients.forEach(cl=>cl.services.forEach(sv=>sv.payments.forEach(pm=>{
       if(pm.amount===0)return;const mk=pm.payment_date.substring(0,7)
       if(!months[mk])months[mk]={total:0,snw:0,dr:0,clinicAmts:{} as Record<string,number>,det:[] as any[]}
-      const sp=calcSplit(pm.amount,sv.service_type,cl.location_id,locs,clinics,cfg,sv.amount,sv.service_date)
+      const sp=calcSplit(pm.amount,sv.service_type,cl.location_id,locs,clinics,cfg,sv.amount,sv.service_date,priorPaidFor(sv,pm))
       months[mk].total+=pm.amount;months[mk].snw+=sp.snw;months[mk].dr+=sp.dr
       Object.entries(sp.clinicAmts).forEach(([cid,ca])=>{months[mk].clinicAmts[cid]=(months[mk].clinicAmts[cid]||0)+ca})
       months[mk].det.push({client:cl.name,svc:sv.service_type,amt:pm.amount,d:pm.payment_date,loc:cl.location_id,snw:sp.snw,dr:sp.dr,clinicAmts:sp.clinicAmts,payoutDate:pm.payout_date||getPayoutDate(pm.payment_date)})
@@ -1078,11 +1096,22 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,on
   const [showAdj,setShowAdj]=useState(false)
   const [af,setAF]=useState({payeeType:'clinic' as string,clinicId:'',direction:'add' as string,amount:'',memo:'',date:td(),isRecon:false})
 
-  // Unapplied adjustment totals per payee (signed: +add, -subtract)
+  // Adjustment totals per payee (signed: +add, -subtract).
+  //   pending = unapplied only  -> drives NEXT PAYOUT
+  //   balance = every non-reconciliation row, applied or not -> drives NET BALANCE.
+  // An applied adjustment was settled through a check, and that check is already
+  // subtracted via checkTotals, so dropping it here would double-count the check.
+  // Reconciliation rows are record-only and belong to neither total.
   const adjTotals=useMemo(()=>{
-    const a:{dr:number;clinics:Record<string,number>}={dr:0,clinics:{}}
-    adjustments.filter(ad=>!ad.is_applied && !ad.is_reconciliation).forEach(ad=>{const signed=ad.direction==='add'?ad.amount:-ad.amount;if(ad.payee_type==='dr')a.dr+=signed;else if(ad.payee_clinic_id)a.clinics[ad.payee_clinic_id]=(a.clinics[ad.payee_clinic_id]||0)+signed})
-    return a
+    const mk=()=>({dr:0,clinics:{} as Record<string,number>})
+    const pending=mk(),balance=mk()
+    adjustments.forEach(ad=>{
+      if(ad.is_reconciliation)return
+      const signed=ad.direction==='add'?ad.amount:-ad.amount
+      const bump=(t:{dr:number;clinics:Record<string,number>})=>{if(ad.payee_type==='dr')t.dr+=signed;else if(ad.payee_clinic_id)t.clinics[ad.payee_clinic_id]=(t.clinics[ad.payee_clinic_id]||0)+signed}
+      bump(balance);if(!ad.is_applied)bump(pending)
+    })
+    return {pending,balance}
   },[adjustments])
   const adjForPayee=(type:'clinic'|'dr',id:string|null)=>adjustments.filter(ad=>ad.payee_type===type&&(type==='dr'||ad.payee_clinic_id===id))
 
@@ -1097,7 +1126,7 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,on
     const o:{dr:number;clinics:Record<string,number>}={dr:0,clinics:{}}
     clients.forEach(cl=>cl.services.forEach(sv=>sv.payments.forEach(pm=>{
       if(pm.amount===0)return
-      const sp=calcSplit(pm.amount,sv.service_type,cl.location_id,locs,clinics,cfg,sv.amount,sv.service_date)
+      const sp=calcSplit(pm.amount,sv.service_type,cl.location_id,locs,clinics,cfg,sv.amount,sv.service_date,priorPaidFor(sv,pm))
       o.dr+=sp.dr;Object.entries(sp.clinicAmts).forEach(([cid,ca])=>{o.clinics[cid]=(o.clinics[cid]||0)+ca})
     })));return o
   },[clients,locs,clinics,cfg])
@@ -1111,7 +1140,7 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,on
     clients.forEach(cl=>cl.services.forEach(sv=>sv.payments.forEach(pm=>{
       if(pm.amount===0)return
       const pd=pm.payout_date||getPayoutDate(pm.payment_date)
-      const sp=calcSplit(pm.amount,sv.service_type,cl.location_id,locs,clinics,cfg,sv.amount,sv.service_date)
+      const sp=calcSplit(pm.amount,sv.service_type,cl.location_id,locs,clinics,cfg,sv.amount,sv.service_date,priorPaidFor(sv,pm))
       if(sp.dr>0)add('dr',pd,sp.dr,{clientName:cl.name,paymentDate:pm.payment_date,svc:sv.service_type,amount:pm.amount,share:sp.dr})
       Object.entries(sp.clinicAmts).forEach(([cid,ca])=>{if(ca>0)add(cid,pd,ca,{clientName:cl.name,paymentDate:pm.payment_date,svc:sv.service_type,amount:pm.amount,share:ca})})
     })))
@@ -1141,14 +1170,31 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,on
   },[checks])
 
   // Build payee list
-  type Payee={type:'clinic'|'dr';id:string|null;name:string;color:string;owedAmt:number;mktgAmt:number;checkAmt:number;net:number}
+  type Payee={type:'clinic'|'dr';id:string|null;name:string;color:string;owedAmt:number;mktgAmt:number;checkAmt:number;adjAmt:number;net:number}
   const payees:Payee[]=useMemo(()=>{
     const list:Payee[]=[]
-    clinics.forEach(c=>{const o=owed.clinics[c.id]||0;const m=mktgTotals.clinics[c.id]||0;const ch=checkTotals.clinics[c.id]||0;list.push({type:'clinic',id:c.id,name:c.name.split('(')[0].trim(),color:'#d97706',owedAmt:o,mktgAmt:m,checkAmt:ch,net:o-m-ch})})
-    const drO=owed.dr;const drM=mktgTotals.dr;const drC=checkTotals.dr
-    list.push({type:'dr',id:null,name:'Dr. Yonce',color:'#9333ea',owedAmt:drO,mktgAmt:drM,checkAmt:drC,net:drO-drM-drC})
+    clinics.forEach(c=>{const o=owed.clinics[c.id]||0;const m=mktgTotals.clinics[c.id]||0;const ch=checkTotals.clinics[c.id]||0;const aj=adjTotals.balance.clinics[c.id]||0;list.push({type:'clinic',id:c.id,name:c.name.split('(')[0].trim(),color:'#d97706',owedAmt:o,mktgAmt:m,checkAmt:ch,adjAmt:aj,net:o+aj-m-ch})})
+    const drO=owed.dr;const drM=mktgTotals.dr;const drC=checkTotals.dr;const drA=adjTotals.balance.dr
+    list.push({type:'dr',id:null,name:'Dr. Yonce',color:'#9333ea',owedAmt:drO,mktgAmt:drM,checkAmt:drC,adjAmt:drA,net:drO+drA-drM-drC})
     return list
-  },[clinics,owed,mktgTotals,checkTotals])
+  },[clinics,owed,mktgTotals,checkTotals,adjTotals])
+
+  // Guard: NEXT PAYOUT's adj must be exactly the unapplied subset of the adj baked
+  // into NET BALANCE. Recomputed from raw rows so a future refactor that drops
+  // either term surfaces here instead of silently mis-stating a payout.
+  const adjMismatches=useMemo(()=>{
+    const out:string[]=[]
+    const sum=(rows:AcctAdjustment[])=>rows.reduce((s,ad)=>s+(ad.direction==='add'?ad.amount:-ad.amount),0)
+    payees.forEach(p=>{
+      const rows=adjForPayee(p.type,p.id).filter(ad=>!ad.is_reconciliation)
+      const inPayout=p.type==='dr'?adjTotals.pending.dr:(adjTotals.pending.clinics[p.id||'']||0)
+      const pend=sum(rows.filter(ad=>!ad.is_applied)),appl=sum(rows.filter(ad=>ad.is_applied))
+      if(Math.abs(p.adjAmt-sum(rows))>=0.01)out.push(`${p.name}: net balance adj ${$$(p.adjAmt)} ≠ ledger ${$$(sum(rows))}`)
+      if(Math.abs(inPayout-pend)>=0.01)out.push(`${p.name}: next payout adj ${$$(inPayout)} ≠ unapplied ${$$(pend)}`)
+      if(Math.abs((p.adjAmt-inPayout)-appl)>=0.01)out.push(`${p.name}: applied adj not reconciled between payout and balance`)
+    })
+    return out
+  },[payees,adjustments,adjTotals])
 
   const doAdd=async()=>{
     const a=parseFloat(cf.amount)||0;if(a<=0)return
@@ -1170,6 +1216,10 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,on
       </div>
     </div>
 
+    {adjMismatches.length>0&&<div className="rounded-xl border border-red-200 bg-red-50 p-3">
+      <p className="text-xs font-bold text-red-600 mb-1">Adjustment reconciliation failed</p>
+      {adjMismatches.map((m,i)=><p key={i} className="text-[11px] text-red-500">{m}</p>)}</div>}
+
     {/* Payee ledger cards */}
     {payees.map(p=><div key={p.id||'dr'} className="rounded-xl border border-gray-100 bg-white overflow-hidden">
       <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
@@ -1181,13 +1231,13 @@ function PayView({clients,locs,clinics,cfg,checks,mktg,onAddCheck,onEditCheck,on
       <div className="p-4">
         <div className="flex gap-3 flex-wrap mb-4">
           <div className="flex-1 min-w-[120px] p-3 rounded-lg bg-gray-50 border border-gray-100 text-center"><p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Split Owed</p><p className="text-base font-bold" style={{color:p.color,fontFeatureSettings:'"tnum"'}}>{$$(p.owedAmt)}</p></div>
-          {(()=>{const b=payoutBuckets[p.id||'dr'];const adj=p.type==='dr'?adjTotals.dr:(adjTotals.clinics[p.id||'']||0);const basePay=b?.nextAmt||0;const adjTotal=basePay+adj;return <>
+          {(()=>{const b=payoutBuckets[p.id||'dr'];const adj=p.type==='dr'?adjTotals.pending.dr:(adjTotals.pending.clinics[p.id||'']||0);const basePay=b?.nextAmt||0;const adjTotal=basePay+adj;return <>
             <button onClick={()=>b?.nextDate&&setDrill({payee:p.name,label:'Next Payout',date:b.nextDate,rows:b.nextRows})} className="flex-1 min-w-[120px] p-3 rounded-lg bg-blue-50 border border-blue-100 text-center hover:bg-blue-100 transition-colors cursor-pointer disabled:cursor-default" disabled={!b?.nextDate}><p className="text-[9px] font-semibold uppercase tracking-wider text-blue-400 mb-1">Next Payout{b?.nextDate?' · '+fD(b.nextDate):''}</p><p className="text-base font-bold text-blue-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(adjTotal)}</p>{Math.abs(adj)>0.001&&<p className="text-[9px] text-gray-400 mt-0.5" style={{fontFeatureSettings:'"tnum"'}}>Pmts {$$(basePay)} · Adj {adj>=0?'+':'−'}{$$(Math.abs(adj))}</p>}</button>
             <button onClick={()=>b?.followDate&&setDrill({payee:p.name,label:'Following Payout',date:b.followDate,rows:b.followRows})} className="flex-1 min-w-[120px] p-3 rounded-lg bg-indigo-50 border border-indigo-100 text-center hover:bg-indigo-100 transition-colors cursor-pointer disabled:cursor-default" disabled={!b?.followDate}><p className="text-[9px] font-semibold uppercase tracking-wider text-indigo-400 mb-1">Following Payout{b?.followDate?' · '+fD(b.followDate):''}</p><p className="text-base font-bold text-indigo-600" style={{fontFeatureSettings:'"tnum"'}}>{$$(b?.followAmt||0)}</p></button>
           </>})()}
           <div className="flex-1 min-w-[120px] p-3 rounded-lg bg-red-50 border border-red-100 text-center"><p className="text-[9px] font-semibold uppercase tracking-wider text-red-400 mb-1">Marketing Ded.</p><p className="text-base font-bold text-red-600" style={{fontFeatureSettings:'"tnum"'}}>-{$$(p.mktgAmt)}</p></div>
           <div className="flex-1 min-w-[120px] p-3 rounded-lg bg-green-50 border border-green-100 text-center"><p className="text-[9px] font-semibold uppercase tracking-wider text-green-500 mb-1">Checks Paid</p><p className="text-base font-bold text-green-600" style={{fontFeatureSettings:'"tnum"'}}>-{$$(p.checkAmt)}</p></div>
-          <div className={`flex-1 min-w-[120px] p-3 rounded-lg border text-center ${p.net>0.01?'bg-amber-50 border-amber-200':p.net<-0.01?'bg-green-50 border-green-200':'bg-gray-50 border-gray-100'}`}><p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Net Balance</p><p className={`text-base font-bold ${p.net>0.01?'text-amber-600':p.net<-0.01?'text-green-600':'text-gray-400'}`} style={{fontFeatureSettings:'"tnum"'}}>{$$(p.net)}</p></div>
+          <div className={`flex-1 min-w-[120px] p-3 rounded-lg border text-center ${p.net>0.01?'bg-amber-50 border-amber-200':p.net<-0.01?'bg-green-50 border-green-200':'bg-gray-50 border-gray-100'}`}><p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Net Balance</p><p className={`text-base font-bold ${p.net>0.01?'text-amber-600':p.net<-0.01?'text-green-600':'text-gray-400'}`} style={{fontFeatureSettings:'"tnum"'}}>{$$(p.net)}</p>{Math.abs(p.adjAmt)>0.001&&<p className="text-[9px] text-gray-400 mt-0.5" style={{fontFeatureSettings:'"tnum"'}}>Incl. adj {p.adjAmt>=0?'+':'−'}{$$(Math.abs(p.adjAmt))}</p>}</div>
         </div>
         {/* Checks for this payee */}
         {(()=>{const pChecks=checks.filter(ch=>ch.payee_type===p.type&&(p.type==='dr'||ch.payee_clinic_id===p.id)).sort((a,b)=>a.check_date.localeCompare(b.check_date));
@@ -1373,12 +1423,12 @@ function SetView({locs,clinics,clients,agreement,setAgreement,config,setConfig,o
           <p className="text-[10px] text-gray-400 mt-1">This is NOT an additional deduction. It's the portion of SNW's total % allocated to credit card processing.</p>
         </div>
         <div className="mt-4 pt-4 border-t border-gray-100">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Neuro Progeny Splits (Sensorium %)</p>
-          <div className="flex items-center justify-between mb-2"><span className="text-sm text-gray-600">Clarity Protocol — Sensorium %</span>
-            <input type="number" value={config.np_splits?.clarity_snw_pct??16.6945} onChange={e=>setConfig((p:any)=>({...p,np_splits:{...(p.np_splits||{clarity_snw_pct:16.6945,qeeg_snw_pct:23.0}),clarity_snw_pct:parseFloat(e.target.value)||0}}))} step={0.0001} className="w-24 px-2 py-1.5 text-sm font-semibold border border-gray-200 rounded-md bg-white text-np-dark text-right focus:outline-none focus:ring-2 focus:ring-np-blue/20" style={{fontFeatureSettings:'"tnum"'}}/></div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Neuro Progeny Splits (Sensorium)</p>
+          <div className="flex items-center justify-between mb-2"><span className="text-sm text-gray-600">Clarity Protocol — Sensorium</span>
+            <span className="text-sm font-semibold text-np-dark" style={{fontFeatureSettings:'"tnum"'}}>{$$(CLARITY_SNW_FLAT)} flat / enrollment</span></div>
           <div className="flex items-center justify-between"><span className="text-sm text-gray-600">qEEG — Sensorium %</span>
-            <input type="number" value={config.np_splits?.qeeg_snw_pct??23.0} onChange={e=>setConfig((p:any)=>({...p,np_splits:{...(p.np_splits||{clarity_snw_pct:16.6945,qeeg_snw_pct:23.0}),qeeg_snw_pct:parseFloat(e.target.value)||0}}))} step={0.01} className="w-24 px-2 py-1.5 text-sm font-semibold border border-gray-200 rounded-md bg-white text-np-dark text-right focus:outline-none focus:ring-2 focus:ring-np-blue/20" style={{fontFeatureSettings:'"tnum"'}}/></div>
-          <p className="text-[10px] text-gray-400 mt-2">Neuro Progeny receives the remainder. Stored as percentages so splits scale if prices change.</p>
+            <input type="number" value={config.np_splits?.qeeg_snw_pct??23.0} onChange={e=>setConfig((p:any)=>({...p,np_splits:{...(p.np_splits||{qeeg_snw_pct:23.0}),qeeg_snw_pct:parseFloat(e.target.value)||0}}))} step={0.01} className="w-24 px-2 py-1.5 text-sm font-semibold border border-gray-200 rounded-md bg-white text-np-dark text-right focus:outline-none focus:ring-2 focus:ring-np-blue/20" style={{fontFeatureSettings:'"tnum"'}}/></div>
+          <p className="text-[10px] text-gray-400 mt-2">Neuro Progeny receives the remainder. The Clarity fee is a fixed amount per enrollment, set in code; qEEG scales with price.</p>
         </div>
         <div className="mt-2"><Btn sm onClick={onSaveConfig}>Save</Btn></div>
       </div>
@@ -1486,7 +1536,7 @@ function SetView({locs,clinics,clients,agreement,setAgreement,config,setConfig,o
 export default function AccountingPage() {
   const {currentOrg}=useWorkspace();const supabase=createClient()
   const [clients,setClients]=useState<AcctClient[]>([]);const [locs,setLocs]=useState<AcctLocation[]>([]);const [clinics,setClinics]=useState<AcctClinic[]>([])
-  const [config,setConfig]=useState<AcctConfig>({map_splits:{snw:23,dr:77,snw_flat:0,dr_flat:0},cc_processing_fee:3,snw_base_pct:0,snw_base_flat:0,default_map_price:600,default_program_price:5400,np_splits:{clarity_snw_pct:16.6945,qeeg_snw_pct:23.0},payout_agreement:''})
+  const [config,setConfig]=useState<AcctConfig>({map_splits:{snw:23,dr:77,snw_flat:0,dr_flat:0},cc_processing_fee:3,snw_base_pct:0,snw_base_flat:0,default_map_price:600,default_program_price:5400,np_splits:{qeeg_snw_pct:23.0},payout_agreement:''})
   const [checks,setChecks]=useState<AcctCheck[]>([]);const [mktg,setMktg]=useState<AcctMktgCharge[]>([])
   const [adjustments,setAdjustments]=useState<AcctAdjustment[]>([])
   const [loading,setLoading]=useState(true);const [vw,sV]=useState('dash');const [sel,sS]=useState<string|null>(null);const [q,sQ]=useState('')
