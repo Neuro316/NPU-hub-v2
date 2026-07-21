@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminSupabase } from '@/lib/supabase';
-import { getOrgTwilioConfig, pickNumber } from '@/lib/twilio-org';
+import { getOrgTwilioConfig, getVoiceCallerId } from '@/lib/twilio-org';
 import { toE164 } from '@/lib/phone';
 import { receiverIdentity } from '@/lib/voice-identity';
 import {
@@ -60,7 +60,9 @@ export async function POST(request: NextRequest) {
         if (passed && (orgNumbers.size === 0 || orgNumbers.has(passed))) {
           callerId = passed;                                   // token-resolved, validated
         } else if (config) {
-          callerId = pickNumber(config, 'manual') || config.numbers?.[0]?.phone || '';
+          // Same resolver as the token route, so the number the browser was told
+          // to use and the number this fallback picks can't disagree.
+          callerId = getVoiceCallerId(config);
         }
       } catch (e) {
         console.warn('Could not resolve org caller ID:', e);

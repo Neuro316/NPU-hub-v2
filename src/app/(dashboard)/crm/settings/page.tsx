@@ -45,7 +45,7 @@ export default function SettingsPage() {
 
   // Settings state
   const [email, setEmail] = useState({ sending_email: '', sending_name: '', daily_limit: 500, provider: 'gmail_workspace', warmup: true })
-  const [twilio, setTwilio] = useState({ account_sid: '', auth_token: '', messaging_service_sid: '', api_key: '', api_secret: '', twiml_app_sid: '' })
+  const [twilio, setTwilio] = useState({ account_sid: '', auth_token: '', messaging_service_sid: '', api_key: '', api_secret: '', twiml_app_sid: '', voice_caller_id: '' })
   const [twilioNumbers, setTwilioNumbers] = useState<TwilioNumber[]>([{ phone: '', nickname: 'Primary', purpose: 'general' }])
   const [ai, setAi] = useState({
     anthropic_key: '', openai_key: '', gemini_key: '',
@@ -70,7 +70,7 @@ export default function SettingsPage() {
         data?.forEach(row => {
           const v = row.setting_value
           if (row.setting_key === 'crm_twilio' && v) {
-            setTwilio({ account_sid: v.account_sid || '', auth_token: v.auth_token || '', messaging_service_sid: v.messaging_service_sid || '', api_key: v.api_key || '', api_secret: v.api_secret || '', twiml_app_sid: v.twiml_app_sid || '' })
+            setTwilio({ account_sid: v.account_sid || '', auth_token: v.auth_token || '', messaging_service_sid: v.messaging_service_sid || '', api_key: v.api_key || '', api_secret: v.api_secret || '', twiml_app_sid: v.twiml_app_sid || '', voice_caller_id: v.voice_caller_id || '' })
             if (v.numbers?.length) setTwilioNumbers(v.numbers)
           }
           if (row.setting_key === 'crm_ai' && v) setAi(prev => ({ ...prev, ...v }))
@@ -246,6 +246,27 @@ export default function SettingsPage() {
                 <div className="mt-3"><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">TwiML App SID</label>
                   <input value={twilio.twiml_app_sid} onChange={e => setTwilio(p=>({...p,twiml_app_sid:e.target.value}))} placeholder="AP..."
                     className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
+
+                {/* Outbound caller ID — what people see when you call them.
+                    Explicit, because inferring it from the contact's pipeline
+                    stage sent calls out from the campaign number. */}
+                <div className="mt-3">
+                  <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Outbound Caller ID</label>
+                  <select value={twilio.voice_caller_id}
+                    onChange={e => setTwilio(p=>({...p,voice_caller_id:e.target.value}))}
+                    className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg">
+                    <option value="">Automatic (main line, then first number)</option>
+                    {twilioNumbers.filter(n => n.phone.trim()).map(n => (
+                      <option key={n.phone} value={n.phone}>
+                        {n.phone}{n.nickname ? ` — ${n.nickname}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[9px] text-gray-400 mt-1">
+                    The number shown when you call someone from the Hub. Texts are unaffected —
+                    campaigns still send from the outreach number.
+                  </p>
+                </div>
               </div>
 
               {/* Phone Numbers */}

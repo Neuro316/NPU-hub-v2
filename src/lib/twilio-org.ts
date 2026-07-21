@@ -12,6 +12,12 @@ export interface OrgTwilioConfig {
   api_secret: string
   twiml_app_sid: string
   numbers: { phone: string; nickname: string; purpose: NumberPurpose }[]
+  /**
+   * Explicit caller ID for OUTBOUND VOICE calls (set in CRM Settings > Twilio).
+   * Voice deliberately does not use the SMS purpose routing — see
+   * getVoiceCallerId. Empty means "fall back to the chain".
+   */
+  voice_caller_id?: string
 }
 
 /**
@@ -71,6 +77,7 @@ export async function getOrgTwilioConfig(
       api_secret: v.api_secret || '',
       twiml_app_sid: v.twiml_app_sid || '',
       numbers: v.numbers || [],
+      voice_caller_id: v.voice_caller_id || '',
     }
   }
 
@@ -213,14 +220,44 @@ export function generateOrgVoiceToken(config: OrgTwilioConfig, identity: string)
 }
 
 /**
- * Get the caller ID for outbound voice calls
+ * Caller ID for outbound VOICE calls.
+ *
+ * Voice deliberately does NOT use pickNumber's pipeline-stage routing. That
+ * logic is right for SMS — an outreach campaign should send from the campaign
+ * number — but wrong for a phone call: someone you ring should see your main
+ * line regardless of where they sit in the pipeline.
+ *
+ * The bug it fixes: pickNumber maps any 'manual' send whose pipeline stage is
+ * not in CLIENT_STAGES to 'cold_outreach', whose chain is ['outreach','general']
+ * — so calling back a contact staged e.g. "Paid/ payment plan" dialled out from
+ * the campaign number instead of the main line. Contacts with a NULL stage
+ * skipped that branch and got the right number, so it looked correct for
+ * unknown callers and wrong for real ones.
+ *
+ * Resolution order:
+ *   1. voice_caller_id, if set AND still one of the org's numbers (a number
+ *      removed from the org must not keep being dialled from).
+ *   2. purpose 'inbound_main'  — the reception line if one is designated.
+ *   3. purpose 'client_relations'
+ *   4. first configured number, then the env fallback.
+ *
+ * `context`/`pipelineStage` are accepted for signature compatibility and are
+ * intentionally unused.
  */
 export function getVoiceCallerId(
   config: OrgTwilioConfig,
-  context: SendContext = 'manual',
-  pipelineStage?: string | null
+  _context: SendContext = 'manual',
+  _pipelineStage?: string | null
 ): string {
-  return pickNumber(config, context, pipelineStage) || config.numbers[0]?.phone || process.env.TWILIO_PHONE_NUMBER || ''
+  const explicit = (config.voice_caller_id || '').trim()
+  if (explicit && config.numbers?.some(n => n.phone === explicit)) return explicit
+
+  const byPurpose = (p: NumberPurpose) => config.numbers?.find(n => n.purpose === p)?.phone
+  return byPurpose('inbound_main')
+    || byPurpose('client_relations')
+    || config.numbers?.[0]?.phone
+    || process.env.TWILIO_PHONE_NUMBER
+    || ''
 }
 
 export { CLIENT_STAGES }
