@@ -10,6 +10,7 @@ import { createClient } from '@/lib/supabase-browser'
 import PipelineResourcesManager from '@/components/crm/pipeline-resources'
 import GuestProfileSettings from '@/components/settings/GuestProfileSettings'
 import VoicemailGreeting from '@/components/crm/voicemail-greeting'
+import BrowserCallingToggle from '@/components/crm/browser-calling-toggle'
 
 type Section = 'email' | 'twilio' | 'ai' | 'pipeline' | 'team' | 'notifications' | 'compliance' | 'general' | 'guest_profile'
 
@@ -274,6 +275,9 @@ export default function SettingsPage() {
               {/* Voicemail Greeting — saves itself through the admin-gated
                   /api/comms/greeting route, independent of "Save Settings". */}
               <VoicemailGreeting />
+
+              {/* Registers this browser to receive inbound calls (Stage 2). */}
+              <BrowserCallingToggle />
 
               {/* Test Connection */}
               <div className="border-t border-gray-100 pt-4">

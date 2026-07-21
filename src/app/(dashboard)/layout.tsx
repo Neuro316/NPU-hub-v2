@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import { WorkspaceProvider } from '@/lib/workspace-context'
 import { PermissionsProvider } from '@/lib/hooks/use-permissions'
 import { SidebarProvider, useSidebar } from '@/lib/sidebar-context'
+import { VoiceReceiverProvider } from '@/lib/voice-receiver-context'
 import { Sidebar } from '@/components/sidebar'
 import { TrackerInit } from '@/components/tracker-init'
 import { HelpBot } from '@/components/help-bot'
@@ -55,12 +56,16 @@ export default function DashboardLayout({
   return (
     <WorkspaceProvider>
       <PermissionsProvider>
-        <SidebarProvider>
-          <TrackerInit />
-          <DynamicFavicon />
-          <DashboardContent>{children}</DashboardContent>
-          <HelpBot />
-        </SidebarProvider>
+        {/* Inside WorkspaceProvider (needs user + currentOrg), outside the page
+            content so the Device registration survives route changes. */}
+        <VoiceReceiverProvider>
+          <SidebarProvider>
+            <TrackerInit />
+            <DynamicFavicon />
+            <DashboardContent>{children}</DashboardContent>
+            <HelpBot />
+          </SidebarProvider>
+        </VoiceReceiverProvider>
       </PermissionsProvider>
     </WorkspaceProvider>
   )
