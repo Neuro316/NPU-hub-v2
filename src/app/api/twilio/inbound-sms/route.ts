@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminSupabase } from '@/lib/supabase';
-import { validateTwilioSignature } from '@/lib/twilio';
+import { validateTwilioSignatureWithToken } from '@/lib/twilio';
+import { resolveInboundTwilioAuth } from '@/lib/twilio-org';
 import {
-  findContactByPhone, getOrCreateConversation, logActivity,
-  emitWebhookEvent, applyAutoAssignment, trackInboundForResponseTime
+  findContactByPhoneNormalized, getOrCreateConversation, logActivity,
+  emitWebhookEvent, applyAutoAssignment, trackInboundForResponseTime,
+  resolveOrgByReceivingNumber, bumpConversation
 } from '@/lib/crm-server';
 
 export async function POST(request: NextRequest) {
@@ -16,19 +18,30 @@ export async function POST(request: NextRequest) {
     console.error('inbound-sms parse error:', e);
   }
 
-  // Validate Twilio signature (skip if URL not configured)
+  // ── Signature verification gates the ENTIRE handler ──
+  // Forging inbound SMS would let anyone write into any contact's history, so
+  // verify first and reject on failure BEFORE any DB access. Fail closed: if we
+  // cannot determine the callback URL or there is no signature, we cannot verify,
+  // so we reject rather than process.
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '');
-  if (appUrl) {
-    const signature = request.headers.get('x-twilio-signature') || '';
-    const url = `${appUrl}/api/twilio/inbound-sms`;
-    if (!validateTwilioSignature(url, params, signature)) {
-      console.warn('Twilio signature validation failed for inbound SMS');
-    }
+  const signature = request.headers.get('x-twilio-signature') || '';
+  const url = `${appUrl}/api/twilio/inbound-sms`;
+  if (!appUrl || !signature) {
+    console.error('inbound-sms: missing NEXT_PUBLIC_APP_URL or X-Twilio-Signature; rejecting');
+    return new NextResponse('Forbidden', { status: 403 });
+  }
+  // Per-org token: validate against the auth token of the account that owns the
+  // receiving ("To") number, not a single global token.
+  const { authToken } = await resolveInboundTwilioAuth(params.To || '');
+  if (!validateTwilioSignatureWithToken(authToken, url, params, signature)) {
+    console.warn('inbound-sms: Twilio signature validation failed; rejecting');
+    return new NextResponse('Forbidden', { status: 403 });
   }
 
   const supabase = createAdminSupabase();
   const from = params.From;
-  const body = params.Body;
+  const to = params.To;
+  const body = params.Body || '';
 
   // Handle STOP/START/UNSUBSCRIBE keywords (TCPA compliance)
   const keyword = (body || '').trim().toUpperCase();
@@ -65,20 +78,23 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const { data: orgConfig } = await supabase
-    .from('org_email_config')
-    .select('org_id')
-    .limit(1)
-    .single();
-
-  const orgId = orgConfig?.org_id;
+  // Resolve the org from the RECEIVING number (multi-tenant). Canonical source is
+  // crm_twilio_numbers; falls back to org_settings.crm_twilio.numbers[] so this
+  // agrees with the inbound-call forward hotfix. Unmapped number -> drop (don't
+  // guess an org, and don't let one org's texts land in another).
+  const orgId = await resolveOrgByReceivingNumber(supabase, to);
   if (!orgId) {
+    console.warn('inbound-sms: no org for receiving number', to);
     return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
       headers: { 'Content-Type': 'text/xml' },
     });
   }
 
-  let contact = await findContactByPhone(supabase, orgId, from);
+  // Match by normalized last-10 digits within the org (stored phones may be
+  // formatted). Unknown -> placeholder "Unknown" contact below, so the message
+  // still threads via conversation->contact and can be merged into the real
+  // contact later.
+  let contact = await findContactByPhoneNormalized(supabase, orgId, from);
   if (!contact) {
     const assignedTo = await applyAutoAssignment(supabase, orgId, { source: 'inbound_sms' });
 
@@ -120,14 +136,23 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const conversation = await getOrCreateConversation(supabase, contact.id, 'sms');
+  const conversation = await getOrCreateConversation(supabase, contact.id, 'sms', orgId);
+
+  // MMS: collect the media URLs Twilio delivered (MediaUrl0..N).
+  const numMedia = parseInt(params.NumMedia || '0', 10) || 0;
+  const mediaUrls = Array.from({ length: numMedia }, (_, i) => params[`MediaUrl${i}`]).filter(Boolean);
 
   const { data: message } = await supabase
     .from('crm_messages')
     .insert({
+      org_id: orgId,
       conversation_id: conversation.id,
       direction: 'inbound',
+      msg_type: numMedia > 0 ? 'mms' : 'sms',
       body,
+      media_urls: mediaUrls,
+      from_e164: from,
+      to_e164: to,
       status: 'received',
       twilio_sid: params.MessageSid,
       sent_at: new Date().toISOString(),
@@ -135,13 +160,12 @@ export async function POST(request: NextRequest) {
     .select()
     .single();
 
-  await supabase
-    .from('conversations')
-    .update({
-      last_message_at: new Date().toISOString(),
-      unread_count: (conversation.unread_count || 0) + 1,
-    })
-    .eq('id', conversation.id);
+  await bumpConversation(supabase, conversation.id, {
+    preview: body || (numMedia > 0 ? '\u{1F4CE} Attachment' : ''),
+    direction: 'inbound',
+    incrementUnread: true,
+    currentUnread: conversation.unread_count || 0,
+  });
 
   if (message) {
     await trackInboundForResponseTime(supabase, orgId, contact.id, 'sms', message.id);

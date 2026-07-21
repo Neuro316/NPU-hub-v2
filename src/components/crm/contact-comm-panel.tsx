@@ -8,8 +8,7 @@
 import { useEffect, useState } from 'react'
 import { Phone, MessageCircle, Mail, ArrowUpRight, ArrowDownLeft, Clock, Activity, Calendar, PhoneMissed, Voicemail } from 'lucide-react'
 import { createClient } from '@/lib/supabase-browser'
-import { fetchCallLogs } from '@/lib/crm-client'
-import type { CallLog } from '@/types/crm'
+import { buildTimeline, TimelineStream, type TimelineEntry } from '@/components/crm/comms-timeline'
 
 interface CommStats {
   total_calls: number
@@ -47,19 +46,24 @@ function ago(d: string | null) {
 export default function ContactCommPanel({ contactId }: { contactId: string }) {
   const supabase = createClient()
   const [stats, setStats] = useState<CommStats | null>(null)
-  const [calls, setCalls] = useState<any[]>([])
+  const [entries, setEntries] = useState<TimelineEntry[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     loadStats()
-    fetchCallLogs(contactId, 10).then(setCalls).catch(() => {})
+    loadTimeline()
 
-    // Realtime: re-fetch when contact counters update
+    // Realtime: counters bump on every new inbound/outbound comm, so re-fetch
+    // both stats and the merged timeline when the contact row updates.
     const ch = supabase.channel(`contact-comms-${contactId}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'contacts', filter: `id=eq.${contactId}` }, () => loadStats())
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'contacts', filter: `id=eq.${contactId}` }, () => { loadStats(); loadTimeline() })
       .subscribe()
     return () => { supabase.removeChannel(ch) }
   }, [contactId])
+
+  async function loadTimeline() {
+    try { setEntries(await buildTimeline(supabase, { contactId })) } catch { /* RLS or empty */ }
+  }
 
   async function loadStats() {
     const { data } = await supabase
@@ -125,35 +129,11 @@ export default function ContactCommPanel({ contactId }: { contactId: string }) {
         </div>
       </div>
 
-      {/* Recent calls */}
+      {/* Full communications history — texts + calls + voicemails, merged + sorted */}
       <div>
-        <p className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Recent Calls</p>
-        <div className="space-y-1">
-          {calls.length === 0 && <p className="text-[10px] text-gray-300 text-center py-4">No calls yet</p>}
-          {calls.map((call: any) => (
-            <div key={call.id} className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg bg-gray-50">
-              <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
-                call.direction === 'inbound' ? 'bg-green-100' : 'bg-blue-100'
-              }`}>
-                {call.status === 'missed' ? <PhoneMissed size={10} className="text-red-500" /> :
-                 call.direction === 'inbound' ? <ArrowDownLeft size={10} className="text-green-600" /> :
-                 <ArrowUpRight size={10} className="text-blue-600" />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-[10px] font-medium text-np-dark">
-                  {call.direction === 'inbound' ? 'Inbound' : 'Outbound'}
-                  {(call.duration_seconds ?? 0) > 0 && ` · ${fmtDur(call.duration_seconds)}`}
-                </p>
-                <p className="text-[8px] text-gray-300">{new Date(call.started_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
-              </div>
-              {call.sentiment && (
-                <span className={`text-[7px] font-bold px-1 py-0.5 rounded ${
-                  call.sentiment === 'positive' ? 'bg-green-50 text-green-600' :
-                  call.sentiment === 'negative' ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-500'
-                }`}>{call.sentiment}</span>
-              )}
-            </div>
-          ))}
+        <p className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Communications</p>
+        <div className="max-h-96 overflow-auto pr-1">
+          <TimelineStream entries={entries} emptyLabel="No communications yet" />
         </div>
       </div>
     </div>

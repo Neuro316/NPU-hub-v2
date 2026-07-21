@@ -38,17 +38,33 @@ export function generateVoiceToken(identity: string) {
   return token.toJwt();
 }
 
-// ─── Validate Twilio webhook signature ───
+// ─── Validate Twilio webhook signature (against a specific auth token) ───
+// Inbound webhooks must be validated with the auth token of the Twilio
+// (sub)account that actually signed them. For per-org credentials, resolve
+// that token via resolveInboundTwilioAuth() in twilio-org.ts, then pass it here.
+export function validateTwilioSignatureWithToken(
+  authToken: string,
+  url: string,
+  params: Record<string, string>,
+  signature: string
+): boolean {
+  if (!authToken || !signature) return false;
+  return validateRequest(authToken, signature, url, params);
+}
+
+// ─── Validate against the global env token (backward-compatible shim) ───
+// Prefer validateTwilioSignatureWithToken with a per-org token for tenant-aware
+// routes. This global-token form remains for single-account callers.
 export function validateTwilioSignature(
   url: string,
   params: Record<string, string>,
   signature: string
 ): boolean {
-  return validateRequest(
-    process.env.TWILIO_AUTH_TOKEN!,
-    signature,
+  return validateTwilioSignatureWithToken(
+    process.env.TWILIO_AUTH_TOKEN || '',
     url,
-    params
+    params,
+    signature
   );
 }
 

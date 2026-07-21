@@ -15,7 +15,8 @@ import {
 import { createClient } from '@/lib/supabase-browser'
 import { createConversation, fetchContacts } from '@/lib/crm-client'
 import { useWorkspace } from '@/lib/workspace-context'
-import type { CrmContact, Conversation, Message, CallLog } from '@/types/crm'
+import type { CrmContact } from '@/types/crm'
+import { buildTimeline, TimelineStream, type TimelineEntry } from '@/components/crm/comms-timeline'
 
 type ChannelFilter = 'all' | 'sms' | 'voice' | 'email'
 type DirectionFilter = 'both' | 'inbound' | 'outbound'
@@ -31,18 +32,6 @@ interface ThreadItem {
   unread_count: number
   snoozed_until: string | null
   last_preview: string
-}
-
-interface TimelineEntry {
-  id: string
-  type: 'sms' | 'call'
-  direction: string
-  body: string | null
-  status: string
-  duration_seconds: number | null
-  ai_summary: string | null
-  sentiment: string | null
-  created_at: string
 }
 
 function fmtTime(d: string) {
@@ -110,7 +99,7 @@ export default function ConversationsPage() {
         last_message_at: d.last_message_at || d.updated_at,
         unread_count: d.unread_count || 0,
         snoozed_until: d.snoozed_until,
-        last_preview: '', // will be set from messages
+        last_preview: d.last_message_preview || '',
       }))
 
       const filtered = searchQuery
@@ -129,55 +118,24 @@ export default function ConversationsPage() {
   }, [selectedThread?.id, directionFilter])
 
   async function loadTimeline(thread: ThreadItem) {
-    const entries: TimelineEntry[] = []
-
-    // Load SMS messages
-    if (thread.channel === 'sms' || thread.channel === 'email') {
-      let msgQuery = supabase
-        .from('crm_messages')
-        .select('*')
-        .eq('conversation_id', thread.id)
-        .order('created_at', { ascending: true })
-
-      if (directionFilter !== 'both') msgQuery = msgQuery.eq('direction', directionFilter)
-
-      const { data: msgs } = await msgQuery
-      if (msgs) {
-        msgs.forEach((m: any) => entries.push({
-          id: m.id, type: 'sms', direction: m.direction,
-          body: m.body, status: m.status,
-          duration_seconds: null, ai_summary: null, sentiment: null,
-          created_at: m.sent_at || m.created_at,
-        }))
-      }
-    }
-
-    // Load calls for this contact
-    if (thread.channel === 'voice' || thread.channel === 'sms') {
-      let callQuery = supabase
-        .from('call_logs')
-        .select('*')
-        .eq('contact_id', thread.contact_id)
-        .order('started_at', { ascending: true })
-
-      if (directionFilter !== 'both') callQuery = callQuery.eq('direction', directionFilter)
-
-      const { data: calls } = await callQuery
-      if (calls) {
-        calls.forEach((c: any) => entries.push({
-          id: c.id, type: 'call', direction: c.direction,
-          body: null, status: c.status,
-          duration_seconds: c.duration_seconds, ai_summary: c.ai_summary,
-          sentiment: c.sentiment,
-          created_at: c.started_at,
-        }))
-      }
-    }
-
-    // Sort by time
-    entries.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+    // Merge crm_messages (texts) + call_logs (calls/voicemails/missed) into one
+    // timestamp-sorted stream. Texts scoped to this thread; calls by contact.
+    const entries = await buildTimeline(supabase, {
+      contactId: thread.contact_id,
+      conversationId: thread.id,
+      directionFilter,
+    })
     setTimeline(entries)
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
+  }
+
+  // Opening a thread clears its unread badge (staff UPDATE, 067 WITH CHECK).
+  async function openThread(thread: ThreadItem) {
+    setSelectedThread(thread)
+    if (thread.unread_count > 0) {
+      await supabase.from('conversations').update({ unread_count: 0 }).eq('id', thread.id)
+      setThreads(prev => prev.map(t => (t.id === thread.id ? { ...t, unread_count: 0 } : t)))
+    }
   }
 
   async function sendSms() {
@@ -305,7 +263,7 @@ export default function ConversationsPage() {
           {loading && <p className="text-[10px] text-gray-400 text-center py-12">Loading...</p>}
           {!loading && threads.length === 0 && <p className="text-[10px] text-gray-400 text-center py-12">No conversations found</p>}
           {threads.map(thread => (
-            <button key={thread.id} onClick={() => setSelectedThread(thread)}
+            <button key={thread.id} onClick={() => openThread(thread)}
               className={`w-full flex items-start gap-2.5 p-3 border-b border-gray-50 text-left transition-colors ${
                 selectedThread?.id === thread.id ? 'bg-np-blue/5' : 'hover:bg-gray-50/50'
               }`}>
@@ -328,8 +286,8 @@ export default function ConversationsPage() {
                   </p>
                   <span className="text-[8px] text-gray-400 flex-shrink-0 ml-2">{fmtTime(thread.last_message_at)}</span>
                 </div>
-                <p className={`text-[10px] truncate ${thread.unread_count > 0 ? 'text-gray-600' : 'text-gray-400'}`}>
-                  {thread.contact_phone || 'No phone'}
+                <p className={`text-[10px] truncate ${thread.unread_count > 0 ? 'text-gray-600 font-medium' : 'text-gray-400'}`}>
+                  {thread.last_preview || thread.contact_phone || 'No phone'}
                 </p>
               </div>
               {thread.unread_count > 0 && (
@@ -377,62 +335,9 @@ export default function ConversationsPage() {
               </div>
             </div>
 
-            {/* Messages */}
-            <div className="flex-1 overflow-auto p-4 space-y-2">
-              {timeline.map((entry, i) => {
-                const isOut = entry.direction === 'outbound'
-                const prev = timeline[i - 1]
-                const showTime = !prev || new Date(entry.created_at).getTime() - new Date(prev.created_at).getTime() > 600000
-
-                return (
-                  <div key={entry.id}>
-                    {showTime && (
-                      <div className="flex items-center gap-3 my-3">
-                        <div className="flex-1 h-px bg-gray-100" />
-                        <span className="text-[8px] text-gray-300">{fmtFullTime(entry.created_at)}</span>
-                        <div className="flex-1 h-px bg-gray-100" />
-                      </div>
-                    )}
-
-                    {entry.type === 'call' ? (
-                      <div className="flex justify-center">
-                        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 rounded-full">
-                          {entry.status === 'missed' ? <PhoneMissed size={10} className="text-red-500" /> :
-                           entry.direction === 'outbound' ? <ArrowUpRight size={10} className="text-np-blue" /> :
-                           <ArrowDownLeft size={10} className="text-green-500" />}
-                          <span className="text-[9px] text-gray-500">
-                            {entry.direction === 'outbound' ? 'Outgoing' : 'Incoming'} call
-                            {entry.duration_seconds ? ` · ${fmtDuration(entry.duration_seconds)}` : ''}
-                            {entry.status === 'missed' ? ' · Missed' : ''}
-                          </span>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className={`flex ${isOut ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[70%] rounded-2xl px-3.5 py-2 ${
-                          isOut ? 'bg-np-blue text-white rounded-br-md' : 'bg-gray-100 text-np-dark rounded-bl-md'
-                        }`}>
-                          <p className="text-xs whitespace-pre-wrap break-words">{entry.body || '(no content)'}</p>
-                          <div className={`flex items-center gap-1 mt-0.5 ${isOut ? 'justify-end' : 'justify-start'}`}>
-                            <span className={`text-[7px] ${isOut ? 'text-white/50' : 'text-gray-400'}`}>
-                              {new Date(entry.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
-                            </span>
-                            {isOut && entry.status === 'delivered' && <CheckCheck size={10} className="text-white/50" />}
-                            {isOut && entry.status === 'sent' && <Check size={10} className="text-white/50" />}
-                            {isOut && entry.status === 'queued' && <Clock size={10} className="text-white/50" />}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {entry.type === 'call' && entry.ai_summary && (
-                      <div className="flex justify-center mt-1">
-                        <p className="text-[8px] text-gray-400 italic max-w-[60%] text-center">{entry.ai_summary}</p>
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
+            {/* Messages — merged text + call + voicemail stream */}
+            <div className="flex-1 overflow-auto p-4">
+              <TimelineStream entries={timeline} emptyLabel="No messages in this conversation yet" />
               <div ref={bottomRef} />
             </div>
 

@@ -95,6 +95,41 @@ export function createOrgTwilioClient(config: OrgTwilioConfig) {
 }
 
 /**
+ * Resolve the auth token to validate an INBOUND webhook signature, keyed on the
+ * receiving ("To") number. Multi-tenant: one webhook URL serves all orgs, so we
+ * map the number -> org via crm_twilio_numbers, then use that org's per-org
+ * auth_token (falling back to the global env token when the number is unmapped
+ * or the org has no dedicated credentials).
+ *
+ * The "To" value is attacker-controllable, but it only selects WHICH token the
+ * signature is checked against — a forger still cannot produce a valid signature
+ * without possessing that token. This performs a read only; callers must reject
+ * (403) on validation failure BEFORE any write.
+ */
+export async function resolveInboundTwilioAuth(
+  toE164: string
+): Promise<{ orgId: string | null; authToken: string }> {
+  const admin = createAdminSupabase()
+  let orgId: string | null = null
+
+  if (toE164) {
+    const { data } = await admin
+      .from('crm_twilio_numbers')
+      .select('org_id')
+      .eq('phone_e164', toE164)
+      .maybeSingle()
+    orgId = data?.org_id ?? null
+  }
+
+  if (orgId) {
+    const config = await getOrgTwilioConfig(admin, orgId)
+    if (config.auth_token) return { orgId, authToken: config.auth_token }
+  }
+
+  return { orgId, authToken: process.env.TWILIO_AUTH_TOKEN || '' }
+}
+
+/**
  * Pick the right number based on send context and optional pipeline stage
  */
 export function pickNumber(

@@ -95,27 +95,113 @@ export async function updateLastContacted(
 export async function getOrCreateConversation(
   supabase: SupabaseClient,
   contactId: string,
-  channel: 'sms' | 'voice' | 'email'
+  channel: 'sms' | 'voice' | 'email',
+  orgId?: string
 ) {
-  // Try to find existing
+  // Try to find existing (maybeSingle: no error on the normal "none yet" case)
   const { data: existing } = await supabase
     .from('conversations')
     .select('*')
     .eq('contact_id', contactId)
     .eq('channel', channel)
-    .single();
+    .maybeSingle();
 
   if (existing) return existing;
 
-  // Create new
+  // conversations.org_id is NOT NULL. Callers historically omitted it, so every
+  // new-conversation insert threw. Derive org_id from the contact when the caller
+  // doesn't pass it — fixes all callers, backward-compatible.
+  let resolvedOrg = orgId;
+  if (!resolvedOrg) {
+    const { data: c } = await supabase
+      .from('contacts')
+      .select('org_id')
+      .eq('id', contactId)
+      .maybeSingle();
+    resolvedOrg = c?.org_id;
+  }
+
   const { data: created, error } = await supabase
     .from('conversations')
-    .insert({ contact_id: contactId, channel })
+    .insert({ contact_id: contactId, channel, org_id: resolvedOrg })
     .select()
     .single();
 
   if (error) throw error;
   return created;
+}
+
+// ─── Resolve org by the RECEIVING Twilio number (multi-tenant inbound) ───
+// Canonical source is crm_twilio_numbers (068 map). Falls back to the numbers
+// configured in org_settings.crm_twilio — the source the inbound-call forward
+// hotfix uses — so both inbound surfaces resolve to the same org.
+export async function resolveOrgByReceivingNumber(
+  supabase: SupabaseClient,
+  toE164: string
+): Promise<string | null> {
+  if (!toE164) return null;
+
+  const { data: mapped } = await supabase
+    .from('crm_twilio_numbers')
+    .select('org_id')
+    .eq('phone_e164', toE164)
+    .maybeSingle();
+  if (mapped?.org_id) return mapped.org_id;
+
+  const { data: rows } = await supabase
+    .from('org_settings')
+    .select('org_id, setting_value')
+    .eq('setting_key', 'crm_twilio');
+  const match = (rows || []).find((r: any) =>
+    Array.isArray(r.setting_value?.numbers) &&
+    r.setting_value.numbers.some((n: any) => n.phone === toE164));
+  return match?.org_id ?? null;
+}
+
+// ─── Find Contact by Phone, normalized (last-10-digit), org-scoped ───
+// Uses the match_contact_by_phone SQL function (migration 069) so an inbound
+// E.164 number matches contacts stored in any format ("(828) 348-4022", bare
+// 10-digit, etc.), instead of the exact .eq('phone', …) that misses most.
+export async function findContactByPhoneNormalized(
+  supabase: SupabaseClient,
+  orgId: string,
+  phone: string
+) {
+  const { data: id } = await supabase.rpc('match_contact_by_phone', {
+    p_org: orgId,
+    p_phone: phone,
+  });
+  if (!id) return null;
+  const { data } = await supabase
+    .from('contacts')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  return data;
+}
+
+// ─── Bump a conversation's rollups after a message ───
+// Sets last_message_at + the 068 rollup columns (preview, direction) and,
+// optionally, increments unread_count.
+export async function bumpConversation(
+  supabase: SupabaseClient,
+  conversationId: string,
+  opts: {
+    preview: string;
+    direction: 'inbound' | 'outbound';
+    incrementUnread?: boolean;
+    currentUnread?: number;
+  }
+) {
+  const updates: Record<string, unknown> = {
+    last_message_at: new Date().toISOString(),
+    last_message_preview: (opts.preview || '').slice(0, 120),
+    last_direction: opts.direction,
+  };
+  if (opts.incrementUnread) {
+    updates.unread_count = (opts.currentUnread || 0) + 1;
+  }
+  await supabase.from('conversations').update(updates).eq('id', conversationId);
 }
 
 // ─── Find Contact by Phone ───
