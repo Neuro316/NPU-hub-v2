@@ -98,14 +98,29 @@ export async function getOrCreateConversation(
   channel: 'sms' | 'voice' | 'email',
   orgId?: string
 ) {
-  // Try to find existing (maybeSingle: no error on the normal "none yet" case)
-  const { data: existing } = await supabase
+  // ONE CONVERSATION PER CONTACT — channel is deliberately NOT part of the
+  // match key. Matching on contact_id + channel gave each contact a separate
+  // card per medium, so a call and a text with the same person landed on two
+  // cards that never merged. Everything for a contact now appends to one thread
+  // forever: no channel split, and no recency window (there never was one —
+  // a single card legitimately spans days).
+  //
+  // `channel` is still WRITTEN on create (it's NOT NULL with a CHECK) and now
+  // means "first touch", used only for display.
+  //
+  // .limit(1) rather than .maybeSingle(): maybeSingle ERRORS when more than one
+  // row matches, and callers that ignore the error read `existing` as null and
+  // insert ANOTHER duplicate — so a single stray duplicate used to compound on
+  // every subsequent message. Oldest-first keeps the original thread as the
+  // survivor and makes the choice deterministic.
+  const { data: existingRows } = await supabase
     .from('conversations')
     .select('*')
     .eq('contact_id', contactId)
-    .eq('channel', channel)
-    .maybeSingle();
+    .order('created_at', { ascending: true })
+    .limit(1);
 
+  const existing = existingRows?.[0];
   if (existing) return existing;
 
   // conversations.org_id is NOT NULL. Callers historically omitted it, so every

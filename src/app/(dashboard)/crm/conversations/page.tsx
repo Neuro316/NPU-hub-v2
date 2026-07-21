@@ -19,7 +19,7 @@ import type { CrmContact } from '@/types/crm'
 import { buildTimeline, TimelineStream, type TimelineEntry } from '@/components/crm/comms-timeline'
 import { VoipCall } from '@/components/crm/twilio-comms'
 
-type ChannelFilter = 'all' | 'sms' | 'voice' | 'email'
+// Channel is no longer a list filter — one card per contact covers all channels.
 type DirectionFilter = 'both' | 'inbound' | 'outbound'
 
 interface ThreadItem {
@@ -59,7 +59,6 @@ export default function ConversationsPage() {
   const [threads, setThreads] = useState<ThreadItem[]>([])
   const [timeline, setTimeline] = useState<TimelineEntry[]>([])
   const [selectedThread, setSelectedThread] = useState<ThreadItem | null>(null)
-  const [channelFilter, setChannelFilter] = useState<ChannelFilter>('all')
   const [directionFilter, setDirectionFilter] = useState<DirectionFilter>('both')
   const [searchQuery, setSearchQuery] = useState('')
   const [newMessage, setNewMessage] = useState('')
@@ -82,7 +81,7 @@ export default function ConversationsPage() {
   const [searchingContacts, setSearchingContacts] = useState(false)
 
   // Load threads from existing conversations table
-  useEffect(() => { loadThreads() }, [channelFilter])
+  useEffect(() => { loadThreads() }, [])
 
   async function loadThreads() {
     setLoading(true)
@@ -97,8 +96,6 @@ export default function ConversationsPage() {
       .neq('status', 'closed')
       .order('last_message_at', { ascending: false })
       .limit(100)
-
-    if (channelFilter !== 'all') query = query.eq('channel', channelFilter)
 
     const { data } = await query
     if (data) {
@@ -297,19 +294,11 @@ export default function ConversationsPage() {
           {showFilters && (
             <div className="mt-2.5 space-y-2">
               {/* Channel */}
-              <div className="flex bg-gray-50 rounded-lg p-0.5">
-                {([
-                  { key: 'all', label: 'All' },
-                  { key: 'sms', label: 'SMS', Icon: MessageCircle },
-                  { key: 'voice', label: 'Voice', Icon: Phone },
-                  { key: 'email', label: 'Email', Icon: Mail },
-                ] as const).map(({ key, label }) => (
-                  <button key={key} onClick={() => setChannelFilter(key)}
-                    className={`flex-1 py-1.5 text-[9px] font-medium rounded-md transition-all ${
-                      channelFilter === key ? 'bg-white text-np-dark shadow-sm' : 'text-gray-400 hover:text-gray-600'
-                    }`}>{label}</button>
-                ))}
-              </div>
+              {/* The channel filter chips were removed here. With one card per
+                  contact they filtered on the card's FIRST-TOUCH channel, so
+                  picking "SMS" would hide a thread full of texts merely because
+                  it began with a call. The direction filter below still works —
+                  it filters the timeline, not the card. */}
               {/* Direction */}
               <div className="flex bg-gray-50 rounded-lg p-0.5">
                 {([
@@ -414,8 +403,11 @@ export default function ConversationsPage() {
               <div ref={bottomRef} />
             </div>
 
-            {/* Compose */}
-            {selectedThread.channel === 'sms' && (
+            {/* Compose. Gated on having a phone number, NOT on the card's
+                channel: one card per contact now covers calls AND texts, so a
+                thread that happened to start with a call would otherwise hide
+                the composer forever. */}
+            {!!selectedThread.contact_phone && (
               <div className="p-3 border-t border-gray-100">
                 <div className="flex items-end gap-2">
                   <textarea ref={inputRef} value={newMessage} onChange={e => setNewMessage(e.target.value)}

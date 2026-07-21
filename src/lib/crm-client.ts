@@ -322,13 +322,18 @@ export async function createSequenceStep(step: Partial<SequenceStep>) {
 }
 
 export async function createConversation(contactId: string, channel: 'sms' | 'voice' | 'email', orgId: string) {
-  const { data: existing } = await supabase()
+  // ONE CONVERSATION PER CONTACT — channel is not part of the match key, and
+  // .limit(1) avoids maybeSingle's multi-row error path (which callers read as
+  // "none found", compounding duplicates). Mirrors getOrCreateConversation in
+  // crm-server.ts; keep the two in step.
+  const { data: existingRows } = await supabase()
     .from('conversations')
     .select('id')
     .eq('contact_id', contactId)
-    .eq('channel', channel)
-    .maybeSingle()
+    .order('created_at', { ascending: true })
+    .limit(1)
 
+  const existing = existingRows?.[0]
   if (existing) return existing.id as string
 
   const { data, error } = await supabase()
