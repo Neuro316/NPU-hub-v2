@@ -5,6 +5,7 @@ import { WorkspaceProvider } from '@/lib/workspace-context'
 import { PermissionsProvider } from '@/lib/hooks/use-permissions'
 import { SidebarProvider, useSidebar } from '@/lib/sidebar-context'
 import { VoiceReceiverProvider } from '@/lib/voice-receiver-context'
+import IncomingCallModal from '@/components/crm/incoming-call-modal'
 import { Sidebar } from '@/components/sidebar'
 import { TrackerInit } from '@/components/tracker-init'
 import { HelpBot } from '@/components/help-bot'
@@ -63,6 +64,8 @@ export default function DashboardLayout({
             <TrackerInit />
             <DynamicFavicon />
             <DashboardContent>{children}</DashboardContent>
+            {/* Calls can arrive on any page — render the ringer above everything. */}
+            <IncomingCallModal />
             <HelpBot />
           </SidebarProvider>
         </VoiceReceiverProvider>

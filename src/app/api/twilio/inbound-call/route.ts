@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminSupabase } from '@/lib/supabase';
 import { getOrgTwilioConfig, pickNumber } from '@/lib/twilio-org';
 import { toE164 } from '@/lib/phone';
+import { receiverIdentity } from '@/lib/voice-identity';
+import {
+  findContactByPhoneNormalized, getOrCreateConversation, bumpConversation,
+  logActivity, applyAutoAssignment,
+} from '@/lib/crm-server';
 import twilio from 'twilio';
 
 export async function POST(request: NextRequest) {
@@ -122,13 +127,69 @@ export async function POST(request: NextRequest) {
     // Cameron Allen contact is stored "18287347558" but arrives "+18287347558"),
     // which left the call row's contact_id null and made voicemails invisible in
     // the thread (the timeline loads calls by contact_id).
+    //
+    // ── VISIBILITY FIX ──────────────────────────────────────────────────────
+    // A call_log row alone is INVISIBLE in the Conversations pane. The pane is a
+    // list of `conversations`; call_logs has no conversation_id and is pulled
+    // into a thread by contact_id — so the conversation row is what makes the
+    // call appear at all, and the call attaches via the contact that
+    // conversation belongs to. Inbound SMS already did find-or-create-contact ->
+    // find-or-create-conversation -> bump; inbound calls skipped both, so a call
+    // from a number with no prior conversation landed in the DB and showed up
+    // nowhere. Mirror the SMS path exactly: unknown caller gets a placeholder
+    // "Unknown" contact (mergeable later) rather than contact_id = null.
     let contactId: string | null = null;
+    let conversationId: string | null = null;
     if (orgId && from) {
-      const { data: matchedId } = await admin.rpc('match_contact_by_phone', {
-        p_org: orgId,
-        p_phone: from,
-      });
-      contactId = (matchedId as string | null) ?? null;
+      let contact = await findContactByPhoneNormalized(admin, orgId, from);
+
+      if (!contact) {
+        try {
+          const assignedTo = await applyAutoAssignment(admin, orgId, { source: 'inbound_call' });
+          const { data: newContact } = await admin
+            .from('contacts')
+            .insert({
+              org_id: orgId,
+              first_name: 'Unknown',
+              last_name: from,
+              phone: from,
+              source: 'inbound_call',
+              assigned_to: assignedTo,
+            })
+            .select()
+            .single();
+          contact = newContact;
+          if (contact) {
+            await logActivity(admin, {
+              contact_id: contact.id,
+              org_id: orgId,
+              event_type: 'contact_created',
+              event_data: { source: 'inbound_call', phone: from },
+            });
+          }
+        } catch (e) {
+          console.warn('inbound call: unknown-contact create failed:', e);
+        }
+      }
+
+      contactId = contact?.id ?? null;
+
+      // Find-or-create the voice conversation so this caller is visible in the
+      // pane. Never let a failure here block the call — TwiML must still return.
+      if (contact) {
+        try {
+          const conversation = await getOrCreateConversation(admin, contact.id, 'voice', orgId);
+          conversationId = conversation?.id ?? null;
+          await bumpConversation(admin, conversation.id, {
+            preview: 'Incoming call',
+            direction: 'inbound',
+            incrementUnread: true,
+            currentUnread: conversation.unread_count || 0,
+          });
+        } catch (e) {
+          console.warn('inbound call: conversation upsert failed:', e);
+        }
+      }
     }
 
     // Insert the inbound call row keyed by CallSid so recording-ready can attribute
@@ -155,9 +216,37 @@ export async function POST(request: NextRequest) {
     }
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '');
+    console.log('Inbound routing:', JSON.stringify({ orgId, contactId, conversationId, hasGreeting: !!greetingUrl }));
 
-    // Forward to the staff phone. callerId = the NP number that was dialed, so the
-    // staff phone shows a business call rather than the raw external caller.
+    // ── RING THE BROWSER FIRST ────────────────────────────────────────────────
+    // Dial the org's registered browser receiver(s). Twilio forks this to EVERY
+    // Device registered under the identity and the first to accept wins; if none
+    // is registered, or nobody answers within the timeout, the <Dial> simply ends
+    // and TwiML execution CONTINUES to the greeting + <Record> below. That verb
+    // ordering IS the "nobody's home" detection — there is nothing to query.
+    //
+    // Two attributes are deliberately absent, and both matter:
+    //   * NO `action`  — with an action URL Twilio POSTs there when the dial ends
+    //                    and ABANDONS the rest of this document, so the greeting
+    //                    and <Record> would never run and the caller would get
+    //                    dead air. (The OUTBOUND branch above does set action —
+    //                    do not copy it down here.)
+    //   * NO `callerId` — for a <Client> leg this would overwrite From, and the
+    //                     browser needs From intact to show who is calling and to
+    //                     run the normalized contact match.
+    // The identity comes from receiverIdentity() — the same helper the token
+    // route uses. Neither side spells the string.
+    if (orgId) {
+      const ring = response.dial({ timeout: 20 });
+      ring.client(receiverIdentity(orgId));
+    }
+
+    // DORMANT: legacy phone forwarding. forward_number is intentionally cleared —
+    // browser-ring REPLACES forwarding — so this never executes. Left in place
+    // rather than deleted, but note it would run as a SECOND leg after the browser
+    // ring if forward_number were ever repopulated.
+    // callerId = the NP number that was dialed, so the staff phone shows a
+    // business call rather than the raw external caller.
     if (forwardNumber) {
       response.say({ voice: 'Polly.Joanna' }, 'Connecting you now.');
       const dial = response.dial({

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminSupabase } from '@/lib/supabase';
-import { logActivity } from '@/lib/crm-server';
+import { logActivity, getOrCreateConversation, bumpConversation } from '@/lib/crm-server';
 
 // Twilio recording-ready callback (recordingStatusCallback on <Record>).
 // Stores the voicemail recording + duration on the call_logs row keyed by CallSid,
@@ -61,6 +61,29 @@ export async function POST(request: NextRequest) {
       ...(Number.isFinite(durationSec) ? { duration_seconds: durationSec } : {}),
     })
     .eq('id', callLog.id);
+
+  // Surface the voicemail in the Conversations pane. inbound-call already
+  // find-or-created this conversation and previewed it as "Incoming call"; now
+  // that the call actually ended in a voicemail, re-bump so the list shows what
+  // it really was and floats it back to the top. getOrCreateConversation is
+  // idempotent, so this also self-heals a call row whose conversation was never
+  // created (e.g. one that landed before this fix shipped).
+  if (callLog.org_id && callLog.contact_id) {
+    try {
+      const conversation = await getOrCreateConversation(
+        supabase, callLog.contact_id, 'voice', callLog.org_id
+      );
+      await bumpConversation(supabase, conversation.id, {
+        preview: '\u{1F4E7} Voicemail',
+        direction: 'inbound',
+        // Not incremented: inbound-call already counted this call as unread.
+        // Bumping again would double-count one interaction.
+        incrementUnread: false,
+      });
+    } catch (e) {
+      console.warn('voicemail conversation bump skipped:', e);
+    }
+  }
 
   // Lightweight timeline entry (only when we know the contact).
   if (callLog.org_id && callLog.contact_id) {
