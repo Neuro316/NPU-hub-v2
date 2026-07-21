@@ -177,7 +177,7 @@ export function VoipCall({ contact, onClose, onEnded }: {
       deviceRef.current = device
 
       const call = await device.connect({
-        params: { To: data.contact_phone }
+        params: { To: data.contact_phone, CallerId: data.caller_id ?? '', OrgId: data.org_id ?? '' }
       })
 
       callRef.current = call

@@ -89,6 +89,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       token, call_log_id: callLogId, contact_phone: contact.phone, caller_id: callerId,
+      org_id: contact.org_id,
     });
   } catch (e: any) {
     console.error('Voice token error:', e);
