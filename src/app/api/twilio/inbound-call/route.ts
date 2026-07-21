@@ -1,28 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminSupabase } from '@/lib/supabase';
 import { getOrgTwilioConfig, pickNumber } from '@/lib/twilio-org';
+import { toE164 } from '@/lib/phone';
 import twilio from 'twilio';
-
-// Normalize a stored contact phone (which may be "(828) 348-4022", "270-358-6842",
-// "(828) 505-7222 ext. 104", etc.) to E.164 for <Dial><Number>. Returns '' if the
-// value is not a dialable number (e.g. "Test"), so the caller can reject instead
-// of misrouting. This is the crux of the browser-call bug: a formatted number
-// failed the old /^\+?\d{7,15}$/ test and fell through to the <Client> branch.
-function toE164(raw: string): string {
-  if (!raw) return '';
-  const trimmed = raw.trim();
-  if (trimmed.toLowerCase().startsWith('client:')) return '';
-  // Drop trailing extensions ("ext. 104", "x104") — Twilio can't dial them inline.
-  const withoutExt = trimmed.replace(/\s*(?:ext\.?|x)\s*\d+\s*$/i, '');
-  const hasPlus = withoutExt.trim().startsWith('+');
-  const digits = withoutExt.replace(/\D/g, '');
-  if (!digits) return '';
-  if (hasPlus) return `+${digits}`;
-  if (digits.length === 10) return `+1${digits}`;               // US 10-digit
-  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`; // US 1+10
-  if (digits.length >= 7) return `+${digits}`;                  // best-effort international
-  return '';
-}
 
 export async function POST(request: NextRequest) {
   const VoiceResponse = twilio.twiml.VoiceResponse;
@@ -111,6 +91,7 @@ export async function POST(request: NextRequest) {
     // configured in org_settings.crm_twilio, and read forward_number from there.
     let orgId: string | null = null;
     let forwardNumber = '';
+    let greetingUrl = '';
     try {
       const { data: rows } = await admin
         .from('org_settings')
@@ -122,6 +103,15 @@ export async function POST(request: NextRequest) {
       if (match) {
         orgId = match.org_id;
         forwardNumber = String(match.setting_value?.forward_number || '').trim();
+        // Custom voicemail greeting (set in CRM Settings -> Twilio). Comes back in
+        // this same row, so no extra round-trip. Must be a URL Twilio's servers
+        // can fetch UNAUTHENTICATED — a public Storage object, never the
+        // session-gated /api/comms/recording proxy (Twilio would get a 401).
+        greetingUrl = String(match.setting_value?.greeting_url || '').trim();
+        if (greetingUrl && !/^https:\/\//i.test(greetingUrl)) {
+          console.warn('Ignoring non-https greeting_url:', greetingUrl);
+          greetingUrl = '';
+        }
       }
     } catch (e) {
       console.warn('inbound org resolution failed:', e);
@@ -180,7 +170,14 @@ export async function POST(request: NextRequest) {
     // Voicemail fallback — runs when the forward does not connect (no-answer/busy),
     // or immediately if no forward number is configured. recordingStatusCallback ->
     // recording-ready, which attributes by CallSid and marks the row 'voicemail'.
-    response.say({ voice: 'Polly.Joanna' }, 'Please leave a message after the tone.');
+    // Greeting: the org's recorded <Play> when one is set, otherwise the default
+    // <Say>. Degrading to <Say> (rather than silence) means a missing/removed
+    // greeting still gives the caller a usable prompt.
+    if (greetingUrl) {
+      response.play(greetingUrl);
+    } else {
+      response.say({ voice: 'Polly.Joanna' }, 'Please leave a message after the tone.');
+    }
     response.record({
       maxLength: 120,
       playBeep: true,

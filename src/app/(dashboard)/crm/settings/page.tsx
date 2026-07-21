@@ -9,6 +9,7 @@ import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
 import PipelineResourcesManager from '@/components/crm/pipeline-resources'
 import GuestProfileSettings from '@/components/settings/GuestProfileSettings'
+import VoicemailGreeting from '@/components/crm/voicemail-greeting'
 
 type Section = 'email' | 'twilio' | 'ai' | 'pipeline' | 'team' | 'notifications' | 'compliance' | 'general' | 'guest_profile'
 
@@ -92,9 +93,20 @@ export default function SettingsPage() {
         }, { onConflict: 'org_id' })
       }
       if (active === 'twilio') {
+        // READ-MERGE-WRITE. This form only knows the credential fields + numbers;
+        // crm_twilio also holds keys this page never loads (greeting_url /
+        // greeting_path from the voicemail-greeting panel, forward_number). A bare
+        // upsert of the form state would silently DROP them — and the greeting can
+        // change after this page loaded, so merge against a fresh read, not the
+        // copy captured at mount.
+        const { data: current } = await supabase.from('org_settings')
+          .select('setting_value').eq('org_id', currentOrg.id)
+          .eq('setting_key', 'crm_twilio').maybeSingle()
+        const existing = (current?.setting_value && typeof current.setting_value === 'object' && !Array.isArray(current.setting_value))
+          ? current.setting_value : {}
         await supabase.from('org_settings').upsert({
           org_id: currentOrg.id, setting_key: 'crm_twilio',
-          setting_value: { ...twilio, numbers: twilioNumbers },
+          setting_value: { ...existing, ...twilio, numbers: twilioNumbers },
         }, { onConflict: 'org_id,setting_key' })
       }
       if (active === 'ai') {
@@ -258,6 +270,10 @@ export default function SettingsPage() {
                   ))}
                 </div>
               </div>
+
+              {/* Voicemail Greeting — saves itself through the admin-gated
+                  /api/comms/greeting route, independent of "Save Settings". */}
+              <VoicemailGreeting />
 
               {/* Test Connection */}
               <div className="border-t border-gray-100 pt-4">
