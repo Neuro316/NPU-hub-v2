@@ -17,32 +17,40 @@ export async function POST(request: NextRequest) {
   const supabase = createAdminSupabase();
   const recordingUrl = params.RecordingUrl;
   const recordingSid = params.RecordingSid;
+  const callSid = params.CallSid;
 
-  if (!recordingUrl) {
-    return NextResponse.json({ error: 'No recording URL' }, { status: 400 });
+  if (!recordingUrl || !callSid) {
+    return NextResponse.json({ error: 'Missing RecordingUrl or CallSid' }, { status: 400 });
   }
 
-  // Find the most recent call log without a recording
+  // Attribute by CallSid — exact, not the old "most recent completed" heuristic
+  // (which mis-attributed and, via contacts!inner, dropped unknown-caller rows).
+  // org_id is read from the call row itself, so null-contact voicemails still work.
   const { data: callLog } = await supabase
     .from('call_logs')
-    .select('*, contacts!inner(org_id)')
-    .is('recording_url', null)
-    .eq('status', 'completed')
-    .order('ended_at', { ascending: false })
-    .limit(1)
-    .single();
+    .select('id, org_id, contact_id')
+    .eq('external_call_sid', callSid)
+    .maybeSingle();
 
   if (!callLog) {
-    return NextResponse.json({ error: 'No matching call log' }, { status: 404 });
+    // No row for this CallSid (e.g. a flow that didn't pre-insert one). No-op 200
+    // so Twilio doesn't retry indefinitely.
+    console.warn('recording-ready: no call_log for CallSid', callSid);
+    return NextResponse.json({ ok: true, matched: false });
   }
 
-  // Store recording URL immediately
+  // This recording is a voicemail: store URL + SID, flip status, mark transcription pending.
   await supabase
     .from('call_logs')
-    .update({ recording_url: `${recordingUrl}.mp3` })
+    .update({
+      recording_url: `${recordingUrl}.mp3`,
+      recording_sid: recordingSid,
+      status: 'voicemail',
+      transcription_status: 'pending',
+    })
     .eq('id', callLog.id);
 
-  const orgId = (callLog as any).contacts?.org_id;
+  const orgId = callLog.org_id;
 
   // Process asynchronously (in production, use a queue)
   // For now, process inline
@@ -56,21 +64,23 @@ export async function POST(request: NextRequest) {
     // 3. Sentiment
     const sentiment = transcription ? await analyzeSentiment(transcription, orgId) : null;
 
-    // 4. Update call log
+    // 4. Update call log. Column is `transcript` (NOT `transcription` — the old
+    //    code wrote a nonexistent column, so this update always errored).
     await supabase
       .from('call_logs')
       .update({
-        transcription,
+        transcript: transcription,
         ai_summary: aiSummary,
         sentiment,
+        transcription_status: transcription ? 'completed' : 'failed',
       })
       .eq('id', callLog.id);
 
-    // 5. Extract tasks (store for review — don't auto-create)
-    if (transcription) {
+    // 5. Extract tasks (store for review — don't auto-create). Needs a contact to
+    //    attach to; unknown-caller voicemails (contact_id null) skip this.
+    if (transcription && orgId && callLog.contact_id) {
       const tasks = await extractTasks(transcription, orgId);
-      if (tasks.length > 0 && orgId) {
-        // Store extracted tasks in activity log for the review modal to pick up
+      if (tasks.length > 0) {
         await logActivity(supabase, {
           contact_id: callLog.contact_id,
           org_id: orgId,
@@ -82,8 +92,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 6. Log activity
-    if (orgId) {
+    // 6. Log activity (only when we know the contact)
+    if (orgId && callLog.contact_id) {
       await logActivity(supabase, {
         contact_id: callLog.contact_id,
         org_id: orgId,
@@ -99,6 +109,10 @@ export async function POST(request: NextRequest) {
     }
   } catch (err) {
     console.error('Recording processing error:', err);
+    await supabase
+      .from('call_logs')
+      .update({ transcription_status: 'failed' })
+      .eq('id', callLog.id);
   }
 
   return NextResponse.json({ success: true });

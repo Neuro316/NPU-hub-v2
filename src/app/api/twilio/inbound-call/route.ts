@@ -96,15 +96,96 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // INBOUND: Someone calling your Twilio number
-    console.log('Inbound call from:', from);
-    response.say({ voice: 'Polly.Joanna' }, 'Please hold while we connect you.');
+    // INBOUND: a real PSTN caller reached an NP number.
+    // Forward to a staff phone; on no-answer/busy, fall through to voicemail.
+    // (The old code dialed <Client>crm-browser-client</Client> — an identity no
+    //  browser registers as, and there is no inbound receiver at all yet — so it
+    //  rang nobody for 30s then recorded a voicemail that was never captured. The
+    //  browser-receiver <Client> leg is the NEXT diff; this one restores calls by
+    //  forwarding to a phone and actually capturing the voicemail.)
+    console.log('Inbound call from:', from, 'to:', to);
+    const admin = createAdminSupabase();
 
-    const dial = response.dial({ timeout: 30 });
-    dial.client('crm-browser-client');
+    // Resolve the receiving number's org + its forward target. Independent of
+    // crm_twilio_numbers (not seeded until step 1): match `to` against the numbers
+    // configured in org_settings.crm_twilio, and read forward_number from there.
+    let orgId: string | null = null;
+    let forwardNumber = '';
+    try {
+      const { data: rows } = await admin
+        .from('org_settings')
+        .select('org_id, setting_value')
+        .eq('setting_key', 'crm_twilio');
+      const match = (rows || []).find((r: any) =>
+        Array.isArray(r.setting_value?.numbers) &&
+        r.setting_value.numbers.some((n: any) => n.phone === to));
+      if (match) {
+        orgId = match.org_id;
+        forwardNumber = String(match.setting_value?.forward_number || '').trim();
+      }
+    } catch (e) {
+      console.warn('inbound org resolution failed:', e);
+    }
 
-    response.say({ voice: 'Polly.Joanna' }, 'No one is available. Please leave a message after the beep.');
-    response.record({ maxLength: 120, transcribe: false });
+    // Best-effort contact match (exact E.164). Normalized last-10 matching arrives
+    // with migration 069 in step 1; until then unknown/formatted numbers stay null,
+    // which is fine — the call row still attributes by CallSid.
+    let contactId: string | null = null;
+    if (orgId && from) {
+      const { data: c } = await admin
+        .from('contacts')
+        .select('id')
+        .eq('org_id', orgId)
+        .eq('phone', from)
+        .is('merged_into_id', null)
+        .maybeSingle();
+      contactId = c?.id ?? null;
+    }
+
+    // Insert the inbound call row keyed by CallSid so recording-ready can attribute
+    // the voicemail back to exactly this call. org_id is NOT NULL, so only insert
+    // when the org resolved.
+    const callSid = params.CallSid || '';
+    if (orgId && callSid) {
+      try {
+        await admin.from('call_logs').insert({
+          org_id: orgId,
+          contact_id: contactId,
+          direction: 'inbound',
+          status: 'ringing',
+          from_number: from,
+          to_number: to,
+          external_call_sid: callSid,
+          started_at: new Date().toISOString(),
+        });
+      } catch (e) {
+        console.warn('inbound call_log insert failed:', e);
+      }
+    }
+
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '');
+
+    // Forward to the staff phone. callerId = the NP number that was dialed, so the
+    // staff phone shows a business call rather than the raw external caller.
+    if (forwardNumber) {
+      response.say({ voice: 'Polly.Joanna' }, 'Connecting you now.');
+      const dial = response.dial({
+        timeout: 20,
+        ...(to ? { callerId: to } : {}),
+      });
+      dial.number(forwardNumber);
+    }
+
+    // Voicemail fallback — runs when the forward does not connect (no-answer/busy),
+    // or immediately if no forward number is configured. recordingStatusCallback ->
+    // recording-ready, which attributes by CallSid and marks the row 'voicemail'.
+    response.say({ voice: 'Polly.Joanna' }, 'Please leave a message after the tone.');
+    response.record({
+      maxLength: 120,
+      playBeep: true,
+      ...(appUrl ? { recordingStatusCallback: `${appUrl}/api/twilio/recording-ready` } : {}),
+    });
+    response.say({ voice: 'Polly.Joanna' }, 'We did not receive a message. Goodbye.');
 
     return new NextResponse(response.toString(), {
       headers: { 'Content-Type': 'text/xml' },
