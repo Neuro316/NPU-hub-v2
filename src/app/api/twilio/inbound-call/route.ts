@@ -127,26 +127,27 @@ export async function POST(request: NextRequest) {
       console.warn('inbound org resolution failed:', e);
     }
 
-    // Best-effort contact match (exact E.164). Normalized last-10 matching arrives
-    // with migration 069 in step 1; until then unknown/formatted numbers stay null,
-    // which is fine — the call row still attributes by CallSid.
+    // Normalized last-10 contact match (069 rpc) — same as inbound SMS. Exact
+    // .eq('phone', from) missed contacts stored in non-E.164 formats (e.g. the
+    // Cameron Allen contact is stored "18287347558" but arrives "+18287347558"),
+    // which left the call row's contact_id null and made voicemails invisible in
+    // the thread (the timeline loads calls by contact_id).
     let contactId: string | null = null;
     if (orgId && from) {
-      const { data: c } = await admin
-        .from('contacts')
-        .select('id')
-        .eq('org_id', orgId)
-        .eq('phone', from)
-        .is('merged_into_id', null)
-        .maybeSingle();
-      contactId = c?.id ?? null;
+      const { data: matchedId } = await admin.rpc('match_contact_by_phone', {
+        p_org: orgId,
+        p_phone: from,
+      });
+      contactId = (matchedId as string | null) ?? null;
     }
 
     // Insert the inbound call row keyed by CallSid so recording-ready can attribute
-    // the voicemail back to exactly this call. org_id is NOT NULL, so only insert
-    // when the org resolved.
-    const callSid = params.CallSid || '';
-    if (orgId && callSid) {
+    // the voicemail back to exactly this call. Insert whenever the org resolved —
+    // do NOT gate on CallSid (if it ever comes through empty, gating on it would
+    // silently skip the row while the forward still proceeds). external_call_sid is
+    // nullable + partial-unique, so a null is fine.
+    const callSid = params.CallSid || null;
+    if (orgId) {
       try {
         await admin.from('call_logs').insert({
           org_id: orgId,
