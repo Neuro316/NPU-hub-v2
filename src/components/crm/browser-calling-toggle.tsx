@@ -1,6 +1,6 @@
 'use client'
 
-import { PhoneCall, PhoneOff, Loader2, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { PhoneCall, PhoneOff, Loader2, AlertTriangle, CheckCircle2, RefreshCw } from 'lucide-react'
 import { useVoiceReceiver } from '@/lib/voice-receiver-context'
 
 // "Enable browser calling" — the one-time opt-in that pre-warms the mic
@@ -8,7 +8,7 @@ import { useVoiceReceiver } from '@/lib/voice-receiver-context'
 // user gesture that unblocks autoplay so the ringtone is audible.
 
 export default function BrowserCallingToggle() {
-  const { status, error, identity, enable, disable } = useVoiceReceiver()
+  const { status, error, identity, enable, disable, ringHere } = useVoiceReceiver()
 
   const busy = status === 'starting'
 
@@ -18,15 +18,25 @@ export default function BrowserCallingToggle() {
       <p className="text-[10px] text-gray-400 mb-3">
         Ring this browser when someone calls your number, and answer in the Hub. If no browser is
         open, callers hear your voicemail greeting instead. Enable once per browser — we ask for the
-        microphone up front so answering is instant.
+        microphone up front so answering is instant. Every open Hub tab rings; whichever you answer
+        on takes the call.
       </p>
 
       <div className="flex flex-wrap items-center gap-2">
         {status === 'ready' && (
           <>
             <span className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-green-50 border border-green-200 text-[10px] font-medium text-green-700">
-              <CheckCircle2 size={12} /> Ready — calls will ring here
+              <CheckCircle2 size={12} /> Ready — calls will ring on THIS tab
             </span>
+            {/* Manual override / recovery: force this tab to re-register. */}
+            <button
+              onClick={ringHere}
+              disabled={busy}
+              className="flex items-center gap-1.5 px-3 py-2 border border-np-blue/20 text-np-blue text-xs font-medium rounded-lg hover:bg-np-blue/5 disabled:opacity-40"
+              title="Re-register this tab with Twilio"
+            >
+              <RefreshCw size={12} /> Reconnect this tab
+            </button>
             <button
               onClick={disable}
               className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 text-np-dark text-xs font-medium rounded-lg hover:bg-gray-50"
@@ -49,12 +59,6 @@ export default function BrowserCallingToggle() {
         {busy && (
           <span className="flex items-center gap-1 text-[10px] text-gray-400">
             <Loader2 size={11} className="animate-spin" /> Connecting…
-          </span>
-        )}
-
-        {status === 'follower' && (
-          <span className="text-[10px] text-gray-500">
-            Another Hub tab in this browser is handling calls — they&rsquo;ll ring there.
           </span>
         )}
 

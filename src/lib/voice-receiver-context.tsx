@@ -10,6 +10,22 @@ import { receiverIdentity } from '@/lib/voice-identity'
 // Mounted once in the dashboard layout so it survives route changes; the UI that
 // renders a ringing call consumes `incoming` from this context.
 //
+// EVERY eligible tab registers — there is deliberately NO leader election.
+//   An earlier version elected one tab per browser over BroadcastChannel to
+//   avoid redundant registrations. It caused a silent, total failure: a tab that
+//   won the vote but never actually registered (mic denied, token error, hard
+//   close without `pagehide` firing) kept the crown while every other tab sat
+//   dormant, so inbound calls rang nobody and fell to voicemail with the UI
+//   showing "another tab is handling calls". Leadership and registration were
+//   separate facts with nothing tying them together, and there was no way back.
+//
+//   Twilio forks an incoming call to EVERY endpoint registered under an
+//   identity and the first to accept wins, so redundant registration is normal,
+//   supported behaviour — not a bug. The cost is N WebSockets and N ringtones
+//   when several tabs are open; the benefit is that "am I reachable?" has one
+//   answer per tab, decided by that tab, visible in that tab. For a phone,
+//   availability beats tidiness.
+//
 // Registration is DELIBERATELY opt-in ("Enable browser calling"):
 //   * device.register() needs no mic permission, but call.accept() does — so
 //     without an up-front opt-in the FIRST real call would hit the browser's mic
@@ -21,11 +37,10 @@ import { receiverIdentity } from '@/lib/voice-identity'
 // loads (the mic grant persists for the origin, so no prompt reappears).
 
 type ReceiverStatus =
-  | 'unsupported'   // no WebRTC/BroadcastChannel path available
+  | 'unsupported'   // no WebRTC in this browser
   | 'off'           // staff user, not enabled on this browser yet
   | 'starting'      // acquiring mic / token / registering
-  | 'ready'         // registered — calls will ring here
-  | 'follower'      // another tab in this browser holds the registration
+  | 'ready'         // THIS TAB is registered — calls will ring here
   | 'error'         // NOT receiving calls; `error` explains why
 
 interface IncomingCall {
@@ -41,13 +56,16 @@ interface VoiceReceiverValue {
   incoming: IncomingCall | null
   enable: () => Promise<void>
   disable: () => void
+  /** Force THIS tab to (re)register — recovery from a dropped connection. */
+  ringHere: () => Promise<void>
   /** Set by the ringing UI once a call is answered/dismissed. */
   clearIncoming: () => void
 }
 
 const VoiceReceiverContext = createContext<VoiceReceiverValue>({
   status: 'off', error: '', identity: null, incoming: null,
-  enable: async () => {}, disable: () => {}, clearIncoming: () => {},
+  enable: async () => {}, disable: () => {}, ringHere: async () => {},
+  clearIncoming: () => {},
 })
 
 export function useVoiceReceiver() {
@@ -55,8 +73,6 @@ export function useVoiceReceiver() {
 }
 
 const ENABLED_KEY = 'npu_hub_voice_receiver_enabled'
-const CHANNEL_NAME = 'npu-voice-receiver'
-const ELECTION_WAIT_MS = 400
 
 export function VoiceReceiverProvider({ children }: { children: React.ReactNode }) {
   const { user, currentOrg } = useWorkspace()
@@ -64,71 +80,12 @@ export function VoiceReceiverProvider({ children }: { children: React.ReactNode 
   const [status, setStatus] = useState<ReceiverStatus>('off')
   const [error, setError] = useState('')
   const [incoming, setIncoming] = useState<IncomingCall | null>(null)
-  const [isLeader, setIsLeader] = useState(false)
   const [enabled, setEnabled] = useState(false)
 
   const deviceRef = useRef<any>(null)
-  const channelRef = useRef<BroadcastChannel | null>(null)
-  const tabIdRef = useRef<string>('')
   const orgIdRef = useRef<string | null>(null)
 
   const identity = currentOrg ? receiverIdentity(currentOrg.id) : null
-
-  // ── Leader election ──────────────────────────────────────────────────────
-  // Every tab of this browser shares one identity, and Twilio forks an incoming
-  // call to EVERY registration — so N open tabs would ring N times. One tab
-  // registers; the rest sit as followers and take over when it goes away.
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    if (typeof BroadcastChannel === 'undefined') { setIsLeader(true); return }  // no election possible: act alone
-
-    tabIdRef.current = Math.random().toString(36).slice(2)
-    const channel = new BroadcastChannel(CHANNEL_NAME)
-    channelRef.current = channel
-
-    let leader = false
-    let electionTimer: ReturnType<typeof setTimeout> | null = null
-
-    const claim = () => {
-      electionTimer = setTimeout(() => {
-        leader = true
-        setIsLeader(true)
-        channel.postMessage({ type: 'leader', id: tabIdRef.current })
-      }, ELECTION_WAIT_MS)
-      channel.postMessage({ type: 'who', id: tabIdRef.current })
-    }
-
-    channel.onmessage = (ev: MessageEvent) => {
-      const msg = ev.data || {}
-      if (msg.id === tabIdRef.current) return
-      if (msg.type === 'who' && leader) {
-        channel.postMessage({ type: 'leader', id: tabIdRef.current })
-      }
-      if (msg.type === 'leader' && !leader) {
-        if (electionTimer) { clearTimeout(electionTimer); electionTimer = null }
-        setIsLeader(false)
-      }
-      if (msg.type === 'bye' && !leader) {
-        // Stagger so two followers don't both claim on the same tick.
-        setTimeout(claim, Math.floor(Math.random() * 200))
-      }
-    }
-
-    claim()
-
-    const relinquish = () => {
-      if (leader) channel.postMessage({ type: 'bye', id: tabIdRef.current })
-    }
-    window.addEventListener('pagehide', relinquish)
-
-    return () => {
-      relinquish()
-      window.removeEventListener('pagehide', relinquish)
-      if (electionTimer) clearTimeout(electionTimer)
-      channel.close()
-      channelRef.current = null
-    }
-  }, [])
 
   // ── Token ────────────────────────────────────────────────────────────────
   const fetchToken = useCallback(async (orgId: string): Promise<string> => {
@@ -229,13 +186,27 @@ export function VoiceReceiverProvider({ children }: { children: React.ReactNode 
   }, [fetchToken, teardown])
 
   // ── Public controls ──────────────────────────────────────────────────────
+  // Enable ALWAYS registers THIS tab and always prompts for the mic here — the
+  // tab you click on is the tab that will ring. (Under the old election a click
+  // could set the flag while a different tab did the registering, so the mic was
+  // never requested on the tab in front of you.)
   const enable = useCallback(async () => {
     if (!currentOrg) return
     try { localStorage.setItem(ENABLED_KEY, '1') } catch { /* private mode */ }
     setEnabled(true)
-    if (!isLeader) { setStatus('follower'); return }
     await register(currentOrg.id, true)
-  }, [currentOrg, isLeader, register])
+  }, [currentOrg, register])
+
+  // Manual recovery: force this tab to re-register. Use when a connection was
+  // dropped (sleep, network change) or when you simply want calls on THIS tab.
+  const ringHere = useCallback(async () => {
+    if (!currentOrg) return
+    try { localStorage.setItem(ENABLED_KEY, '1') } catch { /* private mode */ }
+    setEnabled(true)
+    // promptForMic true: if the grant was never given on this browser (or was
+    // revoked) this is the moment to fix it, rather than failing at accept().
+    await register(currentOrg.id, true)
+  }, [currentOrg, register])
 
   const disable = useCallback(() => {
     try { localStorage.removeItem(ENABLED_KEY) } catch { /* private mode */ }
@@ -265,21 +236,16 @@ export function VoiceReceiverProvider({ children }: { children: React.ReactNode 
       setStatus(enabled ? 'starting' : 'off')
       return
     }
-    if (!isLeader) {
-      teardown()
-      setStatus('follower')
-      return
-    }
     // Mic was already granted when this browser opted in — don't re-prompt.
     register(currentOrg.id, false)
     return () => { teardown() }
-  }, [user, currentOrg?.id, enabled, isLeader])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user, currentOrg?.id, enabled])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Recovery: sleep, network changes, tab restore ─────────────────────────
   // The signalling WebSocket drops on sleep/Wi-Fi switches; the SDK reconnects in
   // many cases but not all, so nudge it whenever the tab comes back to life.
   useEffect(() => {
-    if (!enabled || !isLeader) return
+    if (!enabled) return
     const revive = () => {
       const device = deviceRef.current
       if (!device || device.state === 'registered' || device.state === 'destroyed') return
@@ -292,11 +258,11 @@ export function VoiceReceiverProvider({ children }: { children: React.ReactNode 
       window.removeEventListener('online', revive)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [enabled, isLeader])
+  }, [enabled])
 
   return (
     <VoiceReceiverContext.Provider
-      value={{ status, error, identity, incoming, enable, disable, clearIncoming }}
+      value={{ status, error, identity, incoming, enable, disable, ringHere, clearIncoming }}
     >
       {children}
     </VoiceReceiverContext.Provider>
