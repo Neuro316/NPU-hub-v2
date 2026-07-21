@@ -201,6 +201,18 @@ export async function bumpConversation(
   if (opts.incrementUnread) {
     updates.unread_count = (opts.currentUnread || 0) + 1;
   }
+  // RESURFACE an archived thread on ANY activity, inbound or outbound.
+  // "Remove from Conversations" sets status='closed' and the list filters those
+  // out; without this the thread would be found by getOrCreateConversation
+  // (which matches on contact_id + channel and IGNORES status), bumped with the
+  // new preview, and still stay hidden — silently re-creating the
+  // invisible-inbound bug for any number that had been archived. Archive
+  // therefore means "hide until there is activity", not "suppress forever".
+  //
+  // Outbound counts too: if staff texts an archived thread they are actively in
+  // a conversation, and leaving it hidden mid-exchange is the wrong behavior.
+  // Safe against snooze — snoozing writes snoozed_until only, never status.
+  updates.status = 'open';
   await supabase.from('conversations').update(updates).eq('id', conversationId);
 }
 

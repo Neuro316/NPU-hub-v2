@@ -13,7 +13,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   Voicemail, Loader2, PhoneMissed, ArrowUpRight, ArrowDownLeft,
-  Check, CheckCheck, Clock, Paperclip,
+  Check, CheckCheck, Clock, Paperclip, PhoneCall,
 } from 'lucide-react'
 
 export type TimelineKind = 'text' | 'call' | 'voicemail' | 'missed'
@@ -95,8 +95,28 @@ function fmtClock(d: string) {
   return new Date(d).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
 }
 
+// Call-back affordance shared by the voicemail + missed/incoming call cards.
+// Presentational only: the page that owns the call UI passes onCallBack.
+function CallBackButton({ onCallBack, label = 'Call back' }: {
+  onCallBack: () => void
+  label?: string
+}) {
+  return (
+    <button
+      onClick={onCallBack}
+      className="flex items-center gap-1 px-2 py-1 rounded-full bg-green-50 hover:bg-green-100 text-green-700 text-[9px] font-semibold transition-colors"
+      title={label}
+    >
+      <PhoneCall size={9} /> {label}
+    </button>
+  )
+}
+
 // ── Voicemail: player (authenticated proxy) + inline transcript ──
-export function VoicemailPlayer({ entry }: { entry: TimelineEntry }) {
+export function VoicemailPlayer({ entry, onCallBack }: {
+  entry: TimelineEntry
+  onCallBack?: () => void
+}) {
   return (
     <div className="rounded-xl border border-purple-100 bg-purple-50/40 p-2.5 max-w-[85%]">
       <div className="flex items-center gap-1.5 mb-1.5">
@@ -105,6 +125,7 @@ export function VoicemailPlayer({ entry }: { entry: TimelineEntry }) {
         {(entry.duration_seconds ?? 0) > 0 && (
           <span className="text-[8px] text-gray-400">· {fmtDuration(entry.duration_seconds!)}</span>
         )}
+        {onCallBack && <span className="ml-auto"><CallBackButton onCallBack={onCallBack} /></span>}
       </div>
       {entry.recording_available ? (
         <audio controls preload="none" className="w-full h-8" src={`/api/comms/recording/${entry.id}`}>
@@ -157,8 +178,11 @@ function TextBubble({ entry }: { entry: TimelineEntry }) {
 }
 
 // ── Call / missed centered rows ──
-function CallRow({ entry }: { entry: TimelineEntry }) {
+function CallRow({ entry, onCallBack }: { entry: TimelineEntry; onCallBack?: () => void }) {
   const isMissed = entry.kind === 'missed'
+  // Offer call-back on anything the caller initiated that we may not have taken:
+  // missed calls, and inbound calls generally.
+  const showCallBack = !!onCallBack && (isMissed || entry.direction === 'inbound')
   return (
     <div className="flex justify-center">
       <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 rounded-full">
@@ -170,15 +194,20 @@ function CallRow({ entry }: { entry: TimelineEntry }) {
           {(entry.duration_seconds ?? 0) > 0 ? ` · ${fmtDuration(entry.duration_seconds!)}` : ''}
         </span>
         <span className="text-[8px] text-gray-300 ml-1">{fmtClock(entry.created_at)}</span>
+        {showCallBack && (
+          <span className="ml-1.5"><CallBackButton onCallBack={onCallBack!} /></span>
+        )}
       </div>
     </div>
   )
 }
 
 // ── The stream ──
-export function TimelineStream({ entries, emptyLabel = 'No messages yet' }: {
+export function TimelineStream({ entries, emptyLabel = 'No messages yet', onCallBack }: {
   entries: TimelineEntry[]
   emptyLabel?: string
+  /** Omit to render the timeline read-only (e.g. the contact card panel). */
+  onCallBack?: () => void
 }) {
   if (!entries.length) {
     return <p className="text-[10px] text-gray-300 text-center py-8">{emptyLabel}</p>
@@ -190,11 +219,11 @@ export function TimelineStream({ entries, emptyLabel = 'No messages yet' }: {
         if (entry.kind === 'voicemail') {
           return (
             <div key={entry.id} className="flex justify-start">
-              <VoicemailPlayer entry={entry} />
+              <VoicemailPlayer entry={entry} onCallBack={onCallBack} />
             </div>
           )
         }
-        return <CallRow key={entry.id} entry={entry} />
+        return <CallRow key={entry.id} entry={entry} onCallBack={onCallBack} />
       })}
     </div>
   )

@@ -17,6 +17,7 @@ import { createConversation, fetchContacts } from '@/lib/crm-client'
 import { useWorkspace } from '@/lib/workspace-context'
 import type { CrmContact } from '@/types/crm'
 import { buildTimeline, TimelineStream, type TimelineEntry } from '@/components/crm/comms-timeline'
+import { VoipCall } from '@/components/crm/twilio-comms'
 
 type ChannelFilter = 'all' | 'sms' | 'voice' | 'email'
 type DirectionFilter = 'both' | 'inbound' | 'outbound'
@@ -65,6 +66,9 @@ export default function ConversationsPage() {
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
+  // Call-back: the contact currently being dialed via the existing VoipCall path.
+  const [callBackContact, setCallBackContact] = useState<CrmContact | null>(null)
+  const [callBackError, setCallBackError] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -82,6 +86,12 @@ export default function ConversationsPage() {
     let query = supabase
       .from('conversations')
       .select('*, contacts!inner(first_name, last_name, phone, email, tags, pipeline_stage)')
+      // Hide threads removed from Conversations. status='closed' is what the
+      // archive action sets; the row and all its records stay in the CRM, and
+      // bumpConversation flips it back to 'open' if that number contacts again.
+      // (Previously there was NO status filter at all, so archiving — which was
+      // itself failing on the CHECK constraint — could never have hidden a thread.)
+      .neq('status', 'closed')
       .order('last_message_at', { ascending: false })
       .limit(100)
 
@@ -127,6 +137,52 @@ export default function ConversationsPage() {
     })
     setTimeline(entries)
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
+  }
+
+  // Remove from Conversations. Goes through the admin-gated route rather than a
+  // direct browser write, and — unlike the previous version — the failure is
+  // SURFACED. The old one wrote status='archived', which the CHECK constraint
+  // (open|snoozed|closed) rejected on every attempt, with the error unchecked.
+  async function archiveThread() {
+    if (!selectedThread) return
+    if (!confirm(
+      'Remove this conversation from the list?\n\n' +
+      'The contact, their calls, voicemails and texts all stay in the CRM — only the ' +
+      'thread is hidden. It comes back automatically if this number contacts you again.'
+    )) return
+    try {
+      const res = await fetch('/api/comms/conversation/archive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversation_id: selectedThread.id }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Could not remove the conversation')
+      setSelectedThread(null)
+      loadThreads()
+    } catch (e: any) {
+      alert(e?.message || 'Could not remove the conversation')
+    }
+  }
+
+  // Call back the person in this thread, reusing the EXISTING outbound path
+  // (VoipCall -> /api/voice/token -> transient Device). Not a new outbound flow,
+  // and not gated behind the browser-calling receiver toggle — outbound has
+  // always minted its own Device. It needs mic permission, which the receiver
+  // opt-in already grants if enabled; otherwise the browser prompts here.
+  async function startCallBack() {
+    if (!selectedThread) return
+    setCallBackError('')
+    // Fetch the real contact row rather than casting a stub — VoipCall posts
+    // contact_id and renders the contact's name/phone. Unknown placeholder
+    // contacts work unchanged: they carry the caller's number.
+    const { data: contact } = await supabase
+      .from('contacts').select('*').eq('id', selectedThread.contact_id).maybeSingle()
+    if (!contact?.phone) {
+      setCallBackError('No phone number on this contact to call back.')
+      return
+    }
+    setCallBackContact(contact as CrmContact)
   }
 
   // Opening a thread clears its unread badge (staff UPDATE, 067 WITH CHECK).
@@ -326,18 +382,22 @@ export default function ConversationsPage() {
               <div className="flex gap-1">
                 <Link href={`/crm/contacts?open=${selectedThread.contact_id}`}
                   className="p-1.5 hover:bg-gray-50 rounded-lg text-gray-400" title="View contact"><User size={14} /></Link>
-                <button onClick={async () => {
-                  if (!confirm('Archive this conversation? It will be hidden from the list.')) return
-                  await supabase.from('conversations').update({ status: 'archived' }).eq('id', selectedThread.id)
-                  setSelectedThread(null)
-                  loadThreads()
-                }} className="p-1.5 hover:bg-gray-50 rounded-lg text-gray-400" title="Archive"><Archive size={14} /></button>
+                <button onClick={archiveThread}
+                  className="p-1.5 hover:bg-gray-50 rounded-lg text-gray-400"
+                  title="Remove from Conversations"><Archive size={14} /></button>
               </div>
             </div>
 
             {/* Messages — merged text + call + voicemail stream */}
             <div className="flex-1 overflow-auto p-4">
-              <TimelineStream entries={timeline} emptyLabel="No messages in this conversation yet" />
+              {callBackError && (
+                <p className="text-[10px] text-red-600 text-center mb-2">{callBackError}</p>
+              )}
+              <TimelineStream
+                entries={timeline}
+                emptyLabel="No messages in this conversation yet"
+                onCallBack={startCallBack}
+              />
               <div ref={bottomRef} />
             </div>
 
@@ -400,6 +460,16 @@ export default function ConversationsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Call back — the existing outbound VoipCall component, unmodified. It
+          auto-starts on mount and posts to /api/voice/token with contact_id. */}
+      {callBackContact && (
+        <VoipCall
+          contact={callBackContact}
+          onClose={() => setCallBackContact(null)}
+          onEnded={() => { if (selectedThread) loadTimeline(selectedThread) }}
+        />
       )}
     </div>
   )
