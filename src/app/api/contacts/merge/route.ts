@@ -85,6 +85,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // contact_merge_log.merged_by references team_members(id), NOT auth.users —
+    // so the auth user id must be resolved to this user's team_members row for
+    // the OWNING org (same mapping /api/voice/answered uses; call_logs.
+    // team_member_id has the identical shape). merged_by is nullable, so a user
+    // with no team_members row (e.g. a superadmin acting in an org they aren't a
+    // team member of) still merges — the real actor is recorded on the activity
+    // log's actor_id and in the snapshot regardless.
+    const { data: teamMember } = await admin
+      .from('team_members').select('id')
+      .eq('user_id', user.id)
+      .eq('org_id', winner.org_id)
+      .maybeSingle();
+
     // ── 1. Snapshot FIRST, with the real columns, and CHECK the error ───────
     // Written before anything is repointed so the record exists even if a later
     // step fails. This is the reversibility guarantee — if it can't be written,
@@ -93,9 +106,12 @@ export async function POST(request: NextRequest) {
       org_id: winner.org_id,
       winner_id: winnerId,
       loser_id: loserId,
-      merged_by: user.id,
+      merged_by: teamMember?.id ?? null,
       merge_details: {
         reason: typeof body?.reason === 'string' ? body.reason : 'manual merge',
+        // The authoritative actor: merged_by may be null (FK is to team_members),
+        // so the auth user id is preserved here too and never lost.
+        merged_by_user_id: user.id,
         loser_snapshot: loser,
         winner_snapshot_before: winner,
       },
