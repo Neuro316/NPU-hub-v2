@@ -43,6 +43,90 @@ const digits10 = (v: string | null) => {
 };
 const lowerEmail = (v: string | null) => String(v || '').trim().toLowerCase();
 
+// ── Junk-email guard ────────────────────────────────────────────────────────
+// A value that isn't a real address is not an identifier and must not cluster
+// anyone. Ella Brown's record has the literal string "test" in the email field;
+// two such records would otherwise "share an email" and merge two strangers.
+const PLACEHOLDER_LOCALS = new Set([
+  'test', 'tests', 'testing', 'none', 'na', 'n/a', 'nil', 'null', 'unknown',
+  'noemail', 'no-email', 'no_email', 'email', 'example', 'sample', 'x', 'xx', 'xxx',
+]);
+const PLACEHOLDER_ADDRESSES = new Set([
+  'test@test.com', 'test@example.com', 'example@example.com', 'noreply@example.com',
+  'none@none.com', 'na@na.com', 'no@email.com', 'nobody@nowhere.com',
+]);
+
+function isUsableEmail(raw: string | null): boolean {
+  const e = lowerEmail(raw);
+  if (!e) return false;
+  // Must actually look like an address: one @, a dot in the domain, no spaces.
+  if (/\s/.test(e)) return false;
+  const parts = e.split('@');
+  if (parts.length !== 2) return false;
+  const [local, domain] = parts;
+  if (!local || !domain || !domain.includes('.')) return false;
+  if (domain.startsWith('.') || domain.endsWith('.')) return false;
+  if (PLACEHOLDER_ADDRESSES.has(e)) return false;
+  if (PLACEHOLDER_LOCALS.has(local)) return false;
+  return true;
+}
+
+// ── Name agreement ──────────────────────────────────────────────────────────
+// Safety net ON TOP of the profiles guard: two DIFFERENT real people can share
+// a personal email (a couple, a family address). Default is agreement — a
+// missing name is not evidence of a different person — and a group is demoted
+// to Review only on positive evidence of conflict.
+const NICKNAMES: Record<string, string> = {
+  bob: 'robert', rob: 'robert', bobby: 'robert', bill: 'william', will: 'william',
+  billy: 'william', mike: 'michael', mick: 'michael', dave: 'david', jim: 'james',
+  jimmy: 'james', tom: 'thomas', tommy: 'thomas', chris: 'christopher',
+  liz: 'elizabeth', beth: 'elizabeth', betsy: 'elizabeth', kate: 'katherine',
+  katie: 'katherine', kathy: 'katherine', steve: 'stephen', steven: 'stephen',
+  tony: 'anthony', rick: 'richard', dick: 'richard', rich: 'richard',
+  nick: 'nicholas', jen: 'jennifer', jenny: 'jennifer', sue: 'susan', susie: 'susan',
+  peggy: 'margaret', meg: 'margaret', maggie: 'margaret', dan: 'daniel', danny: 'daniel',
+  joe: 'joseph', joey: 'joseph', ed: 'edward', eddie: 'edward', ken: 'kenneth',
+};
+const canonFirst = (s: string) => NICKNAMES[s] || s;
+
+const normName = (s: string | null) =>
+  String(s || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')   // strip accents
+    .toLowerCase().replace(/[^a-z\s]/g, ' ')            // punctuation -> space
+    .replace(/\s+/g, ' ').trim();
+
+function firstNamesAgree(a: string, b: string): boolean {
+  if (!a || !b) return true;                       // nothing to conflict with
+  if (a === b) return true;
+  if (canonFirst(a) === canonFirst(b)) return true;
+  // single initial vs full name
+  if (a.length === 1 && b.startsWith(a)) return true;
+  if (b.length === 1 && a.startsWith(b)) return true;
+  // shortening: Cam/Cameron — require >= 3 chars so "J"/"Jane" doesn't pass here
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+  if (short.length >= 3 && long.startsWith(short)) return true;
+  return false;
+}
+
+/** True when two records' names do NOT contradict each other. */
+function namesAgree(
+  aFirst: string | null, aLast: string | null,
+  bFirst: string | null, bLast: string | null
+): boolean {
+  const af = normName(aFirst), al = normName(aLast);
+  const bf = normName(bFirst), bl = normName(bLast);
+
+  // Same tokens in any order (handles first/last reversal in imports).
+  const tokensA = `${af} ${al}`.trim().split(' ').filter(Boolean).sort().join(' ');
+  const tokensB = `${bf} ${bl}`.trim().split(' ').filter(Boolean).sort().join(' ');
+  if (tokensA && tokensA === tokensB) return true;
+
+  // Rule 1: both last names present and different -> different family.
+  if (al && bl && al !== bl) return false;
+  // Rule 2: last names agree (or one is missing) -> first names must not conflict.
+  return firstNamesAgree(af, bf);
+}
+
 /**
  * How complete is this record? Drives the default "merge toward the fuller
  * record" choice. Weighted so identifiers and real activity count for more
@@ -105,8 +189,53 @@ export async function GET(request: NextRequest) {
     .eq('org_id', orgId);
   const dismissed = new Set((dismissals || []).map((d: any) => pairKey(d.contact_a, d.contact_b)));
 
-  // Bucket by each signal.
-  const buckets: { signal: Signal; key: string; ids: string[] }[] = [];
+  // ── Foreign-account-email guard ───────────────────────────────────────────
+  // An address that belongs to a Hub login but to a DIFFERENT person than the
+  // contact holding it is a contaminant, not an identifier. Real case: two
+  // "Hazel Thornton" records both carrying sgranau@gmail.com, which is an
+  // account whose profile name is "test test" — someone's test login pasted
+  // into client records. Without this guard that pair gets a HIGH badge and a
+  // one-click merge path that could fuse two genuinely different clients.
+  //
+  // Crucially this must NOT exclude every account email: `profiles` holds
+  // PARTICIPANTS as well as staff, so most account emails are the client's own
+  // (Melissa Allen and Gabriel Robinson both have participant profiles under
+  // their real addresses). Excluding those would hide genuine duplicates —
+  // a worse failure than surfacing them, because it is invisible.
+  //
+  // So the test is name agreement, reusing the same threshold: the email is
+  // disqualified only when the account's name CONFLICTS with the contact's.
+  // Role can't be used to separate these — sgranau is role='participant' too.
+  const { data: profileRows } = await admin
+    .from('profiles').select('email, full_name').not('email', 'is', null);
+  const accountNames = new Map<string, string[]>();
+  for (const p of (profileRows || []) as any[]) {
+    const e = lowerEmail(p.email);
+    if (!e) continue;
+    accountNames.set(e, [...(accountNames.get(e) || []), String(p.full_name || '')]);
+  }
+
+  const emailKeyOf = (c: ContactLite) => {
+    const e = lowerEmail(c.email);
+    if (!isUsableEmail(e)) return '';                 // junk / not an address
+    const owners = accountNames.get(e);
+    if (owners?.length) {
+      // Keep the email if it plausibly belongs to this contact; drop it only
+      // when it belongs to an account that is clearly somebody else.
+      const belongs = owners.some(full => {
+        const parts = String(full || '').trim().split(/\s+/);
+        const oFirst = parts[0] || '';
+        const oLast = parts.slice(1).join(' ');
+        return namesAgree(c.first_name, c.last_name, oFirst, oLast);
+      });
+      if (!belongs) return '';
+    }
+    return e;
+  };
+
+  // Bucket by each signal. `demoted` records why a normally-HIGH bucket must be
+  // reviewed by a human instead of offered as one-click.
+  const buckets: { signal: Signal; key: string; ids: string[]; demoted?: string }[] = [];
   const group = (signal: Signal, keyOf: (c: ContactLite) => string) => {
     const m = new Map<string, string[]>();
     for (const c of list) {
@@ -121,24 +250,44 @@ export async function GET(request: NextRequest) {
     });
   };
 
-  group('email', c => lowerEmail(c.email));
+  group('email', emailKeyOf);
   group('phone', c => digits10(c.phone));
   // identity_id only adds signal beyond `email` when contacts DON'T share an
   // email — i.e. the fuzzy-name pass linked them. Those need human review.
-  group('identity', c => (lowerEmail(c.email) ? '' : (c.identity_id || '')));
+  group('identity', c => (emailKeyOf(c) ? '' : (c.identity_id || '')));
   group('name', c => {
     const n = `${(c.first_name || '').trim().toLowerCase()}|${(c.last_name || '').trim().toLowerCase()}`;
     return n === '|' ? '' : n;
   });
 
   const byId = new Map(list.map(c => [c.id, c]));
+
+  // Belt-and-braces on top of the account-email guard: a genuine shared personal
+  // email between two DIFFERENT real people (a couple, a family address) is rare
+  // but real, and must not get a one-click merge. Demote to Review when the names
+  // positively conflict. Default is agreement — a missing name is not evidence of
+  // a different person.
+  for (const b of buckets) {
+    if (b.signal !== 'email' && b.signal !== 'phone') continue;
+    const members = b.ids.map(id => byId.get(id)).filter(Boolean) as ContactLite[];
+    let conflict = '';
+    for (let i = 0; i < members.length && !conflict; i++) {
+      for (let j = i + 1; j < members.length && !conflict; j++) {
+        const x = members[i], y = members[j];
+        if (!namesAgree(x.first_name, x.last_name, y.first_name, y.last_name)) {
+          conflict = `names differ (${[x.first_name, x.last_name].filter(Boolean).join(' ')} vs ${[y.first_name, y.last_name].filter(Boolean).join(' ')})`;
+        }
+      }
+    }
+    if (conflict) b.demoted = conflict;
+  }
   const CONFIDENCE: Record<Signal, 'high' | 'review'> = {
     email: 'high', phone: 'high', identity: 'review', name: 'review',
   };
 
   // Collapse buckets into one group per contact set, keeping the strongest
   // signal. A pair matching on both email and name is one group, not two.
-  const groups = new Map<string, { signals: Signal[]; ids: string[] }>();
+  const groups = new Map<string, { signals: Signal[]; ids: string[]; notes: string[] }>();
   for (const b of buckets) {
     // A group is suppressed only when EVERY pair inside it has been dismissed —
     // dismissing A/B must not hide a genuine A/C duplicate.
@@ -149,11 +298,15 @@ export async function GET(request: NextRequest) {
     if (pairs.length && pairs.every(p => dismissed.has(p))) continue;
 
     const gk = ids.join('|');
+    // A demoted bucket contributes its signal for display but must NOT confer
+    // high confidence, so it is recorded separately.
+    const signalLabel = (b.demoted ? `${b.signal} (review)` : b.signal) as Signal;
     const existing = groups.get(gk);
     if (existing) {
-      if (!existing.signals.includes(b.signal)) existing.signals.push(b.signal);
+      if (!existing.signals.includes(signalLabel)) existing.signals.push(signalLabel);
+      if (b.demoted && !existing.notes.includes(b.demoted)) existing.notes.push(b.demoted);
     } else {
-      groups.set(gk, { signals: [b.signal], ids });
+      groups.set(gk, { signals: [signalLabel], ids, notes: b.demoted ? [b.demoted] : [] });
     }
   }
 
@@ -163,11 +316,13 @@ export async function GET(request: NextRequest) {
       .filter((c): c is ContactLite => !!c)
       .map((c: ContactLite) => ({ ...c, completeness: completeness(c) }));
     members.sort((a, b) => b.completeness - a.completeness);
+    // Only an UNDEMOTED email/phone bucket confers high confidence.
     const confidence: 'high' | 'review' =
       g.signals.some((s: Signal) => CONFIDENCE[s] === 'high') ? 'high' : 'review';
     return {
       key: g.ids.join('|'),
       signals: g.signals,
+      notes: g.notes,
       confidence,
       // Default survivor = fullest record. The UI may override.
       suggested_winner_id: members[0]?.id ?? null,
