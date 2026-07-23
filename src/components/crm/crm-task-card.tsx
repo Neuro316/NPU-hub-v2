@@ -256,23 +256,28 @@ export function CrmTaskDetail(props: CrmTaskDetailProps) {
   async function save() {
     if (!title.trim()) return
     setSaving(true)
+    // `attachments` is NOT a column on tasks (type/DB drift) — sending it made
+    // PostgREST reject the insert (PGRST204), so it's omitted. `created_by` IS
+    // restored: migration 081 adds the column the sync trigger already reads as
+    // NEW.created_by, so it must exist for any insert to succeed.
     const fields: any = {
       title, description: description || null, priority: pri, status,
-      due_date: dueDate || null, checklist, labels, attachments,
+      due_date: dueDate || null, checklist, labels,
       estimated_minutes: estMin || null, actual_minutes: actMin || null,
-      raci_responsible: responsible, raci_accountable: accountable,
+      raci_responsible: responsible, raci_accountable: accountable || null,
       raci_consulted: consulted, raci_informed: informed,
     }
     if (isCreate) {
       const { data, error } = await supabase.from('tasks').insert({
         ...fields, org_id: props.orgId, contact_id: props.contactId,
-        source: 'manual', created_by: props.createdBy, assigned_to: accountable || undefined,
+        source: 'manual', created_by: props.createdBy || null, assigned_to: accountable || null,
       }).select().single()
       if (!error && data) { props.onCreate(data as CrmTask); onClose() }
-      else { console.error('Create error:', error); alert('Failed to create task') }
+      else { console.error('Create error:', error); alert('Failed to create task: ' + (error?.message || 'unknown error')) }
     } else {
       const { error } = await supabase.from('tasks').update(fields).eq('id', task!.id)
       if (!error) { props.onUpdate(task!.id, fields); setEditing(false) }
+      else { console.error('Update error:', error); alert('Failed to update task: ' + (error?.message || 'unknown error')) }
     }
     setSaving(false)
   }

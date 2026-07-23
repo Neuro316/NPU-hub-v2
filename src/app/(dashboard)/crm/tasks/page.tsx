@@ -282,26 +282,25 @@ export default function TasksPage() {
     if (!form.title || !currentOrg) return
     setCreating(true)
     try {
-      const customFields: Record<string,any> = {}
-      if (form.kanban_column) customFields.kanban_column = form.kanban_column
-      const raci: Record<string,string> = {}
-      if (form.raci_responsible) raci.responsible = form.raci_responsible
-      if (form.raci_accountable) raci.accountable = form.raci_accountable
-      if (form.raci_consulted) raci.consulted = form.raci_consulted
-      if (form.raci_informed) raci.informed = form.raci_informed
-      if (Object.keys(raci).length) customFields.raci = raci
-
+      // `custom_fields` is NOT a column on tasks — sending it helped break every
+      // insert. kanban_column IS a real column; created_by is a real column once
+      // migration 081 lands (the sync trigger reads NEW.created_by). The RACI
+      // fields from this form were being stuffed into the nonexistent
+      // custom_fields and never persisted, so omitting them is not a regression
+      // (tracked to wire to the real raci_* columns, minding team_members-id vs
+      // auth-id resolution).
       const created = await createTask({
         org_id: currentOrg.id, title: form.title, description: form.description || undefined,
         priority: form.priority, status: 'todo', due_date: form.due_date || undefined,
-        assigned_to: form.assigned_to || user?.id || '', source: 'manual', created_by: user?.id,
+        assigned_to: form.assigned_to || user?.id || undefined, source: 'manual',
+        created_by: user?.id || undefined,
         contact_id: form.contact_id || undefined,
-        custom_fields: Object.keys(customFields).length ? customFields : undefined,
-      })
+        ...(form.kanban_column ? { kanban_column: form.kanban_column } : {}),
+      } as any)
       setTasks(prev => [created, ...prev])
       setShowCreate(false)
       setForm({ title:'', description:'', priority:'medium', due_date:'', assigned_to:'', kanban_column:'', contact_id:'', raci_responsible:'', raci_accountable:'', raci_consulted:'', raci_informed:'' })
-    } catch (e) { console.error(e); alert('Failed to create task') }
+    } catch (e: any) { console.error(e); alert('Failed to create task: ' + (e?.message || 'unknown error')) }
     finally { setCreating(false) }
   }
 
