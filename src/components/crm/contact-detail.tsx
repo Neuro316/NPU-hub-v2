@@ -981,6 +981,53 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                       </div>
                     </div>
                   )}
+                  {/* Top 3 open tasks under the notes: highest priority first, then
+                      soonest due (nulls last), then most recently created. Done/
+                      cancelled excluded. Only renders when open tasks exist. */}
+                  {(() => {
+                    const PRI_RANK: Record<string, number> = { urgent: 3, high: 2, medium: 1, low: 0 }
+                    const openTasks = tasks
+                      .filter(t => t.status !== 'done' && t.status !== 'cancelled')
+                      .sort((a, b) => {
+                        const p = (PRI_RANK[b.priority] ?? 0) - (PRI_RANK[a.priority] ?? 0)
+                        if (p !== 0) return p
+                        const ad = a.due_date ? new Date(a.due_date).getTime() : Infinity
+                        const bd = b.due_date ? new Date(b.due_date).getTime() : Infinity
+                        if (ad !== bd) return ad - bd
+                        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+                      })
+                    if (openTasks.length === 0) return null
+                    const PRI_STYLE: Record<string, string> = {
+                      urgent: 'bg-red-100 text-red-600', high: 'bg-orange-100 text-orange-600',
+                      medium: 'bg-np-blue/10 text-np-blue', low: 'bg-gray-100 text-gray-500',
+                    }
+                    return (
+                      <div className="bg-white rounded-xl border border-gray-100 px-3 py-2.5 mb-3">
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <CheckCircle2 className="w-3 h-3 text-teal flex-shrink-0" />
+                          <p className="text-[9px] text-gray-500 uppercase tracking-wider font-medium">Priority Tasks</p>
+                          <button onClick={() => setTab('tasks')} className="ml-auto text-[9px] text-np-blue hover:underline">
+                            {openTasks.length > 3 ? `View all ${openTasks.length}` : 'View'}
+                          </button>
+                        </div>
+                        <div className="space-y-1">
+                          {openTasks.slice(0, 3).map(task => (
+                            <button key={task.id} onClick={() => setSelectedTask(task)}
+                              className="w-full flex items-center gap-2 text-left py-1 hover:bg-gray-50 rounded-md px-1 transition-colors">
+                              <span className={`text-[8px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ${PRI_STYLE[task.priority] || PRI_STYLE.low}`}>{task.priority}</span>
+                              <span className="text-[11px] text-np-dark truncate flex-1">{task.title}</span>
+                              {task.due_date && (
+                                <span className="text-[8px] text-gray-400 flex items-center gap-0.5 flex-shrink-0">
+                                  <Clock className="w-2.5 h-2.5" />
+                                  {new Date(task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                </span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })()}
                   {show('contact_info') && (() => {
                     const hasPhone = !!contact.phone
                     const hasEmail = !!contact.email
