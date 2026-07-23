@@ -137,23 +137,37 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ── 3. Union tags, then apply the caller's chosen field values ──────────
-    const mergedTags = Array.from(new Set([...(winner.tags || []), ...(loser.tags || [])]));
-    const updates: Record<string, unknown> = { tags: mergedTags };
-
+    // ── 3. Apply the caller's chosen field values, then union tags ──────────
+    // Field updates go direct; `tags` is deliberately excluded here and applied
+    // via merge_union_tags (075) instead. Unioning tags fires
+    // handle_contact_tag_change, whose enrollment side effects must NOT run for a
+    // merge — the RPC sets a transaction-local guard the trigger honours. Keeping
+    // tags out of this direct update means this UPDATE never lists `tags`, so the
+    // enrollment trigger doesn't fire here at all.
     if (winnerUpdates) {
-      // Only fields that exist on the winner row may be set, and never these.
-      const BLOCKED = new Set(['id', 'org_id', 'created_at', 'merged_into_id', 'identity_id']);
+      const BLOCKED = new Set(['id', 'org_id', 'created_at', 'merged_into_id', 'identity_id', 'tags']);
+      const fieldUpdates: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(winnerUpdates)) {
-        if (!BLOCKED.has(k) && k in winner) updates[k] = v;
+        if (!BLOCKED.has(k) && k in winner) fieldUpdates[k] = v;
+      }
+      if (Object.keys(fieldUpdates).length) {
+        const { error: winnerError } = await admin
+          .from('contacts').update(fieldUpdates).eq('id', winnerId);
+        if (winnerError) {
+          console.error('[contacts/merge] winner update failed:', winnerError);
+          return NextResponse.json({ error: winnerError.message }, { status: 500 });
+        }
       }
     }
 
-    const { error: winnerError } = await admin
-      .from('contacts').update(updates).eq('id', winnerId);
-    if (winnerError) {
-      console.error('[contacts/merge] winner update failed:', winnerError);
-      return NextResponse.json({ error: winnerError.message }, { status: 500 });
+    const mergedTags = Array.from(new Set([...(winner.tags || []), ...(loser.tags || [])]));
+    const { error: tagError } = await admin.rpc('merge_union_tags', {
+      p_winner: winnerId,
+      p_tags: mergedTags,
+    });
+    if (tagError) {
+      console.error('[contacts/merge] tag union failed:', tagError);
+      return NextResponse.json({ error: tagError.message }, { status: 500 });
     }
 
     // ── 4. Soft-delete the loser ───────────────────────────────────────────
