@@ -817,10 +817,19 @@ export default function PipelinesPage() {
       const stage = activePipeline.stages.find(s => s.name === stageName)
       const emails = (stage as any)?.stage_emails
       if (!emails || emails.length === 0) return
+      // stage_id / pipeline_id are what the send guard (077) keys on. They are
+      // sent instead of the stage NAME so renaming a stage doesn't re-arm every
+      // email on it for contacts that already received one.
       await fetch('/api/crm/stage-emails', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ org_id: currentOrg?.id, contact_id: contactId, emails }),
+        body: JSON.stringify({
+          org_id: currentOrg?.id,
+          contact_id: contactId,
+          emails,
+          pipeline_id: activePipelineId,
+          stage_id: stage?.id,
+        }),
       })
     } catch (e) { console.error('fireStageEmails failed', e) }
   }
