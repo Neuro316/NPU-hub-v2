@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import ContactDetail from '@/components/crm/contact-detail'
 import {
   Plus, MoreHorizontal, ChevronDown, GripVertical,
@@ -125,16 +126,46 @@ function ContactCard({ contact, stages, pipelines, activePipelineId, customField
 }) {
   const [showMenu, setShowMenu] = useState(false)
   const [menuSection, setMenuSection] = useState<'main'|'stage'|'pipeline'>('main')
+  // The menu is rendered in a portal at fixed coords so it escapes the column's
+  // overflow-y-auto — otherwise a tall stage submenu on a lower card is clipped
+  // and its stage buttons become unclickable.
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null)
   const initials = `${contact.first_name?.[0] || ''}${contact.last_name?.[0] || ''}`.toUpperCase()
   const value = contact.custom_fields?.value as number | undefined
   const daysSince = contact.last_contacted_at ? Math.floor((Date.now() - new Date(contact.last_contacted_at).getTime()) / 86400000) : null
   const menuRef = useRef<HTMLDivElement>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
+
+  const closeMenu = () => { setShowMenu(false); setMenuSection('main'); setMenuPos(null) }
+  const openMenu = () => {
+    const r = btnRef.current?.getBoundingClientRect()
+    if (r) {
+      // Clamp so the menu at its TALLEST section (stage list = back + header +
+      // capped max-h-60 ≈ 300px) stays fully on screen even for a card low in
+      // the viewport or near the right edge. Clamping to the max height means a
+      // low card's menu simply opens higher rather than running off the bottom.
+      const MENU_W = 192, MENU_MAX_H = 300, PAD = 8
+      const left = Math.min(Math.max(PAD, r.right - MENU_W), window.innerWidth - MENU_W - PAD)
+      const top = Math.max(PAD, Math.min(r.bottom + 4, window.innerHeight - MENU_MAX_H - PAD))
+      setMenuPos({ top, left })
+    }
+    setMenuSection('main')
+    setShowMenu(true)
+  }
 
   useEffect(() => {
     if (!showMenu) return
-    const handler = (e: MouseEvent) => { if (menuRef.current && !menuRef.current.contains(e.target as Node)) { setShowMenu(false); setMenuSection('main') } }
+    const handler = (e: MouseEvent) => { if (menuRef.current && !menuRef.current.contains(e.target as Node)) closeMenu() }
+    // Fixed-positioned menu won't follow a scroll, so close it on scroll/resize.
+    const dismiss = () => closeMenu()
     document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    window.addEventListener('scroll', dismiss, true)
+    window.addEventListener('resize', dismiss)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+      window.removeEventListener('scroll', dismiss, true)
+      window.removeEventListener('resize', dismiss)
+    }
   }, [showMenu])
 
   // Get custom fields to show on card
@@ -153,7 +184,7 @@ function ContactCard({ contact, stages, pipelines, activePipelineId, customField
           {contact.custom_fields?.company && <p className="text-[10px] text-gray-400 truncate">{contact.custom_fields.company as string}</p>}
           {contact.email && <p className="text-[9px] text-gray-400 truncate">{contact.email}</p>}
         </div>
-        <button onClick={e => { e.stopPropagation(); setShowMenu(!showMenu); setMenuSection('main') }} className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-gray-50 transition-all"><MoreHorizontal size={12} className="text-gray-400" /></button>
+        <button ref={btnRef} onClick={e => { e.stopPropagation(); showMenu ? closeMenu() : openMenu() }} className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-gray-50 transition-all"><MoreHorizontal size={12} className="text-gray-400" /></button>
       </div>
       <div className="flex items-center gap-1.5 mt-2 flex-wrap">
         {contact.pipeline_stage && <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full bg-teal/10 text-teal">{contact.pipeline_stage}</span>}
@@ -184,38 +215,45 @@ function ContactCard({ contact, stages, pipelines, activePipelineId, customField
       <div className="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-all" onClick={e => e.stopPropagation()}>
         <ContactCommsButtons contact={contact} size="sm" />
       </div>
-      {showMenu && (
-        <div ref={menuRef} className="absolute right-0 top-8 z-20 w-48 bg-white rounded-lg shadow-xl border border-gray-100 py-1 animate-in fade-in zoom-in-95 duration-150" onClick={e => e.stopPropagation()}>
+      {showMenu && menuPos && typeof document !== 'undefined' && createPortal(
+        <div ref={menuRef} style={{ position: 'fixed', top: menuPos.top, left: menuPos.left }}
+          className="z-50 w-48 bg-white rounded-lg shadow-xl border border-gray-100 py-1 animate-in fade-in zoom-in-95 duration-150" onClick={e => e.stopPropagation()}>
           {menuSection === 'main' && <>
-            <button onClick={() => onOpenContact(contact.id)} className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50 flex items-center gap-2"><User size={11} className="text-gray-400" /> View Details</button>
+            <button onClick={() => { onOpenContact(contact.id); closeMenu() }} className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50 flex items-center gap-2"><User size={11} className="text-gray-400" /> View Details</button>
             <button onClick={() => setMenuSection('stage')} className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50 flex items-center gap-2"><ArrowRightLeft size={11} className="text-gray-400" /> Move to Stage <ChevronDown size={9} className="ml-auto text-gray-300 -rotate-90" /></button>
             <button onClick={() => setMenuSection('pipeline')} className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50 flex items-center gap-2"><Target size={11} className="text-gray-400" /> Change Pipeline <ChevronDown size={9} className="ml-auto text-gray-300 -rotate-90" /></button>
             <div className="border-t border-gray-100 my-1" />
-            <button onClick={() => { onRemovePipeline(); setShowMenu(false) }} className="w-full text-left px-3 py-1.5 text-[11px] text-red-500 hover:bg-red-50 flex items-center gap-2"><X size={11} /> Remove from Pipeline</button>
+            <button onClick={() => { onRemovePipeline(); closeMenu() }} className="w-full text-left px-3 py-1.5 text-[11px] text-red-500 hover:bg-red-50 flex items-center gap-2"><X size={11} /> Remove from Pipeline</button>
           </>}
           {menuSection === 'stage' && <>
             <button onClick={() => setMenuSection('main')} className="w-full text-left px-3 py-1.5 text-[10px] text-gray-400 hover:bg-gray-50 flex items-center gap-1"><ChevronDown size={9} className="rotate-90" /> Back</button>
             <p className="px-3 py-1 text-[9px] font-semibold uppercase tracking-wider text-gray-400">Move to Stage</p>
-            {stages.map(s => (
-              <button key={s.id} onClick={() => { onMove(s.name); setShowMenu(false); setMenuSection('main') }}
-                className={`w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50 flex items-center gap-2 ${contact.pipeline_stage === s.name ? 'font-semibold text-np-blue' : ''}`}>
-                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: s.color }} />{s.name}
-                {contact.pipeline_stage === s.name && <span className="ml-auto text-[9px] text-gray-300">current</span>}
-              </button>
-            ))}
+            {/* Capped + internally scrollable so a long stage list never overflows the viewport. */}
+            <div className="max-h-60 overflow-y-auto">
+              {stages.map(s => (
+                <button key={s.id} onClick={() => { onMove(s.name); closeMenu() }}
+                  className={`w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50 flex items-center gap-2 ${contact.pipeline_stage === s.name ? 'font-semibold text-np-blue' : ''}`}>
+                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: s.color }} />{s.name}
+                  {contact.pipeline_stage === s.name && <span className="ml-auto text-[9px] text-gray-300 flex-shrink-0">current</span>}
+                </button>
+              ))}
+            </div>
           </>}
           {menuSection === 'pipeline' && <>
             <button onClick={() => setMenuSection('main')} className="w-full text-left px-3 py-1.5 text-[10px] text-gray-400 hover:bg-gray-50 flex items-center gap-1"><ChevronDown size={9} className="rotate-90" /> Back</button>
             <p className="px-3 py-1 text-[9px] font-semibold uppercase tracking-wider text-gray-400">Move to Pipeline</p>
-            {pipelines.map(p => (
-              <button key={p.id} onClick={() => { onMovePipeline(p.id, p.stages[0]?.name || 'New Lead'); setShowMenu(false); setMenuSection('main') }}
-                className={`w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50 flex items-center gap-2 ${p.id === activePipelineId ? 'font-semibold text-np-blue' : ''}`}>
-                {p.name}
-                <span className="ml-auto text-[9px] text-gray-300">{p.stages.length} stages</span>
-              </button>
-            ))}
+            <div className="max-h-60 overflow-y-auto">
+              {pipelines.map(p => (
+                <button key={p.id} onClick={() => { onMovePipeline(p.id, p.stages[0]?.name || 'New Lead'); closeMenu() }}
+                  className={`w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50 flex items-center gap-2 ${p.id === activePipelineId ? 'font-semibold text-np-blue' : ''}`}>
+                  {p.name}
+                  <span className="ml-auto text-[9px] text-gray-300 flex-shrink-0">{p.stages.length} stages</span>
+                </button>
+              ))}
+            </div>
           </>}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
@@ -815,31 +853,37 @@ export default function PipelinesPage() {
   const fireStageEmails = async (contactId: string, stageName: string) => {
     try {
       const stage = activePipeline.stages.find(s => s.name === stageName)
-      const emails = (stage as any)?.stage_emails
-      if (!emails || emails.length === 0) return
-      // stage_id / pipeline_id are what the send guard (077) keys on. They are
-      // sent instead of the stage NAME so renaming a stage doesn't re-arm every
-      // email on it for contacts that already received one.
+      if (!stage?.id) return
+      // The route reads the stage's email CONTENT server-side from the
+      // authoritative pipeline config (by pipeline_id + stage_id) and ignores
+      // anything the client sends — so we no longer POST subject/body/recipient.
+      // stage_id / pipeline_id are also what the send guard (077) keys on.
       await fetch('/api/crm/stage-emails', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          org_id: currentOrg?.id,
           contact_id: contactId,
-          emails,
           pipeline_id: activePipelineId,
-          stage_id: stage?.id,
+          stage_id: stage.id,
         }),
       })
     } catch (e) { console.error('fireStageEmails failed', e) }
   }
 
   const moveContact = async (id: string, stage: string) => {
+    // Optimistic UI, but surface persistence failures. A swallowed error here
+    // (RLS reject, bad field) makes a stage move look successful while the DB
+    // never changed — the silent-failure class that has bitten repeatedly.
+    const prevContacts = contacts
+    setContacts(prev => prev.map(c => c.id === id ? { ...c, pipeline_stage: stage, pipeline_id: activePipelineId } : c))
     try {
       await updateContact(id, { pipeline_stage: stage, pipeline_id: activePipelineId } as any)
-      setContacts(prev => prev.map(c => c.id === id ? { ...c, pipeline_stage: stage, pipeline_id: activePipelineId } : c))
       fireStageEmails(id, stage)
-    } catch (e) { console.error(e) }
+    } catch (e: any) {
+      console.error('moveContact failed', e)
+      setContacts(prevContacts) // roll back the optimistic move
+      alert(`Could not move to "${stage}": ${e?.message || e}`)
+    }
   }
 
   const moveToPipeline = async (id: string, pipelineId: string, firstStage: string) => {
