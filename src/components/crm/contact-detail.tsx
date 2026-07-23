@@ -957,6 +957,30 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
 
               {tab === 'overview' && (
                 <>
+                  {/* Notes surfaced at the top of Overview. Pinned-first, then newest
+                      (fetchNotes orders pinned desc, created_at desc), so slice(0,3)
+                      shows the most relevant. Only renders when notes exist. */}
+                  {notes.length > 0 && (
+                    <div className="bg-amber-50/60 rounded-xl border border-amber-100 px-3 py-2.5 mb-3">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <FileText className="w-3 h-3 text-amber-500 flex-shrink-0" />
+                        <p className="text-[9px] text-gray-500 uppercase tracking-wider font-medium">Notes</p>
+                        <button onClick={() => setTab('notes')} className="ml-auto text-[9px] text-np-blue hover:underline">
+                          {notes.length > 3 ? `View all ${notes.length}` : 'Add'}
+                        </button>
+                      </div>
+                      <div className="space-y-1.5">
+                        {notes.slice(0, 3).map(note => (
+                          <div key={note.id}>
+                            <p className="text-[11px] text-np-dark whitespace-pre-wrap leading-snug">{note.body}</p>
+                            <p className="text-[8px] text-gray-400 mt-0.5">
+                              {new Date(note.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {show('contact_info') && (() => {
                     const hasPhone = !!contact.phone
                     const hasEmail = !!contact.email
