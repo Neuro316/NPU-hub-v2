@@ -272,7 +272,13 @@ export function CrmTaskDetail(props: CrmTaskDetailProps) {
         ...fields, org_id: props.orgId, contact_id: props.contactId,
         source: 'manual', created_by: props.createdBy || null, assigned_to: accountable || null,
       }).select().single()
-      if (!error && data) { props.onCreate(data as CrmTask); onClose() }
+      if (!error && data) {
+        // The AFTER-INSERT sync trigger sets hub_task_id in a separate UPDATE, so
+        // the row returned by .select() still has hub_task_id null. Re-read it so
+        // the card reflects "Synced" instead of "Not synced to Hub Board".
+        const { data: fresh } = await supabase.from('tasks').select('*').eq('id', data.id).single()
+        props.onCreate((fresh || data) as CrmTask); onClose()
+      }
       else { console.error('Create error:', error); alert('Failed to create task: ' + (error?.message || 'unknown error')) }
     } else {
       const { error } = await supabase.from('tasks').update(fields).eq('id', task!.id)
