@@ -57,6 +57,49 @@ Do NOT revert to tag-based pipeline logic.
 
 Output SQL only — never execute. All schema changes run in Supabase SQL Editor manually.
 
+### Migration Numbering: Hub starts at 200
+
+**Hub migrations are numbered from 200 upward. The platform stays in its current sequence. Never cross.**
+
+This is a number rather than a principle because the ledger gives no warning.
+`supabase_migrations.schema_migrations` keys on a **timestamp `version`, not the filename prefix**, so
+two files can both be named `084_*` and both apply cleanly with no error. That is exactly what happened
+on 2026-07-24: Hub's `084_v_platform_signups` (version 20260724152537) and the platform's
+`084_complete_signup_rpc` (version 20260724225937) are both applied and both objects are live.
+
+`npu-hub-v2`, `npu-platform-v2`, and `neuroreport-app` share the database `htfrfaxlcuyawtlztxxm` and
+therefore share **one migration ledger**. Before writing a migration, take the max of BOTH repos'
+numbers, and use the 200+ band so ownership is readable from the filename alone.
+
+Related known drift: the Hub tree has no `083`, and `072_merge_duplicate_cameron_contact.sql` exists as
+a file with no ledger row, meaning it was applied outside `apply_migration`.
+
+### Local `npm run build` halts on `/api/integrations/*` — not a gate failure
+
+`npm run build` on a machine without a real `.env.local` compiles successfully, then fails during
+"Collecting page data" with:
+
+```
+Error: supabaseUrl is required.
+Failed to collect page data for /api/integrations/neuroreport/sync
+```
+
+**Cause:** that route instantiates a Supabase client at **module scope**
+(`src/app/api/integrations/neuroreport/sync/route.ts:16`) reading `process.env.NEXT_PUBLIC_SUPABASE_URL`.
+A tree containing only `.env.local.example` fails there regardless of the diff under test.
+**Vercel builds fine**, because the env vars are set there.
+
+So: `npx tsc --noEmit` is the reliable local signal and must be clean. Treat a build failure at
+`/api/integrations/*` with `supabaseUrl is required` as environmental — but **confirm the failing route
+is one you did not touch before dismissing it**, and never dismiss a failure elsewhere in the build on
+these grounds. For a genuinely green local build, supply a real `.env.local`.
+
+### Next artifact clash
+
+Run `rm -rf .next` when switching between `npm run build` and `next dev`, and after deleting any route.
+Stale generated stubs in `.next/types/app/**` reference deleted routes and produce
+`TS2307: Cannot find module` errors that are not real.
+
 ---
 
 ## Architecture Overview

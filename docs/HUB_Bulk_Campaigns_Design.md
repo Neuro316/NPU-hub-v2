@@ -73,38 +73,55 @@ Both were removed on 2026-07-25 as part of this work. The only code path that st
 
 ### 1.2 The audience chain, filter by filter
 
-Every prior document quoted a single audience number without the filter that produced it, and the number moved between sessions with no visible reason. That ends here. Each step names the filter, what it removes, and what remains.
+Every prior document quoted a single audience number without the filter that produced it, and the number moved between sessions with no visible reason. That ends here.
 
-**Email (2026-07-25, Q3 and Q4):**
+**Two axes, always both. A number on one axis alone is misleading and will be misquoted.**
 
-| # | Filter applied | Removed | Remaining |
-|---|---|---|---|
-| 0 | Live contacts (`merged_into_id is null`) | 35 merged | **271** |
-| 1 | `email_consent = true` | 250 | **21** |
-| 2 | Email address present and non-empty | 10 | **11** |
-| 3 | `do_not_contact = false` | 2 | **9** |
-| 4 | Address well formed (no `mailto:` prefix, passes shape) | 1 | **8** |
-| 5 | Exclude internal and test records | 2 | **6** |
+| Axis | Question it answers | What raises it |
+|---|---|---|
+| **FORMAT-ELIGIBLE** | Is the address or number well formed and deliverable? | Data hygiene |
+| **CONSENT-ELIGIBLE** | Does a valid basis exist for this channel under D1 (§5.2)? | Recorded consent or a cohort judgment |
 
-Step 3 removes Laura Lawrence and Melissa Allen, who are the two contradictory rows carrying `do_not_contact = true` **and** `email_consent = true` simultaneously. Step 4 removes Rachel Kimmel (`mailto:rachel17313@gmail.com`). Step 5 removes Cameron Allen (internal) and a `Jane Doe / jane@gmail.com` test record.
+**Format-eligible is a ceiling, never a permission.** The two move independently, and the hygiene sweep of 2026-07-25 proved it: normalizing 48 phone numbers took SMS format-eligibility from 0 to 5 while creating exactly zero consent.
 
-**The six remaining:** Alexandria Viera, Amanda Berk, Brent Beam, Christopher Times, Ian Gough, Rachel Russell.
+**Email chain — post-sweep, 2026-07-25 (Q3, Q4):**
 
-**Why this document says 6 where the previous session said 7.** The earlier count applied step 3 by hand rather than mechanically. It removed Laura Lawrence by judgment, as staff, and did not notice that Melissa Allen also carries `do_not_contact = true`. Applying `do_not_contact` as a systematic filter removes both. The difference is one filter, applied consistently: **`do_not_contact` was never in the earlier chain at all.** The v594 document reached 9 because it stopped at step 4 and was measured against 306 pre-merge rows.
+| # | Filter applied | Removed | FORMAT-ELIGIBLE | CONSENT-ELIGIBLE |
+|---|---|---|---|---|
+| 0 | Live contacts (`merged_into_id is null`) | 35 merged | **271** | — |
+| 1 | `email_consent = true` (legacy boolean) | 250 | **21** | 0 |
+| 2 | Email address present and non-empty | 10 | **11** | 0 |
+| 3 | `do_not_contact = false` | 3 | **8** | 0 |
+| 4 | Address well formed (no `mailto:`, passes shape) | 0 | **8** | 0 |
 
-**SMS (2026-07-25, Q3):**
+**8 format-eligible. 0 rest on evidence. Not one of the 21 legacy trues carries a consent timestamp** (§1.1), so the consent column is zero at every step. Of the 8, only **3** (Brent Beam, Christopher Times, Rachel Kimmel) fall in a source cohort that D1 grants a basis to; the other 5 are null-source, held pending triage.
 
-| # | Filter applied | Removed | Remaining |
-|---|---|---|---|
-| 0 | Live contacts | 35 merged | **271** |
-| 1 | `sms_consent = true` | 264 | **7** |
-| 2 | Phone present and non-empty | 1 | **6** |
-| 3 | `do_not_contact = false` | 1 | **5** |
-| 4 | Phone conforms to E.164 (`^\+1[0-9]{10}$`) | 5 | **0** |
+**The operative D1 email audience is 27, and it is not derived from this chain at all.** It comes from source cohort A (§5.2), independent of the legacy boolean, which D1 discards. This chain describes the data's condition, not the audience.
 
-> **What these two chains do and do not measure.** They measure the audience implied by the *current boolean state*, which §1.1 shows carries no user intent in either direction. They are the baseline the D1 decision corrects, not the operative audience. Under D1 (§5.2) the email audience is **27**, rising to 40 or 73 as cohorts B and E are adjudicated. **The SMS chain is unaffected: SMS is strict opt-in, so its answer stays zero.**
+**SMS chain — post-sweep, 2026-07-25 (Q3):**
 
-**The bulk SMS audience is zero, and step 4 is why.** Only 2 of 52 stored phone numbers are in E.164 at all, and neither belongs to a consented contact. This is not a consent problem, it is a data-format problem, and it is invisible to every consent-based count. Phone normalization is a hard prerequisite for bulk SMS, listed in §12.
+| # | Filter applied | Removed | FORMAT-ELIGIBLE | CONSENT-ELIGIBLE |
+|---|---|---|---|---|
+| 0 | Live contacts | 35 merged | **271** | — |
+| 1 | `sms_consent = true` | 265 | **6** | 0 |
+| 2 | Phone present and non-empty | 1 | **5** | 0 |
+| 3 | `do_not_contact = false` | 0 | **5** | 0 |
+| 4 | Phone conforms to E.164 (`^\+1[0-9]{10}$`) | 0 | **5** | 0 |
+
+**5 format-eligible. 0 consent-eligible. This is the number most likely to be misread in this document.**
+
+Before the sweep this chain ended at **0**, because only 2 of 52 stored numbers were in E.164. Normalizing 48 numbers moved it to 5. **No consent was created; the numbers merely became well formed.** Not one of the five carries `sms_consent_at` on its live row, and SMS is strict opt-in under D1, where a cohort judgment is worthless (§5.2.1). The only evidenced SMS grant anywhere in the system is Cameron Allen's, and it sits on a merged-away row awaiting import (§5.2.2).
+
+**The defensible bulk SMS audience is zero, and it stays zero** until consent capture produces real opt-ins and the §12.1 prerequisites clear.
+
+**Membership changed even where totals did not.** The email chain ended at 8 both before and after the sweep, but the roster is different: **Jane Doe left** (quarantined as a test record, H4) and **Rachel Kimmel entered** (her `mailto:` prefix was stripped, H1, so she now passes step 4). A stable total concealing a changed roster is precisely the failure this document exists to end, so the composition is recorded, not just the count.
+
+**Why this document says 8 where an earlier session said 7, and 6 before that.** Three separate causes, each a filter rather than a judgment call:
+1. The session that said **7** applied `do_not_contact` by hand, removing Laura Lawrence as staff while missing that Melissa Allen also carried the flag.
+2. Applying `do_not_contact` mechanically gave **9 → 8** at step 4 and **6** after excluding internal and test rows.
+3. The sweep then removed Jane Doe by quarantine and admitted Rachel Kimmel by fixing her address, landing at **8** format-eligible with a different roster.
+
+The v594 document reached **9** because it stopped at step 4 and counted 306 pre-merge rows.
 
 ### 1.3 The suppression surfaces contradict each other
 
@@ -485,7 +502,9 @@ Consent capture is **part of this feature**. Each surface writes a `consent_even
 | Admin UI toggle | `manual_admin` | Staff actor id, free-text justification |
 | Unsubscribe link / `STOP` reply | `revoked` | Signed token or inbound message body |
 
-The admin toggle records `manual_admin` and is explicitly **not** treated as marketing-grade consent by the resolver. This is how the 21 existing unprovenanced trues are handled: they are marked `import_asserted` / `unverified_legacy`, sendable transactional, **not** sendable for marketing. The design refuses to inherit a lie.
+The admin toggle records `manual_admin` and is explicitly **not** treated as marketing-grade consent by the resolver.
+
+**The 21 existing unprovenanced `email_consent = true` flags are not carried forward as consent in any form.** They are discarded. Under §5.2 a contact's basis comes from its source cohort, not from the legacy boolean, so the flag stops being an input. Five of the 21 fall in cohort A and receive a basis by the cohort rule; the other 16 fall in cohort E and receive none until triaged. The design refuses to inherit a lie, which means it does not launder the lie into a basis either.
 
 ### 5.2 D1 RESOLVED — default basis by source
 
@@ -497,8 +516,8 @@ Cohorts measured live 2026-07-25 (Q16). Counts are live contacts; "emailable" me
 
 | Cohort | Contacts | Emailable | Default basis | Email |
 |---|---|---|---|---|
-| **A. Owned channels** — `xregulation`, `neuroreport`, `Podcast`, `Website`, `Workshop`, `inbound_call`, `manual_ecr`, `stripe`, `Other` | 33 | **27** | `existing_business_relationship` | **Yes** |
-| **B. Media appearances** — `media_appearance` | 16 | **13** | `existing_business_relationship` **only where a real interaction is on record**, adjudicated per contact | Case by case |
+| **A. Owned channels** — `xregulation`, `neuroreport`, `Podcast`, `Website`, `Workshop`, `inbound_call`, `manual_ecr`, `stripe`, `Other` | 33 | **27** | `import_asserted`, `method='import'` (§5.2.1) | **Yes** |
+| **B. Media appearances** — `media_appearance` | 16 | **13** | `import_asserted` **only where a real interaction is on record**, adjudicated per contact | Case by case |
 | **C. Bulk imports** — `Import`, conference and city lists, `Thinkers50`, `ChatGPT curated` | 52 | 19 | **None** | **No** |
 | **D. Social scrapes** — URL-valued `source`, 104 of 109 created 2026-03-11/12 | 109 | 15 | **None** | **Never without new consent** |
 | **E. Null source** | 61 | 33 | **None until triaged** (D8) | Held |
@@ -511,7 +530,38 @@ Cohorts measured live 2026-07-25 (Q16). Counts are live contacts; "emailable" me
 
 **SMS is unaffected by every line above.** Strict opt-in throughout. No source cohort receives a default SMS basis. `existing_business_relationship` never satisfies an SMS send, and email consent never satisfies an SMS send. Under the TCPA the bar is express written consent, and cohorts A through E all sit below it. The SMS audience remains **zero** until consent capture produces real opt-ins and the §12.1 prerequisites clear.
 
-**Every cohort-A and cohort-B basis is still written as a `consent_events` row** with `basis='existing_business_relationship'`, `method='import'`, and evidence recording the source value, the cohort rule applied, and the date of this decision. A default basis is still a recorded decision with provenance. It is not a boolean nobody wrote.
+### 5.2.1 A recorded business judgment is not a user's decision
+
+**The resolver must be able to tell them apart, so they are written with different `basis` and `method` values and are never collapsed.**
+
+| | Cohort backfill (§5.2) | A real user decision |
+|---|---|---|
+| `basis` | `import_asserted` | `express_consent` / `double_optin` |
+| `method` | `import` | `checkout`, `web_form`, `quiz`, `reply_stop` |
+| `occurred_at` | the date of this decision, 2026-07-25 | the moment the user acted |
+| `evidence` | source value, cohort rule applied, who decided | IP, user agent, form URL, exact text shown |
+| Email under D1 | **Sendable.** The opt-out basis is exactly this business judgment. | Sendable |
+| **SMS** | **Never sendable.** | Sendable only with express consent |
+| Withstands a complaint | Shows a documented, dated basis and a working unsubscribe | Shows what the person actually agreed to |
+
+`import_asserted` is a real basis under an opt-out email regime and a **worthless** one under the TCPA. That asymmetry is the entire point of separating them, and it is why cohort A can be emailed and can never be texted.
+
+**Every cohort-A and adjudicated cohort-B row is written as a `consent_events` row** with `basis='import_asserted'`, `method='import'`, `occurred_at` = the decision date, and evidence recording the source value and the cohort rule applied. A default basis is still a recorded decision with provenance. It is not a boolean nobody wrote.
+
+### 5.2.2 Two real consent decisions exist and must be imported, not overwritten
+
+**Verified live 2026-07-25 (Q17). The `consent_events` migration does not start empty.**
+
+Exactly two contacts in the entire system carry a genuine, timestamped, user-made consent decision. Both were captured by the platform checkout, both sit on rows that were merged away on 2026-07-22, and both are corroborated by the `contact_merge_log` snapshot as well as the surviving loser row:
+
+| Contact | Decision | Recorded | Import as |
+|---|---|---|---|
+| Cameron Allen (loser `68099477` → `4cb236f6`) | SMS **granted** | 2026-07-14 07:30:57Z | `basis='express_consent'`, `method='checkout'`, `action='granted'` |
+| Melissa Allen (loser `9af172f5` → `5c661e5c`) | SMS **DECLINED** | 2026-07-15 20:43:44Z | `basis='express_consent'`, `method='checkout'`, `action='revoked'` |
+
+**Melissa Allen's live record currently reads `sms_consent = true`.** She declined. The merge kept the survivor's unprovenanced flag and left her recorded decision stranded on the loser row. Importing these two rows correctly therefore *reduces* live SMS consent by one, and that is the correct outcome. See §12.3.
+
+**Neither row carries email consent.** No email consent has ever been captured by any surface in any repo. Cohort A's email basis is entirely §5.2's business judgment, and nothing in the system contradicts or corroborates it.
 
 ### 5.3 Four-layer enforcement
 
@@ -736,6 +786,50 @@ All three must clear before item 13. None is optional and only one is code.
 
 **Recommendation on D6:** build the ledger and the adapter seam so SMS drops in cleanly, ship email first, hold SMS until consent capture produces real opt-ins and the three prerequisites clear.
 
+### 12.2b HARD ORDERING CONSTRAINT: Layer 1 will break platform checkout unless sequenced
+
+> **Consequence of getting this order wrong, in one sentence: the day the Hub revokes the app-role UPDATE grant on the consent columns, every Stripe checkout on the platform starts failing at contact-write, and payments stop.**
+
+**§5.2 Layer 1 makes `contacts.email_consent` and `sms_consent` trigger-derived and revokes `UPDATE` on those columns from the application role.** The platform writes those exact columns directly, on the money path:
+
+- `npu-platform-v2/src/app/api/stripe/create-checkout/route.ts:259-262` (existing-contact branch)
+- `npu-platform-v2/src/app/api/stripe/create-checkout/route.ts:282-285` (new-contact branch)
+
+Both write `sms_consent`, `sms_consent_at`, `terms_accepted`, `terms_accepted_at` into the **shared** `contacts` table. The Hub does not own that writer, and revoking the grant does not fail loudly in the Hub. It fails in the platform, in checkout, in production.
+
+**The order is not negotiable:**
+
+1. **Platform switches to writing `consent_events`** instead of the `contacts` columns directly.
+2. **Verified live with a real checkout** producing a real `consent_events` row. Not a code review, not a staging assumption: a real transaction, confirmed in the ledger.
+3. **ONLY THEN does the Hub revoke the app-role `UPDATE` grant** and enable the derived-flag trigger.
+
+**A future session reading §5.2 Layer 1 in isolation must not apply it.** Layer 1 is correct and it is also a cross-repo change with a money-path blast radius. It is not a Hub-only migration, and the Hub cannot verify step 2 by itself. Confirm steps 1 and 2 are done before touching the grant.
+
+See `docs/PLATFORM_CONSENT_WORK.md` for the platform-side work this depends on.
+
+### 12.3 BLOCKER: contact merges lose consent in the permissive direction
+
+**Until this is fixed, no contact merges. Verified live 2026-07-25 (Q17, Q18).**
+
+The merge path never reconciles consent. `/api/contacts/merge/route.ts:26-28` states the design intent plainly: *"Field-level merge toward the fuller record is deliberately NOT decided here. The caller passes `winner_updates` with the fields it chose; this route only applies them. Policy lives in the review UI, mechanism lives here."*
+
+For most fields that separation is correct. For consent it is not, because the review UI does not pass consent fields, so the survivor silently keeps its own values and the loser's recorded decision is abandoned. The failure is asymmetric: **it always resolves toward the more permissive record**, because an unprovenanced `true` on the survivor beats an evidenced `false` on the loser.
+
+Live consequence, one real person: **Melissa Allen declined SMS at checkout on 2026-07-15 with a timestamp, and her live record reads `sms_consent = true`.**
+
+Two corrections to earlier framing in this project, both stated so they are not repeated:
+
+1. **The evidence is stranded, not destroyed.** The merge is a soft delete: the loser row is preserved, and since 2026-07-22 `contact_merge_log.merge_details` also holds a full `loser_snapshot`. Both sources independently confirm Melissa's `false`. An earlier session described the merge as destroying consent, which overstated it. It abandons consent, which is recoverable and is how this was found.
+2. **`merge_contact_repoint` is not the culprit.** That function only repoints `*contact_id*` foreign keys and touches no consent column. The defect is in the caller's delegation of policy to the UI.
+
+**Proposed fix (not applied).** Consent reconciliation is a safety invariant, not a presentation choice, so it moves out of the UI and into the route as mechanism:
+
+- Add `email_consent`, `sms_consent`, `email_consent_at`, `sms_consent_at`, `terms_accepted`, `terms_accepted_at`, `email_unsubscribed_at` to the route's `BLOCKED` set at line 148, so the UI can never supply them.
+- Compute them server-side, most-restrictive-wins per channel: `winner.x_consent AND loser.x_consent`. A revoke on either side survives the merge.
+- Carry evidence forward with `coalesce`, preferring whichever row actually has a timestamp, so provenance is never the thing that gets dropped.
+- Record the reconciliation in `merge_details.consent_resolution` with both inputs and the rule applied.
+- **Once `consent_events` exists this becomes simpler and strictly better:** consent is no longer a field on the row, so the merge just repoints ledger rows to the winner and the derived flags recompute from the union of both histories. The trigger already produces most-restrictive-wins for free. The field-level reconciliation above is the interim fix for the window before the ledger lands.
+
 **Note on legal posture.** Express written consent, existing business relationship, CAN-SPAM's opt-out regime, and transactional messaging are four different bases with four different rules. A boolean cannot express any of them, which is why the field is empty. The CAN-SPAM and TCPA determination should go to counsel, particularly because Sensorium is a clinical entity. The engineering consequence does not depend on how counsel rules: record a basis and its evidence per contact per channel, and SMS stays strictly opt-in regardless, because the TCPA leaves no room.
 
 ---
@@ -886,4 +980,29 @@ select cohort, count(*) as contacts,
        count(*) filter (where created_at::date
                           in ('2026-03-11','2026-03-12'))     as from_scrape_days
   from c group by cohort order by cohort;
+
+-- Q17: EVERY consent-bearing column across ALL merged-away rows.
+-- This is the coverage proof for "only two rows carry real evidence": it tests all
+-- nine columns, not just the timestamped two. 35 merged rows; 8 carry any flag;
+-- 1 evidenced divergence (Melissa Allen); 0 chained merges.
+with m as (select * from contacts where merged_into_id is not null)
+select left(m.id::text,8) as merged_row, m.email,
+       m.email_consent, s.email_consent as surv_email_consent,
+       m.sms_consent,   s.sms_consent   as surv_sms_consent,
+       m.sms_consent_at, m.terms_accepted, m.terms_accepted_at,
+       m.email_consent_at, m.email_unsubscribed_at, m.consent_forms
+  from m join contacts s on s.id = m.merged_into_id
+ where m.email_consent or m.sms_consent or m.sms_consent_at is not null
+    or m.terms_accepted or m.email_consent_at is not null
+    or m.email_unsubscribed_at is not null
+    or (m.consent_forms is not null and m.consent_forms::text not in ('[]','{}','null'));
+-- chain check (returned 0, so no multi-hop merges to follow):
+select count(*) from m where merged_into_id in (select id from m);
+
+-- Q18: the merge-log snapshot corroborating the loser rows (both merged 2026-07-22)
+select left(loser_id::text,8), left(winner_id::text,8), created_at::date,
+       merge_details->'loser_snapshot'->>'sms_consent'    as snap_sms_consent,
+       merge_details->'loser_snapshot'->>'sms_consent_at' as snap_sms_at
+  from contact_merge_log
+ where loser_id in ('9af172f5-...'::uuid, '68099477-...'::uuid);
 ```
