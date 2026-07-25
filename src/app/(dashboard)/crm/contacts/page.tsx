@@ -396,7 +396,9 @@ function ContactsPageContent() {
         source: form.source || null,
         tags: form.tags?.length ? form.tags : [],
         sms_consent: false,
-        email_consent: true,
+        // email_consent deliberately omitted: the column is NOT NULL DEFAULT false.
+        // Hard-coding true here manufactured consent on every manual create with no
+        // timestamp, source, or evidence. Consent must be recorded, not assumed.
         do_not_contact: false,
       }
       if (Object.keys(customFields).length > 0) payload.custom_fields = customFields

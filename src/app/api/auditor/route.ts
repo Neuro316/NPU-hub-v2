@@ -68,8 +68,6 @@ const API_ROUTES: Array<{
   { path: '/api/crm/network/scores', method: 'GET', name: 'Network Scores', module: 'crm', tables: ['contact_interaction_score'], critical: false, description: 'Health scoring' },
   { path: '/api/email/send', method: 'POST', name: 'Email Send', module: 'email', tables: ['email_sends'], externalService: 'SMTP', critical: true, description: 'Send emails' },
   { path: '/api/email/ai-draft', method: 'POST', name: 'AI Email Draft', module: 'email', tables: [], externalService: 'Anthropic Claude', critical: false, description: 'AI email drafts' },
-  { path: '/api/email/campaign/launch', method: 'POST', name: 'Campaign Launch', module: 'email', tables: ['email_campaigns'], critical: false, description: 'Launch campaigns' },
-  { path: '/api/email/campaign/process-queue', method: 'POST', name: 'Campaign Queue', module: 'email', tables: ['email_campaigns','email_sends'], critical: false, description: 'Process queue' },
   { path: '/api/email/webhook-inbound', method: 'POST', name: 'Inbound Email', module: 'email', tables: ['conversations','crm_messages'], critical: false, description: 'Email webhooks' },
   { path: '/api/sms/send', method: 'POST', name: 'SMS Send', module: 'sms', tables: ['crm_messages'], externalService: 'Twilio', critical: false, description: 'Send SMS' },
   { path: '/api/sms/schedule', method: 'POST', name: 'SMS Schedule', module: 'sms', tables: ['crm_messages'], externalService: 'Twilio', critical: false, description: 'Schedule SMS' },

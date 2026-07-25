@@ -1626,7 +1626,7 @@ export default function AccountingPage() {
   const createNPContactSignedUp=async(clientId:string,name:string,email:string|null,phone:string|null,dob:string|null,street:string|null,city:string|null,state:string|null,zip:string|null)=>{
     const parts=(name||'').trim().split(/\s+/);const first=parts[0]||name||'Unknown';const last=parts.slice(1).join(' ')||''
     try{
-      const payload={org_id:NP_ORG_ID,first_name:first,last_name:last,email:email||null,phone:phone||null,date_of_birth:dob||null,address_street:street||null,address_city:city||null,address_state:state||null,address_zip:zip||null,pipeline_id:NP_PIPELINE_ID,pipeline_stage:NP_STAGE_SIGNED_UP,tags:[],sms_consent:false,email_consent:true,do_not_contact:false}
+      const payload={org_id:NP_ORG_ID,first_name:first,last_name:last,email:email||null,phone:phone||null,date_of_birth:dob||null,address_street:street||null,address_city:city||null,address_state:state||null,address_zip:zip||null,pipeline_id:NP_PIPELINE_ID,pipeline_stage:NP_STAGE_SIGNED_UP,tags:[],sms_consent:false,do_not_contact:false}
       const{data,error}=await supabase.from('contacts').insert(payload).select('id').single()
       if(error){console.error('NP signup contact failed',error);alert('CRM enroll failed: '+error.message);return}
       if(data?.id)await supabase.from('acct_clients').update({enrolled_contact_id:data.id}).eq('id',clientId)
