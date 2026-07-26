@@ -9,9 +9,54 @@ item 3 landing first, and item 1 is the actual unlock for the email audience.
 
 ---
 
+## 0. THE CHECKOUT CONSENT-CAPTURE PATH HAS NEVER EXECUTED
+
+**Investigate this before scoping items 1 through 4. All four are downstream of it.**
+
+The checkout consent code exists, is correctly shaped, and writes to the right columns. It has never run.
+
+Verified against the shared database, 2026-07-25:
+
+| Measure | Count |
+|---|---|
+| Succeeded payments | **3** |
+| Enrollments | **4** |
+| Participant profiles | **17** |
+| Contacts with `source ilike 'Paywall:%'` | **0** |
+| Contacts at `pipeline_stage = 'Checkout started'` | **0** |
+| Live contacts with `terms_accepted_at` | **0** |
+| Live contacts with `sms_consent_at` | **0** |
+
+`create-checkout/route.ts` writes `source: 'Paywall: {name}'` and `pipeline_stage: 'Checkout started'` on both
+the create and update branches. **Neither value appears on a single contact row.** Real money moved and real
+people enrolled, yet no contact was created or updated by that path.
+
+**Root cause is unknown and was not investigated.** This handoff records the observation, not a diagnosis.
+Candidate explanations, none confirmed:
+
+- The three payments predate the consent-capture code and nothing has transacted since.
+- Purchases are arriving through a different path (Stripe dashboard, a payment link, manual enrollment) that
+  never touches `create-checkout`.
+- The contact write runs but fails silently. The surrounding code does not check the error on either branch,
+  which is the same swallowed-error pattern that hid the `email_sends` gap in the Hub for weeks.
+- The route is reached but returns before the contact block.
+
+**Why this leads the page.** Items 1 through 4 all assume the checkout path runs. Building email consent
+capture, fixing the unconditional `sms_consent_at`, and versioning the consent text each change what happens
+*when checkout executes*. **If checkout never executes, none of it fires, and the work produces no consent
+records at all.** Determining which of the above is true is the first task; it may also change what items 1
+through 4 should look like.
+
+**First diagnostic step:** confirm whether the 3 succeeded payments went through `create-checkout` at all —
+check for the `[create-checkout] server-derived amount` log line, which that route emits on every checkout
+immediately before the Stripe call. Its **absence** is proof the route never ran, exactly as the platform's own
+CLAUDE.md prescribes for distinguishing "the guard worked" from "the code never ran."
+
+---
+
 ## 1. Email consent capture does not exist. Anywhere.
 
-**Priority: this is the unlock. Everything else on this page is cleanup by comparison.**
+**Priority: the unlock, once item 0 is understood. Everything below this is cleanup by comparison.**
 
 There is no email consent capture in any surface, in either repo. Every capture point that exists is SMS.
 
@@ -111,10 +156,13 @@ platform checkout, in production.
 
 | # | Item | Priority | Blocks |
 |---|---|---|---|
-| 1 | Email consent capture does not exist | **Highest** — the actual unlock | Any evidence-based email audience |
+| **0** | **Checkout capture path has never executed** | **Investigate FIRST** | Scoping items 1–3 meaningfully |
+| 1 | Email consent capture does not exist | Highest, once 0 is understood | Any evidence-based email audience |
 | 2 | `sms_consent_at` written unconditionally | High before `consent_events` | Ledger correctness |
 | 3 | Consent text hard-coded, unversioned | Medium | Ability to answer "what did they agree to" |
 | 4 | Shared-column write collision | **Sequencing gate** | Hub Layer 1, and the money path if ignored |
 
-Items 2 and 3 should land before the Hub's `consent_events` migration, so the ledger imports clean data.
-Item 4 is a sequencing constraint rather than a defect. Item 1 is a project.
+**Item 0 is a question, not a task, and it gates the estimate on 1 through 3.** Those three assume the checkout
+path runs; if it does not, fixing them produces no consent records. Items 2 and 3 should land before the Hub's
+`consent_events` migration so the ledger imports clean data. Item 4 is a sequencing constraint rather than a
+defect. Item 1 is a project.

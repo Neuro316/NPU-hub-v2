@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabase, createAdminSupabase } from '@/lib/supabase';
 import { logActivity } from '@/lib/crm-server';
 import { ADMIN_ROLES } from '@/lib/org-settings-keys';
+import { resolveConsent, CONSENT_FIELDS } from '@/lib/consent-merge';
 
 // ─── POST /api/contacts/merge ───
 // Soft-merge one contact into another. The loser keeps its row and becomes
@@ -26,6 +27,12 @@ import { ADMIN_ROLES } from '@/lib/org-settings-keys';
 // Field-level "merge toward the fuller record" is deliberately NOT decided here.
 // The caller passes `winner_updates` with the fields it chose; this route only
 // applies them. Policy lives in the review UI, mechanism lives here.
+//
+// ── CONSENT IS THE DELIBERATE EXCEPTION TO THAT RULE (2026-07-25) ────────────
+// Consent does NOT go through `winner_updates`, and the UI cannot supply it: the
+// fields are in BLOCKED below, and the values are computed server-side by
+// resolveConsent() on every merge. The rule, the reasoning, and the live incident
+// that motivated it are documented in src/lib/consent-merge.ts.
 
 export async function POST(request: NextRequest) {
   try {
@@ -98,6 +105,24 @@ export async function POST(request: NextRequest) {
       .eq('org_id', winner.org_id)
       .maybeSingle();
 
+    // Consent is resolved BEFORE the snapshot so the rule that was applied is
+    // recorded in the same write that guarantees reversibility. The snapshot
+    // proves what the rows held; consent_resolution proves what the merge decided.
+    const { resolved: resolvedConsent, audit: consentAudit } = resolveConsent(winner, loser);
+
+    const BLOCKED = new Set<string>([
+      'id', 'org_id', 'created_at', 'merged_into_id', 'identity_id', 'tags',
+      ...CONSENT_FIELDS,
+    ]);
+    // Computed here, before the snapshot, so the refusal is recorded in the same
+    // durable write. See the note at the fieldUpdates loop for why it exists.
+    const rejectedCallerFields: Record<string, unknown> = {};
+    if (winnerUpdates) {
+      for (const [k, v] of Object.entries(winnerUpdates)) {
+        if (BLOCKED.has(k)) rejectedCallerFields[k] = v;
+      }
+    }
+
     // ── 1. Snapshot FIRST, with the real columns, and CHECK the error ───────
     // Written before anything is repointed so the record exists even if a later
     // step fails. This is the reversibility guarantee — if it can't be written,
@@ -114,6 +139,11 @@ export async function POST(request: NextRequest) {
         merged_by_user_id: user.id,
         loser_snapshot: loser,
         winner_snapshot_before: winner,
+        consent_resolution: {
+          ...consentAudit,
+          // Proof the input guard fired, not just that the resolver won.
+          rejected_caller_fields: rejectedCallerFields,
+        },
       },
     });
     if (logError) {
@@ -144,21 +174,32 @@ export async function POST(request: NextRequest) {
     // merge — the RPC sets a transaction-local guard the trigger honours. Keeping
     // tags out of this direct update means this UPDATE never lists `tags`, so the
     // enrollment trigger doesn't fire here at all.
+    // Consent (resolved above, before the snapshot) is merged into the winner
+    // update on EVERY merge, whether or not the caller sent winner_updates. The
+    // fields are in BLOCKED so a caller-supplied value is discarded, never applied.
+    // BLOCKED and rejectedCallerFields are computed above, before the snapshot.
+    // The rejection record exists because this guard is otherwise UNOBSERVABLE:
+    // the Object.assign below runs last and would mask a leaked caller value
+    // anyway, so a passing merge could not distinguish "refused at the input"
+    // from "overwritten afterwards". Those are different guarantees, and only the
+    // recorded refusal proves the first one.
+    const fieldUpdates: Record<string, unknown> = {};
     if (winnerUpdates) {
-      const BLOCKED = new Set(['id', 'org_id', 'created_at', 'merged_into_id', 'identity_id', 'tags']);
-      const fieldUpdates: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(winnerUpdates)) {
         if (!BLOCKED.has(k) && k in winner) fieldUpdates[k] = v;
       }
-      if (Object.keys(fieldUpdates).length) {
-        const { error: winnerError } = await admin
-          .from('contacts').update(fieldUpdates).eq('id', winnerId);
-        if (winnerError) {
-          console.error('[contacts/merge] winner update failed:', winnerError);
-          return NextResponse.json({ error: winnerError.message }, { status: 500 });
-        }
+    }
+    Object.assign(fieldUpdates, resolvedConsent);
+
+    {
+      const { error: winnerError } = await admin
+        .from('contacts').update(fieldUpdates).eq('id', winnerId);
+      if (winnerError) {
+        console.error('[contacts/merge] winner update failed:', winnerError);
+        return NextResponse.json({ error: winnerError.message }, { status: 500 });
       }
     }
+
 
     const mergedTags = Array.from(new Set([...(winner.tags || []), ...(loser.tags || [])]));
     const { error: tagError } = await admin.rpc('merge_union_tags', {
