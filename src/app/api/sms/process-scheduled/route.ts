@@ -41,8 +41,14 @@ export async function GET(request: NextRequest) {
       await supabase
         .from('crm_messages')
         .update({
-          status: 'sent',
+          // 'queued', not 'sent': Twilio has only ACCEPTED it at this point.
+          // /api/twilio/message-status reconciles the real outcome.
+          status: 'queued',
           twilio_sid: twilioMsg.sid,
+          // Recipient known locally; sender is chosen by the Messaging Service and
+          // arrives via the status callback.
+          to_e164: contact.phone,
+          from_e164: twilioMsg.from ?? null,
           sent_at: new Date().toISOString(),
         })
         .eq('id', msg.id);

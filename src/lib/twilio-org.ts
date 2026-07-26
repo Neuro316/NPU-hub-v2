@@ -184,9 +184,29 @@ export async function sendOrgSms(
     params.from = fromNumber
   }
 
+  // The VERCEL_URL fallback is kept deliberately — a callback to the deployment
+  // URL is better than none — but it is LOGGED, because it is the exact path that
+  // produces a signature mismatch: /api/twilio/message-status validates against a
+  // URL rebuilt from NEXT_PUBLIC_APP_URL, so if Twilio was told the VERCEL_URL
+  // instead, every callback is rejected with a 403 and delivery status silently
+  // stops updating. If this line ever appears in the logs, that is the warning.
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '')
   if (appUrl) {
+    if (!process.env.NEXT_PUBLIC_APP_URL) {
+      console.error(
+        '[sendOrgSms] NEXT_PUBLIC_APP_URL is UNSET; falling back to VERCEL_URL for',
+        'the status callback:', appUrl,
+        '\n  Status callbacks will be REJECTED (403) by /api/twilio/message-status,',
+        'because it validates the Twilio signature against NEXT_PUBLIC_APP_URL.',
+        'Delivery status and from_e164 will stop being recorded until this is set.',
+      )
+    }
     params.statusCallback = `${appUrl}/api/twilio/message-status`
+  } else {
+    console.error(
+      '[sendOrgSms] No NEXT_PUBLIC_APP_URL and no VERCEL_URL. Sending WITHOUT a',
+      'status callback: no delivery outcome and no from_e164 will be recorded.',
+    )
   }
 
   return client.messages.create(params)

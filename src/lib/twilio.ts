@@ -8,12 +8,34 @@ const client = twilio(
 
 // ─── Send SMS ───
 export async function sendSms(to: string, body: string) {
-  const message = await client.messages.create({
+  // GUARD THE INTERPOLATION. This previously read
+  //   statusCallback: `${process.env.NEXT_PUBLIC_APP_URL}/api/twilio/message-status`
+  // unconditionally, so an unset env var produced the literal string
+  // "undefined/api/twilio/message-status" and handed it to Twilio. Twilio rejects
+  // a malformed callback URL by rejecting the ENTIRE message, so one missing env
+  // var would break every send rather than just the status reporting.
+  //
+  // Omit-and-log rather than throw: a missing callback URL costs us delivery
+  // status, which is bad, but throwing would cost the message itself, which is
+  // worse. The error line is what makes the degradation visible instead of silent.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+  const params: Parameters<typeof client.messages.create>[0] = {
     to,
     body,
     messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID!,
-    statusCallback: `${process.env.NEXT_PUBLIC_APP_URL}/api/twilio/message-status`,
-  });
+  };
+  if (appUrl) {
+    params.statusCallback = `${appUrl}/api/twilio/message-status`;
+  } else {
+    console.error(
+      '[twilio.sendSms] NEXT_PUBLIC_APP_URL is UNSET. Sending WITHOUT a status',
+      'callback: this message will never record a delivery outcome and its',
+      'from_e164 will stay null. Set NEXT_PUBLIC_APP_URL to the host Twilio should',
+      'call (https://hub.neuroprogeny.com).',
+    );
+  }
+
+  const message = await client.messages.create(params);
   return message;
 }
 

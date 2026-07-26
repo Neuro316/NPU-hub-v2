@@ -282,6 +282,61 @@ All three send real mail and record nothing. This is the live bug the send core 
 
 **The misleading comment.** The block above `stage-emails/route.ts:244` attributes the empty table to RLS and states that "a stage email has `campaign_id` NULL". Both halves are wrong: `campaign_id` cannot be null, and the fix that comment justifies (switching to the admin client) cannot help, because service_role bypasses RLS and constraints are not RLS. A future session reading that comment will be misdirected. It should be corrected when the route is migrated to `message_sends`.
 
+### 3.2b NO DELIVERY STATUS HAS EVERY BEEN RECORDED, FOR ANY MESSAGE, EVER
+
+**Verified live 2026-07-26. This is larger than the endpoint that caused it.**
+
+`sendOrgSms` (`src/lib/twilio-org.ts:189`) and `sendSms` (`src/lib/twilio.ts:15`) have set
+`statusCallback: {appUrl}/api/twilio/message-status` on **every SMS the Hub has ever sent**. That route
+did not exist. Twilio has been POSTing every status update to a **404** since the first send.
+
+**Consequence: no outbound message in this system has a verified delivery outcome.**
+
+- A row reading `status='sent'` asserts only that **Twilio accepted the API call**. It does not mean
+  the message was delivered, and it does not mean it was not rejected by the carrier seconds later.
+- All 8 outbound rows sat at `status='queued'` indefinitely, including messages known to have been
+  delivered days earlier, because nothing ever revisited them.
+- `from_e164` was never learnable. With a Messaging Service, Twilio selects the sender during queueing,
+  so the create response carries `from=null`; the callback is the **only** place the real sender is
+  reported. This is why the 2026-07-24 lost-inbound incident could be reconstructed **only** from
+  Twilio's own logs and not from the Hub.
+
+**Historical send outcomes in this system are unverified and cannot be reconstructed from the Hub.**
+Twilio's message logs are the sole record, and they are subject to Twilio's retention window. Any
+analysis of past SMS performance — deliverability, failure rates, whether a specific person received a
+specific message — must be sourced from Twilio, and any Hub-derived figure is a statement about API
+acceptance, not delivery.
+
+**This is the same defect class as `email_sends` logging nothing (§3.2) and the merge losing consent
+(§12.3): reporting success that was never verified.** Three independent instances of one habit — a
+write path whose failure is invisible because nothing reads back the result. The pattern is worth
+naming because it will recur: *if a system records an outcome it did not observe, the record is a
+guess wearing the costume of a fact.*
+
+Fixed 2026-07-26 by creating `/api/twilio/message-status` and changing create-time status to `queued`
+in every send path. **Only messages sent after that deploy carry a real outcome.** Everything before it
+is permanently unverifiable, and no backfill can change that, because the callbacks were never
+retained.
+
+**`NEXT_PUBLIC_APP_URL` is load-bearing for this, and is set to exactly `https://hub.neuroprogeny.com`,
+no trailing slash, for All Environments** (confirmed in Vercel 2026-07-26).
+
+That variable is not decoration. Both send paths build the `statusCallback` from it, and
+`/api/twilio/message-status` rebuilds the same URL to validate Twilio's signature. The two must match
+byte-for-byte; if they drift, every callback is rejected with a 403 and delivery status silently stops
+recording — the same failure this section documents, in a new place. The route logs both URLs on
+rejection precisely so that drift is diagnosable in one line rather than mysterious.
+
+**"All Environments" means preview deploys also build production callback URLs, and that is correct
+here.** A preview send tells Twilio to call `hub.neuroprogeny.com`, so the callback lands on
+production. Nothing is lost, because **all environments share one database** and the callback resolves
+its row by `twilio_sid` — an identifier that is global to the Twilio account and carries no notion of
+which deployment created it. The row gets updated regardless of which environment sent the message.
+
+The alternative, per-environment URLs, would be actively worse: a preview send's callback would hit a
+preview deployment that may no longer exist by the time Twilio retries, and that status would be lost
+with no record that it went missing.
+
 ### 3.3 Dead code, removed 2026-07-25
 
 Three routes were written against a schema that was never applied, referencing `to_email`, `batch_size`, `filter_criteria`, `provider_message_id`, and `batch_number`, none of which exist on `email_campaigns` (Q12).

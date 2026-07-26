@@ -80,8 +80,14 @@ export async function GET(request: NextRequest) {
             conversation_id: conversation.id,
             direction: 'outbound',
             body: resolvedBody,
-            status: 'sent',
+            // 'queued', not 'sent': the create call only proves Twilio ACCEPTED the
+            // message. /api/twilio/message-status reconciles it to sent/delivered/
+            // failed. Writing 'sent' here made a carrier-rejected message read as
+            // sent forever, because nothing ever revisited it.
+            status: 'queued',
             twilio_sid: twilioMsg.sid,
+            to_e164: contact.phone,
+            from_e164: twilioMsg.from ?? null,
             sent_at: new Date().toISOString(),
           });
           success = true;

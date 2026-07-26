@@ -62,6 +62,12 @@ export async function POST(request: NextRequest) {
       const { data: message } = await supabase.from('crm_messages').insert({
         conversation_id: conversation.id, direction: 'outbound', body: msgBody,
         status: 'queued', twilio_sid: twilioMsg.sid, sent_by: user.id,
+        // The recipient is known locally. The SENDER is not: sends go through a
+        // Messaging Service, so Twilio picks the number from its pool during
+        // queueing and twilioMsg.from is typically null right here. from_e164 is
+        // filled authoritatively by /api/twilio/message-status.
+        to_e164: contact.phone,
+        from_e164: twilioMsg.from ?? null,
         sent_at: new Date().toISOString(),
       }).select().single();
       messageId = message?.id;
