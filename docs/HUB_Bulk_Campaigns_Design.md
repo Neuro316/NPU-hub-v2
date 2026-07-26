@@ -318,6 +318,40 @@ in every send path. **Only messages sent after that deploy carry a real outcome.
 is permanently unverifiable, and no backfill can change that, because the callbacks were never
 retained.
 
+#### Both numbers had the defect. Only the visible one got caught.
+
+**`+18284155050` was on the demo URL too**, on 2026-07-21 between **03:27 and 03:39**. Two inbound were
+lost and both received the same Twilio demo autoresponse:
+
+```
+03:27:18  inbound "2 test"                       LOST + demo autoresponse from ...5050
+03:29:45  inbound "Thanks are you getting this?" LOST + demo autoresponse from ...5050
+03:39:32  inbound "Test"                         landed in the Hub
+```
+
+It was repointed within ten minutes, so the loss was two of Cameron's own test messages and no client
+was affected. `+18289009821` had the identical misconfiguration and ran **76 days**, losing a real
+client reply.
+
+**The difference was not severity, or configuration, or luck about which number mattered. It was that
+somebody happened to be watching one of them at the moment it broke.**
+
+The lesson is not "9821 was misconfigured." It is that **a misrouted inbound webhook produces no signal
+at all.** Nothing errors, nothing retries, no counter moves, no row appears. The Hub's view of a number
+that receives nothing is identical to its view of a number nobody has texted. The only reason the
+`…5050` window was found is that a human was sending test messages and noticed the replies were wrong.
+
+**That is why the delivery-status callback (§3.2b) and `from_e164` recording matter beyond this
+incident.** They convert a class of failure that is currently silent into one that leaves a trace:
+
+- A status callback that stops arriving is a *detectable* condition. Silence on the inbound path is not.
+- `from_e164` on every outbound makes "which number is this conversation actually using" answerable
+  from the Hub, so a number drifting out of the sender pool is visible before someone reports it.
+
+Neither of those would have prevented this incident. Both would have shortened it from 76 days to the
+first time anyone looked, which is the only durable improvement available against a failure mode whose
+defining property is that it is quiet.
+
 **`NEXT_PUBLIC_APP_URL` is load-bearing for this, and is set to exactly `https://hub.neuroprogeny.com`,
 no trailing slash, for All Environments** (confirmed in Vercel 2026-07-26).
 
@@ -611,6 +645,38 @@ $$;
 ```
 
 Precedence is not negotiable and lives in exactly one place. `do_not_contact` always wins over consent, which resolves the two contradictory rows of §1.3 deterministically as suppressed, pending decision D2 (§12.2).
+
+#### 4.5.1 A REVOKE CAN EXIST WITHOUT A CONTACT. `consent_events` cannot be the only suppression surface.
+
+**Proven live, 2026-07-26.** `+18284348480` texted **`Stop`** to `+18289009821` on 2026-05-09 15:33:40Z
+(Twilio `SM2f318948579399060d3eb5516144abe3`). Twilio honoured it one second later: the demo
+autoresponse that followed came back `failed` with `error_code=21610`, "attempt to send to unsubscribed
+recipient". **That number matches no contact, and no `call_logs` row. It is unknown to the CRM.**
+
+`consent_events.contact_id` is `NOT NULL`, so this revoke **cannot be represented there at all**. The
+ledger can only record decisions by people we already have a row for, and a stranger telling us to stop
+is exactly the case where we have no row and should not create one.
+
+**Creating a contact to hold the revoke is the wrong answer.** It builds a profile on someone whose only
+communication with us was a request to be left alone, and it converts "we know nothing about this
+person" into "we have a CRM record for this person" — the opposite of what they asked for.
+
+**Therefore suppression is phone- and email-keyed in `do_not_contact_list`, and identity-keyed in
+`consent_events`, and `is_suppressed()` must consult BOTH.** They are not redundant surfaces to be
+consolidated later; they answer different questions:
+
+| Surface | Keyed on | Answers |
+|---|---|---|
+| `consent_events` | `contact_id` | "What has this *person* decided, per channel, with what evidence?" |
+| `do_not_contact_list` | `phone` / `email` | "Has this *address* asked us to stop, whoever owns it?" |
+
+A future session tempted to fold `do_not_contact_list` into `consent_events` should read this first: the
+fold is impossible without either a `NOT NULL` violation or manufacturing a contact record for someone
+who declined to be one.
+
+**Note also that `idx_dnc_phone` is a plain index, not unique.** Inserts into `do_not_contact_list` are
+therefore not idempotent by constraint and must guard with `WHERE NOT EXISTS`, or a re-run silently
+duplicates the suppression.
 
 ### 4.6 Table dispositions
 
