@@ -21,9 +21,41 @@ This is the single authoritative spec for bulk email and bulk SMS campaigns in t
 
 The three source documents remain in `docs/` pending review and are to be deleted once this document is accepted, so that exactly one spec remains.
 
-### 0.2 Definition of done for the feature
+### 0.2 SCOPE SPLIT BY CHANNEL (2026-07-26) — read this before anything else
 
-Compose a campaign, resolve an audience, see a preflight count, test send, approve, launch, throttled delivery, per-recipient ledger, unsubscribe and STOP handled, engagement rolled up. Org-scoped for white-label across Neuro Progeny and Sensorium. Consent capture is a **component of this feature**, not an external gate that must clear first.
+**This document was written as one feature. It is now two, over a shared substrate. A cold session reading any section below without this split will build the wrong thing.**
+
+| | **SMS** | **EMAIL** |
+|---|---|---|
+| What it is | **Participant reminders** | **Newsletters** |
+| Classification | **Transactional, NOT marketing** | **Marketing** |
+| How a send starts | **Manual, from the Conversations section.** Staff select contacts (usually filtered by enrolled pipeline stage), compose, send. | Campaign entity, scheduled |
+| Campaign entity | **None** | Yes (§4.4) |
+| Audience resolver | **None** — staff pick the recipients | Yes (§5.2 Layer 3) |
+| Preflight report | **None** | Yes (§6.1) |
+| Approval flow | **None** | Yes (§6.1) |
+| AI composer + voice lint | **None** | Yes (§9) |
+| Status | **Buildable now** on the shared substrate | **Blocked** on platform-side consent capture, which does not exist (`docs/PLATFORM_CONSENT_WORK.md` items 0 and 1) |
+
+**The shared substrate serves both and is the current build:**
+
+- `consent_events` (§4.2)
+- `message_sends` (§4.3)
+- `assertSendable()` (§5.3)
+
+**Everything above that line is now per-channel.** §4.4 campaign tables, §6.1 preflight and approval, and §9 composer are **EMAIL ONLY and DEFERRED**. They are not deleted, because the newsletter needs them exactly as specced.
+
+**A future university calendar integration will eventually drive SMS reminders. NOT NOW. Nothing in this build may assume it exists**, and no schema should be shaped around it in advance.
+
+**Consequence for consent.** SMS being transactional does not loosen the consent rule. D1 (§5.2) still applies: SMS is strict opt-in, `existing_business_relationship` never satisfies an SMS send, and STOP handling is still required. Transactional describes the *content*, not the permission.
+
+### 0.2b Definition of done, per channel
+
+**SMS (this build):** staff filter contacts by pipeline stage in Conversations, compose, send; every send passes `assertSendable('sms', …)`, writes a `message_sends` row, and honours STOP via a `consent_events` revoke. No campaign object exists.
+
+**EMAIL (deferred):** compose a campaign, resolve an audience, see a preflight count, test send, approve, launch, throttled delivery, per-recipient ledger, unsubscribe handled, engagement rolled up.
+
+Both org-scoped for white-label across Neuro Progeny and Sensorium. Consent capture is a **component of the email feature**, not an external gate that must clear first.
 
 ### 0.3 Boundaries that govern any session working from this document
 
@@ -386,6 +418,8 @@ Load-bearing choices:
 
 ### 4.4 New tables: `outreach_campaigns` and `outreach_recipients`
 
+> **EMAIL ONLY — DEFERRED (§0.2).** Newsletters use these. **SMS does not**: participant reminders are sent manually from Conversations with no campaign entity. Do not build these for the SMS track, and do not shape them around it. Not deleted; the newsletter needs them exactly as specced below.
+
 **Naming decision, 2026-07-25.** v594 §2.4 proposed extending `email_campaigns` in place. That is superseded: `email_campaigns` is marked **DEPRECATED** (0 rows, no data to migrate) and is not renamed, because renaming it to `campaigns` collides with a populated planning table (§2.2). New names are unused.
 
 ```sql
@@ -581,6 +615,12 @@ Ported from v594 Part 5. Application-level checks alone do not achieve "structur
 
 ## §6 Send pipeline
 
+> **EMAIL ONLY — DEFERRED (§0.2).** The whole staged pipeline below — audience resolve, **preflight report**, test send, **approval flow**, queued/sending worker — is the newsletter path.
+>
+> **SMS uses none of it.** A participant reminder is: staff pick recipients in Conversations, compose, send. Each send still passes `assertSendable()` and writes `message_sends`, but there is no campaign, no resolver, no preflight, and no approval gate to pass through.
+>
+> The claim/throttle/retry/reaper machinery in §6.2 is worth reading for the SMS track as *reference*, since throughput limits still apply, but it is not built for SMS in this phase.
+
 ### 6.1 Stages
 
 ```
@@ -650,6 +690,8 @@ interface SendAdapter {
 
 ### 7.2 SMS — Twilio
 
+> **CORRECTION, verified live 2026-07-26.** An earlier version of this section said campaign sends reuse `SendContext='campaign'` to route to the `outreach` number. **That routing is inert.** In `sendOrgSms` (`src/lib/twilio-org.ts:181-185`) `messagingServiceSid` and `from` are mutually exclusive, and Neuro Progeny has a Messaging Service configured (`MG5f74847d0c4f63becadbf0c7a9adb6c2`), so `pickNumber()` is computed and then discarded on every send. **Twilio's Messaging Service selects the sender from its own pool; the `purpose` taxonomy has no effect on SMS today.** Both `src/lib/twilio.ts sendSms()` and `sendOrgSms()` route through that one service, so 1:1 and any future bulk traffic share it — and share whatever A2P campaign is attached to it. Sender selection is a Twilio-side sender-pool question, not ours.
+
 - Reuses the existing account, `receiverIdentity(orgId)`, and outbound caller ID from the completed 1:1 build. Those constraints carry over unchanged and are not to be re-litigated.
 - `validate` normalizes to E.164. Given 2 of 52 phones conform (§1.2), **normalization is a prerequisite, not a nicety.**
 - **Bulk SMS writes to `crm_messages`, not a parallel table.** When a recipient replies, the reply lands in the existing conversation thread; if the outbound campaign message is absent from that thread, the softphone shows a reply to nothing. `message_sends.crm_message_id` links the accounting row to the conversation row. `crm_messages` already has the right dedupe primitive in `uq_crm_messages_twilio_sid`.
@@ -683,6 +725,10 @@ Once every outbound message lands in one ledger, engagement scoring sees stage e
 ---
 
 ## §9 AI composer and voice rules
+
+> **EMAIL ONLY — DEFERRED (§0.2).** The composer and the voice linter are newsletter tooling.
+>
+> **SMS reminders are composed by a human, every time.** No AI drafting, no `voice_lint_status` gate, no merge-tag renderer. The voice rules themselves still govern anything a human writes, but nothing in the SMS track enforces them in code.
 
 ### 9.1 Voice rules as a gate, not a prompt
 
@@ -736,36 +782,67 @@ All 271 contacts belong to Neuro Progeny. **Sensorium has zero contacts.** The w
 
 ## §11 Build order
 
-Ordered so nothing waits on something later. Items 1 through 4 are worth doing regardless of how the consent question resolves, because they fix live bugs.
+**Restructured 2026-07-26 for the §0.2 channel split.** Three tracks: a shared substrate both channels need, an SMS track buildable now, and an email track blocked on platform-side consent capture.
+
+### 11.1 SHARED SUBSTRATE — the current build
+
+Serves both channels. Nothing above this line should start before it lands.
 
 | # | Work | Depends on | Status |
 |---|---|---|---|
-| 0 | **Stop manufacturing consent.** Remove hard-coded `email_consent: true` from both create paths. Delete the two dead routes and the one-minute cron. | Nothing | **Done 2026-07-25**, pending review |
-| 1 | **Data hygiene sweep.** Normalize emails (strip `mailto:`, lowercase), trim first-name whitespace, normalize phones to E.164, quarantine test records. Dry-run first. | Nothing | Ready |
-| 2 | **`consent_events`** + trigger-derived flags + revoke app-role write on the flag columns (Layer 1) | Nothing | Ready |
-| 3 | **`message_sends`** + backfill the 6 stage rows + repoint `crm-server.ts:420` | 2 | Ready, independently valuable |
-| 4 | **Migrate the three send paths** onto `message_sends` (§8). Surface ledger errors. | 3 | Ready |
-| 5 | **`is_suppressed()`** resolver + reconcile the two suppression surfaces + adjudicate the 2 contradictions and the 57 DNC rows | D2, D3 | Needs decisions |
-| 6 | **Consent capture surfaces** (§5.1): preference page, double opt-in, consent-at-source, admin UI. Plus the **§5.2 cohort backfill**, which writes an `existing_business_relationship` basis for cohort A and adjudicated cohort B. | 2 | **D1 resolved**; the actual unblock |
-| 7 | **`outreach_campaigns` + `outreach_recipients`** + resolver function (Layer 3) | 3, 5 | Follows |
-| 8 | **Send pipeline**: claim, throttle, retry, reaper, ported from 077 | 3, 7 | Follows |
-| 9 | **Resend adapter** + unsubscribe + webhook ingestion + DB send gate (Layer 2) | 8 | Follows |
-| 10 | **Voice lint + AI composer** | Nothing technically | Parallel |
-| 11 | **Preflight report + campaign UI** | 7, 8 | Follows |
-| 12 | **Drop `email_sends`** in a separate reviewed migration | 4 live-tested | Cleanup |
-| 13 | **Twilio bulk adapter**, STOP handling, quiet hours | §12.1 all three | **Blocked** |
+| S0 | **Stop manufacturing consent.** Remove hard-coded `email_consent: true` from both create paths. Delete the two dead routes and the one-minute cron. | Nothing | **Done 2026-07-25** (`743f553`) |
+| S1 | **Data hygiene sweep.** Normalize emails, trim names, phones to E.164, quarantine test records. | Nothing | **Done 2026-07-25**, 6 + 9 + 48 + 4 rows |
+| S2 | **Merge consent fix** — most-restrictive-wins, `rejected_caller_fields`. **No contact merges until this ships.** | Nothing | Committed `b38ce55`; **live test not yet run** |
+| S3 | **`consent_events`** (migration 200) + derived-flag trigger + import the 2 real checkout records + cohort A backfill | S2 proven | **Next** |
+| S4 | **`message_sends`** (migration 201) + backfill the 6 `stage_email_sends` rows | S3 | Follows |
+| S5 | **`assertSendable(channel, contact, org)`** single chokepoint | S3, S4 | Follows |
+| S6 | **Repoint `crm-server.ts:420`** to `message_sends`; migrate the three unlogged send paths (§8) | S4 | Follows |
+| S7 | **`is_suppressed()`** + reconcile the two suppression surfaces + adjudicate the 2 contradictions and 57 DNC rows | D2, D3 | Needs decisions |
+| S8 | **Layer 1**: derived flags become authoritative, revoke app-role `UPDATE`. **Gated by §12.2b ordering — breaks platform checkout if run early.** | Platform switchover verified live | **Blocked, cross-repo** |
+| S9 | **Drop `email_sends`** in a separate reviewed migration | S6 live-tested | Cleanup |
 
-**Item 6 is the actual unblock for reach.** Everything above it is correctness work with real value; none of it moves the audience number.
+### 11.2 SMS TRACK — participant reminders, transactional, buildable after the substrate
+
+No campaign entity, no approval flow, no preflight, no composer, no audience resolver.
+
+| # | Work | Depends on | Status |
+|---|---|---|---|
+| M1 | **Contact picker in Conversations**: filter by pipeline stage, multi-select recipients | S5 | After substrate |
+| M2 | **Manual compose + send**, each recipient through `assertSendable('sms', …)`, writing `message_sends` and `crm_messages` | S5, M1 | After substrate |
+| M3 | **STOP / HELP keyword handling** writing a `consent_events` revoke, not only a Twilio-side block | S3 | After substrate |
+| M4 | **Quiet hours** by recipient timezone | M2 | Follows |
+| — | *University calendar integration* | — | **NOT NOW.** Explicitly out of scope; build nothing that assumes it. |
+
+**Hard prerequisites before any SMS send (§12.1):** R0.4 Stage 3 `crm_messages.org_id` backfill-and-enforce, A2P 10DLC use case confirmed to permit the traffic, and E.164 normalization (done in S1). **Note the §7.2 correction: sender selection is made by the Twilio Messaging Service, not by `pickNumber()`.**
+
+### 11.3 EMAIL TRACK — newsletters, marketing, DEFERRED
+
+**Blocked on platform-side consent capture, which does not exist.** See `docs/PLATFORM_CONSENT_WORK.md` items 0 and 1. Nothing here is deleted; the newsletter needs all of it as specced.
+
+| # | Work | Depends on | Status |
+|---|---|---|---|
+| E1 | **Consent capture surfaces** (§5.1) + the §5.2 cohort A backfill | S3, platform item 1 | **The actual unblock** |
+| E2 | **`outreach_campaigns` + `outreach_recipients`** (§4.4) + resolver (Layer 3) | S4, S7 | **EMAIL ONLY, deferred** |
+| E3 | **Send pipeline**: claim, throttle, retry, reaper, ported from 077 (§6) | E2 | **EMAIL ONLY, deferred** |
+| E4 | **Resend adapter** + unsubscribe + webhooks + DB send gate (Layer 2) | E3 | **EMAIL ONLY, deferred** |
+| E5 | **Preflight report + campaign UI** (§6.1) | E2, E3 | **EMAIL ONLY, deferred** |
+| E6 | **AI composer + voice lint** (§9) | Nothing technically | **EMAIL ONLY, deferred** |
+
+**E1 — consent capture — is the actual unblock for reach, and it is the only item on this page that moves the audience number.** Everything else in 11.1, 11.2, and 11.3 is correctness work or delivery machinery. Both are worth building; neither grows the audience. E1 additionally depends on platform-side work this repo does not own (`docs/PLATFORM_CONSENT_WORK.md` items 0 and 1), so it cannot be scheduled from here alone.
+
+*(STOP handling and quiet hours moved to the SMS track as M3 and M4, where they belong — they serve manual participant reminders, not the deferred newsletter. The old combined "Twilio bulk adapter" row is gone: there is no bulk SMS adapter in this design, because SMS has no campaign entity.)*
 
 ---
 
 ## §12 Blockers and open decisions
 
-### 12.1 Bulk SMS has three hard prerequisites
+### 12.1 SMS has three hard prerequisites
 
-All three must clear before item 13. None is optional and only one is code.
+**All three must clear before M2 (the first real SMS send) in §11.2.** None is optional and only one is code.
 
-1. **R0.4 Stage 3 — `crm_messages` org scoping. This is a BACKFILL-AND-ENFORCE problem, not an add-column problem.** The `org_id` column **already exists** on `crm_messages` (Q14). It is **nullable**, and **7 of 9 rows have it NULL**. The work is: backfill `org_id` from `conversations`, then enforce `NOT NULL`, then scope the RLS policy on it. A prior framing of this as "`crm_messages` has no `org_id`" is wrong and would send a build session looking for the wrong fix. Bulk SMS writes to `crm_messages` at volume, so shipping before this is enforced multiplies the exposure surface.
+**These apply to manual participant reminders, not only to volume sends.** The §0.2 split removed bulk SMS from the design entirely, and that does not soften any of the three below: R0.4 Stage 3 is a tenancy-isolation defect that a single send exercises just as surely as a thousand, A2P registration governs whether the traffic is permitted at all, and an unnormalized number fails one at a time as readily as in a batch.
+
+1. **R0.4 Stage 3 — `crm_messages` org scoping. This is a BACKFILL-AND-ENFORCE problem, not an add-column problem.** The `org_id` column **already exists** on `crm_messages` (Q14). It is **nullable**, and **7 of 9 rows have it NULL**. The work is: backfill `org_id` from `conversations`, then enforce `NOT NULL`, then scope the RLS policy on it. A prior framing of this as "`crm_messages` has no `org_id`" is wrong and would send a build session looking for the wrong fix. Every SMS send writes to `crm_messages`, so an unscoped row is created by the first reminder, not only by a batch; volume multiplies the exposure surface but does not create it.
 
 2. **Twilio A2P 10DLC registration. This is external lead time, not code.** Brand and campaign registration with the carriers takes days to weeks and cannot be compressed by engineering. It gates throughput and deliverability. Start it early or it becomes the critical path by default.
 
