@@ -1,4 +1,4 @@
-# NPU Hub CRM: Bulk Email and Bulk SMS Campaigns
+# NPU Hub CRM: Participant SMS Reminders and Email Newsletters
 
 **Repo:** NPU-hub-v2 only. **Supabase project:** `htfrfaxlcuyawtlztxxm` (shared with npu-platform-v2 and neuroreport-app).
 **Status:** Design and proposal. No migration has been applied. No schema has changed.
@@ -10,7 +10,9 @@
 
 ### 0.1 What this document is
 
-This is the single authoritative spec for bulk email and bulk SMS campaigns in the Hub CRM. It supersedes and merges four prior documents:
+This is the single authoritative spec for **participant SMS reminders and bulk email newsletters** in the Hub CRM. It supersedes and merges four prior documents:
+
+**The filename still reads `HUB_Bulk_Campaigns_Design.md`.** That is deliberate: renaming it would break every inbound reference in commit messages, `CLAUDE.md`, and `PLATFORM_CONSENT_WORK.md`. The filename is history; §0.2 is the scope.
 
 | Source | Role in this merge |
 |---|---|
@@ -144,7 +146,7 @@ Every prior document quoted a single audience number without the filter that pro
 
 Before the sweep this chain ended at **0**, because only 2 of 52 stored numbers were in E.164. Normalizing 48 numbers moved it to 5. **No consent was created; the numbers merely became well formed.** Not one of the five carries `sms_consent_at` on its live row, and SMS is strict opt-in under D1, where a cohort judgment is worthless (§5.2.1). The only evidenced SMS grant anywhere in the system is Cameron Allen's, and it sits on a merged-away row awaiting import (§5.2.2).
 
-**The defensible bulk SMS audience is zero, and it stays zero** until consent capture produces real opt-ins and the §12.1 prerequisites clear.
+**The defensible SMS audience is zero, and it stays zero** until consent capture produces real opt-ins and the §12.1 prerequisites clear. That holds for participant reminders exactly as it held for the bulk sends this design no longer contains: strict opt-in is a property of the channel, not of the volume.
 
 **Membership changed even where totals did not.** The email chain ended at 8 both before and after the sweep, but the roster is different: **Jane Doe left** (quarantined as a test record, H4) and **Rachel Kimmel entered** (her `mailto:` prefix was stripped, H1, so she now passes step 4). A stable total concealing a changed roster is precisely the failure this document exists to end, so the composition is recorded, not just the count.
 
@@ -414,7 +416,7 @@ Load-bearing choices:
 - **`dedupe_key` composed by the caller:** `stage:{stage_id}:{email_id}`, `campaign:{campaign_id}`, `sequence:{sequence_id}:{step_id}`, `manual:{uuid}`. This single generalization lets one partial unique index serve all five send sources.
 - **`skipped` and `suppressed` sit outside the unique index**, per migration 080, so a skip never blocks a later legitimate send.
 - **`consent_snapshot` is immutable proof.** If a contact later revokes, the record of the basis at send time survives. This is what makes a complaint defensible.
-- **`crm_message_id`** links a bulk SMS to the conversation row it created, so the 1:1 thread stays truthful (§7.2).
+- **`crm_message_id`** links an SMS send to the conversation row it created, so the 1:1 thread stays truthful (§7.2).
 
 ### 4.4 New tables: `outreach_campaigns` and `outreach_recipients`
 
@@ -694,11 +696,11 @@ interface SendAdapter {
 
 - Reuses the existing account, `receiverIdentity(orgId)`, and outbound caller ID from the completed 1:1 build. Those constraints carry over unchanged and are not to be re-litigated.
 - `validate` normalizes to E.164. Given 2 of 52 phones conform (§1.2), **normalization is a prerequisite, not a nicety.**
-- **Bulk SMS writes to `crm_messages`, not a parallel table.** When a recipient replies, the reply lands in the existing conversation thread; if the outbound campaign message is absent from that thread, the softphone shows a reply to nothing. `message_sends.crm_message_id` links the accounting row to the conversation row. `crm_messages` already has the right dedupe primitive in `uq_crm_messages_twilio_sid`.
+- **SMS writes to `crm_messages`, not a parallel table.** When a recipient replies, the reply lands in the existing conversation thread; if the outbound message is absent from that thread, the softphone shows a reply to nothing. `message_sends.crm_message_id` links the accounting row to the conversation row. `crm_messages` already has the right dedupe primitive in `uq_crm_messages_twilio_sid`.
 
   *Note: this reverses the 342-line doc's recommendation to keep campaign sends out of `crm_messages`. Thread truthfulness wins over inbox tidiness, and the link column keeps the accounting separable.*
 - Inbound `STOP`, `UNSUBSCRIBE`, `QUIT` write a `consent_events` revoke row and a suppression entry, not merely a Twilio-side block, so the Hub's own view of consent stays accurate.
-- Quiet hours by recipient timezone and a per-campaign send window. Bulk SMS at 6am is a complaint generator.
+- Quiet hours by recipient timezone. A reminder at 6am is a complaint generator, and a manual send makes that easier to do by accident than a scheduled one, because there is no queue pacing it.
 
 ---
 
@@ -857,11 +859,11 @@ No campaign entity, no approval flow, no preflight, no composer, no audience res
 | D3 | The 57 `do_not_contact = true` rows | Confirm as intentional, or treat the bulk-import cohort as an artifact and reset | Audience size |
 | D4 | `sequences` vs `campaign_automations` | Keep `sequences` (recommended), retire the other | §4 data model |
 | D5 | `org_email_config` Gmail / Apps Script transport | Retire the transport, keep the throttle and warmup concepts | §6.2 throttle |
-| D6 | Bulk SMS at all, given an audience of zero and a higher consent bar | Build the seam now, ship later | Scope |
+| ~~D6~~ | ~~Bulk SMS at all, given an audience of zero and a higher consent bar~~ | **RESOLVED 2026-07-26 by the §0.2 split: no bulk SMS.** SMS is manual participant reminders sent from Conversations. The consent bar is unchanged — strict opt-in, audience still zero until capture exists. | Answered |
 | D7 | Does the xregulation participant agreement constitute consent? (24 contacts) | Requires reading the agreement's consent clause | Audience size |
 | D8 | The null-source contacts | Triage by hand, or treat as unconsented | Audience size |
 
-**Recommendation on D6:** build the ledger and the adapter seam so SMS drops in cleanly, ship email first, hold SMS until consent capture produces real opt-ins and the three prerequisites clear.
+**D6 outcome, and how it inverted.** The recommendation here was to ship email first and hold SMS. The §0.2 split reversed that, and the reasoning is worth keeping rather than quietly overwriting: SMS turned out not to need the campaign machinery at all, so it became the *shorter* path, while email turned out to be blocked on platform-side consent capture that does not exist. **SMS now ships first, without a campaign entity; email is deferred.** The one thing that did not change is the consent bar: strict opt-in, audience zero until capture exists, and the §12.1 prerequisites still gate the first send.
 
 ### 12.2b HARD ORDERING CONSTRAINT: Layer 1 will break platform checkout unless sequenced
 
