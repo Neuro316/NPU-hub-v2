@@ -351,6 +351,37 @@ Append-only. Never updated, never deleted.
 
 **Channel separation is absolute.** An email opt-in grants email only. SMS is a separate row. There is no code path where one channel's basis is read for the other.
 
+#### 4.2.1 BUILD NOTE — `200_consent_events.sql` (approved 2026-07-26, not yet written)
+
+> Recorded here because this instruction was truncated in transit once already and this session survived a machine shutdown. It must not live only in conversation.
+
+**Migration number 200**, per the §13.1 band rule. Not 085.
+
+**Two fields, never collapsed** (§5.2.1):
+
+| Field | Allowed values |
+|---|---|
+| `basis` — *why we may send* | `existing_business_relationship`, `express_consent` |
+| `method` — *how the record came to exist* | `import`, `checkout`, `signup`, `unsubscribe_link`, `sms_stop`, `admin_manual`, `preference_page` |
+
+**Import the two real SMS records from the merged rows.** Both `basis='express_consent'`, `method='checkout'`, each carrying its **original** timestamp as `occurred_at` and citing the merged row id as evidence:
+
+| Contact | Action | `occurred_at` | Evidence: merged row |
+|---|---|---|---|
+| Cameron Allen (survivor `4cb236f6`) | `granted` | `2026-07-14 07:30:57.093+00` | `68099477` |
+| Melissa Allen (survivor `5c661e5c`) | `revoked` | `2026-07-15 20:43:44.094+00` | `9af172f5` |
+
+**Importing these correctly REDUCES live SMS consent by one. That is the point, not a regression.** Melissa declined at checkout and the merge kept the survivor's unprovenanced `true` (§12.3). Any migration run that leaves SMS consent unchanged has failed.
+
+**Cohort A backfill is EMAIL BASIS ONLY:** `basis='existing_business_relationship'`, `method='import'`, per §5.2.
+**No SMS basis for any cohort, ever.** SMS is strict opt-in; a cohort judgment is worthless under the TCPA (§5.2.1).
+
+**Append-only.** Derived-flag trigger. No `UPDATE`, no `DELETE`.
+
+> **DO NOT revoke the app-role `UPDATE` grant on the `contacts` consent columns in this migration.** That is Layer 1, and it breaks platform checkout per the §12.2b ordering constraint. Separate migration, only after the platform switches over and it is verified live.
+
+**Gated on** the merge-consent fix (`b38ce55`) passing its live test. The derived-flag trigger makes `contacts.sms_consent` computed from this ledger, so a merge path that still loses consent would turn a visible defect into a structural one.
+
 ### 4.3 New table: `message_sends`
 
 Ported from v594 §2.2, unchanged except that `campaign` source ids now refer to `outreach_campaigns`.
@@ -417,6 +448,21 @@ Load-bearing choices:
 - **`skipped` and `suppressed` sit outside the unique index**, per migration 080, so a skip never blocks a later legitimate send.
 - **`consent_snapshot` is immutable proof.** If a contact later revokes, the record of the basis at send time survives. This is what makes a complaint defensible.
 - **`crm_message_id`** links an SMS send to the conversation row it created, so the 1:1 thread stays truthful (§7.2).
+
+#### 4.3.1 BUILD NOTE — `201_message_sends.sql` (approved 2026-07-26, not yet written)
+
+> Recorded here for the same reason as §4.2.1: this instruction was truncated in transit once and must not live only in conversation.
+
+**Migration number 201**, per the §13.1 band rule.
+
+- **DDL exactly as specced above.** No additions, no omissions.
+- **All five indexes**, not just the unique one: `message_sends_once`, `message_sends_stale`, `message_sends_contact`, `message_sends_source`, `message_sends_org_day`.
+- **Backfill the 6 `stage_email_sends` rows** with `source_kind='stage'` and a composed `dedupe_key` of the form `stage:{stage_id}:{email_id}`. Six rows is small enough to verify by eye, and it gives engagement scoring something to read on day one.
+- Per §4.6, **`stage_email_sends` stays read-only after the backfill** rather than being dropped, until the new path is live-tested.
+
+**Sequenced after 200**, because `message_sends.consent_evidence_id` references `consent_events(id)`.
+
+**Not in this migration:** repointing `crm-server.ts:420`, migrating the three unlogged send paths, or dropping `email_sends`. Those are §11.1 items S6 and S9, each separately reviewed.
 
 ### 4.4 New tables: `outreach_campaigns` and `outreach_recipients`
 
