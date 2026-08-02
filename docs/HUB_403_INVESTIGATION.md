@@ -25,6 +25,7 @@ change, migration or commit was executed.
 | 6 | `response_time_log`: four wrong columns, silent return | **PRE-EXISTING** | Confirmed |
 | 7 | Merge lost email consent on six contacts | **REGRESSION** | Confirmed |
 | 8 | DNC population is software-set; bulk action destroys its own audit row | **PRE-EXISTING** | Confirmed |
+| 8b | `do_not_contact_list` cannot record the actor or the contact | **PRE-EXISTING** | Confirmed |
 
 Findings 1, 2, 5 and 6 were all wrong on the day they were written (2026-02-15 to
 2026-03-16). **Finding 7 is the only confirmed regression**, and it is merge-system
@@ -429,3 +430,140 @@ The repo boundary was never crossed, so the gate never fired. `org_members`,
 three applications. **Staying inside `npu-hub-v2` is not sufficient to stay inside Hub
 scope.** Any finding drawn from a shared table must state which application owns the
 rows it reasons about, and must name the column it actually queried.
+
+---
+
+# Finding 8b — `do_not_contact_list` is structurally unable to record a suppression
+
+**2026-08-02. The schema is wrong, not the code.** SQL below is OUTPUT ONLY and
+**NOT APPLIED**.
+
+Finding 8 established that bulk DNC destroyed its own audit row via a 42P10 from a
+non-existent `onConflict` target, and commit `4b2e3f4` made that failure visible. It did
+not make the write succeed. Two further defects, both structural, are why.
+
+## Defect 1 — `added_by` cannot record most actors
+
+```
+do_not_contact_list_added_by_fkey  FOREIGN KEY (added_by) REFERENCES team_members(id)
+```
+
+`bulk-action:126` writes `added_by: user.id` — an **`auth.users`** id. Measured:
+
+- `team_members` rows: **4** (it is a CRM assignment roster, carrying `auto_assign_weight`)
+- `team_members.id` values that are also an `auth.users` id: **0**
+- rows where `team_members.id = team_members.user_id`: **0**
+
+So the FK can **never** be satisfied by what the application writes, and `4b2e3f4`
+changed the error from 42P10 to **23503** without closing the provenance gap.
+
+**It is not fixable in code.** Of the **7** accounts now holding Hub authority, only
+**3** have a `team_members` row. The four who do not — `doug@`, `ella@neuroprogeny.com`,
+`ella@sensoriumneuro.com`, `paul@` — could never be recorded as the actor. Resolving the
+actor to a `team_members.id` and writing `null` on miss would silently lose provenance
+for the majority of operators, which is the defect Finding 8 exists to close.
+
+**A column that can record 3 of 7 actors is a broken column.**
+
+Precedent for the correct target already exists in this schema:
+`crm_messages_sent_by_fkey FOREIGN KEY (sent_by) REFERENCES auth.users(id)`.
+
+## Defect 2 — the row cannot identify who was suppressed
+
+`do_not_contact_list` has **no `contact_id`**. Columns: `id, org_id, phone, email,
+reason, added_by, created_at`. The suppressed party is identified by phone/email only.
+
+Measured over active contacts (`archived_at is null and merged_into_id is null`):
+
+| Measure | Count |
+|---|---|
+| Active contacts | 282 |
+| **Neither phone nor email** | **153** |
+| No phone | 225 |
+| **Currently DNC and unidentifiable** | **54** |
+
+**More than half of all suppression rows would name nobody.** This also breaks reading,
+not just writing: `isDNC` (`crm-server.ts:14-18`) matches with
+`.or('phone.eq.X,email.eq.Y')`, which cannot match a contact that has neither.
+
+## OUTPUT-ONLY SQL — migration 203, NOT APPLIED
+
+Hub band per CLAUDE.md §13.1 (200+; 202 is taken). Confirm against **both** repos before
+assigning the number.
+
+```sql
+-- ── PRE-CHECK. Run first and read the output. ────────────────────────────────
+select count(*)                                                   as total_rows,
+       count(*) filter (where added_by is not null)               as rows_with_added_by,
+       count(*) filter (where added_by is not null
+                          and added_by not in (select id from auth.users)) as would_violate_new_fk
+from public.do_not_contact_list;
+-- Expect total_rows = 1, rows_with_added_by = 0, would_violate_new_fk = 0.
+-- If would_violate_new_fk > 0, STOP: those rows must be resolved before step 1.
+
+-- ── 1. Repoint added_by to the identity the application actually has. ────────
+alter table public.do_not_contact_list
+  drop constraint do_not_contact_list_added_by_fkey;
+
+alter table public.do_not_contact_list
+  add constraint do_not_contact_list_added_by_fkey
+  foreign key (added_by) references auth.users(id) on delete set null;
+
+-- ── 2. Identify WHO was suppressed. ──────────────────────────────────────────
+-- on delete SET NULL, never CASCADE: deleting a contact must not erase the record
+-- that they asked not to be contacted. The suppression outlives the contact row.
+alter table public.do_not_contact_list
+  add column if not exists contact_id uuid
+  references public.contacts(id) on delete set null;
+
+create index if not exists idx_dnc_contact
+  on public.do_not_contact_list (contact_id) where contact_id is not null;
+
+comment on column public.do_not_contact_list.contact_id is
+  'The contact this suppression was recorded against. Added 2026-08-02 (Finding 8b): '
+  'the table previously identified the party by phone/email only, and 153 of 282 active '
+  'contacts have neither, so most suppression rows identified nobody. NULL means the '
+  'contact row was deleted after the fact; the suppression still stands.';
+
+comment on column public.do_not_contact_list.added_by is
+  'auth.users id of the operator who recorded this. Repointed from team_members(id) on '
+  '2026-08-02 (Finding 8b): team_members is a 4-row assignment roster and could record '
+  'only 3 of 7 Hub-authority operators. Nulled if that auth user is deleted — the actor '
+  'is ALSO written into reason as text so provenance survives.';
+
+-- ── 3. VERIFY (both must hold) ───────────────────────────────────────────────
+select conname, pg_get_constraintdef(oid) from pg_constraint
+where conrelid = 'public.do_not_contact_list'::regclass and contype='f';
+-- expect added_by -> auth.users(id), org_id -> organizations(id)
+
+select attname, format_type(atttypid, atttypmod) from pg_attribute
+where attrelid='public.do_not_contact_list'::regclass and attname='contact_id';
+-- expect: contact_id | uuid
+```
+
+## Ordering — SQL FIRST, then deploy
+
+The code change writes `contact_id` and relies on the repointed FK.
+
+- **SQL applied first, then deploy** — correct. Both writes land.
+- **Deploy first** — every bulk DNC audit insert fails: `PGRST204` (unknown column
+  `contact_id`) or `23503`. The contact flag still sets, the failure is **counted and
+  reported** by the `4b2e3f4` handler, and nothing is silently lost. Recoverable, but
+  no audit rows are written until the SQL runs.
+
+Failing in that direction is acceptable precisely because `4b2e3f4` made it visible.
+
+## Why the actor is written twice
+
+`added_by` is a reference and is nulled if that auth user is ever deleted. `reason` now
+carries `Bulk action by <email>` as text. A compliance record must not lose its actor
+because an employee account was later removed.
+
+## Scope note
+
+`do_not_contact_list` is referenced in the Hub at `crm-server.ts:14` (read, via `isDNC`)
+and `bulk-action:143` (write), plus the `auditor` manifest. Its RLS policy
+(`do_not_contact_list_org_policy`) scopes on `user_org_ids()`, i.e. `org_members` —
+shared. **The platform repo was not read**, so I cannot rule out a platform-side reader.
+Both changes are additive or FK-widening: adding a nullable column and broadening
+`added_by` from a 4-row roster to `auth.users` cannot invalidate an existing reader.

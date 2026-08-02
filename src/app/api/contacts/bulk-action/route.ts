@@ -129,20 +129,33 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        // INSERT, not UPSERT. The previous upsert specified onConflict
-        // 'org_id,phone' against an index that does not exist — there is no
-        // unique index on (org_id, phone), only a NON-UNIQUE PARTIAL one — so it
-        // raised 42P10 on every call. That error was discarded and affected++ ran
-        // anyway, so every bulk DNC set the flag, wrote no audit row, and reported
-        // success. This is what made the DNC population unattributable.
+        // INSERT, not UPSERT. The original upsert named onConflict 'org_id,phone'
+        // against an index that does not exist, so it raised 42P10 on every call,
+        // the error was discarded, and affected++ ran anyway. Append-only is also
+        // the right shape: a suppression entry is a fact at a point in time, and an
+        // audit row that can be overwritten is not an audit row.
         //
-        // Append-only is also the right shape: a suppression entry is a fact at a
-        // point in time. An audit row that can be overwritten is not an audit row,
-        // and 90 of 96 DNC contacts have a NULL phone, so (org_id, phone) cannot
-        // identify them either way.
+        // REQUIRES the schema fix in docs/HUB_403_INVESTIGATION.md (Finding 8b),
+        // which must be applied FIRST:
+        //   - added_by was FK'd to team_members(id), a 4-row CRM assignment roster.
+        //     Only 3 of 7 Hub-authority operators have a row there, so the column
+        //     could not record the majority of actors — it is repointed to
+        //     auth.users(id), matching crm_messages.sent_by.
+        //   - contact_id did not exist. The row identified the suppressed party by
+        //     phone/email only, and 153 of 282 active contacts have NEITHER, so
+        //     more than half of all suppression rows named nobody.
+        //
+        // The actor's email is ALSO written into reason as text. added_by is a
+        // reference and can be nulled if that auth user is ever deleted; a
+        // compliance record must not lose its actor when that happens.
+        const actor = user.email || user.id;
         const { error: auditErr } = await supabase.from('do_not_contact_list').insert({
-          org_id: c.org_id, phone: c.phone, email: c.email,
-          reason: 'Bulk action', added_by: user.id,
+          org_id: c.org_id,
+          contact_id: c.id,
+          phone: c.phone,
+          email: c.email,
+          reason: `Bulk action by ${actor}`,
+          added_by: user.id,
         });
 
         if (auditErr) {
