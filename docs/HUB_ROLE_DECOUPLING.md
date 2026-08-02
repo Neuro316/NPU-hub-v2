@@ -675,7 +675,8 @@ cannot mint platform authority. The separation property of §5 holds.
 > org for `ced3f075` and `a139491d`; Doug's orphan `ca861a0a` no longer exists;
 > `ec05f3ea` untouched and still `super_admin`/`active`.
 >
-> **Statements 7 and 8 (§12.9.2 — `Leigh@`, `wes@`) are NOT applied.**
+> **Statements 7 and 8 (§12.9.2 — `Leigh@`, `wes@`) are also APPLIED 2026-08-02.**
+> Re-verified independently: **12** total rows, **0** unlinked, gate still **7**.
 
 **2026-08-02. All four §11.4 questions answered by Cameron.**
 
@@ -772,15 +773,16 @@ accounts in §11.6. Not resolving it here — recording it so it is not rediscov
 
 ## 12.5 Item 7 — all four `user_id IS NULL` rows
 
-**Status 2026-08-02: Ella's and Doug's orphans are RESOLVED (applied). `Leigh@` and
-`wes@` remain OUTSTANDING — ruled for deletion, SQL in §12.9.2, not yet run.**
+**Status 2026-08-02: ALL FOUR RESOLVED (applied). Ella's and Doug's orphans by
+Statements 4 and 6; `Leigh@` and `wes@` deleted by Statements 7 and 8. Zero unlinked
+rows remain.**
 
 | Row | email | role | status | Resolved by these rulings? |
 |---|---|---|---|---|
 | `91d23bc7` | `Ella@neuroprogeny.com` | super_admin → **admin** | active | **YES** — ruling 4, linked to `ced3f075` (12.3) |
 | `ca861a0a` | `Doug@neuroprogeny.com` | admin | active | **YES** — ruling 3, **delete** (12.2) |
-| `d7985bfc` | `Leigh@neuroprogeny.com` | admin | **invited** | **YES — ruled DELETE, see §12.9** |
-| `79b1aa04` | `wes@neuroprogeny.com` | team_member | **inactive** | **YES — ruled DELETE, see §12.9** |
+| `d7985bfc` | `Leigh@neuroprogeny.com` | admin | **invited** | **RESOLVED — DELETED 2026-08-02 (S7)** |
+| `79b1aa04` | `wes@neuroprogeny.com` | team_member | **inactive** | **RESOLVED — DELETED 2026-08-02 (S8)** |
 
 **`Leigh@neuroprogeny.com`** — `admin`, status `invited`, **no account exists** in
 `auth.users` or `profiles`. This is an open invitation from 2026-04-13 that was never
@@ -943,7 +945,7 @@ touches them**. `Leigh@` and `wes@` are outstanding — **no statement touches t
 
 ## 12.8 FINAL TARGET TABLE — complete end state, both orgs
 
-**Row count, in two stages.** Phase 0b (S1–S6, **applied**): 14 → **14** (one inserted by S1, one deleted by S6). Statements 7–8 (**not applied**): 14 → **12**. See §12.9.3 for the full arithmetic and for why the pre-flight gate reads 7 rather than either figure.
+**Row count: 14 → 12, all applied 2026-08-02.** S1 inserted one, S6/S7/S8 deleted three. See §12.9.3 for the arithmetic and for why the pre-flight gate reads 7 rather than 12.
 
 | email | user_id | org | role | status | change |
 |---|---|---|---|---|---|
@@ -1015,7 +1017,10 @@ low but not formally zero.
 
 **Neither row is referenced. Both deletes are safe to proceed.**
 
-## 12.9.2 OUTPUT-ONLY SQL — NOT APPLIED
+## 12.9.2 SQL — **APPLIED 2026-08-02**
+
+> Both statements ran successfully. Verified after: **0** rows remain for either id,
+> **0** unlinked rows table-wide, **12** rows total.
 
 Both statements carry a `user_id IS NULL` guard, so a **linked** row can never be caught
 by mistake even if an id were mistyped.
@@ -1088,15 +1093,15 @@ regardless of Statements 7 and 8.
 ```
 14  starting point
 +1  S1  insert  cameron.allen@            -> 15   APPLIED
--1  S6  delete  Doug@  (unlinked orphan)  -> 14   APPLIED   <-- current state
--1  S7  delete  Leigh@ (unlinked orphan)  -> 13   not applied
--1  S8  delete  wes@   (unlinked orphan)  -> 12   not applied
+-1  S6  delete  Doug@  (unlinked orphan)  -> 14   APPLIED
+-1  S7  delete  Leigh@ (unlinked orphan)  -> 13   APPLIED
+-1  S8  delete  wes@   (unlinked orphan)  -> 12   APPLIED   <-- current state
 ```
 
 S2, S4 and S5 are updates and do not change the count.
 
-**Verified current state (2026-08-02, after Phase 0b): 14 rows, 2 of them unlinked**
-(`Leigh@`, `wes@`). **After S7 and S8: 12 rows, 0 unlinked.**
+**Verified current state (2026-08-02, all statements applied): 12 rows, 0 unlinked.**
+Measured independently, not reported.
 
 ## 12.9.4 Unrelated discovery — `do_not_contact_list.added_by` is FK'd to `team_members`
 
@@ -1147,8 +1152,8 @@ reported:
 | `a139491d` rows in NP | 1 | **1** |
 | Doug's orphan `ca861a0a` | 0 | **0** |
 | `ec05f3ea` NP row | `super_admin`/`active`, untouched | **`super_admin`/`active`** |
-| Total `team_profiles` rows | 14 | **14** |
-| Unlinked (`user_id IS NULL`) rows | 2 | **2** (`Leigh@`, `wes@`) |
+| Total `team_profiles` rows | 12 | **12** |
+| Unlinked (`user_id IS NULL`) rows | 0 | **0** |
 
 ### Resulting Hub authority
 
@@ -1179,10 +1184,6 @@ lock anyone out**, because the substrate it will read is complete.
 
 ## 13.3 Still outstanding
 
-- **`Leigh@` (`d7985bfc`) and `wes@` (`79b1aa04`)** — ruled for deletion, SQL in
-  §12.9.2, **not applied**. Both are unlinked, so neither affects the pre-flight gate
-  and neither blocks Phase 1. Referential safety re-verified 2026-08-02: **zero**
-  inbound FKs on `team_profiles.id` (control: **17** on `team_members`).
 - **Phase 1 carries two mandatory companions** (§5, §3): the additive
   `team_profiles_self_read` policy, because both existing policies on `team_profiles`
   require an `org_members` row and a Hub-only person could not otherwise read their own
@@ -1199,13 +1200,13 @@ Recorded once, plainly, because three figures appear in this document for the sa
 | Figure | Source | Counts | Value now |
 |---|---|---|---|
 | **7** | §12.7 pre-flight gate | Linked rows **only** (inner join to `profiles`), `role in (super_admin, admin)`, `status='active'` | 7 |
-| **14** | §12.8 final target table | **Every** row: any role, any status, linked or not | 14 |
-| **12** | §12.9.2 closing check | Every row **after** S7 and S8 delete the two unlinked orphans | pending |
+| **14** | §12.8 final target table | **Every** row: any role, any status, linked or not | superseded — now 12 |
+| **12** | §12.9.2 closing check | Every row, after S7 and S8 deleted the two unlinked orphans | **12 — current** |
 
 The gate's `join public.profiles p on p.id = tp.user_id` is an **inner** join, so it
 silently drops every `user_id IS NULL` row; its `role`/`status` filter then drops every
 `team_member`. It was never a row count — it is an **elevated-and-linked** count, which
 is exactly what a lockout guard should measure.
 
-**Consequence worth stating:** deleting `Leigh@` and `wes@` will move 14 → 12 but will
-**not** change the gate, which stays at 7. Neither row was ever counted by it.
+**Confirmed by measurement:** deleting `Leigh@` and `wes@` moved the table 14 → 12 and
+left the gate at **7**, exactly as predicted. Neither row was ever counted by it.
