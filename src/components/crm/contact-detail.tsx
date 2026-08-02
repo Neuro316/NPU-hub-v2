@@ -343,6 +343,23 @@ interface ContactDetailProps {
   pipelineCustomFields?: PipelineCustomField[]
 }
 
+/**
+ * Operator-facing text for a refused contact write.
+ *
+ * PGRST116 means updateContact's .select().single() matched ZERO rows. It does not
+ * identify why. Two causes produce it and the message must not pick one:
+ *   - the row is gone (deleted, archived out of view, merged away), or
+ *   - contacts_org_rls refused it. That policy admits superadmin, or
+ *     admin/facilitator WITH an org_members row for the contact's own org, so a
+ *     staff member outside that org is refused on that org's contacts only.
+ * Either way the write did not land, which is the part the operator needs.
+ */
+function writeErrorMessage(e: any, label: string): string {
+  return e?.code === 'PGRST116'
+    ? `${label} failed — this contact could not be updated. It may have been removed, or it may belong to an organisation you do not have access to. Nothing was saved.`
+    : `${label} failed: ${e?.message || 'unknown error'}. Nothing was saved.`
+}
+
 export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig, pipelineCustomFields }: ContactDetailProps) {
   const show = (key: keyof NonNullable<CardConfig>['sections']) =>
     !cardConfig || cardConfig.sections[key] !== false
@@ -368,6 +385,10 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
   const [newTag, setNewTag] = useState('')
   const [editing, setEditing] = useState(false)
   const [loading, setLoading] = useState(true)
+  // Surfaces a REFUSED contact write. Previously such a write threw into an
+  // unhandled promise and the panel simply kept rendering the old value.
+  const [writeError, setWriteError] = useState('')
+  const [saving, setSaving] = useState(false)
   const [showTaskCreate, setShowTaskCreate] = useState(false)
   const [selectedTask, setSelectedTask] = useState<CrmTask | null>(null)
   const [showEmailComposer, setShowEmailComposer] = useState(false)
@@ -504,6 +525,46 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
     return () => { supabase.removeChannel(ch) }
   }, [contactId])
 
+  /**
+   * Single funnel for every contact field write in this panel.
+   *
+   * TWO DEFECTS IT CLOSES.
+   *
+   * 1. The panel rendered stale values until a manual refresh. Callers invoked
+   *    `load()` WITHOUT awaiting it, so the handler resolved and React re-rendered
+   *    from the old `contact` state while the refetch was still in flight.
+   *    `await load()` here means the panel only re-renders once the PERSISTED row
+   *    has been read back.
+   *
+   * 2. A failed write was indistinguishable from a successful one. updateContact
+   *    throws (crm-client.ts), but these handlers were `async` with no try/catch,
+   *    so a rejection became an unhandled promise, `load()` never ran, and the
+   *    toggle simply did not move — exactly what success-without-refresh looks
+   *    like. Nothing was shown to the operator either way.
+   *
+   * NOT OPTIMISTIC, deliberately. Nothing is moved until the database has
+   * confirmed it. Assuming success is the openThread defect, and it is worse on a
+   * consent field: an operator who believes they revoked SMS consent, when the
+   * write was refused, is looking at a compliance control that lied to them.
+   */
+  const applyUpdate = async (updates: Partial<CrmContact>, label: string): Promise<boolean> => {
+    if (!contact) return false
+    setWriteError('')
+    setSaving(true)
+    try {
+      await updateContact(contact.id, updates)
+      await load()
+      onUpdate?.()
+      return true
+    } catch (e: any) {
+      console.error(`[contact-detail] ${label} failed:`, e)
+      setWriteError(writeErrorMessage(e, label))
+      return false
+    } finally {
+      setSaving(false)
+    }
+  }
+
   if (!contactId) return null
 
   const health = HEALTH_CONFIG[contact?.health_tier || 'stable'] || HEALTH_CONFIG.stable
@@ -519,18 +580,15 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
   const handleAddTag = async () => {
     if (!newTag.trim() || !contact) return
     const tags = [...(contact.tags || []), newTag.trim()]
-    await updateContact(contact.id, { tags })
-    setNewTag('')
-    load()
-    onUpdate?.()
+    // Only clear the input once the write is confirmed, so a refused add does not
+    // also discard what the operator typed.
+    if (await applyUpdate({ tags }, 'Add tag')) setNewTag('')
   }
 
   const removeTag = async (tag: string) => {
     if (!contact) return
     const tags = (contact.tags || []).filter(t => t !== tag)
-    await updateContact(contact.id, { tags })
-    load()
-    onUpdate?.()
+    await applyUpdate({ tags }, 'Remove tag')
   }
 
   const handleToggleTask = async (task: CrmTask) => {
@@ -640,9 +698,12 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
         due_date_notified: infoForm.due_date ? false : null,
       } as any)
       setEditingInfo(false)
-      load()
+      await load()
       onUpdate?.()
-    } catch (e) { console.error(e) }
+    } catch (e: any) {
+      console.error('[contact-detail] Save details failed:', e)
+      setWriteError(writeErrorMessage(e, 'Save details'))
+    }
   }
 
   const handleToggleTag = async (tagDefId: string) => {
@@ -704,6 +765,16 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
           </div>
         ) : contact ? (
           <>
+            {/* Refused write. Panel-wide and above the tabs on purpose: the write
+                that failed may have been on a tab the operator has since left, and
+                a compliance control that fails quietly is the whole defect here. */}
+            {writeError && (
+              <div role="alert" className="px-5 py-2 bg-red-50 border-b border-red-200 flex items-start gap-2 flex-shrink-0">
+                <p className="text-[10px] text-red-700 flex-1">{writeError}</p>
+                <button onClick={() => setWriteError('')}
+                  className="text-[10px] text-red-400 hover:text-red-700 flex-shrink-0">Dismiss</button>
+              </div>
+            )}
             {/* Header */}
             <div className="px-5 py-4 border-b border-gray-100 flex-shrink-0">
               <div className="flex items-start justify-between">
@@ -737,7 +808,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                               phone: headerForm.phone || undefined,
                               company: headerForm.company || undefined,
                             } as any)
-                            setEditingHeader(false); load(); onUpdate?.()
+                            setEditingHeader(false); await load(); onUpdate?.()
                           } catch (e: any) { alert('Save failed: ' + (e?.message || '')) }
                         }}
                           className="px-2.5 py-1 text-[10px] font-bold text-white bg-np-blue rounded-md hover:bg-np-dark">Save</button>
@@ -890,7 +961,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                     if (!confirm('Archive this contact? They will be hidden from the main list.')) return
                     try {
                       await updateContact(contact.id, { archived_at: new Date().toISOString() } as any)
-                      load(); onUpdate?.()
+                      await load(); onUpdate?.()
                     } catch (e: any) { alert('Archive failed: ' + (e?.message || '')) }
                   }}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-medium text-amber-600 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors">
@@ -900,7 +971,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                   <button onClick={async () => {
                     try {
                       await updateContact(contact.id, { archived_at: null } as any)
-                      load(); onUpdate?.()
+                      await load(); onUpdate?.()
                     } catch (e: any) { alert('Restore failed: ' + (e?.message || '')) }
                   }}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-medium text-green-600 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors">
@@ -1187,17 +1258,13 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                     <input type="date" value={(contact as any).due_date || ''}
                       onChange={async (e) => {
                         const val = e.target.value || null
-                        await updateContact(contact.id, { due_date: val, due_date_notified: false } as any)
-                        load()
-                        onUpdate?.()
+                        await applyUpdate({ due_date: val, due_date_notified: false } as any, 'Due date change')
                       }}
                       className="w-full px-1.5 py-1 text-[10px] font-medium text-np-dark border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-amber-300 bg-white" />
                     <div className="mt-1.5">
-                      <button onClick={async () => {
-                        await updateContact(contact.id, { due_date_action: 'Turn off access to xRegulation', due_date_notified: false } as any)
-                        load()
-                        onUpdate?.()
-                      }}
+                      <button disabled={saving} onClick={() =>
+                        applyUpdate({ due_date_action: 'Turn off access to xRegulation', due_date_notified: false } as any, 'Due date action change')
+                      }
                         className={`w-full px-1.5 py-1 text-[9px] border rounded text-left transition-colors ${(contact as any).due_date_action === 'Turn off access to xRegulation' ? 'border-np-blue bg-np-blue/5 text-np-blue font-medium' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
                         Turn off access to xRegulation
                       </button>
@@ -1205,9 +1272,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                         key={(contact as any).due_date_action || 'empty'}
                         onBlur={async (e) => {
                           if (e.target.value !== ((contact as any).due_date_action || '')) {
-                            await updateContact(contact.id, { due_date_action: e.target.value || null, due_date_notified: false } as any)
-                            load()
-                            onUpdate?.()
+                            await applyUpdate({ due_date_action: e.target.value || null, due_date_notified: false } as any, 'Due date action change')
                           }
                         }}
                         onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
@@ -1294,8 +1359,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                             const custom = prompt('Enter custom tag name:')
                             if (custom?.trim() && contact) {
                               const tags = [...(contact.tags || []), custom.trim()]
-                              await updateContact(contact.id, { tags })
-                              load(); onUpdate?.()
+                              await applyUpdate({ tags }, 'Add tag')
                             }
                           } else if (val) {
                             await handleToggleTag(val)
@@ -1555,7 +1619,10 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                                 company: headerForm.company || undefined,
                               } as any)
                               await handleSaveInfo()
-                            } catch (e) { console.error(e) }
+                            } catch (e: any) {
+                              console.error('[contact-detail] Save changes failed:', e)
+                              setWriteError(writeErrorMessage(e, 'Save changes'))
+                            }
                           }} className="px-4 py-2 bg-np-blue text-white text-xs font-semibold rounded-lg hover:bg-np-blue/90 transition-colors">
                             Save Changes
                           </button>
@@ -1606,13 +1673,12 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                         onChange={async (e) => {
                           const pid = e.target.value
                           if (!pid) {
-                            await updateContact(contact.id, { pipeline_id: null, pipeline_stage: null } as any)
+                            await applyUpdate({ pipeline_id: null, pipeline_stage: null } as any, 'Pipeline change')
                           } else {
                             const pipeline = pipelineConfigs.find(p => p.id === pid)
                             const firstStage = pipeline?.stages?.[0]?.name || 'New Lead'
-                            await updateContact(contact.id, { pipeline_id: pid, pipeline_stage: firstStage } as any)
+                            await applyUpdate({ pipeline_id: pid, pipeline_stage: firstStage } as any, 'Pipeline change')
                           }
-                          load(); onUpdate?.()
                         }}
                         className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 bg-white"
                       >
@@ -1624,8 +1690,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                       <select
                         value={contact.pipeline_stage || ''}
                         onChange={async (e) => {
-                          await updateContact(contact.id, { pipeline_stage: e.target.value } as any)
-                          load(); onUpdate?.()
+                          await applyUpdate({ pipeline_stage: e.target.value } as any, 'Pipeline stage change')
                         }}
                         className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 bg-white"
                       >
@@ -1756,7 +1821,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                             try {
                               const updatedCustomFields = { ...contact.custom_fields, [field.id]: newValue }
                               await updateContact(contact.id, { custom_fields: updatedCustomFields } as any)
-                              load()
+                              await load()
                               onUpdate?.()
                             } catch (e) {
                               console.error(e)
@@ -1890,11 +1955,9 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                           <p className="text-[9px] text-gray-400">{contact.sms_consent ? 'Can receive text messages' : 'No consent to text'}</p>
                         </div>
                         <button
-                          onClick={async () => {
-                            await updateContact(contact.id, { sms_consent: !contact.sms_consent })
-                            load(); onUpdate?.()
-                          }}
-                          className={`relative w-9 h-5 rounded-full transition-colors ${contact.sms_consent ? 'bg-green-500' : 'bg-gray-300'}`}
+                          disabled={saving}
+                          onClick={() => applyUpdate({ sms_consent: !contact.sms_consent }, 'SMS consent change')}
+                          className={`relative w-9 h-5 rounded-full transition-colors disabled:opacity-50 ${contact.sms_consent ? 'bg-green-500' : 'bg-gray-300'}`}
                         >
                           <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${contact.sms_consent ? 'left-[18px]' : 'left-0.5'}`} />
                         </button>
@@ -1905,11 +1968,9 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                           <p className="text-[9px] text-gray-400">{contact.do_not_contact ? 'Blocked from all outreach' : 'Available for contact'}</p>
                         </div>
                         <button
-                          onClick={async () => {
-                            await updateContact(contact.id, { do_not_contact: !contact.do_not_contact })
-                            load(); onUpdate?.()
-                          }}
-                          className={`relative w-9 h-5 rounded-full transition-colors ${contact.do_not_contact ? 'bg-red-500' : 'bg-gray-300'}`}
+                          disabled={saving}
+                          onClick={() => applyUpdate({ do_not_contact: !contact.do_not_contact }, 'Do Not Contact change')}
+                          className={`relative w-9 h-5 rounded-full transition-colors disabled:opacity-50 ${contact.do_not_contact ? 'bg-red-500' : 'bg-gray-300'}`}
                         >
                           <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${contact.do_not_contact ? 'left-[18px]' : 'left-0.5'}`} />
                         </button>

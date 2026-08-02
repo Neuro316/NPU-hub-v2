@@ -145,8 +145,9 @@ priority and the remainder is cleanup. Nothing about them has been withdrawn or
 invalidated; the diffs and SQL in the audit record stand as written. Two carry
 consequences worth restating while they wait:
 
-- **P2b** — invite acceptance is broken outright. Onboarding is blocked for as long as
-  this sits.
+- **P2b** — the typo is real and the route 500s, but see Finding 9: this is **not** how
+  Hub staff are provisioned, and no Hub code even creates the invites it consumes.
+  Urgency **downgraded**; it is not blocking Hub onboarding.
 - **P7 / Finding 8** — `bulk-action:127` still destroys its own audit row on every bulk
   DNC. Any bulk action taken before that is fixed adds further unattributable rows.
 
@@ -318,3 +319,113 @@ update public.contacts
 conflict target requires a unique index that does not currently exist — a schema change
 needing approval, and note that `phone` is null for 90 of 96 rows, so a unique index on
 `(org_id, phone)` would not constrain them anyway. **Proposed as a decision, not a diff.**
+
+---
+
+# Finding 9 — Hub vs platform role scope; Finding (e) WITHDRAWN
+
+A prior session reported that "one admin and one facilitator" lacked `org_members`
+rows and were therefore silently unable to edit contacts, framed as "works for
+Cameron, fails for Shane." **That finding was wrong and is withdrawn.** The
+correction matters more than the fix, because the error was a scope breach that
+happened *without leaving the repo* — `org_members` is a shared table serving both
+`npu-hub-v2` and `npu-platform-v2` in database `htfrfaxlcuyawtlztxxm`.
+
+**The specific mistake:** the query grouped **`profiles.role`** but the conclusion was
+stated as if it described `org_members`. Those are two different vocabularies:
+
+| Column | Values present |
+|---|---|
+| `org_members.role` | `participant` (10), `member` (5), `admin` (4), `owner` (2) |
+| `profiles.role` | `participant` (24), `superadmin` (4), `admin` (3), `facilitator` (2) |
+
+`member` and `owner` appear nowhere in Hub role logic.
+
+## 1. The Hub's role set, from Hub code
+
+`STAFF_ROLES = new Set(['admin','superadmin','facilitator'])` — defined identically in
+five Hub routes: `comms/caller-lookup:14`, `comms/conversation/archive:23`,
+`contacts/duplicates:28`, `crm/stage-emails:42`, `voice/receiver-token:23`.
+`ADMIN_ROLES = new Set(['admin','superadmin'])` — `src/lib/org-settings-keys.ts:33`.
+
+It is resolved from **`profiles.role`**, not `org_members.role` —
+`comms/conversation/archive/route.ts:52-55` reads
+`profiles.select('role').eq('id', user.id)` then tests `STAFF_ROLES.has(role)`.
+
+**On the premise that facilitator is not a Hub role: Hub code does not support that.**
+`facilitator` is in `STAFF_ROLES` in all five routes above and is listed in the Hub's
+own `CLAUDE.md`. The Hub grants facilitators staff access deliberately. What the Hub
+never reads is `org_members.role` as an authorisation input — it uses `org_members`
+only to test membership *existence* (`.select('id')`).
+
+## 2. Finding (e) re-run, Hub-relevant accounts only — ZERO affected
+
+The two accounts previously flagged:
+
+| Account | `profiles.role` | org_members | team_members | What it is |
+|---|---|---|---|---|
+| `npu-notifications@neuroprogeny.com` | facilitator | no | no | **service account** — id `facade00-0000-0000-0000-000000000001`, a sentinel UUID. Not a person. |
+| `admin@neuroprogeny.com` | admin | no | no | generic account, never provisioned, no Hub staff record |
+
+Neither is a human Hub staff member. For both, being unable to edit CRM contacts is
+**correct behaviour, not a defect.**
+
+Every actual Hub staff account passes:
+
+- `cameron@`, `cameron.allen@`, `shane@`, `paul@` — all **superadmin**, which
+  short-circuits the policy. **Shane, the named example, was never at risk**: he holds
+  both an `org_members` row and an active `team_members` row. The framing was backwards.
+- `doug@` (admin), `ella@` (admin), `cameron.s.allen+facilitator1@` (facilitator, a test
+  account) — all hold `org_members` rows for org `…0001`, which owns **317 of 318**
+  contacts.
+
+**Zero genuinely Hub-relevant accounts are affected. Finding (e) is withdrawn.**
+
+Residual, trivial and arguably correct: `doug@` is not a member of org
+`b9fd8b2e…`, which owns exactly **1** contact, so he would be refused on that one row.
+That is the policy working as designed.
+
+## 3. The mechanism survives, independent of the withdrawn examples
+
+`contacts_org_rls` governs `contacts`, a Hub CRM table, so the analysis is Hub-scoped
+regardless. The chain is unchanged and real:
+
+> `profiles.role` ∈ {admin, facilitator} **and** an `org_members` row for the contact's
+> org — else the UPDATE matches zero rows → `.select().single()` raises PGRST116 →
+> `updateContact` throws → previously an unhandled rejection in an `async` onClick,
+> indistinguishable from success.
+
+What changed is only that **nothing is currently tripping it.** The defect it would
+expose is latent, not live, and the contact-detail fix closes it either way.
+
+**Error wording corrected accordingly.** PGRST116 means "zero rows matched" and does
+*not* by itself prove a permission denial — a removed, archived or merged-away row
+produces it too. The message no longer asserts "you do not have permission."
+
+## 4. P2b re-assessed on Hub grounds — urgency DOWNGRADED
+
+The typo at `invite/[token]/accept/route.ts:99-100` is real and the route is Hub code.
+But it is **not the Hub staff provisioning path**:
+
+- **No Hub code creates a `hub_invites` row.** `hub_invites` is referenced in exactly two
+  files, both read-only consumers: `invite/[token]/route.ts:14` and
+  `accept/route.ts:25,123`. There is no insert anywhere in `src/`. All three existing
+  rows were created outside the application.
+- **Accepting an invite does not make anyone Hub staff.** It writes `org_members` and
+  `team_profiles` only. It never sets `profiles.role` and never creates a
+  `team_members` row — and `profiles.role` is precisely what every Hub `STAFF_ROLES`
+  gate reads. An accepted invite therefore grants org membership, not Hub staff access.
+- The three invites are `participant`/`participant`/`admin`; two target org
+  `b9fd8b2e…`, not the Hub's main org.
+
+**Conclusion: P2b does not block Hub onboarding and must not be promoted on that basis.**
+It remains a genuine bug worth fixing when the queue resumes — a 500 on a live route —
+but the "blocks all onboarding" claim in earlier revisions was wrong and is retracted.
+
+## Lesson for the scope gate
+
+The repo boundary was never crossed, so the gate never fired. `org_members`,
+`profiles`, `contacts` and `conversations` all live in one shared database serving
+three applications. **Staying inside `npu-hub-v2` is not sufficient to stay inside Hub
+scope.** Any finding drawn from a shared table must state which application owns the
+rows it reasons about, and must name the column it actually queried.
