@@ -44,6 +44,10 @@ export async function POST(request: NextRequest) {
 
   let affected = 0;
   let error: any = null;
+  // Contacts whose do_not_contact flag was written but whose suppression-list
+  // record was NOT. Tracked separately because the two writes can diverge and
+  // the operator has to be told when they do.
+  let dncAuditFailures = 0;
 
   switch (action) {
     case 'add_tags': {
@@ -120,13 +124,37 @@ export async function POST(request: NextRequest) {
 
       for (const c of contacts || []) {
         const { error: updateErr } = await supabase.from('contacts').update({ do_not_contact: true, updated_at: new Date().toISOString() }).eq('id', c.id);
-        if (!updateErr) {
-          await supabase.from('do_not_contact_list').upsert({
-            org_id: c.org_id, phone: c.phone, email: c.email,
-            reason: 'Bulk action', added_by: user.id,
-          }, { onConflict: 'org_id,phone' });
-          affected++;
+        if (updateErr) {
+          console.error('[bulk-action] add_to_dnc: flag write failed for', c.id, updateErr);
+          continue;
         }
+
+        // INSERT, not UPSERT. The previous upsert specified onConflict
+        // 'org_id,phone' against an index that does not exist — there is no
+        // unique index on (org_id, phone), only a NON-UNIQUE PARTIAL one — so it
+        // raised 42P10 on every call. That error was discarded and affected++ ran
+        // anyway, so every bulk DNC set the flag, wrote no audit row, and reported
+        // success. This is what made the DNC population unattributable.
+        //
+        // Append-only is also the right shape: a suppression entry is a fact at a
+        // point in time. An audit row that can be overwritten is not an audit row,
+        // and 90 of 96 DNC contacts have a NULL phone, so (org_id, phone) cannot
+        // identify them either way.
+        const { error: auditErr } = await supabase.from('do_not_contact_list').insert({
+          org_id: c.org_id, phone: c.phone, email: c.email,
+          reason: 'Bulk action', added_by: user.id,
+        });
+
+        if (auditErr) {
+          // The flag is NOT rolled back. Leaving someone contactable who was just
+          // marked do-not-contact is the worse failure of the two, so this fails
+          // SAFE in the restrictive direction. But it is not counted as success,
+          // and the divergence is reported below.
+          console.error('[bulk-action] add_to_dnc: flag set but audit row FAILED for', c.id, auditErr);
+          dncAuditFailures++;
+          continue;
+        }
+        affected++;
       }
       break;
     }
@@ -141,6 +169,23 @@ export async function POST(request: NextRequest) {
       affected = data?.length || 0;
       break;
     }
+  }
+
+  // Reported BEFORE the generic error tail, and deliberately with HTTP 200.
+  // Routing this through the 500 path below would make bulkUpdateContacts
+  // (crm-client.ts:433) discard `affected` and report 0, telling the operator
+  // nothing happened when flags in fact landed — the same silent divergence in
+  // the opposite direction.
+  if (dncAuditFailures > 0) {
+    return NextResponse.json({
+      success: false,
+      affected,
+      audit_failures: dncAuditFailures,
+      error:
+        `${dncAuditFailures} contact(s) were flagged do-not-contact, but their suppression-list ` +
+        `record could not be written. The flag STANDS and was not rolled back. Those contacts ` +
+        `now carry no audit trail for why they were suppressed — record them manually.`,
+    });
   }
 
   if (error) {
