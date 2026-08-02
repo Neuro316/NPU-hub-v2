@@ -64,6 +64,14 @@ export default function ConversationsPage() {
   const [newMessage, setNewMessage] = useState('')
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
+  // Why this exists: /api/sms/send answers 403 for a contact without SMS consent
+  // or on the DNC list, and that refusal is CORRECT. It was previously invisible
+  // — sendSms checked only data.success, never res.ok — so the Send button just
+  // did nothing and the operator could not tell "blocked" from "broken".
+  const [sendError, setSendError] = useState('')
+  // Same reason as sendError, for the thread rather than the composer: clearing
+  // the unread badge is a WRITE, and it was previously assumed to succeed.
+  const [threadError, setThreadError] = useState('')
   const [showFilters, setShowFilters] = useState(false)
   // Call-back: the contact currently being dialed via the existing VoipCall path.
   const [callBackContact, setCallBackContact] = useState<CrmContact | null>(null)
@@ -198,8 +206,21 @@ export default function ConversationsPage() {
   // Opening a thread clears its unread badge (staff UPDATE, 067 WITH CHECK).
   async function openThread(thread: ThreadItem) {
     setSelectedThread(thread)
+    // A refusal belongs to the contact it was raised for. Carrying it across a
+    // thread switch would accuse the next contact of the previous one's block.
+    setSendError('')
+    setThreadError('')
     if (thread.unread_count > 0) {
-      await supabase.from('conversations').update({ unread_count: 0 }).eq('id', thread.id)
+      // The badge is cleared locally only once the write is KNOWN to have landed.
+      // Clearing it optimistically made a rejected UPDATE (the 067 WITH CHECK can
+      // refuse it) look like success until a reload silently put the badge back.
+      const { error } = await supabase.from('conversations')
+        .update({ unread_count: 0 }).eq('id', thread.id)
+      if (error) {
+        console.error('[conversations] clearing unread_count failed:', error)
+        setThreadError('Could not mark this thread as read.')
+        return
+      }
       setThreads(prev => prev.map(t => (t.id === thread.id ? { ...t, unread_count: 0 } : t)))
     }
   }
@@ -207,20 +228,42 @@ export default function ConversationsPage() {
   async function sendSms() {
     if (!newMessage.trim() || !selectedThread || sending) return
     setSending(true)
+    setSendError('')
     try {
       const res = await fetch('/api/sms/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contact_id: selectedThread.contact_id, body: newMessage.trim() }),
       })
-      const data = await res.json()
-      if (data.success) {
-        setNewMessage('')
-        inputRef.current?.focus()
-        loadTimeline(selectedThread)
+      // Parsed defensively: an error response is not guaranteed to carry a JSON
+      // body, and a throw here would land in the catch as a bare "Unexpected
+      // token" that says nothing about the actual refusal.
+      const data: { success?: boolean; error?: string } =
+        await res.json().catch(() => ({}))
+
+      // The refusal is the product, not a failure to swallow. A 403 is the
+      // consent gate working; the operator has to be able to READ it. The draft
+      // is deliberately left in the box on every failure path so nothing the
+      // operator typed is lost to an error they did not cause.
+      if (!res.ok) {
+        setSendError(data.error || `Send failed (${res.status})`)
+        return
       }
-    } catch (e) { console.error('Send failed:', e) }
-    setSending(false)
+      if (!data.success) {
+        setSendError(data.error || 'Send failed for an unknown reason')
+        return
+      }
+
+      setNewMessage('')
+      inputRef.current?.focus()
+      loadTimeline(selectedThread)
+    } catch (e: any) {
+      setSendError(e?.message ? `Send failed: ${e.message}` : 'Send failed: network error')
+    } finally {
+      // finally, not a trailing statement: every branch above returns early, and
+      // a trailing setSending(false) would be skipped and wedge the button.
+      setSending(false)
+    }
   }
 
   const unreadTotal = threads.reduce((s, t) => s + t.unread_count, 0)
@@ -395,6 +438,9 @@ export default function ConversationsPage() {
               {callBackError && (
                 <p className="text-[10px] text-red-600 text-center mb-2">{callBackError}</p>
               )}
+              {threadError && (
+                <p role="alert" className="text-[10px] text-red-600 text-center mb-2">{threadError}</p>
+              )}
               <TimelineStream
                 entries={timeline}
                 emptyLabel="No messages in this conversation yet"
@@ -409,6 +455,9 @@ export default function ConversationsPage() {
                 the composer forever. */}
             {!!selectedThread.contact_phone && (
               <div className="p-3 border-t border-gray-100">
+                {sendError && (
+                  <p role="alert" className="text-[10px] text-red-600 mb-1.5 px-1">{sendError}</p>
+                )}
                 <div className="flex items-end gap-2">
                   <textarea ref={inputRef} value={newMessage} onChange={e => setNewMessage(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendSms() } }}
