@@ -28,6 +28,7 @@ change, migration or commit was executed.
 | 8b | `do_not_contact_list` cannot record the actor or the contact | **PRE-EXISTING** | Confirmed |
 | 10 | Call transcripts captured + displayed; gap is calls stuck at `ringing` | **NOT A DEFECT (pending)** | See Finding 10 |
 | 11 | Accounting RLS: no org scoping, no role check on `acct_*` | **SECURITY — DEFERRED** | Confirmed |
+| 12 | Deleted `acct_payments` row leaves no record it existed | **SECURITY — DEFERRED** | Confirmed |
 
 Findings 1, 2, 5 and 6 were all wrong on the day they were written (2026-02-15 to
 2026-03-16). **Finding 7 is the only confirmed regression**, and it is merge-system
@@ -849,3 +850,97 @@ service amounts, payment history and payout splits.
   be until that changes.
 
 **Do not fix in a feature branch. Give it a session.**
+
+---
+
+# Finding 12 — A deleted accounting payment leaves no record that it existed
+
+**SECURITY / DATA-INTEGRITY. Recorded 2026-08-03. NOT fixed — deferred, like Finding 11.**
+
+Surfaced while revising the Accounting service-delete feature (`2a8e3c7`, revised in the
+follow-up commit that records this finding). Closely related to Finding 11: both concern
+the same unprotected module.
+
+## No audit trail, and nothing fires on DELETE
+
+- **`acct_payments` has no audit trail.** The database contains 19 audit-style relations
+  (`audit_log`, `activity_log`, `crm_activity_log`, `snw_audit_log`, `nr_audit_log`,
+  `integration_audit_log`, `contact_merge_log`, and others — this is the positive control
+  proving the scan works). **None of them is `acct_*`.**
+- **The only trigger on `acct_payments` is `acct_payments_splits_trigger`, which is
+  `AFTER INSERT OR UPDATE OF amount, payment_date, service_id`.** Nothing fires on
+  `DELETE`.
+- **Nothing depends on a payment.** Zero inbound foreign keys (control: 4 outbound FKs
+  returned by the same query). So a delete cascades to nothing, and equally leaves nothing
+  behind.
+
+**A deleted payment is unreconstructable from this database.**
+
+## What a deletion changes
+
+The row carries the money *and* its derived state:
+`id, org_id, service_id, client_id, amount, payment_date, notes, split_snw, split_clinic,
+split_dr, clinic_id, payout_date, payout_period, is_paid_out, created_at`.
+
+Deleting one silently changes:
+
+- the client's **Paid total and balance**;
+- **`split_snw`, `split_clinic`, `split_dr`** — the entire payout calculation for that
+  payment;
+- the **payouts view**, the **reconciliation view**, and the **reports view**;
+- **reconciliation against `acct_checks`**, once payouts are being marked.
+
+## Authorization
+
+**RLS only, and the policy is `USING (auth.uid() IS NOT NULL)`** — see Finding 11. No org
+scoping, no role check, no `WITH CHECK`. Any authenticated user of the shared database can
+delete any payment in either org via direct PostgREST. In the UI it is one click behind a
+`confirm()`, reachable from three places (`page.tsx:474`, `:489`, `:524`).
+
+## Current exposure, measured 2026-08-03
+
+| Measure | Value |
+|---|---|
+| `acct_payments` rows | **76** |
+| Total amount | **$125,666.00** |
+| With computed splits | **76 (all)** |
+| With a `payout_date` | 76 (all) |
+| Flagged `is_paid_out` | **0** |
+
+**The zero is timing, not protection.** No payout has been marked complete *yet*. The
+moment payouts start being flagged, deleting a payment silently desynchronises the books
+from `acct_checks` — the check still records money paid out against a payment that no
+longer exists, and nothing anywhere records that it ever did.
+
+## This change increases reachability — deliberately
+
+The revised service-delete behaviour **refuses** to delete a service while payments are
+attached, and tells the operator to remove those payments first. That is the correct
+safety property for the `ON DELETE CASCADE` on `acct_payments.service_id` — the cascade
+never fires — **but it actively routes operators toward deleting payments by hand.**
+
+**This was an accepted tradeoff, not an oversight.** The alternative considered was
+archiving the service instead, which was rejected because the case being solved is a
+service added to the *wrong client*, and archiving leaves that mistake on the client's
+record permanently. Deleting a payment through the UI was already possible from three
+places before this change; the change makes it a more common path.
+
+Mitigation shipped alongside: `deletePayment` now checks both its error and its row count
+(`page.tsx`), so a failed payment delete is visible rather than silent. That fixes the
+*reporting*, not the *destructiveness*.
+
+## Likely fix — for a future session
+
+1. **Soft delete on `acct_payments`** (a `deleted_at` timestamptz, filtered out of every
+   read and every derived total), or
+2. **An `acct_*` audit trail** capturing before-images on delete — a table plus a
+   `BEFORE DELETE` trigger, which is the only form that survives a direct PostgREST call
+   bypassing the UI entirely.
+
+(2) is the stronger option precisely because Finding 11 leaves the table writable by any
+authenticated user: an application-level soft delete protects only operators who go
+through the app.
+
+**Related to Finding 11.** Both concern the same module, both are ultimately caused by
+`acct_*` having no authorization beyond "is logged in" and no record of what was changed.
+They should be scoped together, and neither should ride along with a feature change.

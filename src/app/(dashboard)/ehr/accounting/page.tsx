@@ -9,7 +9,7 @@ import { DollarSign, Users, TrendingUp, ChevronLeft, Plus, X, Settings as Settin
 interface AcctLocation { id: string; name: string; short_code: string; color: string; clinic_id: string | null; org_id: string }
 interface AcctClinic { id: string; org_id: string; name: string; contact_name: string; ein: string; corp_type: string; has_w9: boolean; has_1099: boolean; address: string; city: string; state: string; zip: string; phone: string; email: string; website: string; notes: string; split_snw: number; split_clinic: number; split_dr: number; flat_snw: number; flat_clinic: number; flat_dr: number; is_neuro_progeny?: boolean }
 interface AcctPayment { id: string; service_id: string; client_id: string; amount: number; payment_date: string; notes: string; split_snw: number; split_clinic: number; split_dr: number; clinic_id: string | null; payout_date: string; payout_period: string; is_paid_out: boolean }
-interface AcctService { id: string; client_id: string; service_type: 'Map' | 'Program' | 'Clarity' | 'qEEG'; amount: number; service_date: string; notes: string; archived_at?: string | null; payments: AcctPayment[] }
+interface AcctService { id: string; client_id: string; service_type: 'Map' | 'Program' | 'Clarity' | 'qEEG'; amount: number; service_date: string; notes: string; payments: AcctPayment[] }
 interface AcctClient { id: string; name: string; location_id: string; org_id: string; notes: string; date_of_birth?: string | null; phone?: string | null; email?: string | null; address_street?: string | null; address_city?: string | null; address_state?: string | null; address_zip?: string | null; enrolled_contact_id?: string | null; services: AcctService[] }
 interface AcctConfig { map_splits: { snw: number; dr: number; snw_flat: number; dr_flat: number }; cc_processing_fee: number; snw_base_pct: number; snw_base_flat: number; default_map_price: number; default_program_price: number; np_splits?: { clarity_snw_pct?: number; qeeg_snw_pct: number }; payout_agreement: string; marketing?: { monthly_total: number; clinic_share: number; dr_share: number } }
 interface AcctCheck { id: string; org_id: string; payee_type: 'clinic' | 'dr'; payee_clinic_id: string | null; check_number: string; check_date: string; amount: number; memo: string; created_at: string }
@@ -426,26 +426,17 @@ function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onEditSvc,onDeleteSvc,canD
       const svP=sv.payments.reduce((s:number,p:AcctPayment)=>s+p.amount,0);const sp=sv.payments.reduce((acc,pm)=>{const s=calcSplit(pm.amount,sv.service_type,cl.location_id,locs,clinics,cfg,sv.amount,sv.service_date,priorPaidFor(sv,pm));return{snw:r2(acc.snw+s.snw),dr:r2(acc.dr+s.dr),cc:r2(acc.cc+s.cc),snwService:r2(acc.snwService+s.snwService),clinicAmts:Object.fromEntries(Object.entries(s.clinicAmts).map(([k,v])=>[k,r2((acc.clinicAmts[k]||0)+v)]))}},{snw:0,dr:0,cc:0,snwService:0,clinicAmts:{}} as ReturnType<typeof calcSplit>);const rem=sv.amount-svP;const clAmt=Object.values(sp.clinicAmts).reduce((s,v)=>s+v,0)
       return <div key={sv.id} className="rounded-xl border border-gray-100 bg-white overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50/50"><div className="flex items-center gap-2"><h4 className="text-xs font-bold text-np-dark">{svcLabel(sv.service_type)}</h4>
-          {sv.archived_at&&<span className="px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-gray-500 bg-gray-200 rounded" title={`Archived ${fD(String(sv.archived_at).slice(0,10))}. Kept because it has payments; totals are unchanged.`}>Archived</span>}
-          {!sv.archived_at&&<button onClick={()=>{setEditingSvc(editingSvc===sv.id?null:sv.id);setEsSF({a:String(sv.amount),d:sv.service_date,n:sv.notes||''})}} className="p-0.5 rounded hover:bg-np-blue/10" title="Edit service"><Pencil className="w-3 h-3 text-gray-300 hover:text-np-blue"/></button>}
-          {canDelete&&!sv.archived_at&&<button title="Delete service" className="p-0.5 rounded hover:bg-red-50" onClick={async()=>{
-            // The message uses the loaded payment count; the HANDLER re-reads the
-            // authoritative count and decides. If they disagree the handler wins,
-            // and the result alert below reports what actually happened.
-            const n=sv.payments.length
-            const label=`${svcLabel(sv.service_type)} — ${$$(sv.amount)} — ${fD(sv.service_date)}`
-            const msg=n>0
-              ? `Archive "${label}"?
-
-This service has ${n} payment(s), so it will be ARCHIVED rather than deleted. It stays on this account and every total is unchanged — but it cannot be edited and no further payments can be added.`
-              : `Delete "${label}"?
-
-This service has no payments and will be permanently deleted. This cannot be undone.`
-            if(!confirm(msg))return
-            const outcome=await onDeleteSvc(sv.id)
-            if(outcome==='deleted')alert(`Deleted "${label}". It had no payments, so nothing was kept.`)
-            else if(outcome==='archived')alert(`Archived "${label}" rather than deleting it, because it has payment records. It stays visible here and all totals are unchanged.`)
-            // outcome===null: the handler already surfaced the specific failure.
+          <button onClick={()=>{setEditingSvc(editingSvc===sv.id?null:sv.id);setEsSF({a:String(sv.amount),d:sv.service_date,n:sv.notes||''})}} className="p-0.5 rounded hover:bg-np-blue/10" title="Edit service"><Pencil className="w-3 h-3 text-gray-300 hover:text-np-blue"/></button>
+          {canDelete&&<button title="Delete service" className="p-0.5 rounded hover:bg-red-50" onClick={async()=>{
+            // Every decision below is the HANDLER's, taken on a database read. The
+            // in-memory sv.payments array is never consulted: a stale screen must
+            // not be able to authorise a delete that would cascade.
+            const label=`${svcLabel(sv.service_type)} \u2014 ${$$(sv.amount)} \u2014 ${fD(sv.service_date)}`
+            const res=await onDeleteSvc(sv.id,()=>confirm(`Delete "${label}"?\n\nThis service has no payments attached and will be permanently deleted. This cannot be undone.`))
+            if(res==='deleted')alert(`Deleted "${label}".`)
+            else if(res&&typeof res==='object')alert(`Cannot delete "${label}".\n\n${res.blocked} payment(s) are still attached to this service. Delete those payments first, then delete the service.`)
+            // res===null: the handler already surfaced the specific failure, or the
+            // operator cancelled at the confirmation.
           }}><Trash2 className="w-3 h-3 text-gray-300 hover:text-red-600"/></button>}</div><span className="text-xs font-bold text-np-dark" style={{fontFeatureSettings:'"tnum"'}}>{$$(sv.amount)}</span></div>
         {editingSvc===sv.id&&<div className="px-4 py-3 bg-blue-50/50 border-b border-blue-100 space-y-2">
           <div className="flex gap-2 items-end flex-wrap">
@@ -474,7 +465,7 @@ This service has no payments and will be permanently deleted. This cannot be und
                 <button onClick={()=>doDelete(pm)} className="p-1 rounded hover:bg-red-50" title="Delete"><Trash2 className="w-3 h-3 text-gray-300 hover:text-red-500"/></button>
               </div>
             </div>)}</div>}
-          {!sv.archived_at&&<button onClick={()=>{setSAP(sv.id);setPF({a:rem>0?String(rem):'',d:td(),n:''})}} className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold text-np-blue border border-np-blue/30 rounded-md hover:bg-np-blue/5"><Plus className="w-3 h-3"/>Add Payment</button>}
+          <button onClick={()=>{setSAP(sv.id);setPF({a:rem>0?String(rem):'',d:td(),n:''})}} className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold text-np-blue border border-np-blue/30 rounded-md hover:bg-np-blue/5"><Plus className="w-3 h-3"/>Add Payment</button>
         </div></div>})}
     {tab==='pmt'&&<div className="rounded-xl border border-gray-100 bg-white overflow-hidden"><div className="overflow-auto"><table className="w-full text-left"><thead><tr className="border-b border-gray-100 bg-gray-50/30"><TH>Date</TH><TH>Service</TH><TH className="text-right">Amount</TH><TH className="text-right text-np-blue">SNW</TH>{clObj&&<TH className="text-right text-amber-600">{isNP?'Neuro Progeny':'Clinic'}</TH>}{!isNP&&<TH className="text-right text-purple-600">Dr.Y</TH>}<TH>Payout</TH><TH></TH></tr></thead>
       <tbody>{cl.services.flatMap((sv:AcctService)=>sv.payments.map((pm:AcctPayment)=>{const sp=calcSplit(pm.amount,sv.service_type,cl.location_id,locs,clinics,cfg,sv.amount,sv.service_date,priorPaidFor(sv,pm));return{...pm,svc:sv.service_type,...sp,_orig:pm}})).sort((a:any,b:any)=>a.payment_date.localeCompare(b.payment_date)).map((pm:any,i:number)=>{
@@ -1678,29 +1669,35 @@ export default function AccountingPage() {
     loadData()}
 
   // ── Delete a service ────────────────────────────────────────────────────────
-  // Two outcomes, decided by whether anything depends on the row:
-  //   no payments  -> HARD DELETE. It was a mistake; there is nothing to preserve.
-  //   has payments -> ARCHIVE. acct_payments.service_id is ON DELETE CASCADE, so a
-  //                   hard delete would silently destroy real payment records.
+  // A service is deleted ONLY when nothing depends on it. If any payment is
+  // attached the delete is REFUSED, and the operator is told how many to remove
+  // first. Nothing is archived: the case this exists for is a service added to the
+  // WRONG CLIENT, and archiving would leave that mistake on the record for good.
   //
-  // The payment count is re-read from the DATABASE at click time rather than taken
-  // from the in-memory sv.payments array. That array is a snapshot from the last
-  // loadData(); acting on it would let a stale screen authorise a cascade.
+  // THE SAFETY PROPERTY. acct_payments.service_id is ON DELETE CASCADE, so a delete
+  // that proceeded with payments attached would destroy them silently — and there
+  // is no audit trail anywhere in acct_* to reconstruct them from. Deletion is
+  // blocked whenever anything would cascade, so THE CASCADE NEVER FIRES.
   //
-  // Returns the outcome so the caller can tell the operator which happened. Never
-  // reports success it did not verify.
-  const deleteService=async(svcId:string):Promise<'deleted'|'archived'|null>=>{
-    if(!orgId)return null
-    const{count,error:ce}=await supabase.from('acct_payments')
+  // The count is read from the DATABASE, never from the in-memory sv.payments
+  // snapshot, and is read AGAIN immediately before the delete. confirm() blocks for
+  // an arbitrary length of time, and a payment added during that pause must not be
+  // caught by a decision taken before it existed.
+  const countServicePayments=async(svcId:string):Promise<number|null>=>{
+    const{count,error}=await supabase.from('acct_payments')
       .select('id',{count:'exact',head:true}).eq('service_id',svcId)
-    if(ce){console.error('deleteService: payment pre-check failed',ce);alert('Could not check payments for this service: '+ce.message+' Nothing was changed.');return null}
-    if((count??0)>0){
-      const{data:upd,error}=await supabase.from('acct_services')
-        .update({archived_at:new Date().toISOString()}).eq('id',svcId).is('archived_at',null).select('id')
-      if(error){console.error('archiveService failed',error);alert('Could not archive service: '+error.message);return null}
-      if(!upd||upd.length===0){console.warn('archiveService matched 0 rows',svcId);alert('Archive updated 0 rows. The service was not matched, or was already archived. Please reload.');return null}
-      loadData();return 'archived'
-    }
+    if(error){console.error('service payment count failed',error);alert('Could not check payments for this service: '+error.message+' Nothing was changed.');return null}
+    return count??0}
+
+  const deleteService=async(svcId:string,confirmDelete:()=>boolean):Promise<'deleted'|{blocked:number}|null>=>{
+    if(!orgId)return null
+    const n=await countServicePayments(svcId)
+    if(n===null)return null
+    if(n>0)return {blocked:n}
+    if(!confirmDelete())return null
+    const n2=await countServicePayments(svcId)
+    if(n2===null)return null
+    if(n2>0){alert('A payment was attached to this service while the confirmation was open. Nothing was deleted.');return {blocked:n2}}
     const{data:del,error}=await supabase.from('acct_services').delete().eq('id',svcId).select('id')
     if(error){console.error('deleteService failed',error);alert('Could not delete service: '+error.message);return null}
     if(!del||del.length===0){console.warn('deleteService matched 0 rows',svcId);alert('Delete removed 0 rows. The service was not matched. Please reload and try again.');return null}
@@ -1724,7 +1721,14 @@ export default function AccountingPage() {
     }
     loadData()}
   const editPayment=async(pmtId:string,data:any)=>{if(!orgId)return;const{data:upd,error}=await supabase.from('acct_payments').update(data).eq('id',pmtId).select();if(error){console.error('editPayment failed',error);alert('Could not save payment: '+error.message)}else if(!upd||upd.length===0){console.warn('editPayment matched 0 rows',pmtId);alert('Save updated 0 rows. The payment was not matched. Please reload and try again.')}loadData()}
-  const deletePayment=async(pmtId:string)=>{if(!orgId)return;await supabase.from('acct_payments').delete().eq('id',pmtId);loadData()}
+  // Now on the critical path: an operator must delete payments BEFORE a service can
+  // be deleted, so a silently failed payment delete would strand them with a
+  // refusal they cannot clear and no idea why.
+  const deletePayment=async(pmtId:string)=>{if(!orgId)return
+    const{data:del,error}=await supabase.from('acct_payments').delete().eq('id',pmtId).select('id')
+    if(error){console.error('deletePayment failed',error);alert('Could not delete payment: '+error.message);return}
+    if(!del||del.length===0){console.warn('deletePayment matched 0 rows',pmtId);alert('Delete removed 0 rows. The payment was not matched. Please reload and try again.');return}
+    loadData()}
   const editClient=async(clientId:string,data:any)=>{if(!orgId)return;const{error}=await supabase.from('acct_clients').update(data).eq('id',clientId);if(error){console.error('editClient failed',error);alert('Could not save account: '+error.message);return}loadData()}
   const deleteClient=async(clientId:string)=>{if(!orgId)return;
     const{error:pe}=await supabase.from('acct_payments').delete().eq('client_id',clientId)
