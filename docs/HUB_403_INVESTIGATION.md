@@ -19,13 +19,14 @@ change, migration or commit was executed.
 | 1 | `/api/sms/send` 403s invisible in conversations UI | **PRE-EXISTING** | Confirmed |
 | 2a | `org_members.org_id` → manufactured 403 | **PRE-EXISTING** | Confirmed |
 | 2b | `org_members.org_id` → invite acceptance 500 | **PRE-EXISTING** | Confirmed |
-| 3 | Outbound status callback not completing | **UNDETERMINED** | Open |
+| 3 | Outbound status callback not completing | **UNDETERMINED** | **Open — narrowed 2026-08-02** |
 | 4 | `crm_twilio_numbers` has no `authenticated` grant | PRE-EXISTING | Latent |
 | 5 | Three PostgREST 400s from missing FK relationships | **PRE-EXISTING** | Confirmed |
 | 6 | `response_time_log`: four wrong columns, silent return | **PRE-EXISTING** | Confirmed |
 | 7 | Merge lost email consent on six contacts | **REGRESSION** | Confirmed |
 | 8 | DNC population is software-set; bulk action destroys its own audit row | **PRE-EXISTING** | Confirmed |
 | 8b | `do_not_contact_list` cannot record the actor or the contact | **PRE-EXISTING** | Confirmed |
+| 10 | Call transcripts captured + displayed; gap is calls stuck at `ringing` | **NOT A DEFECT (pending)** | See Finding 10 |
 
 Findings 1, 2, 5 and 6 were all wrong on the day they were written (2026-02-15 to
 2026-03-16). **Finding 7 is the only confirmed regression**, and it is merge-system
@@ -567,3 +568,206 @@ and `bulk-action:143` (write), plus the `auditor` manifest. Its RLS policy
 shared. **The platform repo was not read**, so I cannot rule out a platform-side reader.
 Both changes are additive or FK-widening: adding a nullable column and broadening
 `added_by` from a 4-row roster to `auth.users` cannot invalidate an existing reader.
+
+---
+
+# Finding 3 (update) and Finding 10 — status callback vs call transcripts
+
+**2026-08-02, read-only. No code changed, no SQL executed.** Connector verified:
+`transaction_read_only = on`, `supabase_read_only_user`, project `htfrfaxlcuyawtlztxxm`.
+
+---
+
+## PART A — Finding 3 remains OPEN, but is now much narrower
+
+### A1. Current state — three more sends today, all still `queued`
+
+| Sent (UTC) | Direction | Status | To |
+|---|---|---|---|
+| 2026-08-02 19:55:24 | inbound | **`received`** | +18284155050 |
+| 2026-08-02 19:54:26 | outbound | **`queued`** | +13212772527 |
+| 2026-08-02 16:59:04 | inbound | **`received`** | +18284155050 |
+| 2026-08-02 16:58:09 | outbound | **`queued`** | +13212772527 |
+| 2026-08-02 14:12:08 | outbound | **`queued`** | +18287347558 |
+
+Whole history: outbound **`queued` = 12**, **`delivered` = 1** (2026-07-27 only).
+Inbound `received` = 11.
+
+**A2: the callback is NOT working. Finding 3 does not resolve.** Three sends through
+the deployed build sat unchanged for up to 9.5 hours.
+
+### The decisive new evidence: inbound works, outbound status does not
+
+An inbound message was written at **19:55:24**, **58 seconds after** an outbound send
+that is still `queued`. So on the same deployment, in the same minute:
+
+- Twilio **can** reach the Hub.
+- A Twilio callback **can** pass signature validation and write to the database.
+- `/api/twilio/*` is reachable unauthenticated — confirmed in
+  `supabase-middleware.ts:20-27`, which lists `pathname.startsWith('/api/twilio')` as a
+  public path, so middleware does not redirect it to `/login`.
+
+That eliminates the whole class of "Twilio cannot reach us" and "the Hub rejects Twilio
+callbacks" explanations.
+
+### A4. The send-side construction is sound
+
+- `sendOrgSms` (`twilio-org.ts:193,204`) sets
+  `statusCallback = ${appUrl}/api/twilio/message-status`, where
+  `appUrl = NEXT_PUBLIC_APP_URL || https://VERCEL_URL`.
+- `/api/twilio/message-status` **exists in this repo** —
+  `src/app/api/twilio/message-status/route.ts`, shipped in `85b609c`.
+- The route validates against `${NEXT_PUBLIC_APP_URL}/api/twilio/message-status`
+  (`message-status:67`) — the **same env var**, inlined at build time on both sides, so
+  the two strings cannot drift within one build.
+
+### A red herring, named and dismissed
+
+`twilio.validateRequest` appears **exactly once** in the Hub —
+`message-status/route.ts:68` — and the working inbound route does not call it. That
+asymmetry looks damning and is **not** the cause: `inbound-sms:36` calls
+`validateTwilioSignatureWithToken`, which (`twilio.ts:67-75`) is a **thin pass-through**
+to the same `validateRequest(authToken, signature, url, params)` with identical argument
+order. Both routes validate the same way. Recorded so it is not re-investigated.
+
+### What is left, and what I cannot obtain
+
+Everything on the Hub side that can be checked statically is sound. Two candidates
+remain, and **neither can be discriminated from inside this repo or the database**:
+
+1. **Twilio never calls the status callback.** Sends go through a **Messaging Service**
+   (`org_settings.crm_twilio.messaging_service_sid`, `MG…`). A Messaging Service carries
+   its own status-callback configuration, and its interaction with the per-message
+   `StatusCallback` parameter is a Twilio-side precedence question. A change to that
+   configuration between 2026-07-27 (the one delivery) and 2026-08-02 would explain the
+   whole pattern.
+2. **Twilio calls it and gets a non-2xx** — signature rejection despite the analysis
+   above, or a runtime error.
+
+### A3. EVIDENCE NEEDED FROM YOU — two items
+
+**(i) Vercel Observability → Runtime Logs.** Filter `[message-status]`, time range
+**2026-08-02 19:54–19:58 UTC** (the 19:54:26 send; also try 16:58–17:02 and 14:12–14:16).
+
+| What appears | Meaning |
+|---|---|
+| `SIGNATURE REJECTED` | Twilio called; compare the printed `reconstructed_url=` against `twilio_called_host=`. A difference is the bug outright. |
+| `no crm_messages row for sid` | Callback arrived and validated; the SID lookup failed. |
+| `update failed for sid` | Callback arrived, matched, and the DB write failed. |
+| **Nothing at all** | **Twilio never called.** Cause is Twilio-side config, and candidate 1 is confirmed. |
+
+**(ii) Twilio Console → Messaging → Services → the `MG…` service → its status-callback
+setting**, plus Monitor → Logs → Errors for 2026-08-02 (look for **11200** HTTP retrieval
+failure). If the Messaging Service has its own callback URL configured, that is almost
+certainly the answer.
+
+---
+
+## Finding 10 — call transcripts: captured, displayed, and NOT sharing Finding 3's cause
+
+### B1. What exists
+
+**Storage** — all on `call_logs`: `transcript` (text), `transcription_status` (text),
+`recording_url`, `recording_sid`, `recording_duration_seconds`.
+
+**Write paths**, both Twilio callbacks:
+- `/api/twilio/recording-ready` — stores `recording_url`/`recording_sid`/duration, flips
+  `status` to `voicemail`, sets `transcription_status='pending'`.
+- `/api/twilio/transcription` — Twilio's `transcribeCallback`; matches `call_logs` on
+  `external_call_sid` and writes `transcript` + `transcription_status`.
+
+**Measured** (positive control: 16 total `call_logs` rows, so zero counts are real):
+
+| Measure | Count |
+|---|---|
+| Total `call_logs` | 16 |
+| With `recording_url` / `recording_sid` | **8** |
+| With `transcription_status` | **8** |
+| **With actual transcript text** | **2** |
+| Latest call log | 2026-07-31 19:45:12 |
+| Latest recording | **2026-07-21 16:33:52** |
+| Latest transcript | **2026-07-21 14:10:26** |
+
+Breakdown:
+
+| `status` | `transcription_status` | n | Latest |
+|---|---|---|---|
+| `ringing` | **null** | **8** | 2026-07-31 19:45 |
+| `voicemail` | `failed` | 3 | 2026-07-21 11:32 |
+| `voicemail` | `pending` | 3 | 2026-07-21 16:33 |
+| `voicemail` | **`completed`** | **2** | 2026-07-21 14:10 |
+
+### B2. CAPTURED, not merely undisplayed — and the pipeline demonstrably worked
+
+Two rows carry real transcript text. The recording callback fired 8 times. **The seam
+works end to end.** This is not "captured but not displayed", and it is not "never
+captured". It is **"worked, then stopped receiving input"**.
+
+**Root cause of the gap since 2026-07-21: no call has reached voicemail since.** All 8
+subsequent inbound calls sit at `status='ringing'` with `transcription_status` NULL —
+they never progressed to the `<Record>` verb, so no recording callback was ever due and
+no transcription was ever expected. `/api/twilio/call-status` is what moves a call off
+`ringing` (`call-status:23,37,43` updates rows `.in('status', ['ringing','in-progress'])`).
+
+**Two readings, and I cannot discriminate them from here:**
+
+- **(a) Benign.** Callers rang, nobody answered, they hung up before voicemail. Eight
+  abandoned calls over ten days is entirely plausible for this volume. Nothing is broken.
+- **(b) Broken.** `/api/twilio/call-status` is not firing, so calls are stuck at
+  `ringing` in the database while actually completing at Twilio.
+
+**What discriminates them:** Twilio Console → Monitor → Logs → Calls for 2026-07-22 →
+2026-07-31. If those calls show a real duration and a recording at Twilio but the Hub
+still says `ringing`, it is (b). If they show as no-answer/canceled, it is (a) and there
+is nothing to fix.
+
+### B3. Does this share Finding 3's subsystem? NO — and the evidence is direct
+
+Both are Twilio→Hub callbacks under `/api/twilio/*`, so the suspicion is reasonable. It
+is wrong:
+
+- **Neither `recording-ready` nor `transcription` validates a Twilio signature.**
+  `validateRequest` occurs only in `message-status:68` (grep across
+  `src/app/api/twilio/`). `transcription/route.ts` parses the body and writes with no
+  signature check at all. So whatever affects signature validation **cannot** affect them.
+- **They have succeeded far more recently and far more often than `message-status`.**
+  8 recording callbacks and 2 transcription callbacks landed, versus **one** successful
+  status callback in the system's entire history.
+
+**These are two independent problems. Fixing one will not fix the other.** Worth stating
+plainly, because "both are Twilio callbacks" is exactly the kind of shared-cause guess
+that would have merged them.
+
+### B4. The UI surface exists and is complete
+
+`src/components/crm/comms-timeline.tsx:115-145` renders a voicemail entry as an
+authenticated audio player (`/api/comms/recording/[id]`) plus the inline transcript, with
+three distinct states:
+
+- `:137-138` — transcript present → renders the text
+- `:139-142` — `transcription_status === 'pending'` → pending indicator
+- `:143` — `transcription_status === 'failed'` → failed indicator
+
+It is mounted where it should be: `conversations/page.tsx:19` imports `buildTimeline` and
+`TimelineStream`, and `contact-detail.tsx` uses the same timeline. **A transcript that
+exists will display today.** No UI work is required.
+
+### Secondary observation — transcription reliability
+
+Of 8 voicemails: **2 completed, 3 failed, 3 still `pending`** (the callback never
+arrived). Even while the flow worked, roughly a quarter succeeded. The route's own
+comment (`transcription/route.ts:12-13`) calls Twilio's built-in transcription
+"English-only + best-effort … swappable when we want higher accuracy", so this is a known
+v1 trade-off rather than a defect — but the numbers are worth recording before anyone
+concludes transcription is reliable.
+
+---
+
+## Summary
+
+| Part | Verdict | Root cause | Blocked on |
+|---|---|---|---|
+| **A — Finding 3** | **OPEN** | Not determinable from the Hub. Send construction, route existence, middleware exclusion and signature logic all verified sound. Inbound callbacks prove reachability and validation both work. | Vercel `[message-status]` log **and** the Twilio Messaging Service status-callback setting |
+| **B — Finding 10** | **RESOLVED as a question** | Transcripts are captured and displayed; the pipeline worked through 2026-07-21. The gap since is that **no call has reached voicemail** — 8 inbound calls stuck at `ringing`. | Twilio Call logs for 2026-07-22→31, to tell abandoned calls from a stalled `call-status` callback |
+
+**No fixes proposed, per the brief.**
