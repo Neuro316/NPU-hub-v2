@@ -27,6 +27,7 @@ change, migration or commit was executed.
 | 8 | DNC population is software-set; bulk action destroys its own audit row | **PRE-EXISTING** | Confirmed |
 | 8b | `do_not_contact_list` cannot record the actor or the contact | **PRE-EXISTING** | Confirmed |
 | 10 | Call transcripts captured + displayed; gap is calls stuck at `ringing` | **NOT A DEFECT (pending)** | See Finding 10 |
+| 11 | Accounting RLS: no org scoping, no role check on `acct_*` | **SECURITY — DEFERRED** | Confirmed |
 
 Findings 1, 2, 5 and 6 were all wrong on the day they were written (2026-02-15 to
 2026-03-16). **Finding 7 is the only confirmed regression**, and it is merge-system
@@ -771,3 +772,80 @@ concludes transcription is reliable.
 | **B — Finding 10** | **RESOLVED as a question** | Transcripts are captured and displayed; the pipeline worked through 2026-07-21. The gap since is that **no call has reached voicemail** — 8 inbound calls stuck at `ringing`. | Twilio Call logs for 2026-07-22→31, to tell abandoned calls from a stalled `call-status` callback |
 
 **No fixes proposed, per the brief.**
+
+---
+
+# Finding 11 — Accounting tables have no org scoping and no role check in RLS
+
+**SECURITY. Recorded 2026-08-03. NOT fixed — deliberately deferred to its own session.**
+
+Surfaced while investigating the Accounting service-delete feature. It is **not** caused
+by that work and was **not** fixed by it, because a change to these policies needs the
+same care as the R0.4 lockdown series and must not ride along with a feature change.
+
+## The policies
+
+All three Accounting tables carry a single permissive policy, `cmd = ALL`, role `{public}`:
+
+| Table | Policy | `USING` | `WITH CHECK` |
+|---|---|---|---|
+| `acct_services` | `acct_services_auth` | `(auth.uid() IS NOT NULL)` | *(none)* |
+| `acct_payments` | `acct_payments_auth` | `(auth.uid() IS NOT NULL)` | *(none)* |
+| `acct_clients` | `acct_clients_auth` | `(auth.uid() IS NOT NULL)` | *(none)* |
+
+RLS is **enabled** on all three — this is not a missing-policy case. The policy grants
+every authenticated user full read and write on every row.
+
+## What that means
+
+- **No org scoping.** Nothing in the policy references `org_id`. Org isolation exists
+  **only in client-side query builders** — `page.tsx:1610-1612` appends
+  `.eq('org_id', orgId)` to each `select`. A predicate in application code is a display
+  filter, not a boundary.
+- **No role check.** Not `team_profiles`, not `profiles.role`, not `org_members`. The bar
+  is "is logged in".
+- **No `WITH CHECK`.** Even where `USING` gates reads, inserts and updates are
+  unconstrained, so a row can be written with any `org_id`.
+
+**Consequence:** any authenticated user of either application — including a platform
+participant with no Hub authority at all — can read or write **every accounting row in
+both orgs** by calling PostgREST directly. The Hub UI never shows them the other org's
+data, but the UI is not what enforces it.
+
+Scope note per Finding 9: `acct_services`, `acct_payments` and `acct_clients` are
+**Hub-owned** (only `ehr/accounting/page.tsx` touches them in this repo). But `auth.uid()`
+is satisfied by **any** account in the shared database `htfrfaxlcuyawtlztxxm`, which
+serves three applications — so the exposed population is far wider than Hub staff. The
+platform repo was not read; I cannot say whether anything there touches these tables.
+
+## Live data at risk
+
+Measured 2026-08-03: **59 `acct_services` rows and 76 `acct_payments` rows**, all
+belonging to SNW (`b9fd8b2e-…`). Neuro Progeny (`00000000-…-0001`) currently holds zero
+accounting rows, so today the exposure is one org's financial records — client names,
+service amounts, payment history and payout splits.
+
+## Why this is not fixed here
+
+1. It is a **security posture change**, not a feature. It belongs with the R0.4 work that
+   produced `contacts_org_rls` and the `r03`/`r04` revoke batches, and deserves the same
+   before/after verification.
+2. **Hub authority is mid-migration.** `HUB_ROLE_DECOUPLING.md` Phase 1 is unstarted, and
+   the correct predicate depends on its outcome. Writing an `org_members`-based policy now
+   would create exactly the coupling Phase 2 removes; a `team_profiles`-based one
+   pre-empts Phase 1.
+3. **The blast radius is the whole Accounting module** — dashboard, payouts,
+   reconciliation, reports — all reading through the browser client. A policy that is
+   even slightly too strict takes the module offline for its only real user.
+
+## What a fix would need to establish first
+
+- Which predicate: `team_profiles` (Hub authority, post-Phase-1) or org membership.
+- Whether any non-Hub application reads these tables — **requires reading the platform
+  repo**, which was out of scope here.
+- Whether service-role API routes should replace the direct browser writes, as the CRM
+  routes do. That is the larger correction: `page.tsx` performs **every** accounting
+  write from the browser under the anon key, so RLS is the only control there will ever
+  be until that changes.
+
+**Do not fix in a feature branch. Give it a session.**

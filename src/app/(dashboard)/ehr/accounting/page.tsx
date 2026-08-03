@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useWorkspace } from '@/lib/workspace-context'
+import { usePermissions } from '@/lib/hooks/use-permissions'
 import { createClient } from '@/lib/supabase-browser'
 import { DollarSign, Users, TrendingUp, ChevronLeft, Plus, X, Settings as SettingsIcon, BarChart3, LayoutDashboard, Search, Wallet, Megaphone, Trash2, Pencil, Download, FileText, Building2, Calendar as CalendarIcon } from 'lucide-react'
 
 interface AcctLocation { id: string; name: string; short_code: string; color: string; clinic_id: string | null; org_id: string }
 interface AcctClinic { id: string; org_id: string; name: string; contact_name: string; ein: string; corp_type: string; has_w9: boolean; has_1099: boolean; address: string; city: string; state: string; zip: string; phone: string; email: string; website: string; notes: string; split_snw: number; split_clinic: number; split_dr: number; flat_snw: number; flat_clinic: number; flat_dr: number; is_neuro_progeny?: boolean }
 interface AcctPayment { id: string; service_id: string; client_id: string; amount: number; payment_date: string; notes: string; split_snw: number; split_clinic: number; split_dr: number; clinic_id: string | null; payout_date: string; payout_period: string; is_paid_out: boolean }
-interface AcctService { id: string; client_id: string; service_type: 'Map' | 'Program' | 'Clarity' | 'qEEG'; amount: number; service_date: string; notes: string; payments: AcctPayment[] }
+interface AcctService { id: string; client_id: string; service_type: 'Map' | 'Program' | 'Clarity' | 'qEEG'; amount: number; service_date: string; notes: string; archived_at?: string | null; payments: AcctPayment[] }
 interface AcctClient { id: string; name: string; location_id: string; org_id: string; notes: string; date_of_birth?: string | null; phone?: string | null; email?: string | null; address_street?: string | null; address_city?: string | null; address_state?: string | null; address_zip?: string | null; enrolled_contact_id?: string | null; services: AcctService[] }
 interface AcctConfig { map_splits: { snw: number; dr: number; snw_flat: number; dr_flat: number }; cc_processing_fee: number; snw_base_pct: number; snw_base_flat: number; default_map_price: number; default_program_price: number; np_splits?: { clarity_snw_pct?: number; qeeg_snw_pct: number }; payout_agreement: string; marketing?: { monthly_total: number; clinic_share: number; dr_share: number } }
 interface AcctCheck { id: string; org_id: string; payee_type: 'clinic' | 'dr'; payee_clinic_id: string | null; check_number: string; check_date: string; amount: number; memo: string; created_at: string }
@@ -375,7 +376,7 @@ function DashView({clients,locs,onSel,onAdd}:{clients:AcctClient[];locs:AcctLoca
 }
 
 /* ── Detail ────────────────────────────────────────── */
-function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onEditSvc,onAddPmt,onEditPmt,onDeletePmt,onDeleteClient,onEditClient}:any) {
+function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onEditSvc,onDeleteSvc,canDelete,onAddPmt,onEditPmt,onDeletePmt,onDeleteClient,onEditClient}:any) {
   const [tab,setTab]=useState('svc');const [showAS,setSAS]=useState(false);const [showAP,setSAP]=useState<string|null>(null)
   const [sf,setSF]=useState({t:'Map',a:'600',d:td(),n:''})
   const [editingSvc,setEditingSvc]=useState<string|null>(null)
@@ -424,7 +425,28 @@ function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onEditSvc,onAddPmt,onEditP
     {tab==='svc'&&cl.services.map((sv:AcctService)=>{
       const svP=sv.payments.reduce((s:number,p:AcctPayment)=>s+p.amount,0);const sp=sv.payments.reduce((acc,pm)=>{const s=calcSplit(pm.amount,sv.service_type,cl.location_id,locs,clinics,cfg,sv.amount,sv.service_date,priorPaidFor(sv,pm));return{snw:r2(acc.snw+s.snw),dr:r2(acc.dr+s.dr),cc:r2(acc.cc+s.cc),snwService:r2(acc.snwService+s.snwService),clinicAmts:Object.fromEntries(Object.entries(s.clinicAmts).map(([k,v])=>[k,r2((acc.clinicAmts[k]||0)+v)]))}},{snw:0,dr:0,cc:0,snwService:0,clinicAmts:{}} as ReturnType<typeof calcSplit>);const rem=sv.amount-svP;const clAmt=Object.values(sp.clinicAmts).reduce((s,v)=>s+v,0)
       return <div key={sv.id} className="rounded-xl border border-gray-100 bg-white overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50/50"><div className="flex items-center gap-2"><h4 className="text-xs font-bold text-np-dark">{svcLabel(sv.service_type)}</h4><button onClick={()=>{setEditingSvc(editingSvc===sv.id?null:sv.id);setEsSF({a:String(sv.amount),d:sv.service_date,n:sv.notes||''})}} className="p-0.5 rounded hover:bg-np-blue/10" title="Edit service"><Pencil className="w-3 h-3 text-gray-300 hover:text-np-blue"/></button></div><span className="text-xs font-bold text-np-dark" style={{fontFeatureSettings:'"tnum"'}}>{$$(sv.amount)}</span></div>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50/50"><div className="flex items-center gap-2"><h4 className="text-xs font-bold text-np-dark">{svcLabel(sv.service_type)}</h4>
+          {sv.archived_at&&<span className="px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-gray-500 bg-gray-200 rounded" title={`Archived ${fD(String(sv.archived_at).slice(0,10))}. Kept because it has payments; totals are unchanged.`}>Archived</span>}
+          {!sv.archived_at&&<button onClick={()=>{setEditingSvc(editingSvc===sv.id?null:sv.id);setEsSF({a:String(sv.amount),d:sv.service_date,n:sv.notes||''})}} className="p-0.5 rounded hover:bg-np-blue/10" title="Edit service"><Pencil className="w-3 h-3 text-gray-300 hover:text-np-blue"/></button>}
+          {canDelete&&!sv.archived_at&&<button title="Delete service" className="p-0.5 rounded hover:bg-red-50" onClick={async()=>{
+            // The message uses the loaded payment count; the HANDLER re-reads the
+            // authoritative count and decides. If they disagree the handler wins,
+            // and the result alert below reports what actually happened.
+            const n=sv.payments.length
+            const label=`${svcLabel(sv.service_type)} — ${$$(sv.amount)} — ${fD(sv.service_date)}`
+            const msg=n>0
+              ? `Archive "${label}"?
+
+This service has ${n} payment(s), so it will be ARCHIVED rather than deleted. It stays on this account and every total is unchanged — but it cannot be edited and no further payments can be added.`
+              : `Delete "${label}"?
+
+This service has no payments and will be permanently deleted. This cannot be undone.`
+            if(!confirm(msg))return
+            const outcome=await onDeleteSvc(sv.id)
+            if(outcome==='deleted')alert(`Deleted "${label}". It had no payments, so nothing was kept.`)
+            else if(outcome==='archived')alert(`Archived "${label}" rather than deleting it, because it has payment records. It stays visible here and all totals are unchanged.`)
+            // outcome===null: the handler already surfaced the specific failure.
+          }}><Trash2 className="w-3 h-3 text-gray-300 hover:text-red-600"/></button>}</div><span className="text-xs font-bold text-np-dark" style={{fontFeatureSettings:'"tnum"'}}>{$$(sv.amount)}</span></div>
         {editingSvc===sv.id&&<div className="px-4 py-3 bg-blue-50/50 border-b border-blue-100 space-y-2">
           <div className="flex gap-2 items-end flex-wrap">
             <div><label className="block text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-0.5">Total Price</label><input type="number" step="0.01" value={esSF.a} onChange={e=>setEsSF(p=>({...p,a:e.target.value}))} className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg w-28 focus:outline-none focus:ring-1 focus:ring-np-blue/30" placeholder="e.g. 5400"/></div>
@@ -452,7 +474,7 @@ function DetView({cl,locs,clinics,cfg,onBack,onAddSvc,onEditSvc,onAddPmt,onEditP
                 <button onClick={()=>doDelete(pm)} className="p-1 rounded hover:bg-red-50" title="Delete"><Trash2 className="w-3 h-3 text-gray-300 hover:text-red-500"/></button>
               </div>
             </div>)}</div>}
-          <button onClick={()=>{setSAP(sv.id);setPF({a:rem>0?String(rem):'',d:td(),n:''})}} className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold text-np-blue border border-np-blue/30 rounded-md hover:bg-np-blue/5"><Plus className="w-3 h-3"/>Add Payment</button>
+          {!sv.archived_at&&<button onClick={()=>{setSAP(sv.id);setPF({a:rem>0?String(rem):'',d:td(),n:''})}} className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold text-np-blue border border-np-blue/30 rounded-md hover:bg-np-blue/5"><Plus className="w-3 h-3"/>Add Payment</button>}
         </div></div>})}
     {tab==='pmt'&&<div className="rounded-xl border border-gray-100 bg-white overflow-hidden"><div className="overflow-auto"><table className="w-full text-left"><thead><tr className="border-b border-gray-100 bg-gray-50/30"><TH>Date</TH><TH>Service</TH><TH className="text-right">Amount</TH><TH className="text-right text-np-blue">SNW</TH>{clObj&&<TH className="text-right text-amber-600">{isNP?'Neuro Progeny':'Clinic'}</TH>}{!isNP&&<TH className="text-right text-purple-600">Dr.Y</TH>}<TH>Payout</TH><TH></TH></tr></thead>
       <tbody>{cl.services.flatMap((sv:AcctService)=>sv.payments.map((pm:AcctPayment)=>{const sp=calcSplit(pm.amount,sv.service_type,cl.location_id,locs,clinics,cfg,sv.amount,sv.service_date,priorPaidFor(sv,pm));return{...pm,svc:sv.service_type,...sp,_orig:pm}})).sort((a:any,b:any)=>a.payment_date.localeCompare(b.payment_date)).map((pm:any,i:number)=>{
@@ -1596,6 +1618,12 @@ function SetView({locs,clinics,clients,agreement,setAgreement,config,setConfig,o
 /* ── Main Page ─────────────────────────────────────── */
 export default function AccountingPage() {
   const {currentOrg}=useWorkspace();const supabase=createClient()
+  // Destructive actions gate on team_profiles via usePermissions, NOT profiles.role
+  // (Hub authority is mid-migration) and NOT org_members. isAdmin is
+  // `role === 'super_admin' || role === 'admin'` over a null-safe role, so a user
+  // with no team_profiles row gets FALSE — it fails closed, unlike canView/canEdit
+  // in that same hook, which fail open.
+  const {isAdmin}=usePermissions()
   const [clients,setClients]=useState<AcctClient[]>([]);const [locs,setLocs]=useState<AcctLocation[]>([]);const [clinics,setClinics]=useState<AcctClinic[]>([])
   const [config,setConfig]=useState<AcctConfig>({map_splits:{snw:23,dr:77,snw_flat:0,dr_flat:0},cc_processing_fee:3,snw_base_pct:0,snw_base_flat:0,default_map_price:600,default_program_price:5400,np_splits:{qeeg_snw_pct:23.0},payout_agreement:''})
   const [checks,setChecks]=useState<AcctCheck[]>([]);const [mktg,setMktg]=useState<AcctMktgCharge[]>([])
@@ -1639,8 +1667,44 @@ export default function AccountingPage() {
     const loc=locs.find(l=>l.id===nc.loc);const clinic=loc?.clinic_id?clinics.find(c=>c.id===loc.clinic_id):null
     if(clinic?.is_neuro_progeny&&data?.id){await createNPContactSignedUp(data.id,nc.nm.trim(),nc.email||null,nc.phone||null,nc.dob||null,nc.street||null,nc.city||null,nc.state||null,nc.zip||null)}
     setSAC(false);setNC({nm:'',loc:'',dob:'',phone:'',email:'',street:'',city:'',state:'',zip:''});loadData()}
-  const addService=async(cid:string,svc:any)=>{if(!orgId)return;await supabase.from('acct_services').insert({org_id:orgId,client_id:cid,...svc});loadData()}
-  const editService=async(svcId:string,data:any)=>{if(!orgId)return;await supabase.from('acct_services').update(data).eq('id',svcId);loadData()}
+  const addService=async(cid:string,svc:any)=>{if(!orgId)return
+    const{error}=await supabase.from('acct_services').insert({org_id:orgId,client_id:cid,...svc})
+    if(error){console.error('addService failed',error);alert('Could not add service: '+error.message);return}
+    loadData()}
+  const editService=async(svcId:string,data:any)=>{if(!orgId)return
+    const{data:upd,error}=await supabase.from('acct_services').update(data).eq('id',svcId).select('id')
+    if(error){console.error('editService failed',error);alert('Could not save service: '+error.message);return}
+    if(!upd||upd.length===0){console.warn('editService matched 0 rows',svcId);alert('Save updated 0 rows. The service was not matched. Please reload and try again.');return}
+    loadData()}
+
+  // ── Delete a service ────────────────────────────────────────────────────────
+  // Two outcomes, decided by whether anything depends on the row:
+  //   no payments  -> HARD DELETE. It was a mistake; there is nothing to preserve.
+  //   has payments -> ARCHIVE. acct_payments.service_id is ON DELETE CASCADE, so a
+  //                   hard delete would silently destroy real payment records.
+  //
+  // The payment count is re-read from the DATABASE at click time rather than taken
+  // from the in-memory sv.payments array. That array is a snapshot from the last
+  // loadData(); acting on it would let a stale screen authorise a cascade.
+  //
+  // Returns the outcome so the caller can tell the operator which happened. Never
+  // reports success it did not verify.
+  const deleteService=async(svcId:string):Promise<'deleted'|'archived'|null>=>{
+    if(!orgId)return null
+    const{count,error:ce}=await supabase.from('acct_payments')
+      .select('id',{count:'exact',head:true}).eq('service_id',svcId)
+    if(ce){console.error('deleteService: payment pre-check failed',ce);alert('Could not check payments for this service: '+ce.message+' Nothing was changed.');return null}
+    if((count??0)>0){
+      const{data:upd,error}=await supabase.from('acct_services')
+        .update({archived_at:new Date().toISOString()}).eq('id',svcId).is('archived_at',null).select('id')
+      if(error){console.error('archiveService failed',error);alert('Could not archive service: '+error.message);return null}
+      if(!upd||upd.length===0){console.warn('archiveService matched 0 rows',svcId);alert('Archive updated 0 rows. The service was not matched, or was already archived. Please reload.');return null}
+      loadData();return 'archived'
+    }
+    const{data:del,error}=await supabase.from('acct_services').delete().eq('id',svcId).select('id')
+    if(error){console.error('deleteService failed',error);alert('Could not delete service: '+error.message);return null}
+    if(!del||del.length===0){console.warn('deleteService matched 0 rows',svcId);alert('Delete removed 0 rows. The service was not matched. Please reload and try again.');return null}
+    loadData();return 'deleted'}
   const addPayment=async(cid:string,sid:string,pmt:any)=>{if(!orgId)return;
     await supabase.from('acct_payments').insert({org_id:orgId,service_id:sid,client_id:cid,...pmt})
     const client=clients.find(c=>c.id===cid)
@@ -1717,7 +1781,7 @@ export default function AccountingPage() {
               <div className="flex items-center justify-between"><span className="text-[10px] text-gray-400" style={{fontFeatureSettings:'"tnum"'}}>{$$(t)}</span>
                 <div className="flex gap-1"><div className="w-1.5 h-1.5 rounded-full" style={{background:lo?.color||'#999'}}/><div className="w-1.5 h-1.5 rounded-full" style={{background:sc?.tx==='text-green-700'?'#34A853':sc?.tx==='text-amber-700'?'#FBBC04':sc?.tx==='text-red-600'?'#EA4335':'#999'}}/></div></div></div></button>})}</div></div>
       <div className="flex-1 overflow-y-auto p-5">
-        {ac?<DetView cl={ac} locs={locs} clinics={clinics} cfg={config} onBack={()=>sS(null)} onAddSvc={addService} onEditSvc={editService} onAddPmt={addPayment} onEditPmt={editPayment} onDeletePmt={deletePayment} onDeleteClient={deleteClient} onEditClient={editClient}/>
+        {ac?<DetView cl={ac} locs={locs} clinics={clinics} cfg={config} onBack={()=>sS(null)} onAddSvc={addService} onEditSvc={editService} onDeleteSvc={deleteService} canDelete={isAdmin} onAddPmt={addPayment} onEditPmt={editPayment} onDeletePmt={deletePayment} onDeleteClient={deleteClient} onEditClient={editClient}/>
           :vw==='payouts'?<PayView clients={clients} locs={locs} clinics={clinics} cfg={config} checks={checks} mktg={mktg} onAddCheck={addCheck} onEditCheck={editCheck} onDeleteCheck={deleteCheck} adjustments={adjustments} onAddAdjustment={addAdjustment} onDeleteAdjustment={deleteAdjustment} onMarkApplied={markAdjustmentApplied}/>
           :vw==='recon'?<ReconView clients={clients} locs={locs} clinics={clinics} cfg={config}/>
           :vw==='reports'?<ReportView clients={clients} locs={locs} clinics={clinics} cfg={config} checks={checks} mktg={mktg}/>
