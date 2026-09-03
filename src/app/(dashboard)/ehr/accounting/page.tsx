@@ -54,10 +54,10 @@ const PRE_AUG_SNW_PCT = 10
 // Sensorium's cut on a Neuro Progeny Clarity Protocol enrollment: flat, per
 // enrollment, never a % of price paid. NP keeps the entire remainder.
 const CLARITY_SNW_FLAT = 300
-const NP_ORG_ID = '00000000-0000-0000-0000-000000000001'
-const NP_PIPELINE_ID = 'pipeline-1771530511407'
-const NP_STAGE_SIGNED_UP = 'Signed up - add user email used to sign up in Circle; dependency has to be joined circle '
-const NP_STAGE_PAID = 'Paid'
+// The Neuro Progeny org id, pipeline id and stage names now live server-side in
+// src/lib/accounting-auth.ts. They are not constants the browser may supply:
+// the enrol target is derived from the clinic row by the API route, so a caller
+// cannot choose which organization a contact lands in.
 
 // Same ordering rule as priorPaidFor, for a payment still being composed in a
 // form (it has no id yet). Keeps the distribution preview honest about a flat
@@ -1641,22 +1641,22 @@ export default function AccountingPage() {
 
   useEffect(()=>{loadData()},[loadData])
 
-  const isNPClient=(client:AcctClient)=>{const loc=locs.find(l=>l.id===client.location_id);const clinic=loc?.clinic_id?clinics.find(c=>c.id===loc.clinic_id):null;return !!clinic?.is_neuro_progeny}
-  const createNPContactSignedUp=async(clientId:string,name:string,email:string|null,phone:string|null,dob:string|null,street:string|null,city:string|null,state:string|null,zip:string|null)=>{
-    const parts=(name||'').trim().split(/\s+/);const first=parts[0]||name||'Unknown';const last=parts.slice(1).join(' ')||''
+  // Creating a client — and the Neuro Progeny CRM enrol that follows it — runs
+  // server-side through /api/accounting/clients. The browser cannot write these
+  // rows: `contacts_org_rls` reads profiles.role, which knows nothing about a
+  // per-org Hub grant, so it refused the operator who does the data entry.
+  // The route re-checks authority against team_profiles for BOTH orgs and
+  // derives every org_id itself. See src/lib/accounting-auth.ts.
+  const addClient=async()=>{if(!nc.nm.trim()||!nc.loc)return;
+    let r:Response;let j:any
     try{
-      const payload={org_id:NP_ORG_ID,first_name:first,last_name:last,email:email||null,phone:phone||null,date_of_birth:dob||null,address_street:street||null,address_city:city||null,address_state:state||null,address_zip:zip||null,pipeline_id:NP_PIPELINE_ID,pipeline_stage:NP_STAGE_SIGNED_UP,tags:[],sms_consent:false,do_not_contact:false}
-      const{data,error}=await supabase.from('contacts').insert(payload).select('id').single()
-      if(error){console.error('NP signup contact failed',error);alert('CRM enroll failed: '+error.message);return}
-      if(data?.id)await supabase.from('acct_clients').update({enrolled_contact_id:data.id}).eq('id',clientId)
-    }catch(e:any){console.error('NP signup exception',e);alert('CRM enroll error: '+(e?.message||e))}
-  }
-  const addClient=async()=>{if(!nc.nm.trim()||!nc.loc||!orgId)return;
-    const{data,error}=await supabase.from('acct_clients').insert({org_id:orgId,name:nc.nm.trim(),location_id:nc.loc,date_of_birth:nc.dob||null,phone:nc.phone||null,email:nc.email||null,address_street:nc.street||null,address_city:nc.city||null,address_state:nc.state||null,address_zip:nc.zip||null}).select('id').single()
-    if(error){console.error('addClient failed',error);alert('Could not add client: '+error.message);return}
-    // if this location belongs to the Neuro Progeny clinic, enroll at Signed up
-    const loc=locs.find(l=>l.id===nc.loc);const clinic=loc?.clinic_id?clinics.find(c=>c.id===loc.clinic_id):null
-    if(clinic?.is_neuro_progeny&&data?.id){await createNPContactSignedUp(data.id,nc.nm.trim(),nc.email||null,nc.phone||null,nc.dob||null,nc.street||null,nc.city||null,nc.state||null,nc.zip||null)}
+      r=await fetch('/api/accounting/clients',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nc.nm.trim(),location_id:nc.loc,date_of_birth:nc.dob||null,phone:nc.phone||null,email:nc.email||null,address_street:nc.street||null,address_city:nc.city||null,address_state:nc.state||null,address_zip:nc.zip||null})})
+      j=await r.json().catch(()=>({}))
+    }catch(e:any){console.error('addClient request failed',e);alert('Could not add client: '+(e?.message||e));return}
+    if(!r.ok){console.error('addClient failed',j);alert('Could not add client: '+(j?.error||r.statusText));return}
+    // Enrol problems no longer pass silently — the route reports them and they
+    // are shown, even though the accounting record itself was created.
+    if(Array.isArray(j?.warnings)&&j.warnings.length)alert(j.warnings.join('\n\n'))
     setSAC(false);setNC({nm:'',loc:'',dob:'',phone:'',email:'',street:'',city:'',state:'',zip:''});loadData()}
   const addService=async(cid:string,svc:any)=>{if(!orgId)return
     const{error}=await supabase.from('acct_services').insert({org_id:orgId,client_id:cid,...svc})
@@ -1702,23 +1702,21 @@ export default function AccountingPage() {
     if(error){console.error('deleteService failed',error);alert('Could not delete service: '+error.message);return null}
     if(!del||del.length===0){console.warn('deleteService matched 0 rows',svcId);alert('Delete removed 0 rows. The service was not matched. Please reload and try again.');return null}
     loadData();return 'deleted'}
-  const addPayment=async(cid:string,sid:string,pmt:any)=>{if(!orgId)return;
-    await supabase.from('acct_payments').insert({org_id:orgId,service_id:sid,client_id:cid,...pmt})
-    const client=clients.find(c=>c.id===cid)
-    if(client&&isNPClient(client)){
-      const priorPayments=client.services.reduce((n,s)=>n+s.payments.length,0)
-      if(priorPayments===0){
-        let contactId=client.enrolled_contact_id
-        // fallback: if no contact yet (e.g. client created before this feature), create one now at Paid-ready then move
-        if(!contactId){
-          // create the signed-up contact first so we have an id, then advance below
-          await createNPContactSignedUp(client.id,client.name,client.email||null,client.phone||null,client.date_of_birth||null,client.address_street||null,client.address_city||null,client.address_state||null,client.address_zip||null)
-          const{data}=await supabase.from('acct_clients').select('enrolled_contact_id').eq('id',client.id).single()
-          contactId=data?.enrolled_contact_id||null
-        }
-        if(contactId){const{error}=await supabase.from('contacts').update({pipeline_stage:NP_STAGE_PAID}).eq('id',contactId);if(error){console.error('NP move to Paid failed',error);alert('CRM move-to-Paid failed: '+error.message)}}
-      }
-    }
+  // Recording a payment — and the first-payment CRM stage move — runs
+  // server-side through /api/accounting/payments. The old client-side version
+  // checked `error` on the stage move, but an UPDATE refused by RLS matches
+  // ZERO ROWS AND RETURNS NO ERROR, so that alert could never fire for a
+  // permission problem and stage moves failed in silence. The route verifies
+  // every write by row count. It also decides "first payment" from a server-side
+  // count rather than from whatever this page happens to have loaded.
+  const addPayment=async(cid:string,sid:string,pmt:any)=>{
+    let r:Response;let j:any
+    try{
+      r=await fetch('/api/accounting/payments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({client_id:cid,service_id:sid,...pmt})})
+      j=await r.json().catch(()=>({}))
+    }catch(e:any){console.error('addPayment request failed',e);alert('Could not record payment: '+(e?.message||e));return}
+    if(!r.ok){console.error('addPayment failed',j);alert('Could not record payment: '+(j?.error||r.statusText));return}
+    if(Array.isArray(j?.warnings)&&j.warnings.length)alert(j.warnings.join('\n\n'))
     loadData()}
   const editPayment=async(pmtId:string,data:any)=>{if(!orgId)return;const{data:upd,error}=await supabase.from('acct_payments').update(data).eq('id',pmtId).select();if(error){console.error('editPayment failed',error);alert('Could not save payment: '+error.message)}else if(!upd||upd.length===0){console.warn('editPayment matched 0 rows',pmtId);alert('Save updated 0 rows. The payment was not matched. Please reload and try again.')}loadData()}
   // Now on the critical path: an operator must delete payments BEFORE a service can
