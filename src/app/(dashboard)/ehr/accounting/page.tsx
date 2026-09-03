@@ -1647,16 +1647,26 @@ export default function AccountingPage() {
   // per-org Hub grant, so it refused the operator who does the data entry.
   // The route re-checks authority against team_profiles for BOTH orgs and
   // derives every org_id itself. See src/lib/accounting-auth.ts.
+  // Middleware bounces an unauthenticated request to /login with a 307, and
+  // fetch FOLLOWS it — handing back the login HTML with status 200. So r.ok is
+  // true and r.json() throws. Without the content-type check an expired session
+  // would look exactly like success and silently drop the write, which is the
+  // failure mode this whole change exists to remove.
+  const postAcct=async(path:string,payload:any):Promise<{data:any}|{error:string}>=>{
+    let r:Response
+    try{r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})}
+    catch(e:any){return{error:e?.message||String(e)}}
+    if(!(r.headers.get('content-type')||'').includes('application/json'))
+      return{error:'Your session has expired. Reload the page, sign in again, and retry.'}
+    const j=await r.json().catch(()=>({}))
+    if(!r.ok)return{error:j?.error||r.statusText||('HTTP '+r.status)}
+    return{data:j}}
   const addClient=async()=>{if(!nc.nm.trim()||!nc.loc)return;
-    let r:Response;let j:any
-    try{
-      r=await fetch('/api/accounting/clients',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nc.nm.trim(),location_id:nc.loc,date_of_birth:nc.dob||null,phone:nc.phone||null,email:nc.email||null,address_street:nc.street||null,address_city:nc.city||null,address_state:nc.state||null,address_zip:nc.zip||null})})
-      j=await r.json().catch(()=>({}))
-    }catch(e:any){console.error('addClient request failed',e);alert('Could not add client: '+(e?.message||e));return}
-    if(!r.ok){console.error('addClient failed',j);alert('Could not add client: '+(j?.error||r.statusText));return}
+    const res=await postAcct('/api/accounting/clients',{name:nc.nm.trim(),location_id:nc.loc,date_of_birth:nc.dob||null,phone:nc.phone||null,email:nc.email||null,address_street:nc.street||null,address_city:nc.city||null,address_state:nc.state||null,address_zip:nc.zip||null})
+    if('error' in res){console.error('addClient failed',res.error);alert('Could not add client: '+res.error);return}
     // Enrol problems no longer pass silently — the route reports them and they
     // are shown, even though the accounting record itself was created.
-    if(Array.isArray(j?.warnings)&&j.warnings.length)alert(j.warnings.join('\n\n'))
+    if(Array.isArray(res.data?.warnings)&&res.data.warnings.length)alert(res.data.warnings.join('\n\n'))
     setSAC(false);setNC({nm:'',loc:'',dob:'',phone:'',email:'',street:'',city:'',state:'',zip:''});loadData()}
   const addService=async(cid:string,svc:any)=>{if(!orgId)return
     const{error}=await supabase.from('acct_services').insert({org_id:orgId,client_id:cid,...svc})
@@ -1710,13 +1720,9 @@ export default function AccountingPage() {
   // every write by row count. It also decides "first payment" from a server-side
   // count rather than from whatever this page happens to have loaded.
   const addPayment=async(cid:string,sid:string,pmt:any)=>{
-    let r:Response;let j:any
-    try{
-      r=await fetch('/api/accounting/payments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({client_id:cid,service_id:sid,...pmt})})
-      j=await r.json().catch(()=>({}))
-    }catch(e:any){console.error('addPayment request failed',e);alert('Could not record payment: '+(e?.message||e));return}
-    if(!r.ok){console.error('addPayment failed',j);alert('Could not record payment: '+(j?.error||r.statusText));return}
-    if(Array.isArray(j?.warnings)&&j.warnings.length)alert(j.warnings.join('\n\n'))
+    const res=await postAcct('/api/accounting/payments',{client_id:cid,service_id:sid,...pmt})
+    if('error' in res){console.error('addPayment failed',res.error);alert('Could not record payment: '+res.error);return}
+    if(Array.isArray(res.data?.warnings)&&res.data.warnings.length)alert(res.data.warnings.join('\n\n'))
     loadData()}
   const editPayment=async(pmtId:string,data:any)=>{if(!orgId)return;const{data:upd,error}=await supabase.from('acct_payments').update(data).eq('id',pmtId).select();if(error){console.error('editPayment failed',error);alert('Could not save payment: '+error.message)}else if(!upd||upd.length===0){console.warn('editPayment matched 0 rows',pmtId);alert('Save updated 0 rows. The payment was not matched. Please reload and try again.')}loadData()}
   // Now on the critical path: an operator must delete payments BEFORE a service can
