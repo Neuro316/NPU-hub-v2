@@ -6,14 +6,17 @@ Running state of in-flight Hub work. Newest first.
 
 ## 2026-09-03 — Accounting CRM enrol: fixed and deployed, repair held
 
-**Status: shipped to production. Awaiting confirmation from the operator. Migration 206 deliberately NOT applied.**
+**Status: shipped, and CONFIRMED WORKING by the operator (Ella, 2026-09-03).
+Migration 206 is committed but deliberately NOT applied — it awaits approval.**
+
+**Next work is in the platform repo, not here.**
 
 | | |
 |---|---|
 | Deployed SHA | `970ca1365df90246c6c74fee6d466932b41908ce` |
 | Alias | https://hub.neuroprogeny.com |
 | Deployment | `dpl_5dBMySqZVbnrLwMpXnc3h33sehbu` · Ready |
-| Commits | `06c89ed` (routes), `970ca13` (session hardening) |
+| Commits | `06c89ed` routes · `970ca13` session hardening · `78aa95a` migration 206 (unapplied) |
 
 ### The bug
 
@@ -97,39 +100,68 @@ entitlements, promo codes, HRV sessions, participant clinical data. That is plat
 admin, not "admin of her org". `profiles_update_admin`'s WITH CHECK is unread and may be
 self-elevating.
 
-### HELD — migration 206
+### AWAITING APPROVAL — migration 206
 
-`supabase/migrations/206_repair_accounting_crm_links.sql` — **written, reviewed, NOT
-applied, NOT committed.** Held until Ella's path is confirmed working. It blocks nobody.
+`supabase/migrations/206_repair_accounting_crm_links.sql` — **committed (`78aa95a`) and
+UNAPPLIED.** Committing it does not run it: per CLAUDE.md all schema and data changes are
+applied by hand in the Supabase SQL Editor. It was untracked until now, which is how work
+gets lost and makes a pending migration invisible to anyone reading the repo.
 
-Measured 2026-09-03: 18 NP clients, 12 with payments.
+**Counts re-measured from live data at commit time**, not quoted from the investigation —
+the routes have been in use and rows moved. NP accounting clients went **18 → 15** as the
+operator deleted the duplicate and test rows. NP clients with payments: **13**.
 
-- **S1** relink 2 enrol orphans (Adam Hill, Dylan Constance — each matches exactly one
-  non-merged NP contact by name)
-- **S2** null 2 dangling links (Mary-Lynn Manley, Elizabeth Nelson — targets absent, not
-  merged; no surviving name match)
-- **S3** move the 1 off-pipeline `'Paid'` contact to `'Paid/ payment plan'`
+| | Repair | Re-verified |
+|---|---|---|
+| **S1** | Relink **Adam Hill**, **Dylan Constance** | still unlinked, exactly **1** non-merged NP name match each |
+| **S2** | Null **Mary-Lynn Manley**, **Elizabeth Nelson** | still dangling, **0** name matches — targets absent, not merged |
+| **S3** | **Dyann Meyers** `'Paid'` → `'Paid/ payment plan'` | still the only contact on that stage |
 
-**Stage-move failures needing repair: 0.** Eleven NP clients sit at a non-paid stage, but
-nine are at *later* stages — legitimate forward progress that must not be rewound. The
+All four targets unchanged. **Stage-move failures needing repair: 0** — nine NP clients
+sit at *later* stages, which is legitimate forward progress and must not be rewound. The
 silent defect was real; it left no repairable damage.
 
-**Not repaired, needs a person:** four 2026-09-03 rows with no contact and no name match —
-`Megan Pomphrey` twice 27 minutes apart (a retry after the error, so one is a duplicate),
-`Megan`, and `jhtf`. SQL would mint one duplicate and two junk NP contacts.
+**Not repaired, needs a person:** one row — **`Megan Pomphrey`** (2026-09-03, no contact,
+0 name matches). The other three are already gone; the operator deleted the duplicate
+retry, the incomplete `Megan` and the test row `jhtf`, as recommended. Re-saving it in the
+UI now works and enrols through the route.
 
-### Open / filed
+### Filed — schema backlog
 
-- **`sensoriumwalk@` and `admin@neuroprogeny.com` have no `team_profiles` row in either
-  org.** They will now get a named 403 where the UI still shows them the button (the UI
-  fails open: middleware only redirects on `status='pending'`, and
-  `use-permissions.tsx:76,82` returns `true` when the row is missing). If either is a real
-  operator that is a provisioning act — one row — not a code change.
-- **`acct_clinics.crm_org_id`** — durable replacement for the server-side NP constant. All
-  three clinics carry Sensorium in `acct_clinics.org_id`, *including* the NP one, so the
-  target cannot be read from the row today.
-- **`acct_clients.enrolled_contact_id` is `text` with no FK** to `contacts.id` (uuid).
-  That is what allowed S2's dangling rows.
+- **`acct_clinics.crm_org_id uuid references organizations(id)`** — the durable
+  replacement for the server-side NP constant in `src/lib/accounting-auth.ts`. Needed
+  because all three clinics carry **Sensorium** in `acct_clinics.org_id`, *including the
+  Neuro Progeny one*, so that column names the **owning** org and can never name the enrol
+  target. Until it exists the target is `is_neuro_progeny` mapped to a constant.
+- **`acct_clients.enrolled_contact_id` is `text` with no FK** to `contacts.id` (`uuid`).
+  Nothing stops a link outliving the row it points at — that is exactly what produced S2's
+  two dangling rows. Typing it as `uuid` with a nullable FK (`on delete set null`) makes
+  that class of damage impossible to recur. Requires validating every existing value casts
+  cleanly first.
+
+### Filed — craft, generalises beyond this repo
+
+- **A route that redirects unauthenticated defeats `r.ok`.** Middleware 307s to `/login`,
+  `fetch` follows it (default `redirect: 'follow'`) and returns login HTML with **status
+  200** — so `r.ok` is `true`, `r.json()` throws into any `.catch(() => ({}))`, and an
+  expired session reads as a successful write. **Any caller that checks only `r.ok` has
+  this defect.** It surfaces only when a session expires, so it survives testing. Check
+  the response is actually JSON, or use `r.redirected`. A route returning 401 directly
+  does not have this problem — the redirect creates it.
+- **An RLS-filtered `UPDATE`/`DELETE` returns `error: null`.** `USING` filters rows out of
+  scope rather than rejecting the statement, so zero rows match and no error is raised.
+  Only `WITH CHECK` on an `INSERT` raises. Verify RLS-governed writes by **row count**
+  (`.select()` then check `length`), never by `error` alone.
+
+### Provisioning, not code
+
+- **`cameron.s.allen+sensoriumwalk@gmail.com` and `admin@neuroprogeny.com` have no
+  `team_profiles` row in either org.** They will see the Add Client button and get a named
+  403 from the routes, because the UI fails **open** — middleware only redirects on
+  `status='pending'` (`supabase-middleware.ts:44-53`), and `use-permissions.tsx:76,82`
+  returns `true` when the row is missing. **If either is a real operator, that is one
+  `team_profiles` row to provision — not a code change.** Inverting the fail-open default
+  is a mandatory companion to Phase 1, per §13.3 of the decoupling doc.
 - **`acct_*` tables have no org scoping** (`acct_clients_auth` checks neither org nor
   role), so any authenticated user can write any org's accounting rows via PostgREST.
   Pre-existing; `HUB_403_INVESTIGATION.md` Finding 11. These routes tighten the UI path
