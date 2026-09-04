@@ -181,6 +181,7 @@ export default function FlowchartsPage() {
   const [newTagColor, setNewTagColor] = useState('#06B6D4')
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const canvasRef = useRef<HTMLDivElement>(null)
   const dragOffset = useRef({ x: 0, y: 0 })
@@ -210,6 +211,10 @@ export default function FlowchartsPage() {
           custom_tags: r.custom_tags || [], updated_at: r.updated_at,
         }))
         setCharts(mapped)
+        // Everything just read from the database is by definition persisted.
+        // Recording it stops the save effect firing on load and rewriting
+        // updated_at (which reorders the sidebar) for no reason.
+        mapped.forEach(m => { cleanRef.current[m.id] = snap(m) })
         // Load first chart
         const first = mapped[0]
         setActiveChartId(first.id)
@@ -222,25 +227,87 @@ export default function FlowchartsPage() {
   }, [orgId])
 
   // ========== SUPABASE SAVE (debounced) ==========
+  //
+  // This used to lose renames. Three things went wrong together and all three
+  // are fixed here:
+  //
+  //  1. The debounce cleanup ran clearTimeout on UNMOUNT, so anything typed in
+  //     the last second before navigating away was CANCELLED, not flushed.
+  //  2. switchChart wrote the outgoing chart to local React state only, so its
+  //     pending rename died with the page and never reached the database.
+  //  3. Loading the page changed loaded/activeChartId/chartName/nodes, which
+  //     scheduled a write — so merely opening the page rewrote updated_at and
+  //     (because the sidebar sorts on it) reordered the list.
+  //
+  // A snapshot of what is known to be persisted, per chart id, so a save is
+  // scheduled only when something ACTUALLY changed. This is what stops load and
+  // chart-switch from writing.
+  const cleanRef = useRef<Record<string, string>>({})
+  const snap = (d: { name: string; nodes: FlowNode[]; connections: FlowConn[]; custom_tags: TagItem[] }) =>
+    JSON.stringify([d.name, d.nodes, d.connections, d.custom_tags])
+
   const saveTimer = useRef<any>(null)
+  const pendingRef = useRef<{ chartId: string; data: any } | null>(null)
+
   const saveToSupabase = useCallback(async (chartId: string, data: Partial<FlowChart>) => {
-    if (!orgId) return
+    if (!orgId) return false
     setSaving(true)
-    await supabase.from('flowcharts').update({
+    // .select() is required: an UPDATE filtered out by RLS matches zero rows and
+    // returns error null, so `error` alone cannot tell a refusal from a success.
+    const { data: rows, error } = await supabase.from('flowcharts').update({
       name: data.name, nodes: data.nodes, connections: data.connections,
       custom_tags: data.custom_tags, updated_at: new Date().toISOString(),
-    }).eq('id', chartId)
+    }).eq('id', chartId).select('id')
     setSaving(false)
+    if (error) {
+      console.error('flowchart save failed', error)
+      setSaveError('Not saved: ' + error.message)
+      return false
+    }
+    if (!rows || rows.length === 0) {
+      console.warn('flowchart save matched 0 rows', chartId)
+      setSaveError('Not saved — the chart was not matched. Reload before editing further.')
+      return false
+    }
+    cleanRef.current[chartId] = snap({
+      name: data.name as string, nodes: data.nodes as FlowNode[],
+      connections: data.connections as FlowConn[], custom_tags: data.custom_tags as TagItem[],
+    })
+    setSaveError(null)
+    return true
   }, [orgId, supabase])
+
+  // Writes whatever is queued immediately. Called on unmount, on chart switch,
+  // and when the title input loses focus.
+  const flushPending = useCallback(() => {
+    if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null }
+    const p = pendingRef.current
+    if (!p) return
+    pendingRef.current = null
+    void saveToSupabase(p.chartId, p.data)
+  }, [saveToSupabase])
+  const flushRef = useRef(flushPending); flushRef.current = flushPending
 
   useEffect(() => {
     if (!loaded || !activeChartId) return
+    const payload = { name: chartName, nodes, connections, custom_tags: customTags }
+    // Unchanged since the last load or save — nothing to write.
+    if (cleanRef.current[activeChartId] === snap(payload)) return
+    pendingRef.current = { chartId: activeChartId, data: payload }
     if (saveTimer.current) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => {
-      saveToSupabase(activeChartId, { name: chartName, nodes, connections, custom_tags: customTags })
-    }, 1000)
+    saveTimer.current = setTimeout(() => flushRef.current(), 1000)
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current) }
-  }, [nodes, connections, chartName, customTags, loaded, activeChartId, saveToSupabase])
+  }, [nodes, connections, chartName, customTags, loaded, activeChartId])
+
+  // Unmount-only: flush instead of cancel. This is the one that was missing.
+  // Covers in-app navigation, which is how the rename was lost. A full browser
+  // unload (tab close) may still cut the request short — the beforeunload below
+  // is best-effort only, since it cannot await.
+  useEffect(() => {
+    const onUnload = () => flushRef.current()
+    window.addEventListener('beforeunload', onUnload)
+    return () => { window.removeEventListener('beforeunload', onUnload); flushRef.current() }
+  }, [])
 
   // ========== CHART MANAGEMENT ==========
   const newChart = async () => {
@@ -251,6 +318,9 @@ export default function FlowchartsPage() {
     }).select().single()
     if (data) {
       const chart: FlowChart = { id: data.id, name: data.name, nodes: [], connections: [], custom_tags: [] }
+      // The row was just inserted with exactly these values.
+      cleanRef.current[chart.id] = snap(chart)
+      flushPending() // persist the outgoing chart before we stop tracking it
       setCharts(prev => [chart, ...prev])
       setActiveChartId(chart.id)
       setNodes([]); setConnections([]); setChartName(chart.name); setCustomTags([])
@@ -262,13 +332,24 @@ export default function FlowchartsPage() {
   const switchChart = (id: string) => {
     const chart = charts.find(c => c.id === id)
     if (!chart) return
-    // Save current first
-    if (activeChartId) {
-      setCharts(prev => prev.map(c => c.id === activeChartId
-        ? { ...c, name: chartName, nodes, connections, custom_tags: customTags }
-        : c
-      ))
+    // Save current first — TO THE DATABASE, not just to local state. Keeping it
+    // in `charts` alone is what lost renames: the pending write was replaced by
+    // one for the incoming chart, and the outgoing edit died with the page.
+    if (activeChartId && activeChartId !== id) {
+      const payload = { name: chartName, nodes, connections, custom_tags: customTags }
+      setCharts(prev => prev.map(c => c.id === activeChartId ? { ...c, ...payload } : c))
+      if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null }
+      pendingRef.current = null
+      if (cleanRef.current[activeChartId] !== snap(payload)) {
+        void saveToSupabase(activeChartId, payload)
+      }
     }
+    // The incoming chart comes from state that mirrors the database, so mark it
+    // clean — otherwise selecting it would immediately schedule a pointless write.
+    cleanRef.current[chart.id] = snap({
+      name: chart.name, nodes: chart.nodes || [],
+      connections: chart.connections || [], custom_tags: chart.custom_tags || [],
+    })
     setActiveChartId(chart.id)
     setNodes(chart.nodes || []); setConnections(chart.connections || [])
     setChartName(chart.name); setCustomTags(chart.custom_tags || [])
@@ -277,7 +358,15 @@ export default function FlowchartsPage() {
   }
 
   const deleteChartFn = async (id: string) => {
-    await supabase.from('flowcharts').delete().eq('id', id)
+    // Drop any queued write for this chart first, or the debounce could
+    // resurrect a row that was just deleted.
+    if (pendingRef.current?.chartId === id) pendingRef.current = null
+    if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null }
+    const { data: del, error } = await supabase.from('flowcharts').delete().eq('id', id).select('id')
+    if (error) { console.error('deleteChart failed', error); setSaveError('Could not delete: ' + error.message); return }
+    if (!del || del.length === 0) { console.warn('deleteChart matched 0 rows', id); setSaveError('Delete removed 0 rows. Reload and try again.'); return }
+    delete cleanRef.current[id]
+    setSaveError(null)
     const updated = charts.filter(c => c.id !== id)
     setCharts(updated)
     if (activeChartId === id) {
@@ -641,8 +730,9 @@ export default function FlowchartsPage() {
         {/* Toolbar */}
         <div className="flex items-center gap-2.5 px-4 flex-shrink-0" style={{ height: 48, background: C.surface, borderBottom: `1px solid ${C.border}` }}>
           {!showSidebar && <button onClick={() => setShowSidebar(true)} className="p-1.5 rounded border" style={{ borderColor: C.border, color: C.textMuted }}><PanelLeftOpen size={16} /></button>}
-          {activeChartId && <input value={chartName} onChange={e => setChartName(e.target.value)} className="bg-transparent border-none outline-none text-sm font-semibold w-60" style={{ color: C.text }} placeholder="Chart name..." />}
+          {activeChartId && <input value={chartName} onChange={e => setChartName(e.target.value)} onBlur={() => flushPending()} onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }} className="bg-transparent border-none outline-none text-sm font-semibold w-60" style={{ color: C.text }} placeholder="Chart name..." />}
           {saving && <Loader2 size={14} className="animate-spin text-blue-400" />}
+          {saveError && <span className="text-[11px] font-semibold px-2 py-0.5 rounded" style={{ color: '#f87171', background: '#f8717115', border: '1px solid #f8717133' }}>{saveError}</span>}
           <div className="flex-1" />
           {connectingFrom && <span className="text-xs font-semibold px-3 py-1 rounded-md" style={{ color: C.accent, background: `${C.accent}15`, border: `1px solid ${C.accent}33` }}>Drop on a node to connect</span>}
           {selectedConn && !editingConn && <span className="text-xs text-amber-400">Arrow selected</span>}
