@@ -96,7 +96,11 @@ export async function getOrCreateConversation(
   supabase: SupabaseClient,
   contactId: string,
   channel: 'sms' | 'voice' | 'email',
-  orgId?: string
+  orgId?: string,
+  // The org line (E.164) this event used. Written on CREATE only; an existing
+  // thread's line is updated by bumpConversation so it always records the
+  // most recent line. Null/undefined = leave unset (the org's default line).
+  lineE164?: string | null
 ) {
   // ONE CONVERSATION PER CONTACT — channel is deliberately NOT part of the
   // match key. Matching on contact_id + channel gave each contact a separate
@@ -138,7 +142,10 @@ export async function getOrCreateConversation(
 
   const { data: created, error } = await supabase
     .from('conversations')
-    .insert({ contact_id: contactId, channel, org_id: resolvedOrg })
+    .insert({
+      contact_id: contactId, channel, org_id: resolvedOrg,
+      ...(lineE164 ? { line_e164: lineE164 } : {}),
+    })
     .select()
     .single();
 
@@ -206,6 +213,8 @@ export async function bumpConversation(
     direction: 'inbound' | 'outbound';
     incrementUnread?: boolean;
     currentUnread?: number;
+    /** Org line (E.164) this event used; records the thread's most recent line. */
+    lineE164?: string | null;
   }
 ) {
   const updates: Record<string, unknown> = {
@@ -213,6 +222,7 @@ export async function bumpConversation(
     last_message_preview: (opts.preview || '').slice(0, 120),
     last_direction: opts.direction,
   };
+  if (opts.lineE164) updates.line_e164 = opts.lineE164;
   if (opts.incrementUnread) {
     updates.unread_count = (opts.currentUnread || 0) + 1;
   }

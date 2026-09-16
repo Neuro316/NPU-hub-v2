@@ -1,8 +1,33 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import twilio from 'twilio'
 import { createAdminSupabase } from '@/lib/supabase'
+import { toE164 } from '@/lib/phone'
 
 export type NumberPurpose = 'outreach' | 'client_relations' | 'appointments' | 'inbound_main' | 'general'
+
+/**
+ * One entry of crm_twilio.numbers. The per-line keys are all optional and all
+ * fall back to the org-level value (or the shipped default) when absent — see
+ * resolveInboundOrgContext in inbound-voice.ts. A line with none of them set
+ * behaves exactly as every line did before they existed; that is the
+ * Neuro Progeny main line.
+ */
+export interface OrgTwilioNumber {
+  phone: string
+  nickname: string
+  purpose: NumberPurpose
+  /** Per-line voicemail greeting audio (public https URL Twilio can <Play>). */
+  greeting_url?: string
+  greeting_path?: string
+  greeting_filename?: string
+  greeting_updated_at?: string
+  /** Spoken greeting when there is no audio; rendered with Polly.Joanna-Neural. */
+  greeting_text?: string
+  /** Seconds the browser (and the forward cell) ring before voicemail. */
+  ring_timeout_seconds?: number
+  /** E.164 cell to ring alongside the browser. Empty = ring the Hub only. */
+  forward_number?: string
+}
 
 export interface OrgTwilioConfig {
   account_sid: string
@@ -11,7 +36,7 @@ export interface OrgTwilioConfig {
   api_key: string
   api_secret: string
   twiml_app_sid: string
-  numbers: { phone: string; nickname: string; purpose: NumberPurpose }[]
+  numbers: OrgTwilioNumber[]
   /**
    * Explicit caller ID for OUTBOUND VOICE calls (set in CRM Settings > Twilio).
    * Voice deliberately does not use the SMS purpose routing — see
@@ -164,21 +189,54 @@ export function pickNumber(
 }
 
 /**
- * Send SMS using org-specific Twilio config with smart number routing
+ * Find the org's number entry for an E.164 (or formatted) value. Compares after
+ * toE164 on both sides so a number typed as "(828) 900-9821" in Settings still
+ * matches the "+18289009821" Twilio sends. Returns undefined when the value is
+ * not one of the org's numbers — callers must treat that as "not a line".
+ */
+export function findOrgNumber(
+  config: Pick<OrgTwilioConfig, 'numbers'>,
+  value: string | null | undefined
+): OrgTwilioNumber | undefined {
+  const want = toE164(String(value || ''))
+  if (!want) return undefined
+  return (config.numbers || []).find(n => toE164(n.phone) === want)
+}
+
+/** Twilio error: "From" is not a sender in the given Messaging Service. */
+const TWILIO_NOT_IN_MESSAGING_SERVICE = 21712
+
+/**
+ * Send SMS using org-specific Twilio config with smart number routing.
+ *
+ * `opts.from` pins the sender to a specific line (Conversations line dropdown).
+ * When absent the routing is exactly what it always was: Messaging Service if
+ * configured, else pickNumber.
  */
 export async function sendOrgSms(
   config: OrgTwilioConfig,
   to: string,
   body: string,
   context: SendContext = 'manual',
-  pipelineStage?: string | null
+  pipelineStage?: string | null,
+  opts: { from?: string } = {}
 ) {
   const client = createOrgTwilioClient(config)
   const fromNumber = pickNumber(config, context, pipelineStage)
 
   const params: any = { to, body }
 
-  if (config.messaging_service_sid) {
+  if (opts.from) {
+    // Explicit line. Twilio accepts From + MessagingServiceSid together only
+    // when From is in the service's sender pool (otherwise error 21712). Sending
+    // through the service keeps the A2P 10DLC campaign association; a From-only
+    // send from a number that is NOT registered risks 30034 (unregistered)
+    // filtering instead. So: try the pooled form first, and fall back to
+    // From-only on 21712 below, where the risk is visible in the message row's
+    // error_code rather than a hard failure at send time.
+    params.from = opts.from
+    if (config.messaging_service_sid) params.messagingServiceSid = config.messaging_service_sid
+  } else if (config.messaging_service_sid) {
     params.messagingServiceSid = config.messaging_service_sid
   } else if (fromNumber) {
     params.from = fromNumber
@@ -209,7 +267,20 @@ export async function sendOrgSms(
     )
   }
 
-  return client.messages.create(params)
+  try {
+    return await client.messages.create(params)
+  } catch (e: any) {
+    const notPooled = opts.from && params.messagingServiceSid
+      && Number(e?.code) === TWILIO_NOT_IN_MESSAGING_SERVICE
+    if (!notPooled) throw e
+    console.warn(
+      '[sendOrgSms] From', opts.from, 'is not in Messaging Service',
+      config.messaging_service_sid, '(21712); retrying From-only. Add the number to',
+      'the service sender pool so the send is registered 10DLC traffic (else 30034).',
+    )
+    const { messagingServiceSid: _omit, ...direct } = params
+    return await client.messages.create(direct)
+  }
 }
 
 /**

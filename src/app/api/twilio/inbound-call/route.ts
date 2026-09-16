@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminSupabase } from '@/lib/supabase';
 import { getOrgTwilioConfig, getVoiceCallerId } from '@/lib/twilio-org';
 import { toE164 } from '@/lib/phone';
-import { receiverIdentity } from '@/lib/voice-identity';
-import { resolveInboundOrgContext, appendVoicemail } from '@/lib/inbound-voice';
+import { resolveInboundOrgContext, appendVoicemail, appendRingDial } from '@/lib/inbound-voice';
 import {
   findContactByPhoneNormalized, getOrCreateConversation, bumpConversation,
   logActivity, applyAutoAssignment,
@@ -84,20 +83,15 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // INBOUND: a real PSTN caller reached an NP number.
-    // Forward to a staff phone; on no-answer/busy, fall through to voicemail.
-    // (The old code dialed <Client>crm-browser-client</Client> — an identity no
-    //  browser registers as, and there is no inbound receiver at all yet — so it
-    //  rang nobody for 30s then recorded a voicemail that was never captured. The
-    //  browser-receiver <Client> leg is the NEXT diff; this one restores calls by
-    //  forwarding to a phone and actually capturing the voicemail.)
+    // INBOUND: a real PSTN caller reached one of the org's numbers.
     console.log('Inbound call from:', from, 'to:', to);
     const admin = createAdminSupabase();
 
-    // Org + custom greeting + (dormant) forward number, resolved from the
-    // receiving number. Shared with the ring-complete action handler so both
-    // sides of the flow read the same config the same way.
-    const { orgId, greetingUrl, forwardNumber, ringTimeoutSeconds } =
+    // Org + LINE (which of the org's numbers was dialled) + that line's greeting,
+    // ring timeout and forward number, each falling back to the org-level value.
+    // Shared with the ring-complete action handler so both sides of the flow
+    // read the same config the same way.
+    const { orgId, lineE164, greetingUrl, greetingText, forwardNumber, ringTimeoutSeconds } =
       await resolveInboundOrgContext(admin, to);
 
     // Normalized last-10 contact match (069 rpc) — same as inbound SMS. Exact
@@ -153,16 +147,18 @@ export async function POST(request: NextRequest) {
       contactId = contact?.id ?? null;
 
       // Find-or-create the voice conversation so this caller is visible in the
-      // pane. Never let a failure here block the call — TwiML must still return.
+      // pane, stamped with the line that was dialled. Never let a failure here
+      // block the call — TwiML must still return.
       if (contact) {
         try {
-          const conversation = await getOrCreateConversation(admin, contact.id, 'voice', orgId);
+          const conversation = await getOrCreateConversation(admin, contact.id, 'voice', orgId, lineE164 || null);
           conversationId = conversation?.id ?? null;
           await bumpConversation(admin, conversation.id, {
             preview: 'Incoming call',
             direction: 'inbound',
             incrementUnread: true,
             currentUnread: conversation.unread_count || 0,
+            lineE164: lineE164 || null,
           });
         } catch (e) {
           console.warn('inbound call: conversation upsert failed:', e);
@@ -194,15 +190,18 @@ export async function POST(request: NextRequest) {
     }
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '');
-    console.log('Inbound routing:', JSON.stringify({ orgId, contactId, conversationId, hasGreeting: !!greetingUrl }));
+    console.log('Inbound routing:', JSON.stringify({
+      orgId, contactId, conversationId, line: lineE164, hasGreeting: !!greetingUrl,
+      hasGreetingText: !!greetingText, forwards: !!forwardNumber, ringTimeoutSeconds,
+    }));
 
-    // ── RING THE BROWSER FIRST ────────────────────────────────────────────────
+    // ── RING THE BROWSER (AND THE LINE'S CELL, IF ANY) ───────────────────────
     // Dial the org's registered browser receiver(s). Twilio forks this to EVERY
     // Device registered under the identity and the first to accept wins; if none
     // is registered, or nobody answers within the timeout, the <Dial> ends and
-    // Twilio POSTs the outcome to the `action` URL below. "Nobody's home" is
-    // still detected implicitly — it arrives as DialCallStatus=no-answer rather
-    // than as verb fall-through — and /ring-complete sends those callers to
+    // Twilio POSTs the outcome to the `action` URL. "Nobody's home" is still
+    // detected implicitly — it arrives as DialCallStatus=no-answer rather than
+    // as verb fall-through — and /ring-complete sends those callers to
     // voicemail. There is still nothing to query.
     //
     // `action` IS set here, and the reason is subtle — read before changing it.
@@ -217,19 +216,23 @@ export async function POST(request: NextRequest) {
     // the no-answer branch. That is why the verbs below are now reachable ONLY
     // when no ring leg was dialled at all.
     //
-    //   * NO `callerId` — for a <Client> leg this would overwrite From, and the
-    //                     browser needs From intact to show who is calling and to
-    //                     run the normalized contact match.
-    // The identity comes from receiverIdentity() — the same helper the token
-    // route uses. Neither side spells the string.
+    // The <Dial> itself is built by appendRingDial (inbound-voice.ts), which owns
+    // the two shapes: browser-only for a line with no forward_number (the Neuro
+    // Progeny main line — no callerId, From intact), and browser + <Number> with
+    // callerId = the dialled line for a line that forwards to a cell. The old
+    // dormant sequential-forward block that used to sit after this dial is
+    // gone: forwarding is real now and lives inside the same <Dial>.
     if (orgId) {
-      const ring = response.dial({
-        // Configurable in CRM Settings -> Twilio; clamped to 5-30s on read so a
-        // stray 0 can't silently disable browser ringing. 20s when unset.
-        timeout: ringTimeoutSeconds,
-        ...(appUrl ? { action: `${appUrl}/api/twilio/ring-complete`, method: 'POST' } : {}),
+      appendRingDial(response, {
+        orgId,
+        appUrl,
+        // Configurable in CRM Settings -> Twilio, per line or per org; clamped to
+        // 5-30s on read so a stray 0 can't silently disable browser ringing.
+        ringTimeoutSeconds,
+        lineE164,
+        forwardNumber,
+        callerE164: from,
       });
-      ring.client(receiverIdentity(orgId));
 
       // With an action set, everything after this <Dial> is unreachable —
       // ring-complete owns both outcomes. Return now so that is explicit rather
@@ -241,29 +244,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // DORMANT: legacy phone forwarding. forward_number is intentionally cleared —
-    // browser-ring REPLACES forwarding — so this never executes. It is now doubly
-    // unreachable: the ring branch above returns whenever an org resolved, and
-    // forward_number is only ever populated on a resolved org. Kept as a record
-    // of the old path rather than deleted.
-    // callerId = the NP number that was dialed, so the staff phone shows a
-    // business call rather than the raw external caller.
-    if (forwardNumber) {
-      response.say({ voice: 'Polly.Joanna' }, 'Connecting you now.');
-      const dial = response.dial({
-        timeout: 20,
-        ...(to ? { callerId: to } : {}),
-      });
-      dial.number(forwardNumber);
-    }
-
-    // Voicemail fallback — runs when the forward does not connect (no-answer/busy),
-    // or immediately if no forward number is configured. recordingStatusCallback ->
+    // Voicemail fallback. Reached only when NO ring leg was dialled (org
+    // unresolved), or when no appUrl meant no action URL could be built (the
+    // dial above then falls through here on its own). recordingStatusCallback ->
     // recording-ready, which attributes by CallSid and marks the row 'voicemail'.
-    // Reached only when NO ring leg was dialled (org unresolved, or no appUrl so
-    // no action URL could be built). Same voicemail TwiML the action handler
-    // emits — one implementation, so the two paths cannot drift.
-    appendVoicemail(response, { greetingUrl, appUrl });
+    // Same voicemail TwiML the action handler emits — one implementation, so the
+    // two paths cannot drift.
+    appendVoicemail(response, { greetingUrl, greetingText, appUrl });
 
     return new NextResponse(response.toString(), {
       headers: { 'Content-Type': 'text/xml' },

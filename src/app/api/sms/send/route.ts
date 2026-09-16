@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabase, createAdminSupabase } from '@/lib/supabase';
-import { getOrgTwilioConfig, sendOrgSms } from '@/lib/twilio-org';
+import { getOrgTwilioConfig, sendOrgSms, findOrgNumber } from '@/lib/twilio-org';
+import { toE164 } from '@/lib/phone';
 import {
   isDNC, logActivity, emitWebhookEvent,
   updateLastContacted, getOrCreateConversation, recordResponseTime
@@ -18,7 +19,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
     }
 
-    const { contact_id, body: msgBody } = body;
+    const { contact_id, body: msgBody, line_e164 } = body;
     if (!contact_id || !msgBody) {
       return NextResponse.json({ error: 'contact_id and body required' }, { status: 400 });
     }
@@ -48,9 +49,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Twilio not configured. Go to CRM Settings > Twilio to add credentials.' }, { status: 400 });
     }
 
+    // Multi-line: an explicitly chosen line pins the From. A value that is not
+    // one of the org's numbers is refused, never silently ignored. Absent ->
+    // the send path is exactly what it always was.
+    let fromLine = '';
+    if (line_e164) {
+      const line = findOrgNumber(twilioConfig, String(line_e164));
+      if (!line) {
+        return NextResponse.json({ error: 'line_e164 is not one of this organization\'s numbers' }, { status: 400 });
+      }
+      fromLine = toE164(line.phone);
+    }
+
     let twilioMsg;
     try {
-      twilioMsg = await sendOrgSms(twilioConfig, contact.phone, msgBody, 'manual', contact.pipeline_stage);
+      twilioMsg = await sendOrgSms(
+        twilioConfig, contact.phone, msgBody, 'manual', contact.pipeline_stage,
+        { from: fromLine || undefined }
+      );
     } catch (e: any) {
       return NextResponse.json({ error: `SMS send failed: ${e.message}` }, { status: 500 });
     }
@@ -58,22 +74,28 @@ export async function POST(request: NextRequest) {
     // Log everything (non-blocking)
     let messageId: string | undefined;
     try {
-      const conversation = await getOrCreateConversation(supabase, contact_id, 'sms');
+      const conversation = await getOrCreateConversation(supabase, contact_id, 'sms', undefined, fromLine || null);
       const { data: message } = await supabase.from('crm_messages').insert({
         conversation_id: conversation.id, direction: 'outbound', body: msgBody,
         status: 'queued', twilio_sid: twilioMsg.sid, sent_by: user.id,
-        // The recipient is known locally. The SENDER is not: sends go through a
-        // Messaging Service, so Twilio picks the number from its pool during
-        // queueing and twilioMsg.from is typically null right here. from_e164 is
-        // filled authoritatively by /api/twilio/message-status.
+        // The recipient is known locally. The SENDER is known only when a line
+        // was pinned: un-pinned sends go through a Messaging Service, so Twilio
+        // picks the number from its pool during queueing and twilioMsg.from is
+        // typically null right here. from_e164 is confirmed authoritatively by
+        // /api/twilio/message-status either way.
         to_e164: contact.phone,
-        from_e164: twilioMsg.from ?? null,
+        from_e164: twilioMsg.from || fromLine || null,
         sent_at: new Date().toISOString(),
       }).select().single();
       messageId = message?.id;
 
       await supabase.from('conversations')
-        .update({ last_message_at: new Date().toISOString() }).eq('id', conversation.id);
+        .update({
+          last_message_at: new Date().toISOString(),
+          // A pinned outbound line is the thread's most recent line.
+          ...(fromLine ? { line_e164: fromLine } : {}),
+        })
+        .eq('id', conversation.id);
       await updateLastContacted(supabase, contact_id);
 
       const { data: teamMember } = await supabase.from('team_members')

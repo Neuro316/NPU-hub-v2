@@ -8,6 +8,8 @@
 import { useEffect, useState } from 'react'
 import { Phone, MessageCircle, Mail, ArrowUpRight, ArrowDownLeft, Clock, Activity, Calendar, PhoneMissed, Voicemail } from 'lucide-react'
 import { createClient } from '@/lib/supabase-browser'
+import { useWorkspace } from '@/lib/workspace-context'
+import { useOrgLines } from '@/lib/hooks/use-org-lines'
 import { buildTimeline, TimelineStream, type TimelineEntry } from '@/components/crm/comms-timeline'
 
 interface CommStats {
@@ -45,6 +47,9 @@ function ago(d: string | null) {
 
 export default function ContactCommPanel({ contactId }: { contactId: string }) {
   const supabase = createClient()
+  const { currentOrg } = useWorkspace()
+  // Line badges on call/voicemail rows; null (no badge) for a single-line org.
+  const { labelFor } = useOrgLines(currentOrg?.id)
   const [stats, setStats] = useState<CommStats | null>(null)
   const [entries, setEntries] = useState<TimelineEntry[]>([])
   const [loading, setLoading] = useState(true)
@@ -133,7 +138,7 @@ export default function ContactCommPanel({ contactId }: { contactId: string }) {
       <div>
         <p className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Communications</p>
         <div className="max-h-96 overflow-auto pr-1">
-          <TimelineStream entries={entries} emptyLabel="No communications yet" />
+          <TimelineStream entries={entries} emptyLabel="No communications yet" lineLabel={labelFor} />
         </div>
       </div>
     </div>

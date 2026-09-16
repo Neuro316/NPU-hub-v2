@@ -45,8 +45,12 @@ type ReceiverStatus =
 
 interface IncomingCall {
   call: any
+  /** The real caller. From the `caller` custom parameter when the line forwards
+   *  to a cell (callerId then overwrites the leg's From), else the leg's From. */
   from: string
   callSid: string
+  /** The org line (E.164) that was dialled, from the `line` custom parameter. */
+  line: string
 }
 
 interface VoiceReceiverValue {
@@ -159,10 +163,19 @@ export function VoiceReceiverProvider({ children }: { children: React.ReactNode 
       })
 
       device.on('incoming', (call: any) => {
+        // Custom <Parameter>s from the inbound TwiML (inbound-voice.ts
+        // appendRingDial). `caller` is present only when the line forwards to a
+        // cell: the <Dial callerId> that makes the cell show a business call
+        // also overwrites this leg's From, so the true caller travels here.
+        // A plain browser-only line (NP main) has no `caller`, and From is used
+        // exactly as before.
+        const custom: Map<string, string> | undefined = call?.customParameters
+        const caller = (custom?.get?.('caller') || '').trim()
         setIncoming({
           call,
-          from: call?.parameters?.From || '',
+          from: caller || call?.parameters?.From || '',
           callSid: call?.parameters?.CallSid || '',
+          line: (custom?.get?.('line') || '').trim(),
         })
         // If the caller hangs up or Twilio's <Dial> times out into voicemail,
         // the call is cancelled — drop the ringing UI so it can't be answered

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabase, createAdminSupabase } from '@/lib/supabase';
-import { getOrgTwilioConfig, generateOrgVoiceToken, getVoiceCallerId } from '@/lib/twilio-org';
+import { getOrgTwilioConfig, generateOrgVoiceToken, getVoiceCallerId, findOrgNumber } from '@/lib/twilio-org';
 import { getOrCreateConversation, logActivity, isDNC } from '@/lib/crm-server';
+import { toE164 } from '@/lib/phone';
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,7 +16,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
     }
 
-    const { contact_id } = body;
+    const { contact_id, line_e164 } = body;
     if (!contact_id) return NextResponse.json({ error: 'contact_id required' }, { status: 400 });
 
     const { data: contact, error: contactErr } = await supabase
@@ -51,16 +52,38 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `Token failed: ${e.message}` }, { status: 500 });
     }
 
-    const callerId = getVoiceCallerId(twilioConfig, 'manual', contact.pipeline_stage);
+    // Caller ID: an explicitly chosen line when it is one of the org's numbers,
+    // otherwise the unchanged getVoiceCallerId chain. inbound-call's
+    // browser-originated branch re-validates whatever is passed as CallerId.
+    let callerId = getVoiceCallerId(twilioConfig, 'manual', contact.pipeline_stage);
+    if (line_e164) {
+      const line = findOrgNumber(twilioConfig, String(line_e164));
+      if (!line) {
+        return NextResponse.json({ error: 'line_e164 is not one of this organization\'s numbers' }, { status: 400 });
+      }
+      callerId = toE164(line.phone) || callerId;
+    }
+    // The thread's line is the number we are calling FROM (when it is ours).
+    const lineForThread = findOrgNumber(twilioConfig, callerId) ? toE164(callerId) : null;
 
     let callLogId: string | undefined;
     try {
-      const conversation = await getOrCreateConversation(supabase, contact_id, 'voice');
+      const conversation = await getOrCreateConversation(supabase, contact_id, 'voice', undefined, lineForThread);
       const { data: callLog } = await supabase.from('call_logs').insert({
         conversation_id: conversation.id, contact_id, direction: 'outbound',
         status: 'ringing', called_by: user.id, started_at: new Date().toISOString(),
+        // org_id / from_number / to_number were never written on outbound rows,
+        // which left them invisible under the 067 org-scoped policy and with no
+        // derivable line. Stamped from here on.
+        org_id: contact.org_id,
+        from_number: callerId || null,
+        to_number: toE164(contact.phone) || contact.phone,
       }).select().single();
       callLogId = callLog?.id;
+      if (lineForThread) {
+        await supabase.from('conversations')
+          .update({ line_e164: lineForThread }).eq('id', conversation.id);
+      }
       await logActivity(supabase, {
         contact_id, org_id: contact.org_id, event_type: 'call_outbound',
         event_data: { call_log_id: callLogId, caller_id: callerId },

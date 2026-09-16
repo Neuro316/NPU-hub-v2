@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminSupabase } from '@/lib/supabase';
 import { validateTwilioSignatureWithToken } from '@/lib/twilio';
 import { resolveInboundTwilioAuth } from '@/lib/twilio-org';
+import { toE164 } from '@/lib/phone';
 import {
   findContactByPhoneNormalized, getOrCreateConversation, logActivity,
   emitWebhookEvent, applyAutoAssignment, trackInboundForResponseTime,
@@ -136,7 +137,9 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const conversation = await getOrCreateConversation(supabase, contact.id, 'sms', orgId);
+  // The org number this text arrived on is the thread's line (multi-line).
+  const lineE164 = toE164(to) || null;
+  const conversation = await getOrCreateConversation(supabase, contact.id, 'sms', orgId, lineE164);
 
   // MMS: collect the media URLs Twilio delivered (MediaUrl0..N).
   const numMedia = parseInt(params.NumMedia || '0', 10) || 0;
@@ -165,6 +168,7 @@ export async function POST(request: NextRequest) {
     direction: 'inbound',
     incrementUnread: true,
     currentUnread: conversation.unread_count || 0,
+    lineE164,
   });
 
   if (message) {

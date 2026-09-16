@@ -42,9 +42,28 @@ export async function POST(request: NextRequest) {
     }));
 
     // ── ANSWERED then hung up: end the call. ────────────────────────────────
-    // 'completed' means the dialed leg was answered and has finished. Anything
-    // after <Hangup/> would be unreachable, so this is the whole response.
+    // 'completed' means a dialed leg (browser, or the line's forward cell) was
+    // answered and has finished. Anything after <Hangup/> would be unreachable,
+    // so this is the whole response.
     if (dialStatus === 'completed') {
+      // Close the call row by CallSid. Only a row still in a live state is
+      // touched, so an earlier mark written by /api/voice/answered (or any
+      // other terminal status) is never overwritten. Bookkeeping must never
+      // delay the <Hangup/>, hence best-effort.
+      const callSid = params.CallSid || '';
+      if (callSid) {
+        try {
+          const admin = createAdminSupabase();
+          const { error } = await admin
+            .from('call_logs')
+            .update({ status: 'completed', ended_at: new Date().toISOString() })
+            .eq('external_call_sid', callSid)
+            .in('status', ['ringing', 'in_progress']);
+          if (error) console.warn('ring-complete: call_log close failed:', error.message);
+        } catch (e) {
+          console.warn('ring-complete: call_log close skipped:', e);
+        }
+      }
       response.hangup();
       return new NextResponse(response.toString(), {
         headers: { 'Content-Type': 'text/xml' },
@@ -52,9 +71,10 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Nobody answered: voicemail, exactly as before. ──────────────────────
+    // Per-line greeting (audio, else spoken text), org greeting as fallback.
     const admin = createAdminSupabase();
-    const { greetingUrl } = await resolveInboundOrgContext(admin, to);
-    appendVoicemail(response, { greetingUrl, appUrl: resolveAppUrl() });
+    const { greetingUrl, greetingText } = await resolveInboundOrgContext(admin, to);
+    appendVoicemail(response, { greetingUrl, greetingText, appUrl: resolveAppUrl() });
 
     return new NextResponse(response.toString(), {
       headers: { 'Content-Type': 'text/xml' },

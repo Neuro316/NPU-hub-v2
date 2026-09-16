@@ -138,10 +138,12 @@ function NoPhonePrompt({ contact, onClose, onSaved }: {
 
 type CallState = 'idle' | 'connecting' | 'ringing' | 'connected' | 'ended' | 'error'
 
-export function VoipCall({ contact, onClose, onEnded }: {
+export function VoipCall({ contact, onClose, onEnded, lineE164 }: {
   contact: CrmContact
   onClose: () => void
   onEnded?: () => void
+  /** Org line to call FROM (Conversations line dropdown). Omit for the org default. */
+  lineE164?: string | null
 }) {
   const [callState, setCallState] = useState<CallState>('idle')
   const [duration, setDuration] = useState(0)
@@ -175,7 +177,7 @@ export function VoipCall({ contact, onClose, onEnded }: {
       const res = await fetch('/api/voice/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contact_id: contact.id }),
+        body: JSON.stringify({ contact_id: contact.id, ...(lineE164 ? { line_e164: lineE164 } : {}) }),
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'Failed to connect'); setCallState('error'); return }
@@ -231,7 +233,9 @@ export function VoipCall({ contact, onClose, onEnded }: {
       setError(e?.message || String(e) || 'Failed to set up call')
       setCallState('error')
     }
-  }, [contact.id])
+    // lineE164 is read once at dial time; the mount effect below still runs
+    // exactly once (startedRef), so a changing prop can never redial.
+  }, [contact.id, lineE164])
 
   useEffect(() => {
     // Exactly one dial per mount. Even if this effect were somehow re-run, the

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabase, createAdminSupabase } from '@/lib/supabase';
 import { getOrCreateConversation, bumpConversation, logActivity } from '@/lib/crm-server';
+import { toE164 } from '@/lib/phone';
 
 // "Who answered" — posted by the browser that accepts an inbound call.
 //
@@ -30,7 +31,7 @@ export async function POST(request: NextRequest) {
 
     const { data: callLog } = await admin
       .from('call_logs')
-      .select('id, org_id, contact_id, status')
+      .select('id, org_id, contact_id, status, to_number')
       .eq('external_call_sid', callSid)
       .maybeSingle();
     if (!callLog) {
@@ -70,13 +71,15 @@ export async function POST(request: NextRequest) {
 
     if (callLog.contact_id) {
       try {
+        const lineE164 = toE164(callLog.to_number || '') || null;
         const conversation = await getOrCreateConversation(
-          admin, callLog.contact_id, 'voice', callLog.org_id
+          admin, callLog.contact_id, 'voice', callLog.org_id, lineE164
         );
         await bumpConversation(admin, conversation.id, {
           preview: '\u{1F4DE} Call answered',
           direction: 'inbound',
           incrementUnread: false,   // answered in person — nothing left unread
+          lineE164,
         });
         await logActivity(admin, {
           contact_id: callLog.contact_id,

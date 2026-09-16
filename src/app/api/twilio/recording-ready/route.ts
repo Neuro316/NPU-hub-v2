@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminSupabase } from '@/lib/supabase';
 import { logActivity, getOrCreateConversation, bumpConversation } from '@/lib/crm-server';
+import { toE164 } from '@/lib/phone';
 
 // Twilio recording-ready callback (recordingStatusCallback on <Record>).
 // Stores the voicemail recording + duration on the call_logs row keyed by CallSid,
@@ -39,7 +40,7 @@ export async function POST(request: NextRequest) {
   // (null contact) voicemails still work.
   const { data: callLog } = await supabase
     .from('call_logs')
-    .select('id, org_id, contact_id')
+    .select('id, org_id, contact_id, to_number')
     .eq('external_call_sid', callSid)
     .maybeSingle();
 
@@ -70,8 +71,11 @@ export async function POST(request: NextRequest) {
   // created (e.g. one that landed before this fix shipped).
   if (callLog.org_id && callLog.contact_id) {
     try {
+      // The line is the number that was dialled, carried on the call row, so a
+      // voicemail bump keeps the thread on the line the caller actually used.
+      const lineE164 = toE164(callLog.to_number || '') || null;
       const conversation = await getOrCreateConversation(
-        supabase, callLog.contact_id, 'voice', callLog.org_id
+        supabase, callLog.contact_id, 'voice', callLog.org_id, lineE164
       );
       await bumpConversation(supabase, conversation.id, {
         preview: '\u{1F4E7} Voicemail',
@@ -79,6 +83,7 @@ export async function POST(request: NextRequest) {
         // Not incremented: inbound-call already counted this call as unread.
         // Bumping again would double-count one interaction.
         incrementUnread: false,
+        lineE164,
       });
     } catch (e) {
       console.warn('voicemail conversation bump skipped:', e);

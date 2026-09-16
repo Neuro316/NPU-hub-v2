@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminSupabase, createServerSupabase } from '@/lib/supabase';
 import { ADMIN_ROLES } from '@/lib/org-settings-keys';
+import { toE164 } from '@/lib/phone';
 
-// Voicemail greeting management (NPU Hub — Twilio Conversations, Stage 1).
+// Voicemail greeting management (NPU Hub — Twilio Conversations, Stage 1;
+// per-line scoping added with multi-line Conversations).
 //
-// GET    ?org_id=  -> current greeting URL for the org
-// POST   multipart -> validate + store audio, save greeting_url on crm_twilio
-// DELETE ?org_id=  -> remove greeting, revert callers to the default <Say>
+// GET    ?org_id=[&line=]  -> current greeting URL for the org, or for one line
+// POST   multipart         -> validate + store audio, save greeting_url on crm_twilio
+//                             (top level, or on numbers[i] when `line` is given)
+// DELETE ?org_id=[&line=]  -> remove greeting, revert callers to the fallback
+//
+// `line` is one of the org's numbers (compared after toE164). Without it every
+// verb behaves exactly as before: the org-level greeting is what lines with no
+// greeting of their own fall back to (inbound-voice.ts resolveInboundOrgContext).
 //
 // Admin-gated SERVER-SIDE on every verb (getUser -> org_members membership ->
 // profiles.role in ADMIN_ROLES), mirroring /api/settings PUT. The CRM settings
@@ -26,6 +33,8 @@ const ALLOWED: { mime: string[]; ext: 'mp3' | 'wav' }[] = [
   { mime: ['audio/mpeg', 'audio/mp3'], ext: 'mp3' },
   { mime: ['audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave'], ext: 'wav' },
 ];
+
+const GREETING_KEYS = ['greeting_url', 'greeting_path', 'greeting_filename', 'greeting_updated_at'] as const;
 
 /**
  * Sniff the real container from the leading bytes. A file renamed .mp3 that is
@@ -90,8 +99,52 @@ async function readTwilioSettings(
   return v && typeof v === 'object' && !Array.isArray(v) ? { ...v } : {};
 }
 
+/**
+ * Where the greeting keys live for this request: the top-level object, or the
+ * matching numbers[i] entry. `line` must be one of the org's numbers.
+ */
+function scopeFor(
+  settings: Record<string, any>,
+  line: string
+): { target: Record<string, any>; error?: NextResponse } {
+  if (!line) return { target: settings };
+  const numbers: any[] = Array.isArray(settings.numbers) ? settings.numbers : [];
+  const idx = numbers.findIndex(n => toE164(String(n?.phone || '')) === line);
+  if (idx < 0) {
+    return {
+      target: settings,
+      error: NextResponse.json({ error: 'line is not one of this organization\'s numbers' }, { status: 400 }),
+    };
+  }
+  // Copy the array and the entry so the caller mutates a fresh object and the
+  // upsert below writes the whole numbers[] back intact.
+  const copy = numbers.map(n => ({ ...n }));
+  settings.numbers = copy;
+  return { target: copy[idx] };
+}
+
+function pickGreeting(target: Record<string, any>) {
+  return {
+    greeting_url: target.greeting_url || null,
+    greeting_updated_at: target.greeting_updated_at || null,
+    greeting_filename: target.greeting_filename || null,
+  };
+}
+
+async function saveSettings(
+  admin: ReturnType<typeof createAdminSupabase>,
+  orgId: string,
+  settings: Record<string, any>
+) {
+  return admin.from('org_settings').upsert(
+    { org_id: orgId, setting_key: 'crm_twilio', setting_value: settings },
+    { onConflict: 'org_id,setting_key' }
+  );
+}
+
 export async function GET(request: NextRequest) {
   const orgId = (request.nextUrl.searchParams.get('org_id') || '').trim();
+  const line = toE164(request.nextUrl.searchParams.get('line') || '');
   if (!orgId) return NextResponse.json({ error: 'org_id is required' }, { status: 400 });
 
   const admin = createAdminSupabase();
@@ -99,11 +152,9 @@ export async function GET(request: NextRequest) {
   if (denied) return denied;
 
   const settings = await readTwilioSettings(admin, orgId);
-  return NextResponse.json({
-    greeting_url: settings.greeting_url || null,
-    greeting_updated_at: settings.greeting_updated_at || null,
-    greeting_filename: settings.greeting_filename || null,
-  });
+  const { target, error } = scopeFor(settings, line);
+  if (error) return error;
+  return NextResponse.json({ ...pickGreeting(target), line: line || null });
 }
 
 export async function POST(request: NextRequest) {
@@ -111,6 +162,7 @@ export async function POST(request: NextRequest) {
     const form = await request.formData();
     const file = form.get('file') as File | null;
     const orgId = String(form.get('org_id') || '').trim();
+    const line = toE164(String(form.get('line') || ''));
 
     if (!orgId) return NextResponse.json({ error: 'org_id is required' }, { status: 400 });
     if (!file || typeof file.arrayBuffer !== 'function') {
@@ -157,9 +209,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Resolve the scope BEFORE uploading so an unknown line never leaves an
+    // orphan object in storage.
+    const settings = await readTwilioSettings(admin, orgId);
+    const { target, error: scopeError } = scopeFor(settings, line);
+    if (scopeError) return scopeError;
+
     const ext = sniffed;
     const contentType = ext === 'mp3' ? 'audio/mpeg' : 'audio/wav';
-    const path = `${orgId}/greeting-${Date.now()}.${ext}`;
+    const path = `${orgId}/${line ? `${line.replace(/\D/g, '')}/` : ''}greeting-${Date.now()}.${ext}`;
 
     const { error: uploadError } = await admin.storage
       .from(BUCKET)
@@ -179,24 +237,15 @@ export async function POST(request: NextRequest) {
     // --- READ-MERGE-WRITE ---------------------------------------------------
     // crm_twilio holds account_sid / auth_token / api_secret / twiml_app_sid /
     // numbers. A bare upsert of { greeting_url } would WIPE every credential in
-    // this org's Twilio config. Always merge onto the existing object.
-    const settings = await readTwilioSettings(admin, orgId);
-    const previousPath = typeof settings.greeting_path === 'string' ? settings.greeting_path : '';
+    // this org's Twilio config. Always merge onto the existing object (and, for
+    // a line, onto the existing numbers[i] entry).
+    const previousPath = typeof target.greeting_path === 'string' ? target.greeting_path : '';
+    target.greeting_url = publicUrl;
+    target.greeting_path = path;
+    target.greeting_filename = file.name || `greeting.${ext}`;
+    target.greeting_updated_at = new Date().toISOString();
 
-    const { error: saveError } = await admin.from('org_settings').upsert(
-      {
-        org_id: orgId,
-        setting_key: 'crm_twilio',
-        setting_value: {
-          ...settings,
-          greeting_url: publicUrl,
-          greeting_path: path,
-          greeting_filename: file.name || `greeting.${ext}`,
-          greeting_updated_at: new Date().toISOString(),
-        },
-      },
-      { onConflict: 'org_id,setting_key' }
-    );
+    const { error: saveError } = await saveSettings(admin, orgId, settings);
     if (saveError) {
       // Roll the object back so storage never holds an orphan the config
       // doesn't point at.
@@ -210,7 +259,7 @@ export async function POST(request: NextRequest) {
       await admin.storage.from(BUCKET).remove([previousPath]);
     }
 
-    return NextResponse.json({ ok: true, greeting_url: publicUrl, format: ext });
+    return NextResponse.json({ ok: true, greeting_url: publicUrl, format: ext, line: line || null });
   } catch (e: any) {
     console.error('[comms/greeting] POST error:', e);
     return NextResponse.json({ error: e?.message || 'Internal error' }, { status: 500 });
@@ -219,6 +268,7 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   const orgId = (request.nextUrl.searchParams.get('org_id') || '').trim();
+  const line = toE164(request.nextUrl.searchParams.get('line') || '');
   if (!orgId) return NextResponse.json({ error: 'org_id is required' }, { status: 400 });
 
   const admin = createAdminSupabase();
@@ -226,17 +276,13 @@ export async function DELETE(request: NextRequest) {
   if (denied) return denied;
 
   const settings = await readTwilioSettings(admin, orgId);
-  const path = typeof settings.greeting_path === 'string' ? settings.greeting_path : '';
+  const { target, error: scopeError } = scopeFor(settings, line);
+  if (scopeError) return scopeError;
 
-  delete settings.greeting_url;
-  delete settings.greeting_path;
-  delete settings.greeting_filename;
-  delete settings.greeting_updated_at;
+  const path = typeof target.greeting_path === 'string' ? target.greeting_path : '';
+  for (const key of GREETING_KEYS) delete target[key];
 
-  const { error } = await admin.from('org_settings').upsert(
-    { org_id: orgId, setting_key: 'crm_twilio', setting_value: settings },
-    { onConflict: 'org_id,setting_key' }
-  );
+  const { error } = await saveSettings(admin, orgId, settings);
   if (error) {
     console.error('[comms/greeting] delete save failed:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -244,5 +290,5 @@ export async function DELETE(request: NextRequest) {
 
   if (path) await admin.storage.from(BUCKET).remove([path]);
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, line: line || null });
 }

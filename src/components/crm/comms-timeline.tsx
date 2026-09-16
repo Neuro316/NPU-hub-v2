@@ -31,6 +31,9 @@ export interface TimelineEntry {
   recording_available?: boolean
   media_urls?: string[]
   ai_summary?: string | null
+  /** The org line this event used: inbound -> the number dialled/texted,
+   *  outbound -> the From. Null when unknown (older outbound calls). */
+  line_e164?: string | null
 }
 
 // ── Data: load + merge both tables for a contact ──
@@ -56,6 +59,7 @@ export async function buildTimeline(
     status: m.status,
     created_at: m.sent_at || m.created_at,
     media_urls: Array.isArray(m.media_urls) ? m.media_urls : [],
+    line_e164: (m.direction === 'inbound' ? m.to_e164 : m.from_e164) || null,
   }))
 
   // Calls / voicemails / missed — by contact.
@@ -79,6 +83,7 @@ export async function buildTimeline(
       transcription_status: c.transcription_status,
       recording_available: !!c.recording_url,
       ai_summary: c.ai_summary,
+      line_e164: (c.direction === 'inbound' ? c.to_number : c.from_number) || null,
     })
   })
 
@@ -112,10 +117,22 @@ function CallBackButton({ onCallBack, label = 'Call back' }: {
   )
 }
 
+// Which line an event used. Renders nothing without a label, so an org with a
+// single line (or none) shows no badges anywhere.
+export function LineBadge({ label }: { label: string | null | undefined }) {
+  if (!label) return null
+  return (
+    <span className="px-1.5 py-0.5 rounded-full bg-np-blue/10 text-np-blue text-[8px] font-semibold whitespace-nowrap">
+      {label}
+    </span>
+  )
+}
+
 // ── Voicemail: player (authenticated proxy) + inline transcript ──
-export function VoicemailPlayer({ entry, onCallBack }: {
+export function VoicemailPlayer({ entry, onCallBack, lineLabel }: {
   entry: TimelineEntry
   onCallBack?: () => void
+  lineLabel?: string | null
 }) {
   return (
     <div className="rounded-xl border border-purple-100 bg-purple-50/40 p-2.5 max-w-[85%]">
@@ -125,6 +142,7 @@ export function VoicemailPlayer({ entry, onCallBack }: {
         {(entry.duration_seconds ?? 0) > 0 && (
           <span className="text-[8px] text-gray-400">· {fmtDuration(entry.duration_seconds!)}</span>
         )}
+        <LineBadge label={lineLabel} />
         {onCallBack && <span className="ml-auto"><CallBackButton onCallBack={onCallBack} /></span>}
       </div>
       {entry.recording_available ? (
@@ -178,7 +196,11 @@ function TextBubble({ entry }: { entry: TimelineEntry }) {
 }
 
 // ── Call / missed centered rows ──
-function CallRow({ entry, onCallBack }: { entry: TimelineEntry; onCallBack?: () => void }) {
+function CallRow({ entry, onCallBack, lineLabel }: {
+  entry: TimelineEntry
+  onCallBack?: () => void
+  lineLabel?: string | null
+}) {
   const isMissed = entry.kind === 'missed'
   // Offer call-back on anything the caller initiated that we may not have taken:
   // missed calls, and inbound calls generally.
@@ -194,6 +216,7 @@ function CallRow({ entry, onCallBack }: { entry: TimelineEntry; onCallBack?: () 
           {(entry.duration_seconds ?? 0) > 0 ? ` · ${fmtDuration(entry.duration_seconds!)}` : ''}
         </span>
         <span className="text-[8px] text-gray-300 ml-1">{fmtClock(entry.created_at)}</span>
+        <LineBadge label={lineLabel} />
         {showCallBack && (
           <span className="ml-1.5"><CallBackButton onCallBack={onCallBack!} /></span>
         )}
@@ -203,15 +226,20 @@ function CallRow({ entry, onCallBack }: { entry: TimelineEntry; onCallBack?: () 
 }
 
 // ── The stream ──
-export function TimelineStream({ entries, emptyLabel = 'No messages yet', onCallBack }: {
+export function TimelineStream({ entries, emptyLabel = 'No messages yet', onCallBack, lineLabel }: {
   entries: TimelineEntry[]
   emptyLabel?: string
   /** Omit to render the timeline read-only (e.g. the contact card panel). */
   onCallBack?: () => void
+  /** Resolves an event's line to a nickname (useOrgLines().labelFor). Omit, or
+   *  return null, for no badges. */
+  lineLabel?: (e164: string) => string | null
 }) {
   if (!entries.length) {
     return <p className="text-[10px] text-gray-300 text-center py-8">{emptyLabel}</p>
   }
+  const labelOf = (entry: TimelineEntry) =>
+    lineLabel && entry.line_e164 ? lineLabel(entry.line_e164) : null
   return (
     <div className="space-y-2">
       {entries.map(entry => {
@@ -219,11 +247,11 @@ export function TimelineStream({ entries, emptyLabel = 'No messages yet', onCall
         if (entry.kind === 'voicemail') {
           return (
             <div key={entry.id} className="flex justify-start">
-              <VoicemailPlayer entry={entry} onCallBack={onCallBack} />
+              <VoicemailPlayer entry={entry} onCallBack={onCallBack} lineLabel={labelOf(entry)} />
             </div>
           )
         }
-        return <CallRow key={entry.id} entry={entry} onCallBack={onCallBack} />
+        return <CallRow key={entry.id} entry={entry} onCallBack={onCallBack} lineLabel={labelOf(entry)} />
       })}
     </div>
   )

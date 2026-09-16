@@ -16,6 +16,7 @@ import { MemberDetail } from '@/components/team/member-detail'
 import { navCategories, REORDERABLE_IDS } from '@/lib/nav-config'
 import type { SidebarOrder } from '@/lib/nav-config'
 import { createClient } from '@/lib/supabase-browser'
+import { toE164 } from '@/lib/phone'
 
 type Section = 'email' | 'twilio' | 'ai' | 'pipeline' | 'team' | 'notifications' | 'compliance' | 'general' | 'modules' | 'admin_tools' | 'sidebar_layout'
 
@@ -224,9 +225,28 @@ export default function SettingsPage() {
         }, { onConflict: 'org_id' })
       }
       if (active === 'twilio') {
+        // READ-MERGE-WRITE, the same rule as CRM Settings > Twilio. crm_twilio
+        // also holds keys this form never loads: the org voicemail greeting
+        // (greeting_url / greeting_path), voice_caller_id, ring_timeout_seconds,
+        // and on each numbers[] entry the per-line keys (greeting_*,
+        // greeting_text, ring_timeout_seconds, forward_number). The previous
+        // bare upsert of the form state dropped every one of them on Save.
+        // Per number, the fresh entry is kept and only the three fields this
+        // form edits are overwritten.
+        const { data: current } = await supabase.from('org_settings')
+          .select('setting_value').eq('org_id', currentOrg.id)
+          .eq('setting_key', 'crm_twilio').maybeSingle()
+        const existing: Record<string, any> =
+          (current?.setting_value && typeof current.setting_value === 'object' && !Array.isArray(current.setting_value))
+            ? current.setting_value : {}
+        const freshNumbers: any[] = Array.isArray(existing.numbers) ? existing.numbers : []
+        const numbers = twilioNumbers.map(n => {
+          const fresh = freshNumbers.find(f => toE164(String(f?.phone || '')) === toE164(n.phone))
+          return fresh ? { ...fresh, phone: n.phone, nickname: n.nickname, purpose: n.purpose } : n
+        })
         await supabase.from('org_settings').upsert({
           org_id: currentOrg.id, setting_key: 'crm_twilio',
-          setting_value: { ...twilio, numbers: twilioNumbers },
+          setting_value: { ...existing, ...twilio, numbers },
         }, { onConflict: 'org_id,setting_key' })
       }
       if (active === 'ai') {

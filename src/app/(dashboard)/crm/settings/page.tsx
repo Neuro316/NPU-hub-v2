@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import {
   Mail, Phone, Brain, Shield, Bell, Users, Sliders, Mic,
-  Save, Plus, X, Trash2, CheckCircle2, AlertTriangle
+  Save, Plus, X, Trash2, CheckCircle2, AlertTriangle, ChevronDown, ChevronRight
 } from 'lucide-react'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
@@ -15,6 +15,7 @@ import {
   clampRingTimeout, DEFAULT_RING_TIMEOUT_SECONDS,
   MIN_RING_TIMEOUT_SECONDS, MAX_RING_TIMEOUT_SECONDS,
 } from '@/lib/inbound-voice'
+import { toE164 } from '@/lib/phone'
 
 type Section = 'email' | 'twilio' | 'ai' | 'pipeline' | 'team' | 'notifications' | 'compliance' | 'general' | 'guest_profile'
 
@@ -38,7 +39,22 @@ const NUMBER_PURPOSES: { value: NumberPurpose; label: string; desc: string }[] =
   { value: 'inbound_main', label: 'Inbound Main Line', desc: 'Primary reception number' },
   { value: 'general', label: 'General', desc: 'Fallback for everything' },
 ]
-interface TwilioNumber { phone: string; nickname: string; purpose: NumberPurpose }
+// Per-line keys are optional; absent = "use org default" (inbound-voice.ts
+// resolveInboundOrgContext). The greeting_* keys are written by the
+// /api/comms/greeting route, never by this form — see the merge in handleSave.
+interface TwilioNumber {
+  phone: string
+  nickname: string
+  purpose: NumberPurpose
+  greeting_url?: string
+  greeting_path?: string
+  greeting_filename?: string
+  greeting_updated_at?: string
+  greeting_text?: string
+  ring_timeout_seconds?: number
+  forward_number?: string
+}
+const GREETING_KEYS = ['greeting_url', 'greeting_path', 'greeting_filename', 'greeting_updated_at'] as const
 
 export default function SettingsPage() {
   const { currentOrg } = useWorkspace()
@@ -46,6 +62,8 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [twilioTest, setTwilioTest] = useState<{ loading: boolean; result: any | null }>({ loading: false, result: null })
+  // Which number card has its "Line options" open.
+  const [openLine, setOpenLine] = useState<number | null>(null)
 
   // Settings state
   const [email, setEmail] = useState({ sending_email: '', sending_name: '', daily_limit: 500, provider: 'gmail_workspace', warmup: true })
@@ -109,12 +127,35 @@ export default function SettingsPage() {
           .eq('setting_key', 'crm_twilio').maybeSingle()
         const existing = (current?.setting_value && typeof current.setting_value === 'object' && !Array.isArray(current.setting_value))
           ? current.setting_value : {}
+        // Per-number merge, same reason. A line's greeting_* keys are written
+        // by /api/comms/greeting into numbers[i], possibly after this page
+        // loaded; writing the in-memory numbers[] back verbatim would drop
+        // them. Carry those four keys from the FRESH read, matched by phone,
+        // and normalise the optional per-line fields so "empty" is absent
+        // rather than '' (absent is what "use org default" means).
+        const freshNumbers: any[] = Array.isArray((existing as any).numbers) ? (existing as any).numbers : []
+        const numbers = twilioNumbers.map(n => {
+          const out: Record<string, any> = { ...n }
+          const fresh = freshNumbers.find(f => toE164(String(f?.phone || '')) === toE164(n.phone))
+          for (const key of GREETING_KEYS) {
+            if (fresh && fresh[key]) out[key] = fresh[key]
+            else delete out[key]
+          }
+          if (!String(out.greeting_text || '').trim()) delete out.greeting_text
+          else out.greeting_text = String(out.greeting_text).trim()
+          const fwd = String(out.forward_number || '').trim()
+          if (!fwd) delete out.forward_number
+          else out.forward_number = toE164(fwd) || fwd
+          if (out.ring_timeout_seconds == null || out.ring_timeout_seconds === '') delete out.ring_timeout_seconds
+          else out.ring_timeout_seconds = clampRingTimeout(out.ring_timeout_seconds)
+          return out
+        })
         await supabase.from('org_settings').upsert({
           org_id: currentOrg.id, setting_key: 'crm_twilio',
           // clamp on write as well as read — the stored value is never outside
           // the range that keeps browser ringing functional.
           setting_value: {
-            ...existing, ...twilio, numbers: twilioNumbers,
+            ...existing, ...twilio, numbers,
             ring_timeout_seconds: clampRingTimeout(twilio.ring_timeout_seconds),
           },
         }, { onConflict: 'org_id,setting_key' })
@@ -141,6 +182,8 @@ export default function SettingsPage() {
 
   const addTwilioNumber = () => setTwilioNumbers(prev => [...prev, { phone: '', nickname: '', purpose: 'general' as NumberPurpose }])
   const removeTwilioNumber = (i: number) => setTwilioNumbers(prev => prev.filter((_, idx) => idx !== i))
+  const patchNumber = (i: number, patch: Partial<TwilioNumber>) =>
+    setTwilioNumbers(prev => prev.map((n, idx) => idx === i ? { ...n, ...patch } : n))
 
   return (
     <div className="flex gap-6 animate-in fade-in duration-300">
@@ -284,21 +327,107 @@ export default function SettingsPage() {
                   <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Phone Numbers</label>
                   <button onClick={addTwilioNumber} className="flex items-center gap-1 text-[10px] text-np-blue font-medium hover:underline"><Plus size={10} /> Add Number</button>
                 </div>
-                <p className="text-[10px] text-gray-400 mb-2">Assign numbers for campaigns (outreach) or clients (relationship management).</p>
+                <p className="text-[10px] text-gray-400 mb-2">Assign numbers for campaigns (outreach) or clients (relationship management). The nickname is what the Conversations line dropdown shows.</p>
                 <div className="space-y-2">
-                  {twilioNumbers.map((num, i) => (
-                    <div key={i} className="flex items-center gap-2 p-2.5 rounded-lg border border-gray-100 bg-gray-50/50">
-                      <input value={num.phone} onChange={e => setTwilioNumbers(prev => prev.map((n,idx) => idx===i ? {...n,phone:e.target.value} : n))}
-                        placeholder="+18285551234" className="w-36 px-2 py-1.5 text-xs border border-gray-100 rounded-md bg-white font-mono" />
-                      <input value={num.nickname} onChange={e => setTwilioNumbers(prev => prev.map((n,idx) => idx===i ? {...n,nickname:e.target.value} : n))}
-                        placeholder="Nickname" className="w-28 px-2 py-1.5 text-xs border border-gray-100 rounded-md bg-white" />
-                      <select value={num.purpose} onChange={e => setTwilioNumbers(prev => prev.map((n,idx) => idx===i ? {...n,purpose:e.target.value as NumberPurpose} : n))}
-                        className="flex-1 px-2 py-1.5 text-xs border border-gray-100 rounded-md bg-white">
-                        {NUMBER_PURPOSES.map(p => <option key={p.value} value={p.value}>{p.label} - {p.desc}</option>)}
-                      </select>
-                      {i > 0 && <button onClick={() => removeTwilioNumber(i)} className="p-1 text-gray-400 hover:text-red-500"><Trash2 size={12} /></button>}
+                  {twilioNumbers.map((num, i) => {
+                    const lineE164 = toE164(num.phone)
+                    const open = openLine === i
+                    const usesOrgTimeout = num.ring_timeout_seconds == null || (num.ring_timeout_seconds as any) === ''
+                    const orgTimeout = clampRingTimeout(twilio.ring_timeout_seconds)
+                    return (
+                    <div key={i} className="rounded-lg border border-gray-100 bg-gray-50/50">
+                      <div className="flex items-center gap-2 p-2.5">
+                        <input value={num.phone} onChange={e => patchNumber(i, { phone: e.target.value })}
+                          placeholder="+18285551234" className="w-36 px-2 py-1.5 text-xs border border-gray-100 rounded-md bg-white font-mono" />
+                        <input value={num.nickname} onChange={e => patchNumber(i, { nickname: e.target.value })}
+                          placeholder="Nickname" className="w-28 px-2 py-1.5 text-xs border border-gray-100 rounded-md bg-white" />
+                        <select value={num.purpose} onChange={e => patchNumber(i, { purpose: e.target.value as NumberPurpose })}
+                          className="flex-1 px-2 py-1.5 text-xs border border-gray-100 rounded-md bg-white">
+                          {NUMBER_PURPOSES.map(p => <option key={p.value} value={p.value}>{p.label} - {p.desc}</option>)}
+                        </select>
+                        <button type="button" onClick={() => setOpenLine(open ? null : i)}
+                          className="flex items-center gap-0.5 text-[10px] text-np-blue font-medium hover:underline whitespace-nowrap"
+                          title="Greeting, ring duration and cell forwarding for this line">
+                          {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />} Line options
+                        </button>
+                        {i > 0 && <button onClick={() => removeTwilioNumber(i)} className="p-1 text-gray-400 hover:text-red-500"><Trash2 size={12} /></button>}
+                      </div>
+
+                      {/* Per-line options. Every field is optional; empty means
+                          "use org default", which is exactly the pre-multi-line
+                          behaviour. Saved by "Save Settings" (the audio greeting
+                          saves itself through /api/comms/greeting). */}
+                      {open && (
+                        <div className="border-t border-gray-100 p-3 space-y-4">
+                          <p className="text-[10px] text-gray-400">
+                            Everything here is optional. Leave a field empty to use the org default set further down this page.
+                          </p>
+
+                          {/* Greeting text */}
+                          <div>
+                            <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Greeting text</label>
+                            <textarea value={num.greeting_text || ''} maxLength={500} rows={3}
+                              onChange={e => patchNumber(i, { greeting_text: e.target.value })}
+                              placeholder="Using org default greeting"
+                              className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg bg-white resize-none focus:outline-none focus:ring-1 focus:ring-teal/30" />
+                            <p className="text-[9px] text-gray-400 mt-1">
+                              Spoken to callers on this line when it has no audio greeting of its own (Polly Joanna, neural). {(num.greeting_text || '').length}/500
+                            </p>
+                          </div>
+
+                          {/* Ring duration */}
+                          <div>
+                            <div className="flex items-center justify-between">
+                              <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Ring duration</label>
+                              <span className="text-xs font-semibold text-np-blue tabular-nums">
+                                {usesOrgTimeout ? `Org default: ${orgTimeout} s` : `${clampRingTimeout(num.ring_timeout_seconds)} seconds`}
+                              </span>
+                            </div>
+                            <label className="flex items-center gap-1.5 text-[10px] text-gray-500 mt-1">
+                              <input type="checkbox" checked={usesOrgTimeout}
+                                onChange={e => patchNumber(i, { ring_timeout_seconds: e.target.checked ? undefined : orgTimeout })} />
+                              Use org default
+                            </label>
+                            {!usesOrgTimeout && (
+                              <>
+                                <input type="range" min={MIN_RING_TIMEOUT_SECONDS} max={MAX_RING_TIMEOUT_SECONDS} step={1}
+                                  value={clampRingTimeout(num.ring_timeout_seconds)}
+                                  onChange={e => patchNumber(i, { ring_timeout_seconds: parseInt(e.target.value, 10) || orgTimeout })}
+                                  className="w-full accent-np-blue mt-1" />
+                                <div className="flex justify-between text-[9px] text-gray-400">
+                                  <span>{MIN_RING_TIMEOUT_SECONDS}s</span>
+                                  <span>{MAX_RING_TIMEOUT_SECONDS}s</span>
+                                </div>
+                              </>
+                            )}
+                          </div>
+
+                          {/* Forward to cell */}
+                          <div>
+                            <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Forward to cell</label>
+                            <input value={num.forward_number || ''}
+                              onChange={e => patchNumber(i, { forward_number: e.target.value })}
+                              placeholder="Off — rings the Hub only"
+                              className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg bg-white font-mono focus:outline-none focus:ring-1 focus:ring-teal/30" />
+                            <p className="text-[9px] text-gray-400 mt-1">
+                              Rings this phone at the same time as the Hub; whoever answers first takes the call, and the phone
+                              sees this line&rsquo;s number as the caller. Keep Ring duration at 15 seconds or less when forwarding:
+                              Twilio adds about 5 seconds, and past roughly 20 seconds the cell&rsquo;s own voicemail answers first,
+                              so the message lands there instead of in the Hub.
+                            </p>
+                          </div>
+
+                          {/* Audio greeting for this line */}
+                          {lineE164 ? (
+                            <VoicemailGreeting lineE164={lineE164} />
+                          ) : (
+                            <p className="text-[10px] text-gray-400">Enter a valid phone number to manage this line&rsquo;s audio greeting.</p>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
 

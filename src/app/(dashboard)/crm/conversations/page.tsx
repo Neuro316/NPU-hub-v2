@@ -15,12 +15,18 @@ import {
 import { createClient } from '@/lib/supabase-browser'
 import { createConversation, fetchContacts } from '@/lib/crm-client'
 import { useWorkspace } from '@/lib/workspace-context'
+import { useOrgLines } from '@/lib/hooks/use-org-lines'
+import { formatUsPhone } from '@/lib/phone'
 import type { CrmContact } from '@/types/crm'
-import { buildTimeline, TimelineStream, type TimelineEntry } from '@/components/crm/comms-timeline'
+import { buildTimeline, TimelineStream, LineBadge, type TimelineEntry } from '@/components/crm/comms-timeline'
 import { VoipCall } from '@/components/crm/twilio-comms'
 
 // Channel is no longer a list filter — one card per contact covers all channels.
 type DirectionFilter = 'both' | 'inbound' | 'outbound'
+
+// Line dropdown value: 'all', or one of the org's numbers (E.164).
+const LINE_ALL = 'all'
+const lineStorageKey = (orgId: string) => `npu_hub_conversations_line:${orgId}`
 
 interface ThreadItem {
   id: string
@@ -33,6 +39,8 @@ interface ThreadItem {
   unread_count: number
   snoozed_until: string | null
   last_preview: string
+  /** The org line this thread most recently used; null = the org default line. */
+  line_e164: string | null
 }
 
 function fmtTime(d: string) {
@@ -82,14 +90,47 @@ export default function ConversationsPage() {
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
-  // New conversation state
-  const [showNewConv, setShowNewConv] = useState(false)
-  const [contactSearch, setContactSearch] = useState('')
-  const [contactResults, setContactResults] = useState<CrmContact[]>([])
-  const [searchingContacts, setSearchingContacts] = useState(false)
+  // ── Lines ──────────────────────────────────────────────────────────────
+  // The org's numbers come from /api/comms/lines (never a browser read of
+  // crm_twilio, which carries credentials). The dropdown renders only when the
+  // org has two or more lines, so a single-line or no-line org (Sensorium) sees
+  // exactly the page it saw before. Selection persists per org.
+  const { lines, defaultLine, loaded: linesLoaded, labelFor } = useOrgLines(currentOrg?.id)
+  const [selectedLine, setSelectedLine] = useState<string>(LINE_ALL)
+  const showLines = lines.length >= 2
 
-  // Load threads from existing conversations table
-  useEffect(() => { loadThreads() }, [])
+  useEffect(() => {
+    if (!currentOrg) return
+    let stored = LINE_ALL
+    try { stored = localStorage.getItem(lineStorageKey(currentOrg.id)) || LINE_ALL } catch { /* private mode */ }
+    setSelectedLine(stored)
+  }, [currentOrg?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A remembered line that is no longer one of the org's numbers falls back to
+  // "All lines" rather than filtering everything out.
+  useEffect(() => {
+    if (!linesLoaded) return
+    if (selectedLine !== LINE_ALL && !lines.some(l => l.phone === selectedLine)) setSelectedLine(LINE_ALL)
+  }, [linesLoaded, lines, selectedLine])
+
+  const chooseLine = (value: string) => {
+    setSelectedLine(value)
+    if (currentOrg) {
+      try { localStorage.setItem(lineStorageKey(currentOrg.id), value) } catch { /* private mode */ }
+    }
+  }
+
+  // Which line a reply or callback leaves from: the dropdown when one is
+  // chosen, else the thread's own line, else null (the server's unchanged
+  // default path: getVoiceCallerId for calls, the Messaging Service for texts).
+  const effectiveLine: string | null =
+    selectedLine !== LINE_ALL ? selectedLine : (selectedThread?.line_e164 || null)
+  const effectiveLineLabel = labelFor(effectiveLine)
+
+  // Load threads from existing conversations table. Re-runs when the line
+  // filter changes (and once the default line is known, since NULL rows belong
+  // to it).
+  useEffect(() => { loadThreads() }, [selectedLine, defaultLine]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadThreads() {
     setLoading(true)
@@ -105,6 +146,14 @@ export default function ConversationsPage() {
       .order('last_message_at', { ascending: false })
       .limit(100)
 
+    // Line filter. NULL line_e164 means "the org's default line", so the default
+    // line's view includes those rows; any other line matches exactly.
+    if (selectedLine !== LINE_ALL) {
+      query = selectedLine === defaultLine
+        ? query.or(`line_e164.eq.${selectedLine},line_e164.is.null`)
+        : query.eq('line_e164', selectedLine)
+    }
+
     const { data } = await query
     if (data) {
       const mapped: ThreadItem[] = data.map((d: any) => ({
@@ -118,6 +167,7 @@ export default function ConversationsPage() {
         unread_count: d.unread_count || 0,
         snoozed_until: d.snoozed_until,
         last_preview: d.last_message_preview || '',
+        line_e164: d.line_e164 || null,
       }))
 
       const filtered = searchQuery
@@ -233,7 +283,12 @@ export default function ConversationsPage() {
       const res = await fetch('/api/sms/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contact_id: selectedThread.contact_id, body: newMessage.trim() }),
+        body: JSON.stringify({
+          contact_id: selectedThread.contact_id,
+          body: newMessage.trim(),
+          // Pinned line, when one applies (dropdown, else the thread's line).
+          ...(effectiveLine ? { line_e164: effectiveLine } : {}),
+        }),
       })
       // Parsed defensively: an error response is not guaranteed to carry a JSON
       // body, and a throw here would land in the catch as a bare "Unexpected
@@ -257,6 +312,12 @@ export default function ConversationsPage() {
       setNewMessage('')
       inputRef.current?.focus()
       loadTimeline(selectedThread)
+      // A pinned send moved the thread onto that line; keep the card in step.
+      if (effectiveLine && selectedThread.line_e164 !== effectiveLine) {
+        const moved = { ...selectedThread, line_e164: effectiveLine }
+        setSelectedThread(moved)
+        setThreads(prev => prev.map(t => (t.id === moved.id ? moved : t)))
+      }
     } catch (e: any) {
       setSendError(e?.message ? `Send failed: ${e.message}` : 'Send failed: network error')
     } finally {
@@ -280,6 +341,12 @@ export default function ConversationsPage() {
     finally { setSearchingContacts(false) }
   }
 
+  // New conversation state
+  const [showNewConv, setShowNewConv] = useState(false)
+  const [contactSearch, setContactSearch] = useState('')
+  const [contactResults, setContactResults] = useState<CrmContact[]>([])
+  const [searchingContacts, setSearchingContacts] = useState(false)
+
   const startConversation = async (contact: CrmContact) => {
     try {
       const convId = await createConversation(contact.id, 'sms', currentOrg?.id || '')
@@ -293,7 +360,7 @@ export default function ConversationsPage() {
         contact_initials: `${contact.first_name?.[0] || ''}${contact.last_name?.[0] || ''}`,
         contact_phone: contact.phone || null, channel: 'sms',
         last_message_at: new Date().toISOString(), unread_count: 0,
-        snoozed_until: null, last_preview: '',
+        snoozed_until: null, last_preview: '', line_e164: null,
       }
       setSelectedThread(thread)
     } catch (e) { console.error(e); alert('Failed to start conversation') }
@@ -326,6 +393,23 @@ export default function ConversationsPage() {
               </button>
             </div>
           </div>
+
+          {/* Line dropdown — only for an org with two or more numbers. */}
+          {showLines && (
+            <select
+              value={selectedLine}
+              onChange={e => chooseLine(e.target.value)}
+              title="Which of your phone lines to show"
+              className="w-full mb-2 px-2.5 py-1.5 text-xs bg-gray-50 border border-gray-100 rounded-lg text-np-dark focus:outline-none focus:ring-1 focus:ring-np-blue/30"
+            >
+              <option value={LINE_ALL}>All lines</option>
+              {lines.map(l => (
+                <option key={l.phone} value={l.phone} title={formatUsPhone(l.phone)}>
+                  {l.nickname || formatUsPhone(l.phone)}
+                </option>
+              ))}
+            </select>
+          )}
 
           <div className="relative">
             <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -385,7 +469,10 @@ export default function ConversationsPage() {
                   <p className={`text-xs truncate ${thread.unread_count > 0 ? 'font-bold text-np-dark' : 'font-medium text-np-dark'}`}>
                     {thread.contact_name}
                   </p>
-                  <span className="text-[8px] text-gray-400 flex-shrink-0 ml-2">{fmtTime(thread.last_message_at)}</span>
+                  <span className="flex items-center gap-1 flex-shrink-0 ml-2">
+                    <LineBadge label={labelFor(thread.line_e164 || defaultLine)} />
+                    <span className="text-[8px] text-gray-400">{fmtTime(thread.last_message_at)}</span>
+                  </span>
                 </div>
                 <p className={`text-[10px] truncate ${thread.unread_count > 0 ? 'text-gray-600 font-medium' : 'text-gray-400'}`}>
                   {thread.last_preview || thread.contact_phone || 'No phone'}
@@ -421,7 +508,10 @@ export default function ConversationsPage() {
                 </div>
                 <div>
                   <h3 className="text-xs font-bold text-np-dark">{selectedThread.contact_name}</h3>
-                  <p className="text-[10px] text-gray-400">{selectedThread.contact_phone || ''} · {selectedThread.channel}</p>
+                  <p className="text-[10px] text-gray-400 flex items-center gap-1.5">
+                    <span>{selectedThread.contact_phone || ''} · {selectedThread.channel}</span>
+                    <LineBadge label={labelFor(selectedThread.line_e164 || defaultLine)} />
+                  </p>
                 </div>
               </div>
               <div className="flex gap-1">
@@ -445,6 +535,7 @@ export default function ConversationsPage() {
                 entries={timeline}
                 emptyLabel="No messages in this conversation yet"
                 onCallBack={startCallBack}
+                lineLabel={labelFor}
               />
               <div ref={bottomRef} />
             </div>
@@ -471,7 +562,10 @@ export default function ConversationsPage() {
                     <Send size={14} className="text-white" />
                   </button>
                 </div>
-                <p className="text-[8px] text-gray-300 mt-1 px-1">{newMessage.length > 0 ? `${newMessage.length} chars · ` : ''}Enter to send</p>
+                <p className="text-[8px] text-gray-300 mt-1 px-1">
+                  {newMessage.length > 0 ? `${newMessage.length} chars · ` : ''}Enter to send
+                  {effectiveLineLabel ? ` · Sending as ${effectiveLineLabel}` : ''}
+                </p>
               </div>
             )}
           </>
@@ -516,12 +610,14 @@ export default function ConversationsPage() {
         </div>
       )}
 
-      {/* Call back — the existing outbound VoipCall component, unmodified. It
-          auto-starts on mount and posts to /api/voice/token with contact_id. */}
+      {/* Call back — the existing outbound VoipCall component. It auto-starts
+          on mount and posts to /api/voice/token with contact_id (and the
+          effective line as the caller ID when one applies). */}
       {callBackContact && (
         <VoipCall
           key={callBackContact.id}
           contact={callBackContact}
+          lineE164={effectiveLine}
           onClose={() => setCallBackContact(null)}
           // Tear the panel down when the call ends so nothing can re-dial, then
           // refresh the thread so the new outbound call appears. VoipCall now

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Phone, PhoneOff, PhoneIncoming, Mic, MicOff } from 'lucide-react'
 import { useVoiceReceiver } from '@/lib/voice-receiver-context'
 import { useWorkspace } from '@/lib/workspace-context'
+import { useOrgLines } from '@/lib/hooks/use-org-lines'
 import { formatUsPhone } from '@/lib/phone'
 
 // Ringing / in-call UI for inbound browser calls. Mounted once in the dashboard
@@ -27,6 +28,10 @@ export default function IncomingCallModal() {
 
   const call = incoming?.call
   const from = incoming?.from || ''
+  // Which line rang. Null for an org with fewer than two lines, so nothing
+  // extra renders there.
+  const { labelFor } = useOrgLines(currentOrg?.id)
+  const lineLabel = labelFor(incoming?.line)
 
   // Reset per call.
   useEffect(() => {
@@ -118,6 +123,11 @@ export default function IncomingCallModal() {
           <p className="text-base font-bold text-np-dark mt-1 truncate max-w-full">{display}</p>
           {callerName && (
             <p className="text-[11px] text-gray-400 font-mono">{formatUsPhone(from)}</p>
+          )}
+          {lineLabel && (
+            <span className="mt-1.5 px-2 py-0.5 rounded-full bg-np-blue/10 text-np-blue text-[9px] font-semibold">
+              via {lineLabel}
+            </span>
           )}
           {phase === 'connected' && (
             <p className="text-xs text-green-600 font-medium mt-1">{mmss(duration)}</p>

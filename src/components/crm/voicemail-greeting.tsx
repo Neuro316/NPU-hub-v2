@@ -14,7 +14,17 @@ import { blobToTwilioWav, canRecordInBrowser } from '@/lib/audio-wav'
 const MAX_MB = 5
 const MAX_SECONDS = 120
 
-export default function VoicemailGreeting() {
+// The greeting endpoint, scoped to one line when lineE164 is given. Without a
+// line every call is exactly what it was: the org-level greeting.
+function greetingApi(orgId: string, lineE164?: string) {
+  return `/api/comms/greeting?org_id=${encodeURIComponent(orgId)}`
+    + (lineE164 ? `&line=${encodeURIComponent(lineE164)}` : '')
+}
+
+export default function VoicemailGreeting({ lineE164 }: {
+  /** Manage the greeting for ONE of the org's numbers instead of the org default. */
+  lineE164?: string
+} = {}) {
   const { currentOrg } = useWorkspace()
 
   const [loading, setLoading] = useState(true)
@@ -40,7 +50,7 @@ export default function VoicemailGreeting() {
     if (!currentOrg) return
     setLoading(true)
     try {
-      const res = await fetch(`/api/comms/greeting?org_id=${encodeURIComponent(currentOrg.id)}`)
+      const res = await fetch(greetingApi(currentOrg.id, lineE164))
       const data = await res.json()
       if (res.ok) {
         setGreetingUrl(data.greeting_url || null)
@@ -52,7 +62,7 @@ export default function VoicemailGreeting() {
     } finally {
       setLoading(false)
     }
-  }, [currentOrg])
+  }, [currentOrg, lineE164])
 
   useEffect(() => { load() }, [load])
 
@@ -72,6 +82,7 @@ export default function VoicemailGreeting() {
       const form = new FormData()
       form.append('file', blob, name)
       form.append('org_id', currentOrg.id)
+      if (lineE164) form.append('line', lineE164)
       const res = await fetch('/api/comms/greeting', { method: 'POST', body: form })
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error || 'Upload failed')
@@ -149,7 +160,7 @@ export default function VoicemailGreeting() {
     if (!currentOrg) return
     setBusy('removing'); setError('')
     try {
-      const res = await fetch(`/api/comms/greeting?org_id=${encodeURIComponent(currentOrg.id)}`, { method: 'DELETE' })
+      const res = await fetch(greetingApi(currentOrg.id, lineE164), { method: 'DELETE' })
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error || 'Could not remove the greeting')
       setGreetingUrl(null); setUpdatedAt(null); setFilename(null)
@@ -164,12 +175,24 @@ export default function VoicemailGreeting() {
   const mmss = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 
   return (
-    <div className="border-t border-gray-100 pt-4">
-      <h4 className="text-xs font-semibold text-np-dark mb-1">Voicemail Greeting</h4>
-      <p className="text-[10px] text-gray-400 mb-3">
-        What callers hear before the beep. Upload an MP3 or WAV, or record one here. With no greeting
-        set, callers hear the default &ldquo;Please leave a message after the tone.&rdquo;
-      </p>
+    <div className={lineE164 ? '' : 'border-t border-gray-100 pt-4'}>
+      {lineE164 ? (
+        <>
+          <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Audio greeting</label>
+          <p className="text-[10px] text-gray-400 mb-2 mt-0.5">
+            Upload an MP3 or WAV, or record one here. When this line has none, callers hear its greeting
+            text above; when that is empty too, the org greeting.
+          </p>
+        </>
+      ) : (
+        <>
+          <h4 className="text-xs font-semibold text-np-dark mb-1">Voicemail Greeting</h4>
+          <p className="text-[10px] text-gray-400 mb-3">
+            What callers hear before the beep. Upload an MP3 or WAV, or record one here. With no greeting
+            set, callers hear the default &ldquo;Please leave a message after the tone.&rdquo;
+          </p>
+        </>
+      )}
 
       {/* Current greeting */}
       <div className="rounded-lg border border-gray-100 bg-gray-50/50 p-3 mb-3">
@@ -198,7 +221,9 @@ export default function VoicemailGreeting() {
           </>
         ) : (
           <p className="text-[10px] text-gray-500">
-            No custom greeting — callers hear the default message.
+            {lineE164
+              ? 'No audio greeting on this line — callers hear its greeting text, else the org greeting.'
+              : 'No custom greeting — callers hear the default message.'}
           </p>
         )}
       </div>

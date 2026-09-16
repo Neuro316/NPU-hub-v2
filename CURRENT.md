@@ -4,6 +4,44 @@ Running state of in-flight Hub work. Newest first.
 
 ---
 
+## 2026-09-16 — Multi-line Conversations (branch `feat/multi-line-conversations`)
+
+**Status: code written on the branch, NOT committed. Migrations 207 and 208 APPLIED
+2026-09-16 via apply_migration (versions 20260916104713, 20260916104738).** Design:
+`docs/HUB_Multi_Line_Conversations_Design.md`. Snapshot check for the Neuro Progeny TwiML:
+`npm run check:twiml`.
+
+Post-apply distribution: NP 15 × `+18284155050`, 1 × `+18289009821`, Sensorium 2 NULL.
+208 changed the 1 NP `branding` row. The 9821 entry's nickname in `crm_twilio.numbers` was
+renamed `Campaign` → `WNW Office` with a targeted `jsonb_set` (this is what the dropdown
+shows). Still to do in the Twilio console after deploy: point the 9821 voice webhook at
+`/api/twilio/inbound-call`, then set forward number, 15 s ring timeout and greeting text
+under CRM Settings > Twilio > Line options.
+
+Design D1 (is `+18289009821` in the NP Messaging Service sender pool?) is **closed as
+self-correcting, no console dependency**: `sendOrgSms` sends a pinned From together with the
+service SID and falls back to From-only on Twilio 21712. Keep as shipped.
+
+### Follow-ups from multi-line
+
+1. **`inbound-call` lacks Twilio signature validation** — security, next session.
+   `inbound-sms` and `message-status` validate and reject before any write; the voice
+   webhook does not.
+2. **`call-status` attributes by "latest ringing row"** (`.in('status', ['ringing',
+   'in-progress']).order(started_at).limit(1)`) rather than by CallSid. Two overlapping
+   calls mis-attribute. It also matches `'in-progress'`, which the CHECK spells
+   `'in_progress'`.
+3. **`voice/answered` writes `status='answered'`**, which the live `call_logs` CHECK does
+   not allow. Read 2026-09-16 via `pg_constraint`: `ringing, in_progress, completed, missed,
+   voicemail, failed`. The update fails silently on every answered call. `ring-complete` now
+   closes the row as `'completed'` from a live status, so answered calls no longer sit at
+   `ringing`; the "who answered" mark still needs a valid status (or a column of its own).
+4. **`sequences/process-step` and `sms/process-scheduled` are not line-aware.** Both use the
+   global `sendSms` with the env Messaging Service, so the sender is whatever the pool picks.
+   They should pin `from` to the NP line explicitly.
+
+---
+
 ## 2026-09-03 — Accounting CRM enrol: fixed and deployed, repair held
 
 **Status: shipped, and CONFIRMED WORKING by the operator (Ella, 2026-09-03).
