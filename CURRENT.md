@@ -4,6 +4,34 @@ Running state of in-flight Hub work. Newest first.
 
 ---
 
+## 2026-09-16 — Incoming-call banner (branch `fix/incoming-call-banner`, uncommitted)
+
+**Bug:** the ringing modal vanished on any click and the ring stopped. **Root cause was not
+the UI.** `WorkspaceContext` replaces the `user` object on every Supabase
+`onAuthStateChange` event (SIGNED_IN / TOKEN_REFRESHED fire on window focus and token
+refresh); `VoiceReceiverProvider`'s lifecycle effect depended on that object, so each event
+re-ran it and `teardown()` destroyed the Twilio Device mid-ring. The effect now keys on
+`user.id`. There was never a CRM-only mount: the provider and ringer have always been in
+`src/app/(dashboard)/layout.tsx`.
+
+**Client-side only.** No TwiML, API route, or `inbound-voice.ts` change; `npm run check:twiml`
+still passes.
+
+- `src/components/incoming-call-banner.tsx` (new) replaces `crm/incoming-call-modal.tsx`
+  (deleted): fixed, full-width, `z-[1000]`, above the sidebar and mobile bar; no backdrop,
+  no click-outside, no Escape, no auto-dismiss. Ringing → Answer / Decline; connected →
+  duration, Mute, Hang up. Newest ringing call on top, connected call beneath, the rest
+  queued and counted. Layout offsets content and the mobile bar by the banner height.
+- Receiver status pill (top-right, every page): Calls ring here / Connecting / Not
+  receiving calls + Reconnect / Browser calling off + Enable.
+- Provider: `calls[]` queue (newest first), `answer` / `decline` / `hangUp` / `setMuted`,
+  Device option `allowIncomingWhileBusy: true` so a second call rings instead of being
+  auto-rejected; answering a second call while one is live shows an inline
+  "End current call and answer?" Yes / Cancel in the banner, and only Yes ends and accepts.
+  `browser-calling-toggle.tsx` unchanged; it reads this same global provider.
+
+---
+
 ## 2026-09-16 — Multi-line Conversations (branch `feat/multi-line-conversations`)
 
 **Status: code written on the branch, NOT committed. Migrations 207 and 208 APPLIED

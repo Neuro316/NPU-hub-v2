@@ -5,7 +5,7 @@ import { WorkspaceProvider } from '@/lib/workspace-context'
 import { PermissionsProvider } from '@/lib/hooks/use-permissions'
 import { SidebarProvider, useSidebar } from '@/lib/sidebar-context'
 import { VoiceReceiverProvider } from '@/lib/voice-receiver-context'
-import IncomingCallModal from '@/components/crm/incoming-call-modal'
+import { IncomingCallBanner, useCallBannerVisible, CALL_BANNER_HEIGHT_PX } from '@/components/incoming-call-banner'
 import { Sidebar } from '@/components/sidebar'
 import { TrackerInit } from '@/components/tracker-init'
 import { HelpBot } from '@/components/help-bot'
@@ -16,6 +16,10 @@ import { usePathname } from 'next/navigation'
 function DashboardContent({ children }: { children: React.ReactNode }) {
   const { isCollapsed, openMobile, closeMobile } = useSidebar()
   const pathname = usePathname()
+  // While a call banner is pinned to the top, push the mobile bar and the page
+  // content down by its height so nothing sits underneath it.
+  const bannerVisible = useCallBannerVisible()
+  const bannerOffset = bannerVisible ? CALL_BANNER_HEIGHT_PX : 0
 
   // Close mobile sidebar on route change
   useEffect(() => {
@@ -27,7 +31,10 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
       <Sidebar />
 
       {/* Mobile top bar */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 z-30 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3">
+      <div
+        className="lg:hidden fixed left-0 right-0 z-30 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3"
+        style={{ top: bannerOffset }}
+      >
         <button onClick={openMobile} className="p-1.5 rounded-lg hover:bg-gray-100">
           <Menu className="w-5 h-5 text-np-dark" />
         </button>
@@ -38,11 +45,14 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* Main content */}
-      <main className={`
-        p-6 transition-all duration-200
-        pt-20 lg:pt-6
-        ${isCollapsed ? 'lg:ml-16' : 'lg:ml-64'}
-      `}>
+      <main
+        className={`
+          p-6 transition-all duration-200
+          pt-20 lg:pt-6
+          ${isCollapsed ? 'lg:ml-16' : 'lg:ml-64'}
+        `}
+        style={bannerVisible ? { marginTop: bannerOffset } : undefined}
+      >
         {children}
       </main>
     </div>
@@ -64,8 +74,10 @@ export default function DashboardLayout({
             <TrackerInit />
             <DynamicFavicon />
             <DashboardContent>{children}</DashboardContent>
-            {/* Calls can arrive on any page — render the ringer above everything. */}
-            <IncomingCallModal />
+            {/* Calls can arrive on any page — the banner is pinned above
+                everything and lives outside the page tree, so navigating
+                between CRM and non-CRM routes never unmounts it. */}
+            <IncomingCallBanner />
             <HelpBot />
           </SidebarProvider>
         </VoiceReceiverProvider>
