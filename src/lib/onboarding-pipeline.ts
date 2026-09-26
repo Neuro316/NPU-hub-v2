@@ -15,13 +15,15 @@
 //   5.  Create enrollment record (if track requires it)
 //   6.  Assign cohort_members (if cohort provided)
 //   7.  Auto-join cohort channels
-//   8.  Upsert np_hrv_participant_map (pre-links xReg)
-//   9.  Backlink existing np_hrv_sessions by email → participant_id
+//   8.  Flag an xReg/enrollment email mismatch for manual intervention
+//   9.  (DISABLED by ruling, Addendum C §KJ, 2026-09-26) Backlink np_hrv_sessions by email
 //   10. Create np_client_record stub (Enrolled + Mastermind only)
 //   11. Write np_onboarding_log (full audit)
 //
-// Email is the single linking key between all systems.
-// If email differs between xReg and Hub, a manual intervention flag is set.
+// Email links CRM, auth and enrollment. It is NOT a key to xRegulation identity:
+// Addendum C §JM/§KJ (2026-09-26) rule that sessions join to people only through
+// np_hrv_participant_map on xreg_user_id, supplied by pairing. If the xReg email
+// differs from the enrollment email, a manual intervention flag is set.
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
@@ -421,57 +423,49 @@ export async function runOnboardingPipeline(
     }
   }
 
-  // ── STEP 6: np_hrv_participant_map — pre-link xReg ─────────────────────
-  // This ensures xReg knows about this participant before they open the app.
-  // When they log into xReg with the same email, sessions auto-link.
-  try {
-    const xregEmail = (params.xregEmail || email).toLowerCase()
-    const { error: mapErr } = await db
-      .from('np_hrv_participant_map')
-      .upsert({
-        xreg_user_email: xregEmail,
-        xreg_user_name:  fullName,
-        participant_id:  profileId || null,
-        org_id:          NP_ORG_ID,
-        enrollment_track: track,
-        synced_at:       new Date().toISOString(),
-      }, { onConflict: 'xreg_user_email' })
-
-    if (mapErr) {
-      steps.push({ step: 'xreg_map', action: 'upsert_failed', error: mapErr.message })
-    } else {
-      steps.push({ step: 'xreg_map', action: 'upserted' })
-    }
-
-    // Flag if xReg email differs from primary email
-    if (params.xregEmail && params.xregEmail.toLowerCase() !== email) {
-      requiresManualIntervention = true
-      manualInterventionReason = `xReg email (${params.xregEmail}) differs from enrollment email (${email}). Sessions may not auto-link.`
-      steps.push({ step: 'xreg_map', action: 'email_mismatch_flagged', note: manualInterventionReason })
-    }
-  } catch (e: any) {
-    // np_hrv_participant_map may not have org_id column — gracefully skip
-    steps.push({ step: 'xreg_map', action: 'skipped', note: (e as any).message })
+  // ── STEP 6: xReg email mismatch flag ───────────────────────────────────
+  // ⚠ The np_hrv_participant_map pre-link that used to sit here was DELETED by
+  // ruling (Addendum C §KE, Cameron, 2026-09-26). It tried to identify a vendor
+  // account from an email, which §JM's Shane finding measured wrong for the
+  // first person anybody checked; pairing supplies the vendor id instead. It had
+  // also never succeeded once (27 of 27 onboardings logged upsert_failed).
+  //
+  // This flag is KEPT ON PURPOSE. It is the only thing in the pipeline that
+  // notices the exact condition §JM is about: the vendor holding a different
+  // email from the one the person enrolled with. Its step name is unchanged so
+  // existing readers of np_onboarding_log see the same shape.
+  if (params.xregEmail && params.xregEmail.toLowerCase() !== email) {
+    requiresManualIntervention = true
+    manualInterventionReason = `xReg email (${params.xregEmail}) differs from enrollment email (${email}). Sessions may not auto-link.`
+    steps.push({ step: 'xreg_map', action: 'email_mismatch_flagged', note: manualInterventionReason })
   }
 
-  // ── STEP 7: Backlink existing xReg sessions → profile ─────────────────
+  // ── STEP 7: ⚠⚠ DISABLED BY RULING, NOT DELETED. Addendum C §KJ, Cameron, 2026-09-26. ──────
+  //
+  // It wrote `np_hrv_sessions.participant_id` keyed on `xreg_user_email = email` -- claiming a
+  // person's physiology from an email match. §JM's Shane finding measured that key being wrong for
+  // the first person anybody checked, and §KJ rules that sessions join to people through
+  // `np_hrv_participant_map` on `xreg_user_id`, never on email.
+  //
+  // ⚠ DISABLED RATHER THAN REMOVED, ON PURPOSE, AND THE RULING SAYS SO: "disabled (deleted when
+  // pairing lands)". A step silently absent is indistinguishable from a step somebody forgot; an
+  // explicit refusal that records itself is a DECISION, and the log says which.
+  //
+  // ⚠ IT IS ONE OF FIVE IDENTICAL WRITERS (§KJ). The other four -- the platform's STEP 7, both
+  // `/api/invite` sites there, and this repo's `xreg-participant-sync` -- are disabled the same
+  // way. Re-enabling any one of them alone re-opens the email key for everybody.
+  //
+  // Note for the record: in THIS repo the pipeline's only caller is the §KF cron, which never
+  // reached it, so this step has never executed in production (np_onboarding_log holds zero
+  // `xreg_cron` rows). Disabled anyway: reachability is not a guard.
   if (profileId) {
-    try {
-      const { data: linked } = await db
-        .from('np_hrv_sessions')
-        .update({ participant_id: profileId })
-        .eq('xreg_user_email', email)
-        .is('participant_id', null)
-        .select('id')
-
-      if (linked && linked.length > 0) {
-        steps.push({ step: 'xreg_sessions_backlink', action: 'linked', count: linked.length })
-      } else {
-        steps.push({ step: 'xreg_sessions_backlink', action: 'none_pending' })
-      }
-    } catch (e: any) {
-      steps.push({ step: 'xreg_sessions_backlink', action: 'error', error: (e as any).message })
-    }
+    steps.push({
+      step: 'xreg_sessions_backlink',
+      action: 'disabled_by_ruling',
+      note: 'Addendum C §KJ (2026-09-26): sessions join to people through np_hrv_participant_map '
+          + 'on xreg_user_id, never on email. This email-keyed backlink is disabled; pairing '
+          + 'supplies the vendor id instead.',
+    })
   }
 
   // ── STEP 8: NP Client Record stub ─────────────────────────────────────

@@ -2,16 +2,37 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // xRegulation → Hub Participant Sync (CRON)
 //
-// Runs on a schedule (Vercel cron or external trigger).
+// ⚠⚠ DISABLED BY RULING, NOT FIXED. Addendum C §KF, Cameron, 2026-09-26.
+//
+// The first query below selects `enrollment_track`, which is not a column on
+// np_hrv_participant_map (it belongs to np_client_records), so every run since
+// the route was written has returned 500 at that line and nothing downstream
+// has ever executed. THE ONE-WORD FIX IS THE WRONG FIX: the moment that select
+// succeeds, this cron begins creating CRM contacts and rewriting participant_id
+// on the map from 65 rows of unconfirmed `auto_backfill` data, every 30 minutes.
+// §JM rules that auto_backfill "is not a trust level, it is the absence of one".
+//
+// So the route now REFUSES explicitly (DISABLED_BY_RULING_KF below), and its
+// */30 schedule was removed from vercel.json in the same change. A cron that
+// 500s is indistinguishable from a cron somebody turned off; a refusal that
+// names its ruling is a decision. Do NOT correct the column name.
+//
+// Re-enable condition, as ruled: trust ruled (§JM, done) AND the map confirmed
+// by hand (not done). Both, not either. And before flipping the constant, decide
+// what the two np_hrv_participant_map.participant_id writers below should do --
+// they would repoint an `inferred` or `confirmed` row by an email match.
+//
+// Original design (kept for the day it is re-enabled):
 // Reads np_hrv_participant_map, syncs each external participant into Hub CRM.
 //
 // For each xReg participant:
 //   1. Skip internal team emails
 //   2. Lookup contact by email
-//      - EXISTS → update neuroreport_linked fields, backlink sessions
+//      - EXISTS → update neuroreport_linked fields
 //      - NEW    → create contact + create profile (silent) + generate invite link
 //   3. Upsert np_client_record (for enrolled/mastermind tracks)
 //   4. Write np_onboarding_log entry
+//   (the email-keyed np_hrv_sessions backlink is disabled by §KJ; see below)
 //
 // Auth: Authorization: Bearer CRON_SECRET header
 //
@@ -22,6 +43,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { runOnboardingPipeline, NP_ORG_ID, NP_PIPELINE_ID, SITE_URL } from '@/lib/onboarding-pipeline'
+
+// ⚠ Flip to false ONLY when both re-enable conditions in the header hold, and
+// restore the vercel.json schedule in the same commit. Kept as a constant rather
+// than dead code so the disable is greppable and the flip is one visible line.
+const DISABLED_BY_RULING_KF = true
 
 function adminSupabase() {
   return createClient(
@@ -44,6 +70,20 @@ export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('authorization')
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // ── §KF refusal. Auth above is kept so an unauthenticated caller still gets
+  // 401 and cannot use this route to learn anything. ─────────────────────
+  if (DISABLED_BY_RULING_KF) {
+    return NextResponse.json({
+      disabled: true,
+      reason:   'disabled_by_ruling_KF',
+      detail:   'Addendum C §KF, Cameron, 2026-09-26: this sync is disabled by ruling, not fixed. '
+              + 'Its first query names a phantom column and has never succeeded; correcting it would '
+              + 'start rewriting the CRM from 65 unconfirmed auto_backfill map rows every 30 minutes.',
+      re_enable_condition: 'trust ruled (§JM, done) AND np_hrv_participant_map confirmed by hand '
+              + '(not done). Both. Then flip DISABLED_BY_RULING_KF and restore the vercel.json schedule.',
+    }, { status: 503 })
   }
 
   const dryRun = req.nextUrl.searchParams.get('dry_run') === 'true'
@@ -112,23 +152,25 @@ export async function GET(req: NextRequest) {
           xreg_user_id:          p.xreg_user_id || null,
         }).eq('id', existing.id).eq('org_id', NP_ORG_ID)
 
-        // Backlink any orphaned sessions if profile exists
-        if (existing.mastermind_user_id) {
-          await supabase
-            .from('np_hrv_sessions')
-            .update({ participant_id: existing.mastermind_user_id })
-            .eq('xreg_user_email', email)
-            .is('participant_id', null)
-        }
+        // ⚠ DISABLED BY RULING, NOT DELETED. Addendum C §KJ, Cameron, 2026-09-26. This wrote
+        // `np_hrv_sessions.participant_id` keyed on `xreg_user_email = email`, claiming a person's
+        // physiology from an email match. §JM's Shane finding measured that key wrong for the first
+        // person checked. Sessions now join through `np_hrv_participant_map` on `xreg_user_id`.
+        // One of FIVE identical writers (§KJ): this, the pipeline's STEP 7 in both repos, and both
+        // `/api/invite` sites in the platform. Re-enabling any one re-opens the email key for everybody.
 
-        // Update np_hrv_participant_map with profile link if we have it
-        if (existing.mastermind_user_id && !p.participant_id) {
-          await supabase.from('np_hrv_participant_map')
-            .update({ participant_id: existing.mastermind_user_id })
-            .eq('xreg_user_email', email)
-        }
+        // ⚠ DISABLED, SAME RULING, DIFFERENT TABLE. This set `np_hrv_participant_map.participant_id`
+        // from an email match. It is a MAP writer, not a session writer, and §KJ names it separately:
+        // an `.update()` leaves `trust` alone, so it would repoint an existing `inferred` or
+        // `confirmed` row by the disqualified key. Whoever re-enables §KF's cron decides what this
+        // becomes; it is not restored by flipping DISABLED_BY_RULING_KF alone.
 
-        results.push({ email, status: 'updated', contact_id: existing.id })
+        results.push({
+          email, status: 'updated', contact_id: existing.id,
+          // ⚠ Named so a reader does not take the absence of a link count as "there were none".
+          sessions_backlink: 'disabled_by_ruling_KJ',
+          map_link:          'disabled_by_ruling_KJ',
+        })
         updated++
       } catch (e: any) {
         results.push({ email, status: 'error', error: e.message })
@@ -175,14 +217,14 @@ export async function GET(req: NextRequest) {
           errors:        result.errors,
           requires_manual: result.requiresManualIntervention,
           manual_reason:   result.manualInterventionReason,
+          // ⚠ ALWAYS this value since §KJ -- see the note on the update branch above.
+          map_link:        'disabled_by_ruling_KJ',
         })
 
-        // Update participant_map with new profile_id
-        if (result.profileId) {
-          await supabase.from('np_hrv_participant_map')
-            .update({ participant_id: result.profileId })
-            .eq('xreg_user_email', email)
-        }
+        // ⚠ DISABLED BY RULING, NOT DELETED. Addendum C §KJ, Cameron, 2026-09-26. This set
+        // `np_hrv_participant_map.participant_id` for the newly created profile, keyed on
+        // `xreg_user_email = email`. Same map-writer note as the update branch: it would bind a
+        // vendor account to a person by the disqualified key and leave `trust` untouched.
 
         if (result.success) created++
         else { errored++; }
