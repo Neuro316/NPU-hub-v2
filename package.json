@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
-    "check:twiml": "node scripts/np-twiml-snapshot.mjs"
+    "check:twiml": "node scripts/np-twiml-snapshot.mjs",
+    "check:kj": "node scripts/hrv/kj-hub-writers-tamper.cjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",

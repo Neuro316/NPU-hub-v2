@@ -4,7 +4,21 @@ Running state of in-flight Hub work. Newest first.
 
 ---
 
+## 2026-09-26 — §KJ hub-side: email-keyed identity writers disabled, §KF cron disabled by ruling (branch `fix/kj-hub-side`)
+
+**Record: `docs/HUB_KJ_Hub_Side_2026-09-26.md`. Rulings: Addendum C §JM / §KE / §KF / §KJ
+(platform repo).** Two session writers and two map writers onto the xRegulation identity tables
+disabled, not deleted; STEP 6 pre-link deleted with its email-mismatch flag kept; the
+`xreg-participant-sync` cron refuses with a 503 naming §KF and its `*/30` schedule is out of
+`vercel.json`. Column name deliberately not corrected. Harness `npm run check:kj`, four selectors,
+all measured live. Finding for the platform side: the hub's onboarding pipeline has **never**
+executed in production (`np_onboarding_log` has zero `xreg_cron` rows; its only caller is that cron).
+
+---
+
 ## 2026-09-16 — Incoming-call banner (branch `fix/incoming-call-banner`, uncommitted)
+
+> ⚠ STALE as of 2026-09-26: committed and merged to main as `51c6942` / `eaa462a` on 2026-09-16 and deployed; the NP line is verified, the WNW line untested. Not rewritten here; CURRENT.md cleanup is a separate housekeeping step.
 
 **Bug:** the ringing modal vanished on any click and the ring stopped. **Root cause was not
 the UI.** `WorkspaceContext` replaces the `user` object on every Supabase
@@ -33,6 +47,8 @@ still passes.
 ---
 
 ## 2026-09-16 — Multi-line Conversations (branch `feat/multi-line-conversations`)
+
+> ⚠ STALE as of 2026-09-26: committed and merged to main as `8d6cb52` on 2026-09-16 and deployed; the Twilio console cutover for `+18289009821` is still to do. Not rewritten here; CURRENT.md cleanup is a separate housekeeping step.
 
 **Status: code written on the branch, NOT committed. Migrations 207 and 208 APPLIED
 2026-09-16 via apply_migration (versions 20260916104713, 20260916104738).** Design:
