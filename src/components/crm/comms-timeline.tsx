@@ -11,6 +11,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { fmtClock, fmtFull, fmtDuration, groupByDay } from '@/lib/date-format'
 import {
   Voicemail, Loader2, PhoneMissed, ArrowUpRight, ArrowDownLeft,
   Check, CheckCheck, Clock, Paperclip, PhoneCall,
@@ -94,12 +95,6 @@ export async function buildTimeline(
   return filtered
 }
 
-// ── Formatting helpers ──
-function fmtDuration(s: number) { return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` }
-function fmtClock(d: string) {
-  return new Date(d).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
-}
-
 // Call-back affordance shared by the voicemail + missed/incoming call cards.
 // Presentational only: the page that owns the call UI passes onCallBack.
 function CallBackButton({ onCallBack, label = 'Call back' }: {
@@ -143,6 +138,9 @@ export function VoicemailPlayer({ entry, onCallBack, lineLabel }: {
           <span className="text-[8px] text-gray-400">· {fmtDuration(entry.duration_seconds!)}</span>
         )}
         <LineBadge label={lineLabel} />
+        <span className="text-[8px] text-gray-400" title={fmtFull(entry.created_at)}>
+          {fmtClock(entry.created_at)}
+        </span>
         {onCallBack && <span className="ml-auto"><CallBackButton onCallBack={onCallBack} /></span>}
       </div>
       {entry.recording_available ? (
@@ -185,7 +183,10 @@ function TextBubble({ entry }: { entry: TimelineEntry }) {
         )}
         {entry.body && <p className="text-xs whitespace-pre-wrap break-words">{entry.body}</p>}
         <div className={`flex items-center gap-1 mt-0.5 ${isOut ? 'justify-end' : 'justify-start'}`}>
-          <span className={`text-[7px] ${isOut ? 'text-white/50' : 'text-gray-400'}`}>{fmtClock(entry.created_at)}</span>
+          <span className={`text-[7px] ${isOut ? 'text-white/50' : 'text-gray-400'}`}
+            title={fmtFull(entry.created_at)}>
+            {fmtClock(entry.created_at)}
+          </span>
           {isOut && entry.status === 'delivered' && <CheckCheck size={10} className="text-white/50" />}
           {isOut && entry.status === 'sent' && <Check size={10} className="text-white/50" />}
           {isOut && entry.status === 'queued' && <Clock size={10} className="text-white/50" />}
@@ -215,7 +216,9 @@ function CallRow({ entry, onCallBack, lineLabel }: {
           {entry.direction === 'outbound' ? 'Outgoing' : 'Incoming'} {isMissed ? 'call · Missed' : 'call'}
           {(entry.duration_seconds ?? 0) > 0 ? ` · ${fmtDuration(entry.duration_seconds!)}` : ''}
         </span>
-        <span className="text-[8px] text-gray-300 ml-1">{fmtClock(entry.created_at)}</span>
+        <span className="text-[8px] text-gray-400 ml-1" title={fmtFull(entry.created_at)}>
+          {fmtClock(entry.created_at)}
+        </span>
         <LineBadge label={lineLabel} />
         {showCallBack && (
           <span className="ml-1.5"><CallBackButton onCallBack={onCallBack!} /></span>
@@ -240,19 +243,35 @@ export function TimelineStream({ entries, emptyLabel = 'No messages yet', onCall
   }
   const labelOf = (entry: TimelineEntry) =>
     lineLabel && entry.line_e164 ? lineLabel(entry.line_e164) : null
+
+  // One heading per calendar day. Entries arrive oldest first, so consecutive
+  // grouping preserves that order. Without this, every item shows a clock time
+  // with nothing saying which day it belongs to, and a thread spanning weeks
+  // reads as one long afternoon.
+  const days = groupByDay(entries, e => e.created_at)
+
   return (
     <div className="space-y-2">
-      {entries.map(entry => {
-        if (entry.kind === 'text') return <TextBubble key={entry.id} entry={entry} />
-        if (entry.kind === 'voicemail') {
-          return (
-            <div key={entry.id} className="flex justify-start">
-              <VoicemailPlayer entry={entry} onCallBack={onCallBack} lineLabel={labelOf(entry)} />
-            </div>
-          )
-        }
-        return <CallRow key={entry.id} entry={entry} onCallBack={onCallBack} lineLabel={labelOf(entry)} />
-      })}
+      {days.map(day => (
+        <div key={day.key} className="space-y-2">
+          <div className="flex items-center gap-2 pt-2">
+            <div className="flex-1 h-px bg-gray-100" />
+            <span className="text-[9px] font-medium text-gray-400 whitespace-nowrap">{day.label}</span>
+            <div className="flex-1 h-px bg-gray-100" />
+          </div>
+          {day.items.map(entry => {
+            if (entry.kind === 'text') return <TextBubble key={entry.id} entry={entry} />
+            if (entry.kind === 'voicemail') {
+              return (
+                <div key={entry.id} className="flex justify-start">
+                  <VoicemailPlayer entry={entry} onCallBack={onCallBack} lineLabel={labelOf(entry)} />
+                </div>
+              )
+            }
+            return <CallRow key={entry.id} entry={entry} onCallBack={onCallBack} lineLabel={labelOf(entry)} />
+          })}
+        </div>
+      ))}
     </div>
   )
 }

@@ -215,10 +215,19 @@ export async function bumpConversation(
     currentUnread?: number;
     /** Org line (E.164) this event used; records the thread's most recent line. */
     lineE164?: string | null;
+    /**
+     * The EVENT's own timestamp (ISO), not the moment this ran. Drives
+     * last_activity_at, which the thread list orders by. Omit only when the
+     * event genuinely has no timestamp of its own, in which case now() is used.
+     */
+    occurredAt?: string | null;
   }
 ) {
+  const nowIso = new Date().toISOString();
+  const occurredAt = opts.occurredAt || nowIso;
+
   const updates: Record<string, unknown> = {
-    last_message_at: new Date().toISOString(),
+    last_message_at: nowIso,
     last_message_preview: (opts.preview || '').slice(0, 120),
     last_direction: opts.direction,
   };
@@ -238,7 +247,39 @@ export async function bumpConversation(
   // a conversation, and leaving it hidden mid-exchange is the wrong behavior.
   // Safe against snooze — snoozing writes snoozed_until only, never status.
   updates.status = 'open';
-  await supabase.from('conversations').update(updates).eq('id', conversationId);
+
+  // last_activity_at is the thread list's ORDER BY (migration 209). Two writers
+  // maintain it and they must agree:
+  //   - the DB triggers trg_conv_activity_from_calls / _from_messages, which
+  //     fire on the call_logs or crm_messages row itself, and
+  //   - this function, for the callers that bump before or without such a row.
+  // Both are FORWARD ONLY, so whichever runs second cannot drag the thread
+  // backwards. Reading first costs one round trip and keeps the rule in one
+  // shape; the triggers remain the authority if this read races.
+  const { data: current } = await supabase
+    .from('conversations')
+    .select('last_activity_at')
+    .eq('id', conversationId)
+    .maybeSingle();
+  const currentActivity = current?.last_activity_at as string | null | undefined;
+  if (!currentActivity || new Date(occurredAt).getTime() > new Date(currentActivity).getTime()) {
+    updates.last_activity_at = occurredAt;
+  }
+
+  // Verify by ROW COUNT, never by `error`. An RLS-filtered UPDATE returns
+  // error null and zero rows, so a silent no-op would otherwise look like a
+  // success here.
+  const { count, error } = await supabase
+    .from('conversations')
+    .update(updates, { count: 'exact' })
+    .eq('id', conversationId);
+  if (error) {
+    console.warn(`bumpConversation failed for ${conversationId}: ${error.message}`);
+  } else if (!count) {
+    console.warn(
+      `bumpConversation matched 0 rows for ${conversationId}. The row is missing or RLS filtered it out.`
+    );
+  }
 }
 
 // ─── Find Contact by Phone ───

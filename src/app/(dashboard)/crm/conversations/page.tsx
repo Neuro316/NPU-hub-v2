@@ -17,6 +17,7 @@ import { createConversation, fetchContacts } from '@/lib/crm-client'
 import { useWorkspace } from '@/lib/workspace-context'
 import { useOrgLines } from '@/lib/hooks/use-org-lines'
 import { formatUsPhone } from '@/lib/phone'
+import { fmtListStamp, fmtFull } from '@/lib/date-format'
 import type { CrmContact } from '@/types/crm'
 import { buildTimeline, TimelineStream, LineBadge, type TimelineEntry } from '@/components/crm/comms-timeline'
 import { VoipCall } from '@/components/crm/twilio-comms'
@@ -35,31 +36,14 @@ interface ThreadItem {
   contact_initials: string
   contact_phone: string | null
   channel: string
-  last_message_at: string
+  /** Newest event of any kind on this thread: text, call, voicemail or missed. */
+  last_activity_at: string
   unread_count: number
   snoozed_until: string | null
   last_preview: string
   /** The org line this thread most recently used; null = the org default line. */
   line_e164: string | null
 }
-
-function fmtTime(d: string) {
-  const diff = Date.now() - new Date(d).getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 1) return 'now'
-  if (mins < 60) return `${mins}m`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h`
-  const days = Math.floor(hrs / 24)
-  if (days < 7) return `${days}d`
-  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-}
-
-function fmtFullTime(d: string) {
-  return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })
-}
-
-function fmtDuration(s: number) { return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` }
 
 export default function ConversationsPage() {
   const supabase = createClient()
@@ -143,7 +127,12 @@ export default function ConversationsPage() {
       // (Previously there was NO status filter at all, so archiving — which was
       // itself failing on the CHECK constraint — could never have hidden a thread.)
       .neq('status', 'closed')
-      .order('last_message_at', { ascending: false })
+      // Order by ANY activity, not only texts. last_activity_at is maintained
+      // by migration 209's triggers plus bumpConversation, from each event's
+      // own timestamp. NULLS LAST keeps threads with no events at the bottom;
+      // last_message_at is the tiebreak for any row 209's backfill left null.
+      .order('last_activity_at', { ascending: false, nullsFirst: false })
+      .order('last_message_at', { ascending: false, nullsFirst: false })
       .limit(100)
 
     // Line filter. NULL line_e164 means "the org's default line", so the default
@@ -163,7 +152,7 @@ export default function ConversationsPage() {
         contact_initials: `${d.contacts.first_name?.[0] || ''}${d.contacts.last_name?.[0] || ''}`,
         contact_phone: d.contacts.phone,
         channel: d.channel,
-        last_message_at: d.last_message_at || d.updated_at,
+        last_activity_at: d.last_activity_at || d.last_message_at || d.updated_at,
         unread_count: d.unread_count || 0,
         snoozed_until: d.snoozed_until,
         last_preview: d.last_message_preview || '',
@@ -359,7 +348,7 @@ export default function ConversationsPage() {
         contact_name: `${contact.first_name} ${contact.last_name}`,
         contact_initials: `${contact.first_name?.[0] || ''}${contact.last_name?.[0] || ''}`,
         contact_phone: contact.phone || null, channel: 'sms',
-        last_message_at: new Date().toISOString(), unread_count: 0,
+        last_activity_at: new Date().toISOString(), unread_count: 0,
         snoozed_until: null, last_preview: '', line_e164: null,
       }
       setSelectedThread(thread)
@@ -471,7 +460,9 @@ export default function ConversationsPage() {
                   </p>
                   <span className="flex items-center gap-1 flex-shrink-0 ml-2">
                     <LineBadge label={labelFor(thread.line_e164 || defaultLine)} />
-                    <span className="text-[8px] text-gray-400">{fmtTime(thread.last_message_at)}</span>
+                    <span className="text-[8px] text-gray-400" title={fmtFull(thread.last_activity_at)}>
+                      {fmtListStamp(thread.last_activity_at)}
+                    </span>
                   </span>
                 </div>
                 <p className={`text-[10px] truncate ${thread.unread_count > 0 ? 'text-gray-600 font-medium' : 'text-gray-400'}`}>

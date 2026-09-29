@@ -11,6 +11,7 @@ import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
 import { useOrgLines } from '@/lib/hooks/use-org-lines'
 import { buildTimeline, TimelineStream, type TimelineEntry } from '@/components/crm/comms-timeline'
+import { fmtAgo, fmtFull } from '@/lib/date-format'
 
 interface CommStats {
   total_calls: number
@@ -33,16 +34,6 @@ function fmtDur(s: number) {
   const m = Math.floor(s / 60)
   if (m < 60) return `${m}m ${s % 60}s`
   return `${Math.floor(m / 60)}h ${m % 60}m`
-}
-
-function ago(d: string | null) {
-  if (!d) return 'Never'
-  const mins = Math.floor((Date.now() - new Date(d).getTime()) / 60000)
-  if (mins < 1) return 'Just now'
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
-  return `${Math.floor(hrs / 24)}d ago`
 }
 
 export default function ContactCommPanel({ contactId }: { contactId: string }) {
@@ -96,7 +87,7 @@ export default function ContactCommPanel({ contactId }: { contactId: string }) {
             <span className="flex items-center gap-0.5 text-[8px] text-gray-400"><ArrowDownLeft size={8} className="text-blue-500" />{stats.total_inbound_calls}</span>
           </div>
           <p className="text-[7px] text-gray-300 mt-0.5">{fmtDur(stats.total_call_duration_seconds)} total</p>
-          <p className="text-[7px] text-gray-300">Last: {ago(stats.last_call_at)}</p>
+          <p className="text-[7px] text-gray-300" title={fmtFull(stats.last_call_at)}>Last: {fmtAgo(stats.last_call_at)}</p>
         </div>
 
         <div className="rounded-lg border border-gray-100 p-2.5">
@@ -109,7 +100,7 @@ export default function ContactCommPanel({ contactId }: { contactId: string }) {
             <span className="flex items-center gap-0.5 text-[8px] text-gray-400"><ArrowUpRight size={8} className="text-green-500" />{stats.total_outbound_texts}</span>
             <span className="flex items-center gap-0.5 text-[8px] text-gray-400"><ArrowDownLeft size={8} className="text-blue-500" />{stats.total_inbound_texts}</span>
           </div>
-          <p className="text-[7px] text-gray-300 mt-1">Last: {ago(stats.last_text_at)}</p>
+          <p className="text-[7px] text-gray-300 mt-1" title={fmtFull(stats.last_text_at)}>Last: {fmtAgo(stats.last_text_at)}</p>
         </div>
 
         <div className="rounded-lg border border-gray-100 p-2.5">
@@ -118,7 +109,7 @@ export default function ContactCommPanel({ contactId }: { contactId: string }) {
             <span className="text-[8px] font-semibold text-gray-400 uppercase tracking-wider">Emails</span>
           </div>
           <p className="text-lg font-bold text-np-dark">{stats.total_emails}</p>
-          <p className="text-[7px] text-gray-300 mt-3">Last: {ago(stats.last_email_at)}</p>
+          <p className="text-[7px] text-gray-300 mt-3" title={fmtFull(stats.last_email_at)}>Last: {fmtAgo(stats.last_email_at)}</p>
         </div>
       </div>
 
@@ -130,7 +121,7 @@ export default function ContactCommPanel({ contactId }: { contactId: string }) {
         </div>
         <div className="flex-1 bg-gray-50 rounded-lg p-2 flex items-center gap-2">
           <Calendar size={12} className="text-gray-400" />
-          <div><p className="text-[8px] text-gray-400">Last Contact</p><p className="text-xs font-bold text-np-dark">{ago(stats.last_contacted_at)}</p></div>
+          <div><p className="text-[8px] text-gray-400">Last Contact</p><p className="text-xs font-bold text-np-dark" title={fmtFull(stats.last_contacted_at)}>{fmtAgo(stats.last_contacted_at)}</p></div>
         </div>
       </div>
 
