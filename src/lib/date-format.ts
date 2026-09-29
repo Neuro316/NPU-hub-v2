@@ -143,13 +143,21 @@ export function fmtDuration(seconds: number | null | undefined): string {
 }
 
 /**
+ * Bucket an item carrying no usable timestamp lands in. It gets its own group
+ * with a visible heading rather than an empty one, so such an item is never
+ * silently undated on screen.
+ */
+export const UNDATED_KEY = '__undated__'
+export const UNDATED_LABEL = 'Date unknown'
+
+/**
  * Stable per-day bucket key. Uses the LOCAL calendar day, so an event at
  * 11pm local does not land in the next day's group the way an ISO-date slice
  * of a UTC string would.
  */
 export function dayKey(d: string | Date | null | undefined): string {
   const date = toDate(d)
-  if (!date) return ''
+  if (!date) return UNDATED_KEY
   return date.toDateString()
 }
 
@@ -161,17 +169,27 @@ export function dayKey(d: string | Date | null | undefined): string {
 export function groupByDay<T>(
   items: T[],
   getTimestamp: (item: T) => string | Date | null | undefined
-): { key: string; label: string; items: T[] }[] {
-  const groups: { key: string; label: string; items: T[] }[] = []
+): { key: string; dayKey: string; label: string; items: T[] }[] {
+  const groups: { key: string; dayKey: string; label: string; items: T[] }[] = []
   items.forEach(item => {
     const ts = getTimestamp(item)
-    const key = dayKey(ts)
+    const bucket = dayKey(ts)
     const last = groups[groups.length - 1]
-    if (last && last.key === key) {
+    if (last && last.dayKey === bucket) {
       last.items.push(item)
       return
     }
-    groups.push({ key, label: fmtDateSeparator(ts), items: [item] })
+    // `key` is unique per group and is what a renderer should hand React.
+    // `dayKey` is the semantic bucket and repeats when undated items appear in
+    // more than one run. Handing React the semantic value directly meant two
+    // groups could share a key, and React drops or merges siblings whose keys
+    // collide, which silently loses a heading.
+    groups.push({
+      key: `${bucket}#${groups.length}`,
+      dayKey: bucket,
+      label: bucket === UNDATED_KEY ? UNDATED_LABEL : fmtDateSeparator(ts),
+      items: [item],
+    })
   })
   return groups
 }

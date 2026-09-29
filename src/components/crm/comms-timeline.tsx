@@ -11,7 +11,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { fmtClock, fmtFull, fmtDuration, groupByDay } from '@/lib/date-format'
+import { fmtClock, fmtFull, fmtDuration, groupByDay, UNDATED_LABEL } from '@/lib/date-format'
 import {
   Voicemail, Loader2, PhoneMissed, ArrowUpRight, ArrowDownLeft,
   Check, CheckCheck, Clock, Paperclip, PhoneCall,
@@ -244,10 +244,14 @@ export function TimelineStream({ entries, emptyLabel = 'No messages yet', onCall
   const labelOf = (entry: TimelineEntry) =>
     lineLabel && entry.line_e164 ? lineLabel(entry.line_e164) : null
 
-  // One heading per calendar day. Entries arrive oldest first, so consecutive
-  // grouping preserves that order. Without this, every item shows a clock time
-  // with nothing saying which day it belongs to, and a thread spanning weeks
-  // reads as one long afternoon.
+  // One heading per calendar day, EVERY day including the first. Entries
+  // arrive oldest first, so consecutive grouping preserves that order. Without
+  // this, every item shows a clock time with nothing saying which day it
+  // belongs to, and a thread spanning weeks reads as one long afternoon.
+  //
+  // day.key is unique per group and safe as a React key. day.label is never
+  // empty: an item with no usable timestamp is grouped under UNDATED_LABEL
+  // rather than under a blank heading that looks like no heading at all.
   const days = groupByDay(entries, e => e.created_at)
 
   return (
@@ -256,7 +260,9 @@ export function TimelineStream({ entries, emptyLabel = 'No messages yet', onCall
         <div key={day.key} className="space-y-2">
           <div className="flex items-center gap-2 pt-2">
             <div className="flex-1 h-px bg-gray-100" />
-            <span className="text-[9px] font-medium text-gray-400 whitespace-nowrap">{day.label}</span>
+            <span className="text-[9px] font-medium text-gray-400 whitespace-nowrap">
+              {day.label || UNDATED_LABEL}
+            </span>
             <div className="flex-1 h-px bg-gray-100" />
           </div>
           {day.items.map(entry => {
