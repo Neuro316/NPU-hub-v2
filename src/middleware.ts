@@ -13,7 +13,10 @@ export const config = {
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
      * - public folder
+     * - api/notify/sms: the bearer check (HUB_NOTIFY_SECRET) in that route is the
+     *   ONLY gate for this path. The session middleware would redirect its
+     *   cookieless scheduled callers to /login.
      */
-    '/((?!_next/static|_next/image|favicon.ico|api/integrations|api/cron|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|api/integrations|api/cron|api/notify/sms$|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

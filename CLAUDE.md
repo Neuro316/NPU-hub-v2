@@ -168,3 +168,11 @@ The platform supports multiple organizations. `WorkspaceContext` manages org swi
 - Read any file
 - Edit UI components and pages
 - Run: `git status`, `git diff`, `npm run build`, `npm run lint`, `npx tsc --noEmit`
+
+## Environment: HUB_NOTIFY_SECRET
+
+`POST /api/notify/sms` (scheduled tasks texting staff, replacing inserts into the platform's
+`scheduled_jobs`) authenticates with `Authorization: Bearer <HUB_NOTIFY_SECRET>`, compared in
+constant time. **It must be set in Vercel for Production AND Preview.** When it is unset the route
+refuses every request with 401 and sends nothing, so a missing value fails closed rather than open.
+Generate it with `openssl rand -hex 32`. Never log it.
