@@ -115,5 +115,45 @@ check('voicemail: default unchanged',
   + '<Record maxLength="120" playBeep="true"/>'
   + '<Say voice="Polly.Joanna">We did not receive a message. Goodbye.</Say></Response>')
 
+// 6. Recording OFF by default: no record attribute anywhere, on either shape.
+check('recording off: NP line has no record attribute',
+  [/record=/.test(np), /recordingStatusCallback=/.test(np)].join(','),
+  'false,false')
+check('recording off: WNW line has no record attribute',
+  [/record=/.test(wnw), /recordingStatusCallback=/.test(wnw)].join(','),
+  'false,false')
+
+// 7. Recording ON: record-from-answer-dual plus the recording-ready callback.
+const npRec = twiml(r => appendRingDial(r, {
+  orgId: ORG, appUrl: APP, ringTimeoutSeconds: 20,
+  lineE164: NP, forwardNumber: '', callerE164: '+15555550123',
+  recordCalls: true,
+}))
+check('recording on: NP line records both legs from answer',
+  npRec,
+  '<?xml version="1.0" encoding="UTF-8"?><Response>'
+  + `<Dial timeout="20" action="${APP}/api/twilio/ring-complete" method="POST"`
+  + ` record="record-from-answer-dual"`
+  + ` recordingStatusCallback="${APP}/api/twilio/recording-ready"`
+  + ` recordingStatusCallbackMethod="POST">`
+  + `<Client><Identity>org-${ORG}</Identity><Parameter name="line" value="${NP}"/></Client>`
+  + '</Dial></Response>')
+
+// 8. Forwarding line ring window is capped at 15s even when 30 is configured,
+//    so a carrier voicemail is less likely to answer before the Hub does.
+const timeoutOf = (doc) => /timeout="(\d+)"/.exec(doc)?.[1]
+check('forwarding line: ring timeout capped at 15s',
+  timeoutOf(twiml(r => appendRingDial(r, {
+    orgId: ORG, appUrl: APP, ringTimeoutSeconds: 30,
+    lineE164: WNW, forwardNumber: '(828) 555-0199', callerE164: '+15555550123',
+  }))),
+  '15')
+check('browser only line: 30s is NOT capped',
+  timeoutOf(twiml(r => appendRingDial(r, {
+    orgId: ORG, appUrl: APP, ringTimeoutSeconds: 30,
+    lineE164: NP, forwardNumber: '', callerE164: '+15555550123',
+  }))),
+  '30')
+
 if (failures) { console.log(`\n${failures} check(s) FAILED`); process.exit(1) }
 console.log('\nall TwiML snapshot checks passed')

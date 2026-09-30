@@ -52,6 +52,9 @@ interface TwilioNumber {
   greeting_updated_at?: string
   greeting_text?: string
   ring_timeout_seconds?: number
+  record_calls?: boolean
+  recording_notice_enabled?: boolean
+  recording_notice_text?: string
   forward_number?: string
 }
 const GREETING_KEYS = ['greeting_url', 'greeting_path', 'greeting_filename', 'greeting_updated_at'] as const
@@ -148,6 +151,16 @@ export default function SettingsPage() {
           else out.forward_number = toE164(fwd) || fwd
           if (out.ring_timeout_seconds == null || out.ring_timeout_seconds === '') delete out.ring_timeout_seconds
           else out.ring_timeout_seconds = clampRingTimeout(out.ring_timeout_seconds)
+          // Recording switches. Absent means off, so an unchecked box is stored
+          // as no key at all rather than false. That keeps a line that nobody
+          // has touched byte identical to how it was stored before these
+          // fields existed, and it is what resolveInboundOrgContext reads.
+          if (out.record_calls === true) out.record_calls = true
+          else delete out.record_calls
+          if (out.recording_notice_enabled === true) out.recording_notice_enabled = true
+          else delete out.recording_notice_enabled
+          if (!String(out.recording_notice_text || '').trim()) delete out.recording_notice_text
+          else out.recording_notice_text = String(out.recording_notice_text).trim()
           return out
         })
         await supabase.from('org_settings').upsert({
@@ -413,8 +426,45 @@ export default function SettingsPage() {
                               Rings this phone at the same time as the Hub; whoever answers first takes the call, and the phone
                               sees this line&rsquo;s number as the caller. Keep Ring duration at 15 seconds or less when forwarding:
                               Twilio adds about 5 seconds, and past roughly 20 seconds the cell&rsquo;s own voicemail answers first,
-                              so the message lands there instead of in the Hub.
+                              so the message lands there instead of in the Hub. Ring duration is now capped at
+                              15 seconds automatically whenever a forward number is set.
                             </p>
+                          </div>
+
+                          {/* Call recording for this line. Both switches default
+                              OFF: absent in the stored JSON means off, so a line
+                              nobody has touched behaves exactly as before. */}
+                          <div>
+                            <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Call recording</label>
+                            <label className="flex items-center gap-1.5 text-[10px] text-gray-600 mt-1">
+                              <input type="checkbox" checked={num.record_calls === true}
+                                onChange={e => patchNumber(i, { record_calls: e.target.checked ? true : undefined })} />
+                              Record answered calls on this line
+                            </label>
+                            <p className="text-[9px] text-gray-400 mt-1">
+                              Records both directions once the call connects: inbound calls the team answers and
+                              outbound calls placed from the browser. Missed calls and voicemails are unaffected.
+                              Recordings play back in the conversation thread and are readable only by staff of this
+                              organization. If this line forwards to a cell, calls answered on that cell are recorded too.
+                            </p>
+
+                            <label className="flex items-center gap-1.5 text-[10px] text-gray-600 mt-2">
+                              <input type="checkbox" checked={num.recording_notice_enabled === true}
+                                onChange={e => patchNumber(i, { recording_notice_enabled: e.target.checked ? true : undefined })} />
+                              Play a recording notice before connecting
+                            </label>
+                            {num.recording_notice_enabled === true && (
+                              <>
+                                <textarea value={num.recording_notice_text || ''} maxLength={300} rows={2}
+                                  onChange={e => patchNumber(i, { recording_notice_text: e.target.value })}
+                                  placeholder="This call may be recorded for quality and training purposes."
+                                  className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg bg-white resize-none focus:outline-none focus:ring-1 focus:ring-teal/30" />
+                                <p className="text-[9px] text-gray-400 mt-1">
+                                  Spoken to the caller before the call connects. Leave empty to use the standard wording.
+                                  {' '}{(num.recording_notice_text || '').length}/300
+                                </p>
+                              </>
+                            )}
                           </div>
 
                           {/* Audio greeting for this line */}

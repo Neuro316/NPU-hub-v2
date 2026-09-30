@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabase, createAdminSupabase } from '@/lib/supabase';
-import { getOrgTwilioConfig } from '@/lib/twilio-org';
+import { getOrgTwilioConfig, fetchTwilioRecording, twilioRecordingUrlFromSid } from '@/lib/twilio-org';
 
 // Authenticated proxy for Twilio call recordings / voicemails.
 // The browser <audio> points HERE, never at the raw Twilio URL: Twilio media
@@ -20,18 +20,31 @@ export async function GET(
 
   const admin = createAdminSupabase();
 
-  // 2. Load the call row (its owning org + recording URL).
+  // 2. Load the call row (its owning org + recording pointer).
+  //    recording_sid is a fallback for a row that has the SID but no URL: the
+  //    maintenance/cleanup-recordings job nulls recording_url after 90 days and
+  //    leaves recording_sid in place, and a <Dial> recording callback can land
+  //    the SID before the URL. Either pointer is enough to stream the media.
   const { data: callLog } = await admin
     .from('call_logs')
-    .select('id, org_id, recording_url')
+    .select('id, org_id, recording_url, recording_sid')
     .eq('id', params.id)
     .maybeSingle();
-  if (!callLog?.recording_url) {
+  if (!callLog || (!callLog.recording_url && !callLog.recording_sid)) {
     return new NextResponse('Not found', { status: 404 });
   }
 
   // 3. Server-side org + staff gate — mirrors the 067 RLS shape exactly:
   //    superadmin OR (admin/facilitator AND a member of the owning org).
+  //
+  //    KNOWN COARSE CHECK, accepted deliberately. The role comes from
+  //    profiles.role, which is platform wide and knows nothing about per org
+  //    team_profiles grants, so "admin or facilitator of this org" is broader
+  //    than the Hub's real authority model. That means anyone profiles.role
+  //    calls an admin or facilitator in the owning org can play back a recorded
+  //    client call. Narrowing it means rewriting the 067 policy family onto
+  //    team_profiles, which needs platform coordination and must not be done as
+  //    a side effect of a recording change. Reviewed and kept as is.
   const { data: profile } = await admin
     .from('profiles').select('role').eq('id', user.id).maybeSingle();
   const role = profile?.role ?? '';
@@ -48,28 +61,31 @@ export async function GET(
 
   // 4. Fetch from Twilio with the OWNING org's creds and stream back. Creds are
   //    used only here on the server; the client only ever sees this proxy URL.
-  const config = await getOrgTwilioConfig(admin, callLog.org_id);
-  if (!config.account_sid || !config.auth_token) {
-    return new NextResponse('Recording unavailable', { status: 502 });
+  //    fetchTwilioRecording owns the credential handling so a future
+  //    transcription step cannot drift from what plays back here.
+  let mediaUrl = callLog.recording_url as string | null;
+  if (!mediaUrl && callLog.recording_sid) {
+    const config = await getOrgTwilioConfig(admin, callLog.org_id);
+    if (!config.account_sid) {
+      return new NextResponse('Recording unavailable', { status: 502 });
+    }
+    mediaUrl = twilioRecordingUrlFromSid(config.account_sid, callLog.recording_sid);
   }
-  const authHeader = 'Basic ' + Buffer.from(`${config.account_sid}:${config.auth_token}`).toString('base64');
+  if (!mediaUrl) return new NextResponse('Not found', { status: 404 });
 
-  let twilioRes: Response;
-  try {
-    twilioRes = await fetch(callLog.recording_url, { headers: { Authorization: authHeader } });
-  } catch {
-    return new NextResponse('Recording fetch failed', { status: 502 });
-  }
-  if (!twilioRes.ok || !twilioRes.body) {
-    return new NextResponse('Recording fetch failed', { status: 502 });
+  const media = await fetchTwilioRecording(callLog.org_id, mediaUrl);
+  if (!media.ok) {
+    return new NextResponse(
+      media.reason === 'not_configured' ? 'Recording unavailable' : 'Recording fetch failed',
+      { status: 502 }
+    );
   }
 
   const headers: Record<string, string> = {
-    'Content-Type': twilioRes.headers.get('content-type') || 'audio/mpeg',
+    'Content-Type': media.contentType,
     'Cache-Control': 'private, no-store',
   };
-  const len = twilioRes.headers.get('content-length');
-  if (len) headers['Content-Length'] = len;
+  if (media.contentLength) headers['Content-Length'] = media.contentLength;
 
-  return new NextResponse(twilioRes.body, { status: 200, headers });
+  return new NextResponse(media.body, { status: 200, headers });
 }

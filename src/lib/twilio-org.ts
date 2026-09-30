@@ -27,6 +27,22 @@ export interface OrgTwilioNumber {
   ring_timeout_seconds?: number
   /** E.164 cell to ring alongside the browser. Empty = ring the Hub only. */
   forward_number?: string
+  /**
+   * Record answered calls on this line, both inbound calls the team picks up
+   * and outbound calls placed from the browser. Absent or false means no
+   * recording, which is the behaviour every line had before this field existed.
+   * Recording is owner approved; this flag is the per line switch.
+   */
+  record_calls?: boolean
+  /**
+   * Speak a recording notice to the caller before connecting. Absent or false
+   * means no notice. Independent of record_calls on purpose: the owner has
+   * approved recording without an announcement, so the notice is opt in per
+   * line rather than implied by recording being on.
+   */
+  recording_notice_enabled?: boolean
+  /** Notice wording. Only read when recording_notice_enabled is true. */
+  recording_notice_text?: string
 }
 
 export interface OrgTwilioConfig {
@@ -352,3 +368,56 @@ export function getVoiceCallerId(
 }
 
 export { CLIENT_STAGES }
+
+/**
+ * Fetch a Twilio recording's BYTES using the owning org's credentials.
+ *
+ * One implementation, two callers: the authenticated playback proxy
+ * (api/comms/recording/[id]) streams the body straight to the browser, and a
+ * future transcription step hands the same bytes to a speech vendor. The
+ * comment at the top of api/twilio/recording-ready records why that matters:
+ * the earlier Deepgram integration passed the auth protected Twilio URL and got
+ * a 401 on every call, which is what produced transcription_status 'failed'.
+ * Never hand a vendor a URL it cannot authenticate; hand it what this returns.
+ *
+ * Returns a discriminated result rather than throwing, so a caller can map the
+ * reason onto its own status code.
+ */
+export async function fetchTwilioRecording(
+  orgId: string,
+  recordingUrl: string
+): Promise<
+  | { ok: true; body: ReadableStream<Uint8Array>; contentType: string; contentLength: string | null }
+  | { ok: false; reason: 'not_configured' | 'fetch_failed' }
+> {
+  const admin = createAdminSupabase()
+  const config = await getOrgTwilioConfig(admin, orgId)
+  if (!config.account_sid || !config.auth_token) return { ok: false, reason: 'not_configured' }
+
+  const authHeader =
+    'Basic ' + Buffer.from(`${config.account_sid}:${config.auth_token}`).toString('base64')
+
+  let res: Response
+  try {
+    res = await fetch(recordingUrl, { headers: { Authorization: authHeader } })
+  } catch {
+    return { ok: false, reason: 'fetch_failed' }
+  }
+  if (!res.ok || !res.body) return { ok: false, reason: 'fetch_failed' }
+
+  return {
+    ok: true,
+    body: res.body as ReadableStream<Uint8Array>,
+    contentType: res.headers.get('content-type') || 'audio/mpeg',
+    contentLength: res.headers.get('content-length'),
+  }
+}
+
+/**
+ * Build the media URL for a RecordingSid when only the SID was stored.
+ * Twilio serves recording media at the account scoped Recordings path; the
+ * .mp3 suffix picks the transcoded audio the browser can play.
+ */
+export function twilioRecordingUrlFromSid(accountSid: string, recordingSid: string): string {
+  return `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Recordings/${recordingSid}.mp3`
+}

@@ -148,7 +148,12 @@ export default function DialerPage() {
 
         const { Device } = await import('@twilio/voice-sdk')
         const device = new Device(data.token, { logLevel: 1, codecPreferences: ['opus', 'pcmu'] as any })
-        const call = await device.connect({ params: { To: data.contact_phone, CallerId: data.caller_id ?? '', OrgId: data.org_id ?? '' } })
+        const call = await device.connect({ params: {
+          To: data.contact_phone, CallerId: data.caller_id ?? '', OrgId: data.org_id ?? '',
+          // Lets inbound-call stamp external_call_sid on THIS row from the
+          // parent CallSid, which is what recording-ready matches on.
+          CallLogId: data.call_log_id ?? '',
+        } })
 
         setCallState('ringing')
         call.on('accept', () => { setCallState('connected'); setCallDuration(0) })
@@ -172,7 +177,12 @@ export default function DialerPage() {
           if (!res.ok) { setCallState('idle'); return }
           const { Device } = await import('@twilio/voice-sdk')
           const device = new Device(data.token, { logLevel: 1, codecPreferences: ['opus', 'pcmu'] as any })
-          const call = await device.connect({ params: { To: data.contact_phone, CallerId: data.caller_id ?? '', OrgId: data.org_id ?? '' } })
+          const call = await device.connect({ params: {
+          To: data.contact_phone, CallerId: data.caller_id ?? '', OrgId: data.org_id ?? '',
+          // Lets inbound-call stamp external_call_sid on THIS row from the
+          // parent CallSid, which is what recording-ready matches on.
+          CallLogId: data.call_log_id ?? '',
+        } })
           setCallState('ringing')
           call.on('accept', () => { setCallState('connected'); setCallDuration(0) })
           call.on('disconnect', () => { setCallState('ended'); setTimeout(() => { setCallState('idle'); reloadCalls() }, 1500) })

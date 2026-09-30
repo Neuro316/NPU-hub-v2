@@ -45,12 +45,40 @@ export interface InboundOrgContext {
   forwardNumber: string;
   /** Seconds the browser rings before the call falls to voicemail. */
   ringTimeoutSeconds: number;
+  /** Record answered calls on this line. false = never record (the default). */
+  recordCalls: boolean;
+  /** Speak a recording notice before connecting. false = no notice (default). */
+  recordingNoticeEnabled: boolean;
+  /** Notice wording. Only used when recordingNoticeEnabled is true. */
+  recordingNoticeText: string;
 }
 
 /** Default when nothing is configured — the value shipped before the setting existed. */
 export const DEFAULT_RING_TIMEOUT_SECONDS = 20;
 export const MIN_RING_TIMEOUT_SECONDS = 5;
 export const MAX_RING_TIMEOUT_SECONDS = 30;
+
+/**
+ * Ceiling on the ring window for a line that forwards to a cell.
+ *
+ * WHY THIS EXISTS. A forwarding line puts <Client> and <Number> in ONE <Dial>,
+ * and Twilio bridges whichever answers first. A mobile carrier's own voicemail
+ * counts as an answer. When it wins the race, three things follow: the caller
+ * hears the personal carrier greeting instead of the Hub greeting, the Hub
+ * voicemail path in ring-complete is never reached, and once record_calls is on
+ * the recording captures that carrier greeting plus whatever the caller says to
+ * it. The call row closes as 'completed' with no Hub voicemail and no transcript.
+ *
+ * Carriers typically roll to voicemail between 20 and 30 seconds. Capping the
+ * forward leg below that window makes the Hub win the race in the common case.
+ * It is a mitigation, not a proof: a carrier configured to answer in 15 seconds
+ * or less can still get there first. TwiML has no answering machine detection
+ * on <Number>, so there is no way to refuse a machine answer from here.
+ *
+ * Applies ONLY when forward_number is set. A browser only line keeps the full
+ * 5 to 30 range and its TwiML is untouched.
+ */
+export const FORWARD_MAX_RING_TIMEOUT_SECONDS = 15;
 
 /**
  * Clamp a configured ring timeout into a range that keeps the feature working.
@@ -93,6 +121,9 @@ export async function resolveInboundOrgContext(
     greetingText: '',
     forwardNumber: '',
     ringTimeoutSeconds: DEFAULT_RING_TIMEOUT_SECONDS,
+    recordCalls: false,
+    recordingNoticeEnabled: false,
+    recordingNoticeText: '',
   };
   try {
     const want = toE164(to);
@@ -119,6 +150,12 @@ export async function resolveInboundOrgContext(
         str(line?.ring_timeout_seconds) ? line.ring_timeout_seconds : org.ring_timeout_seconds
       );
       ctx.greetingText = str(line?.greeting_text);
+      // Per line only, and absent means off. Deliberately NOT falling back to an
+      // org level value: recording is a per line decision and an org wide
+      // default would switch on lines nobody reviewed.
+      ctx.recordCalls = line?.record_calls === true;
+      ctx.recordingNoticeEnabled = line?.recording_notice_enabled === true;
+      ctx.recordingNoticeText = str(line?.recording_notice_text);
       // Must be a URL Twilio's servers can fetch UNAUTHENTICATED — a public
       // Storage object, never the session-gated /api/comms/recording proxy
       // (Twilio would get a 401).
@@ -145,6 +182,8 @@ export interface RingDialOptions {
   forwardNumber: string;
   /** The real caller (Twilio `From`), carried to the browser when callerId is set. */
   callerE164: string;
+  /** Record both legs once answered. Omit or false = no recording (default). */
+  recordCalls?: boolean;
 }
 
 /**
@@ -174,10 +213,27 @@ export interface RingDialOptions {
  */
 export function appendRingDial(response: any, o: RingDialOptions): void {
   const forward = toE164(o.forwardNumber);
+  // See FORWARD_MAX_RING_TIMEOUT_SECONDS. Only a forwarding line is capped, so
+  // a browser only line's TwiML is byte identical to what shipped before.
+  const timeout = forward
+    ? Math.min(o.ringTimeoutSeconds, FORWARD_MAX_RING_TIMEOUT_SECONDS)
+    : o.ringTimeoutSeconds;
+  // Recording is per line and OFF unless record_calls is true, so a line nobody
+  // has switched on emits exactly the TwiML it always did. record-from-answer-dual
+  // starts at answer, not at ring, so a missed call produces no recording, and it
+  // writes both legs to separate channels. The callback is the same
+  // recording-ready route the voicemail <Record> uses; it branches on
+  // RecordingSource so an answered call never gets relabelled a voicemail.
+  const record = o.recordCalls === true && !!o.appUrl;
   const ring = response.dial({
-    timeout: o.ringTimeoutSeconds,
+    timeout,
     ...(o.appUrl ? { action: `${o.appUrl}/api/twilio/ring-complete`, method: 'POST' } : {}),
     ...(forward && o.lineE164 ? { callerId: o.lineE164 } : {}),
+    ...(record ? {
+      record: 'record-from-answer-dual',
+      recordingStatusCallback: `${o.appUrl}/api/twilio/recording-ready`,
+      recordingStatusCallbackMethod: 'POST',
+    } : {}),
   });
   const client = ring.client();
   client.identity(receiverIdentity(o.orgId));
@@ -223,6 +279,26 @@ export function appendVoicemail(
   });
 
   response.say({ voice: 'Polly.Joanna' }, 'We did not receive a message. Goodbye.');
+}
+
+/** Standard wording when a line enables the notice but sets no text. */
+export const DEFAULT_RECORDING_NOTICE =
+  'This call may be recorded for quality and training purposes.';
+
+/**
+ * Speak the recording notice, if the line has one enabled.
+ *
+ * Called BEFORE the <Dial> so the caller hears it while still on our leg rather
+ * than after someone picks up. No-op when disabled, which is the default, so a
+ * line that has not opted in emits no extra verb.
+ */
+export function appendRecordingNotice(
+  response: any,
+  opts: { enabled: boolean; text?: string }
+): void {
+  if (!opts.enabled) return;
+  const text = (opts.text || '').trim() || DEFAULT_RECORDING_NOTICE;
+  response.say({ voice: 'Polly.Joanna-Neural' }, text);
 }
 
 /** Resolve the public base URL for Twilio callbacks. */

@@ -10,11 +10,12 @@
 // authenticated proxy (/api/comms/recording/[id]) + inline transcript.
 // ═══════════════════════════════════════════════════════════════
 
+import { useState } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { fmtClock, fmtFull, fmtDuration, groupByDay, UNDATED_LABEL } from '@/lib/date-format'
 import {
   Voicemail, Loader2, PhoneMissed, ArrowUpRight, ArrowDownLeft,
-  Check, CheckCheck, Clock, Paperclip, PhoneCall,
+  Check, CheckCheck, Clock, Paperclip, PhoneCall, Play,
 } from 'lucide-react'
 
 export type TimelineKind = 'text' | 'call' | 'voicemail' | 'missed'
@@ -82,7 +83,10 @@ export async function buildTimeline(
       duration_seconds: c.duration_seconds,
       transcript: c.transcript,
       transcription_status: c.transcription_status,
-      recording_available: !!c.recording_url,
+      // Either pointer is playable: the proxy reconstructs the media URL from
+      // recording_sid when recording_url is null, which is the state a row is
+      // left in after the 90 day cleanup nulls the URL.
+      recording_available: !!(c.recording_url || c.recording_sid),
       ai_summary: c.ai_summary,
       line_e164: (c.direction === 'inbound' ? c.to_number : c.from_number) || null,
     })
@@ -206,7 +210,13 @@ function CallRow({ entry, onCallBack, lineLabel }: {
   // Offer call-back on anything the caller initiated that we may not have taken:
   // missed calls, and inbound calls generally.
   const showCallBack = !!onCallBack && (isMissed || entry.direction === 'inbound')
+  // A recorded answered call. The pill is a fixed height rounded-full row, so the
+  // player cannot live inside it; it expands underneath instead, and stays closed
+  // until asked for so opening a thread does not create one audio element per call.
+  const [playerOpen, setPlayerOpen] = useState(false)
+  const hasRecording = !!entry.recording_available
   return (
+    <div className="flex flex-col items-center gap-1">
     <div className="flex justify-center">
       <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 rounded-full">
         {isMissed ? <PhoneMissed size={10} className="text-red-500" />
@@ -220,10 +230,31 @@ function CallRow({ entry, onCallBack, lineLabel }: {
           {fmtClock(entry.created_at)}
         </span>
         <LineBadge label={lineLabel} />
+        {hasRecording && (
+          <button
+            onClick={() => setPlayerOpen(o => !o)}
+            aria-expanded={playerOpen}
+            title={playerOpen ? 'Hide recording' : 'Play recording'}
+            className="flex items-center gap-0.5 ml-1 px-1.5 py-0.5 rounded-full bg-np-blue/10 text-np-blue text-[8px] font-semibold hover:bg-np-blue/20 transition-colors"
+          >
+            <Play size={8} /> {playerOpen ? 'Hide' : 'Recording'}
+          </button>
+        )}
         {showCallBack && (
           <span className="ml-1.5"><CallBackButton onCallBack={onCallBack!} /></span>
         )}
       </div>
+    </div>
+    {hasRecording && playerOpen && (
+      <div className="w-full max-w-[85%]">
+        {/* Authenticated proxy, never the raw Twilio URL: the media needs account
+            auth and the proxy enforces the staff plus owning org gate. */}
+        <audio controls autoPlay preload="none" className="w-full h-8"
+          src={`/api/comms/recording/${entry.id}`}>
+          Your browser does not support audio playback.
+        </audio>
+      </div>
+    )}
     </div>
   )
 }

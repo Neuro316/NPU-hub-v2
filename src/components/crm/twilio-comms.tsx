@@ -196,7 +196,12 @@ export function VoipCall({ contact, onClose, onEnded, lineE164 }: {
       deviceRef.current = device
 
       const call = await device.connect({
-        params: { To: data.contact_phone, CallerId: data.caller_id ?? '', OrgId: data.org_id ?? '' }
+        params: {
+          To: data.contact_phone, CallerId: data.caller_id ?? '', OrgId: data.org_id ?? '',
+          // Lets inbound-call stamp external_call_sid on THIS row from the
+          // parent CallSid, which is what recording-ready matches on.
+          CallLogId: data.call_log_id ?? '',
+        }
       })
 
       callRef.current = call
