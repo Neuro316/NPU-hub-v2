@@ -692,3 +692,27 @@ checkout (`npu-platform-v2/src/app/api/stripe/create-checkout/route.ts:363, 385`
   one of these 7 contacts on the board later will send that stage's email as it always has.
 - **A45. Side effect:** `trg_pipeline_timeline` writes one "pipeline_changed" row per moved contact
   (7), and the rollback writes 7 more.
+
+**APPLIED to live 2026-10-01 13:28 UTC, on Cameron's go**, exactly as committed. Before applying,
+the file on disk re-hashed to the approved whole-file `c8af5aad...`, body `cc86923f...` and
+rollback `2f869bfe...`. The body ran as one statement inside a wrapper that refused to execute
+unless it hashed to `cc86923f...`; none of the file's own aborts fired.
+
+Read back from live against a snapshot taken at 13:28:19: 9 live Enrolled stages; "Checkout
+started" once in settings and once in `pipeline_stages` (`a623ec21...`, position 8); 6 contacts
+at "Signed up - add user email...", 1 at "Paid/ payment plan", 1 at "Checkout started"; 8
+placements, all matching the contact's stage; 7 timeline rows; 0 `stage_email_sends`, 0
+`message_sends` and 0 entry events since the snapshot; 0 active stage or tag routes. Stages with
+stage emails: still 5, unchanged. On the board, the "Checkout started" column shows Cameron's
+contact and the 7 moved contacts render in their real columns; no card was dragged.
+
+- **A44 (decision pending with Cameron)**: the two target stages keep their stage emails, which
+  were not changed. "Signed up - add user email..." (`stage-1772022700334`) has stage email
+  `email-1782377734911`: recipient client, empty subject and empty body; the same stage also carries
+  legacy single-email fields `email_enabled: true`, `email_subject: "Test"`, `email_recipient:
+  internal`, `email_to_team_id: b3010056-31cf-4342-9553-42ee15bcfd5c`. "Paid/ payment plan" (`s2`)
+  has stage email `email-1782377748797`: recipient internal, subject "Test", empty body, team member
+  `b3010056-31cf-4342-9553-42ee15bcfd5c`, plus the same legacy fields. Dragging one of the 7 moved
+  contacts out of and back into these stages would send them.
+- **Seen on the board, not touched:** a second "Dylan Constance" contact (`bc9a82c0...`, no email)
+  already sat in "Paid/ payment plan" before this fix; possibly a duplicate of `6c3f7e36...`.
