@@ -4,6 +4,7 @@
 // live switch is NOT settable here: see /api/marketing/campaigns/live.
 import { NextResponse } from 'next/server'
 import { withStaff, requireOrg, bad } from '@/lib/api-guard'
+import { constraintMessage } from '@/lib/marketing/db-errors'
 
 export const dynamic = 'force-dynamic'
 
@@ -45,7 +46,7 @@ export const POST = withStaff(async (req, ctx) => {
     : db.from('funnel_campaigns').insert({ ...row, created_by: ctx.userId }).select('*')
   const { data, error } = await q
   if (error || (data?.length ?? 0) !== 1) {
-    return NextResponse.json({ error: 'The campaign could not be saved.' }, { status: error ? 500 : 404 })
+    return NextResponse.json({ error: constraintMessage(error, 'The campaign') ?? (error ? 'The campaign could not be saved. Try again in a moment.' : 'That campaign was not found. Reload the page.') }, { status: error ? 500 : 404 })
   }
   if (row.sequence_id) await db.from('sequences').update({ campaign_id: data![0].id }).eq('id', row.sequence_id).eq('org_id', org)
   return NextResponse.json({ campaign: data![0] })

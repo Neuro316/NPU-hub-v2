@@ -3,6 +3,7 @@
 // campaign. { org_id, campaign_id, source_key, active?, remove? }.
 import { NextResponse } from 'next/server'
 import { withStaff, requireOrg, bad } from '@/lib/api-guard'
+import { constraintMessage } from '@/lib/marketing/db-errors'
 
 export const dynamic = 'force-dynamic'
 const KEY = /^[a-z0-9][a-z0-9_.:-]{0,79}$/
@@ -22,6 +23,6 @@ export const POST = withStaff(async (req, ctx) => {
   const { data, error } = await ctx.db.from('campaign_routes').upsert(
     { org_id: org, campaign_id: camp.id, source_key: key, active: b.active !== false },
     { onConflict: 'org_id,source_key,campaign_id' }).select('*')
-  if (error || (data?.length ?? 0) !== 1) return NextResponse.json({ error: 'The route could not be saved.' }, { status: 500 })
+  if (error || (data?.length ?? 0) !== 1) return NextResponse.json({ error: constraintMessage(error, 'The source') ?? 'The source could not be saved. Try again in a moment.' }, { status: 500 })
   return NextResponse.json({ route: data![0] })
 })

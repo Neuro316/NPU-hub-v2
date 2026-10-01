@@ -376,3 +376,90 @@ lives in `engine.ts`, and the Twilio provider is `providers/twilio-sms.ts`.
   Afterwards both settings rows were deleted (back to absent, `hub_flag(engine)` reads `off`) and the
   campaign archived. Nothing was sent: before and after the deploy and the run, `stage_email_sends` 13,
   `hub_sms_outbox` 1, `crm_messages` 62.
+
+
+---
+
+## 11. Funnels made self-explanatory (2026-10-01, UI only)
+
+Built: an (i) popover on every section title and non-obvious field, a "How a funnel campaign works"
+overview, a Starts from picker that produces the existing source keys (with "Advanced: type a key"),
+a five-step guided setup (purpose and name, who enters, pipeline, messages with starter templates,
+review and test with a readiness checklist), "Run the guided setup again" on drafts, empty and error
+states that say what to do next, and the latest test drive decision with its plain reason on the
+campaign page. One read-only route was added, `GET /api/marketing/campaigns/<id>/activity`, and the
+overview now says whether the unsubscribe secret is set (a boolean, never the secret). No engine,
+gate, flag, consent or permission code changed.
+
+### Assumptions recorded
+
+- **A27. A test drive needs the campaign to be Active.** `public.enroll` only enrolls into active
+  campaigns, and changing that would change engine behaviour. The guided setup therefore offers
+  "Save, set Active and test drive", says plainly that Active lets real people enter from its
+  sources, and that while live sending is off they only get dry runs.
+- **A28. Only forms are connected today.** The picker offers missed and answered calls, bookings,
+  tags, stage changes, quizzes and imports, which produce `call:`, `booking:`, `tag:`, `stage:`,
+  `quiz:` and `import:` keys, but nothing in the Hub emits those events yet. The picker and the
+  campaign page say "Nothing sends this event yet" beside them rather than hide them.
+- **A29. A stage-change source is keyed by stage id** (`stage:<uuid>`), so renaming a stage does not
+  break the route (ruling 3).
+- **A30. The University asset template is a service message**, because the person asked for it.
+  The welcome and nurture templates are marketing; the reminder template is service.
+- **A31. "Previews checked" and "test drive run" are tracked for the current setup session.** The
+  Hub stores no record of who previewed what, and adding one would be a schema change.
+- **A32. The activity route shows message bodies only for allowlisted test contacts**, so the
+  campaign page never displays a real person's message.
+
+## 12. Bug: "The sequence could not be created" (2026-10-01)
+
+**What the funnel code sent.** `POST /api/marketing/sequences` (`src/app/api/marketing/sequences/route.ts`)
+inserted `created_by: ctx.userId`. `ctx.userId` is the AUTH user id, from the cookie session in
+`withStaff` (`src/lib/api-guard.ts`). Live `sequences.created_by` is
+`FOREIGN KEY (created_by) REFERENCES team_members(id)`, so every new sequence failed with 23503.
+`sequence_steps` and `sequence_enrollments` have no column pointing at a user and were not affected.
+
+**Why the branch tests missed it.** `supabase/branch-bootstrap/hub_211_dependencies.sql` copied only
+the foreign keys whose target was another copied table or `auth.users`. `sequences_created_by_fkey`
+points at `team_members`, which was not copied, so the constraint was silently left out and the
+branch accepted any `created_by`. A bootstrap that drops a constraint makes every test on that
+table blind to it. The next bootstrap must include every FK of every copied table, copying the
+target table too, or list each dropped FK by name.
+
+**Fix.** `src/lib/marketing/team-member.ts` resolves the signed-in user's `team_members.id` by
+membership, `(org_id, user_id)` (UNIQUE) and `is_active`, never by `profiles.organization_id`. No
+active row means null; `sequences.created_by` is nullable (checked in `pg_attribute`). Constraint
+failures in the campaign, steps, source and asset routes now return a plain sentence
+(`src/lib/marketing/db-errors.ts`), for example "The steps could not be saved because your team
+member record could not be matched to this organization.", never SQL.
+
+**Every foreign key from a column the new code writes into an EXISTING table, verified in pg_catalog
+2026-10-01:**
+
+| Column the code writes | Constraint | Value the code sends | Verdict |
+|---|---|---|---|
+| `sequences.created_by` | `sequences_created_by_fkey` -> `team_members(id)` | was the auth user id; now the team_members id or null | **fixed** |
+| `sequences.org_id` | `sequences_org_id_fkey` -> `organizations(id)` | the org from membership | correct |
+| `sequences.campaign_id` | `sequences_campaign_id_fkey` -> `funnel_campaigns(id)` | a campaign checked to be in the org | correct |
+| `sequence_steps.sequence_id` | `sequence_steps_sequence_id_fkey` -> `sequences(id)` | the sequence just read or created | correct |
+| `sequence_steps.asset_id` | `sequence_steps_asset_id_fkey` -> `university_assets(id)` | an asset checked to be in the org | correct |
+| `sequence_enrollments.sequence_id` | `sequence_enrollments_sequence_id_fkey` -> `sequences(id)` | set inside `public.enroll` | correct |
+| `sequence_enrollments.campaign_enrollment_id` | -> `campaign_enrollments(id)` | set inside `public.enroll` | correct |
+| `contacts.org_id` (intake) | `contacts_org_id_fkey` -> `organizations(id)` | the form's org | correct |
+| `contacts.assigned_to`, `contacts.identity_id` | -> `team_members(id)`, -> `identity_graph(id)` | never written by the new code | not affected |
+| `org_settings.org_id` | `org_settings_org_id_fkey` -> `organizations(id)` | the org from membership | correct |
+| `contact_timeline.org_id` | `contact_timeline_org_id_fkey` -> `organizations(id)` | the contact's org, inside the functions | correct |
+| `hub_sms_outbox` (watchdog) | `org_id`, `user_id` | NP org and the owner's profile id | written the same way as before this build |
+
+Columns holding a user id that have **no** foreign key on live, so the auth user id stays:
+`funnel_campaigns.created_by`, `funnel_campaigns.live_enabled_by`, `form_definitions.created_by`,
+`consent_events.actor_id`, `suppressions.lifted_by`, `contact_pipeline_positions.moved_by`,
+`contact_timeline.actor_id`.
+
+**Contract test.** `scripts/marketing/sequence-created-by-probe.cjs` (REQUIRES_LIVE database, read
+only): compiles the real route, runs it as a real staff user against live reads with every write
+captured and never sent, and requires the `created_by` it would insert to be null or an active
+`team_members` id for that user in that org. Its control C1 proves the auth user id is not a
+`team_members` id. `TAMPER=authid` reddens exactly S1.
+
+- **A33. A missing team_members row saves with `created_by` null** rather than refusing, because the
+  column is nullable and authorship is not worth blocking a save for.

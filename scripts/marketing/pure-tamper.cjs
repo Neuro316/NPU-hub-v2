@@ -31,7 +31,7 @@ const ROOT = path.resolve(__dirname, '..', '..')
 const SRC = path.join(ROOT, 'src')
 const MODULES = ['lib/marketing/flags.ts', 'lib/marketing/policy.ts', 'lib/marketing/tokens.ts', 'lib/marketing/svix.ts',
   'lib/marketing/university.ts', 'lib/marketing/engine.ts', 'lib/marketing/render.ts', 'lib/marketing/watchdog.ts',
-  'lib/marketing/intake.ts', 'lib/marketing/providers/resend.ts', 'lib/marketing/providers/types.ts', 'lib/crm-server.ts', 'lib/phone.ts', 'lib/sms-split.ts', 'lib/marketing/ui-logic.ts']
+  'lib/marketing/intake.ts', 'lib/marketing/providers/resend.ts', 'lib/marketing/providers/types.ts', 'lib/crm-server.ts', 'lib/phone.ts', 'lib/sms-split.ts', 'lib/marketing/ui-logic.ts', 'lib/marketing/db-errors.ts']
 
 const TAMPERS = {
   flagson: [['lib/marketing/flags.ts', "out[k] = (raw as Record<string, unknown>)[k] === 'on'", 'out[k] = Boolean((raw as Record<string, unknown>)[k])']],
@@ -86,6 +86,7 @@ const { validateIntake, definitionProblems } = L('lib/marketing/intake.js')
 const { buildResendRequest } = L('lib/marketing/providers/resend.js')
 const { emailIdempotencyKey } = L('lib/marketing/engine.js')
 const ui = L('lib/marketing/ui-logic.js')
+const { constraintMessage } = L('lib/marketing/db-errors.js')
 const crypto = require('crypto')
 
 const rows = []
@@ -184,6 +185,10 @@ check('N1', /switched off/.test(ui.reasonText('engine_off')) && /opted out or bo
 const copy = [JSON.stringify(ui.TEMPLATES), ...['engine_off', 'no_marketing_consent', 'cap_reached', 'outside_send_window'].map(ui.reasonText),
   ...fs.readdirSync(path.join(SRC, 'components', 'marketing')).map((f) => fs.readFileSync(path.join(SRC, 'components', 'marketing', f), 'utf8'))].join(' ')
 check('N2', !copy.includes(EM_DASH), 'an em dash in Funnels copy')
+const fkMsg = constraintMessage({ code: '23503', message: 'insert or update on table "sequences" violates foreign key constraint "sequences_created_by_fkey"' }, 'The steps')
+check('D1', fkMsg === 'The steps could not be saved because your team member record could not be matched to this organization.'
+  && constraintMessage({ code: 'PGRST116', message: 'x' }, 'The steps') === null
+  && !/violates|constraint|sequences_|insert/.test(constraintMessage({ code: '23503', message: 'violates foreign key constraint "other_fkey"' }, 'The steps')), fkMsg)
 
 fs.rmSync(out, { recursive: true, force: true })
 const red = rows.filter((r) => !r.ok).map((r) => r.id).sort()
