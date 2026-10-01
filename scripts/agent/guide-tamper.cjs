@@ -15,6 +15,10 @@
 //   G_EMDASH       an em dash in an answer never reaches the person
 //   G_CAP          the spend is reserved under mode guide, and a refused reservation stops it
 //   G_SHOWME       Show me outlines a known control, refuses unknown ids, and never clicks
+//   G_POLICY       only a superadmin may change the limits; an out-of-range value is refused, not
+//                  corrected; a valid one is stored exactly as given
+//   G_STUB_PROD    the scripted model is never used when NODE_ENV is production
+//   G_OFFTOPIC     a question no article covers retrieves nothing, while a covered one does
 //   C_ANSWERS      control: a valid answer is shown, with its citations and steps intact
 //   C_ROUTE_ALIVE  control: flag on and allowed, the same route reaches the model
 //
@@ -26,8 +30,11 @@
 //   leakctx    any route is passed through unchecked            {G_CONTEXT}
 //   dash       em dashes are kept                               {G_EMDASH}
 //   writetask  a Guide question also writes a task              {G_READONLY}
+//   policyopen the limits can be changed by any staff member     {G_POLICY}
 //   clickme    Show me clicks the control                       {G_SHOWME}
-// TAMPER=1 reddens the union (9).
+//   stubprod   the stub model is allowed in production          {G_STUB_PROD}
+//   anytag     a stop-word tag phrase scores                    {G_OFFTOPIC}
+// TAMPER=1 reddens the union (12).
 const fs = require('fs')
 const H = require('./lib/harness.cjs')
 
@@ -43,10 +50,13 @@ const TAMPERS = {
     ['lib/agent/help/walkthrough.ts', "const text = typeof raw.text === 'string' ? raw.text.trim().replace(EM_DASH, ', ') : ''", "const text = typeof raw.text === 'string' ? raw.text.trim() : ''"],
   ],
   writetask: [['lib/agent/guide.ts', '    if (gErr) console.error(', "    await i.db.from('tasks').insert({ title: 'from the Guide' }); if (gErr) console.error("]],
+  policyopen: [['app/api/marketing/agent/route.ts', "    if (!ctx.isSuperadmin) return forbidden('Only a platform superadmin can change the AI assistant limits.')", '']],
+  stubprod: [['lib/agent/stub-model.ts', "&& env.NODE_ENV !== 'production'", '']],
+  anytag: [['lib/agent/help/search.ts', 'if (terms(tag).length && q.includes(tag.toLowerCase()))', 'if (tag.length >= 3 && q.includes(tag.toLowerCase()))']],
   clickme: [['lib/agent/help/show-me.ts', "  el.setAttribute(HIGHLIGHT_ATTR, 'on')", "  el.setAttribute(HIGHLIGHT_ATTR, 'on'); (el as any).click?.()"]],
 }
 const RED_OF = { nocite: ['G_CITE'], anytarget: ['G_TARGET'], anyroute: ['G_ROUTE'], noflag: ['G_FLAG_OFF'], nogap: ['G_GAP'],
-  leakctx: ['G_CONTEXT'], dash: ['G_EMDASH'], writetask: ['G_READONLY'], clickme: ['G_SHOWME'] }
+  leakctx: ['G_CONTEXT'], dash: ['G_EMDASH'], writetask: ['G_READONLY'], policyopen: ['G_POLICY'], stubprod: ['G_STUB_PROD'], anytag: ['G_OFFTOPIC'], clickme: ['G_SHOWME'] }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-guide')
 const load = H.install(out)
@@ -54,8 +64,10 @@ const { runGuide } = load('lib/agent/guide.ts')
 const { checkAnswer, REGISTRY } = load('lib/agent/help/walkthrough.ts')
 const { articles } = load('lib/agent/help/corpus.ts')
 const { showMe } = load('lib/agent/help/show-me.ts')
+const { searchHelp } = load('lib/agent/help/search.ts')
 const { DEFAULT_POLICY } = load('lib/agent/config.ts')
 const { POST } = load('app/api/marketing/agent/route.ts')
+const { clientFor, stubClient } = load('lib/agent/stub-model.ts')
 
 const usage = { input_tokens: 900, output_tokens: 120 }
 const search = (q) => ({ model: 'claude-haiku-4-5', stop_reason: 'tool_use', usage, content: [{ type: 'tool_use', id: `s${Math.random()}`, name: 'search_help', input: { query: q } }] })
@@ -166,6 +178,38 @@ const GOOD = { found: true, text: 'Use a test drive on the campaign page.', cite
     check('G_ROLE', member.status === 403 && !member.touched && memberAllowed.touched, { member: member.status, allowed: memberAllowed.status })
     const alive = await callRoute({ flagOn: true, team: 'super_admin', superadmin: true })
     check('C_ROUTE_ALIVE', alive.touched, alive.status)
+  }
+
+  // the limits: superadmin only, refused rather than corrected, stored exactly
+  {
+    const POL = { monthly_cap_usd: 40, help_monthly_cap_usd: 5, session_messages: 30, run_tool_calls: 10, help_roles: ['superadmin', 'admin'] }
+    const save = async (policy, superadmin) => {
+      const db = H.stubDb({}, reserveOk)
+      global.__ctx = { userId: 'U1', orgIds: ['O1'], orgRoles: { O1: 'admin' }, isSuperadmin: superadmin, db }
+      const res = await POST({ json: async () => ({ action: 'policy', org_id: 'O1', policy }) }, { params: {} })
+      const up = db.calls.find((x) => x.table === 'org_settings' && x.ops.some((o) => o[0] === 'upsert'))
+      return { status: res.status, stored: up ? up.ops.find((o) => o[0] === 'upsert')[1][0].setting_value : null }
+    }
+    const admin = await save(POL, false)
+    const bad = await save({ ...POL, help_monthly_cap_usd: 5000 }, true)
+    const good = await save(POL, true)
+    check('G_POLICY', admin.status === 403 && !admin.stored && bad.status === 400 && !bad.stored && good.status === 200
+      && JSON.stringify(good.stored) === JSON.stringify(POL), { admin, bad, good })
+  }
+
+  // the scripted model: local only
+  {
+    const prod = clientFor({ AGENT_STUB_MODEL: '1', NODE_ENV: 'production' })
+    const dev = clientFor({ AGENT_STUB_MODEL: '1', NODE_ENV: 'development' })
+    const isStub = async (c) => { try { return (await c.create({ model: 'm', tools: [], messages: [{ role: 'user', content: 'x' }] })).model === 'stub' } catch { return false } }
+    check('G_STUB_PROD', !(await isStub(prod)) && (await isStub(dev)), null)
+  }
+
+  // retrieval: off-topic questions find nothing, on-topic ones find the right article
+  {
+    const off = ['How do I export payroll?', 'How do I book a flight?', 'Where do I file expense receipts?', 'How do I change my password?'].map((q) => searchHelp(q, articles(), { route: '/campaigns' }).length)
+    const on = searchHelp('How do I test a campaign before it goes live?', articles(), { route: '/campaigns' }).map((h) => h.article.id)
+    check('G_OFFTOPIC', off.every((n) => n === 0) && on.includes('test-funnel'), { off, on })
   }
 
   H.report(rows, active, RED_OF, () => fs.rmSync(out, { recursive: true, force: true }))

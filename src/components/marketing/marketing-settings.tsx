@@ -8,6 +8,7 @@ import { useWorkspace } from '@/lib/workspace-context'
 import { api } from '@/lib/marketing/client'
 import { useToast } from '@/components/ui/toast'
 import type { Flags, Overview } from './types'
+import { AgentSettings } from './agent/agent-settings'
 
 const input = 'w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/30'
 const FLAG_TEXT: Record<keyof Flags, string> = {
@@ -86,6 +87,7 @@ export function MarketingSettings() {
         <p className="mt-3 text-[11px] font-medium text-gray-500" data-help-id="sending.allowlist">Test contacts who may receive real messages before a campaign goes live</p>
         {d.test_contacts.map((t) => <p key={t.id} className="text-[11px] text-gray-500">{t.label}: {t.email ?? 'no email'}{t.phone ? ', a phone number' : ''}</p>)}
       </div>
+      {d.can_go_live && currentOrg && <AgentSettings orgId={currentOrg.id} />}
     </div>
   )
 }

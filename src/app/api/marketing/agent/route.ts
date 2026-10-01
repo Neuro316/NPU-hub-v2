@@ -4,6 +4,8 @@
 //       runs the agent and returns a plan to review; nothing is written but the run log
 //   { action: 'build', org_id, run_id }
 //       writes that plan, all at once and only as drafts, through public.agent_build
+//   { action: 'policy', org_id, policy? }   superadmin: read or save the caps and Guide roles
+//   { action: 'approve', org_id, kind, id } / { action: 'task', org_id, id, status }   staff
 //   { action: 'ask',   org_id, question, route?, help_id?, session_id? }
 //       the Hub Guide: answers from the help articles, writes nothing but its log and help_gaps
 // The org comes from membership (withStaff, requireOrg), never from the body alone. The
@@ -11,11 +13,11 @@
 import { NextResponse } from 'next/server'
 import { withStaff, requireOrg, bad, forbidden } from '@/lib/api-guard'
 import { getFlags } from '@/lib/marketing/flags'
-import { getPolicy, helpRoleOf, mayUseGuide, MAX_PASTED_CHARS, MAX_PROMPT_CHARS } from '@/lib/agent/config'
+import { getPolicy, helpRoleOf, mayUseGuide, HELP_ROLE_CHOICES, POLICY_KEY, MAX_PASTED_CHARS, MAX_PROMPT_CHARS } from '@/lib/agent/config'
 import { rateLimited, useSession } from '@/lib/agent/session'
 import { readHubSetup } from '@/lib/agent/tools/read'
 import { runBuilder } from '@/lib/agent/loop'
-import { liveClient } from '@/lib/agent/model'
+import { clientFor } from '@/lib/agent/stub-model'
 import { planForReview } from '@/lib/agent/review'
 import { runGuide } from '@/lib/agent/guide'
 
@@ -29,6 +31,32 @@ export const POST = withStaff(async (req, ctx) => {
   const org = requireOrg(ctx, b?.org_id)
   if (typeof org !== 'string') return org
   const db = ctx.db
+
+  if (b.action === 'policy') {
+    // caps, limits and who may use the Guide (rulings 8, 20, 21): platform superadmin only.
+    // public.agent_reserve reads the same stored keys, so a value is refused rather than
+    // quietly corrected: what is stored is exactly what both sides enforce.
+    if (!ctx.isSuperadmin) return forbidden('Only a platform superadmin can change the AI assistant limits.')
+    if (b.policy !== undefined) {
+      const p = b.policy ?? {}
+      const inRange = (v: unknown, lo: number, hi: number, whole = false) => { const n = Number(v); return Number.isFinite(n) && n >= lo && n <= hi && (!whole || Number.isInteger(n)) }
+      if (!inRange(p.monthly_cap_usd, 0, 1000)) return bad('The Campaign Builder monthly limit is a dollar amount from 0 to 1000.')
+      if (!inRange(p.help_monthly_cap_usd, 0, 1000)) return bad('The Hub Guide monthly limit is a dollar amount from 0 to 1000.')
+      if (!inRange(p.session_messages, 1, 200, true)) return bad('Messages per conversation is a whole number from 1 to 200.')
+      if (!inRange(p.run_tool_calls, 1, 30, true)) return bad('Steps per Campaign Builder run is a whole number from 1 to 30.')
+      const roles = Array.isArray(p.help_roles) ? p.help_roles.map(String) : []
+      if (!roles.length || roles.some((r: string) => !(HELP_ROLE_CHOICES as readonly string[]).includes(r))) return bad('Choose who may use the Hub Guide.')
+      const value = { monthly_cap_usd: Number(p.monthly_cap_usd), help_monthly_cap_usd: Number(p.help_monthly_cap_usd),
+        session_messages: Number(p.session_messages), run_tool_calls: Number(p.run_tool_calls), help_roles: Array.from(new Set(roles)) }
+      const { data: saved, error } = await db.from('org_settings').upsert({ org_id: org, setting_key: POLICY_KEY, setting_value: value, updated_at: new Date().toISOString() },
+        { onConflict: 'org_id,setting_key' }).select('setting_key')
+      if (error || (saved?.length ?? 0) !== 1) return NextResponse.json({ error: 'The limits could not be saved.' }, { status: 500 })
+      console.info(`[agent] policy org=${org} by=${ctx.userId} ${JSON.stringify(value)}`)
+    }
+    const month = new Date().toISOString().slice(0, 7)
+    const { data: usage } = await db.from('agent_usage').select('mode, spent_usd, reserved_usd').eq('org_id', org).eq('month', month)
+    return NextResponse.json({ policy: await getPolicy(db, org), month, usage: usage ?? [] })
+  }
 
   if (b.action === 'approve') {
     // a person approving an AI draft (ruling 14): any staff member of the org, as for editing it
@@ -67,7 +95,7 @@ export const POST = withStaff(async (req, ctx) => {
     const session = await useSession(db, { org, userId: ctx.userId, mode: 'guide', surface: 'panel', sessionId: b.session_id, policy })
     if (!session.ok) return NextResponse.json({ error: session.message }, { status: session.status })
     // ruling 19: only the route and the screen id are accepted; any other field is ignored
-    const result = await runGuide({ db, client: liveClient(), org, userId: ctx.userId, sessionId: session.sessionId, policy, question,
+    const result = await runGuide({ db, client: clientFor(), org, userId: ctx.userId, sessionId: session.sessionId, policy, question,
       route: typeof b.route === 'string' ? b.route.slice(0, 300) : null, helpId: typeof b.help_id === 'string' ? b.help_id.slice(0, 120) : null })
     console.info(`[agent] guide run=${result.runId} org=${org} outcome=${result.outcome} cost=${result.costUsd.toFixed(4)}`)
     const status = result.outcome === 'answered' || result.outcome === 'no_answer' ? 200 : result.outcome === 'cap_hit' ? 429 : result.outcome === 'model_unavailable' ? 503 : 500
@@ -135,7 +163,7 @@ export const POST = withStaff(async (req, ctx) => {
   try { setup = await readHubSetup(db, org) }
   catch { return NextResponse.json({ error: 'The Hub setup could not be read. Try again.' }, { status: 503 }) }
 
-  const result = await runBuilder({ db, client: liveClient(), org, userId: ctx.userId, sessionId: session.sessionId, policy, setup,
+  const result = await runBuilder({ db, client: clientFor(), org, userId: ctx.userId, sessionId: session.sessionId, policy, setup,
     prompt, pasted, existing })
   console.info(`[agent] run=${result.runId} org=${org} outcome=${result.outcome} cost=${result.costUsd.toFixed(4)}`)
   const status = result.outcome === 'planned' || result.outcome === 'refused' ? 200
