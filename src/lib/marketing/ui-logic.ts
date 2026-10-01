@@ -24,7 +24,7 @@ export function slugPart(s: string): string {
 export function sourceKeyFor(kind: SourceKind, detail: string): string | null {
   switch (kind) {
     case 'call_missed': return 'call:missed'
-    case 'call_inbound': return 'call:inbound'
+    case 'call_inbound': return 'call:answered'
     case 'form': return detail && /^[a-z0-9][a-z0-9_.:-]{0,79}$/.test(detail) ? detail : null
     case 'stage': return /^[0-9a-f-]{36}$/.test(detail) ? `stage:${detail}` : null
     default: {
@@ -34,16 +34,62 @@ export function sourceKeyFor(kind: SourceKind, detail: string): string | null {
   }
 }
 
-/** Only form submissions (POST /api/intake) and test drives create entry events today. */
-export function sourceIsConnected(key: string): boolean {
-  return key.startsWith('form:') || key.startsWith('manual:')
+// ── which starting points actually raise events ──
+// Built on the server from the real state (the hub_212 triggers and queue in the
+// database, the phone lines in CRM Settings) by buildSourceStatus, and sent with the
+// overview. Forms and test drives are wired in code that always ships with this page.
+export type SourceGroup = 'form' | 'manual' | 'call_missed' | 'call_answered' | 'booking' | 'tag' | 'stage' | 'quiz' | 'import'
+export interface SourceState { connected: boolean; why: string }
+export type SourceStatus = Partial<Record<SourceGroup, SourceState>>
+
+export function sourceGroup(key: string): SourceGroup | null {
+  if (key === 'call:missed') return 'call_missed'
+  if (key === 'call:answered' || key === 'call:inbound') return 'call_answered'
+  const kind = key.split(':')[0]
+  return (['form', 'manual', 'booking', 'tag', 'stage', 'quiz', 'import'] as const).find((k) => k === kind) ?? null
+}
+
+/** The group a picker choice belongs to, without needing its detail filled in. */
+export function kindGroup(kind: SourceKind): SourceGroup {
+  return kind === 'call_inbound' ? 'call_answered' : kind
+}
+
+export function buildSourceStatus(i: { queue: boolean; stageTrigger: boolean; tagTrigger: boolean; lines: number }): SourceStatus {
+  const noQueue = 'The campaign event queue is not installed in the database yet.'
+  const call = !i.queue ? { connected: false, why: noQueue }
+    : i.lines < 1 ? { connected: false, why: 'No phone line is set up in CRM Settings, Twilio.' }
+    : { connected: true, why: `Raised by calls to your ${i.lines} phone ${i.lines === 1 ? 'line' : 'lines'}.` }
+  const nothing = { connected: false, why: 'Nothing in the Hub raises this event yet.' }
+  return {
+    form: { connected: true, why: 'Raised when someone submits a published form.' },
+    manual: { connected: true, why: 'Raised by a test drive.' },
+    call_missed: call,
+    call_answered: call,
+    stage: !i.queue ? { connected: false, why: noQueue } : i.stageTrigger ? { connected: true, why: 'Raised when a contact moves into the stage, from any screen.' } : { connected: false, why: 'The stage change trigger is not installed in the database.' },
+    tag: !i.queue ? { connected: false, why: noQueue } : i.tagTrigger ? { connected: true, why: 'Raised when the tag is added to a contact, from any screen.' } : { connected: false, why: 'The tag trigger is not installed in the database.' },
+    import: !i.queue ? { connected: false, why: noQueue } : { connected: true, why: 'Raised only when the person importing ticks Start funnel campaigns and uses this import name.' },
+    booking: nothing,
+    quiz: nothing,
+  }
+}
+
+export function sourceIsConnected(key: string, status?: SourceStatus): boolean {
+  const g = sourceGroup(key)
+  return !!g && status?.[g]?.connected === true
+}
+
+/** Why a starting point will not fire yet, or null when it is connected. */
+export function sourceGapText(key: string, status?: SourceStatus): string | null {
+  if (sourceIsConnected(key, status)) return null
+  const g = sourceGroup(key)
+  return (g && status?.[g]?.why) || 'Nothing in the Hub raises this event yet.'
 }
 
 export function describeSource(key: string, forms: Array<{ source_key: string; name: string }>, stages: Array<{ id: string; name: string }>): string {
   const f = forms.find((x) => x.source_key === key)
   if (f) return `Someone submits the form "${f.name}"`
   if (key === 'call:missed') return 'A missed call'
-  if (key === 'call:inbound') return 'An answered call'
+  if (key === 'call:inbound' || key === 'call:answered') return 'An answered call'
   const [kind, rest] = [key.split(':')[0], key.slice(key.indexOf(':') + 1)]
   const nice = rest.replace(/-/g, ' ')
   if (kind === 'stage') return `Moves into the stage "${stages.find((s) => s.id === rest)?.name ?? 'unknown stage'}"`

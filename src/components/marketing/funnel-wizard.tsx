@@ -111,7 +111,7 @@ export function FunnelWizard({ orgId, data, existing, onClose, onSaved }: {
 
       {at === 1 && <div className="space-y-3">
         <p className="flex items-center text-sm text-gray-600">Choose what brings a person into this campaign. You can add more than one.<Help topic="Starts from" k="startsFrom" /></p>
-        <SourcePicker forms={data.forms} pipelines={data.pipelines} stages={data.stages} taken={keys} onAdd={(k) => setKeys([...keys, k])} />
+        <SourcePicker forms={data.forms} pipelines={data.pipelines} stages={data.stages} taken={keys} onAdd={(k) => setKeys([...keys, k])} sources={data.sources} />
         {keys.length ? <ul className="space-y-1">{keys.map((k) => (
           <li key={k} className="flex items-center gap-2 rounded-lg border border-gray-100 px-3 py-1.5 text-sm"><span className="flex-1">{describeSource(k, data.forms, data.stages)}</span>
             <button type="button" aria-label={`Remove ${k}`} onClick={() => setKeys(keys.filter((x) => x !== k))} className="text-gray-400 hover:text-fire"><X className="h-3.5 w-3.5" aria-hidden /></button></li>))}</ul>
