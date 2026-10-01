@@ -18,6 +18,7 @@
 //   nosummary   a bulk stage move stops writing its job log summary      {W6}
 //   hardcoded   the overview claims stages are wired without asking      {W8}
 //   consent     entry event code starts writing consent                  {W10}
+//   cached      the admin client lets Next.js answer rpc calls from cache {W11}
 // TAMPER=1 runs every selector at once and must redden the union.
 // Exit: 0 green (untampered) or the declared set reddened (tampered); 1 a red that was
 // not declared; 2 unknown selector or a dead anchor; 3 a tampered run whose red set is
@@ -36,6 +37,7 @@ const FILES = {
   entry: 'src/lib/marketing/entry-events.ts',
   vercel: 'vercel.json',
   migration: 'supabase/migrations/hub_212_entry_events.sql',
+  supabase: 'src/lib/supabase.ts',
 }
 const TAMPERS = {
   nocall: [['ring', "await raiseCallEvent(params.CallSid || '', 'missed');", '']],
@@ -43,10 +45,11 @@ const TAMPERS = {
   importoptin: [['importPage', 'if (startCampaigns && batchId) {', 'if (batchId) {']],
   nosummary: [['bulk', "if (!err && affected) campaignNote = (await summariseBulkStageMove(supabase, orgId, stageMoveStarted, affected, user.id)).note;", '']],
   hardcoded: [['overview', 'queue: (wiring.data as any)?.queue === true,', 'queue: true,'], ['overview', 'stageTrigger: (wiring.data as any)?.stage === true,', 'stageTrigger: true,']],
+  cached: [['supabase', "fetch(input, { ...init, cache: 'no-store' })", 'fetch(input, init)']],
   consent: [['entry', "export const ENTRY_CAP_PER_RUN = 100", "export const ENTRY_CAP_PER_RUN = 100\nexport const _c = (db: any) => db.rpc('record_consent', {})"]],
 }
-const RED_OF = { nocall: ['W1'], mergeorder: ['W3'], importoptin: ['W4'], nosummary: ['W6'], hardcoded: ['W8'], consent: ['W10'] }
-const ALL = ['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8', 'W9', 'W10']
+const RED_OF = { nocall: ['W1'], mergeorder: ['W3'], importoptin: ['W4'], nosummary: ['W6'], hardcoded: ['W8'], consent: ['W10'], cached: ['W11'] }
+const ALL = ['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8', 'W9', 'W10', 'W11']
 
 const sel = process.env.TAMPER || ''
 const base = process.env.BASE || ''
@@ -146,6 +149,14 @@ const at = (s, needle) => s.indexOf(needle)
   const pathSrc = [src.entry, src.importRoute, src.cron, src.ring.slice(at(src.ring, 'async function raiseCallEvent'), at(src.ring, 'export async function POST')), src.migration].join('\n')
   const bad = /record_consent|consent_events|sms_consent|email_consent|suppressions/.test(pathSrc)
   check('W10', src.entry && src.migration && !bad, 'entry event code mentions a consent write')
+}
+
+// W11 every service-role request bypasses the Next.js Data Cache (2026-10-01: a cached rpc
+// left a queued event unprocessed while the cron reported success)
+{
+  const s = src.supabase
+  const fn = s.slice(at(s, 'export function createAdminSupabase'))
+  check('W11', fn.includes("fetch(input, { ...init, cache: 'no-store' })") && src.cron.includes("export const fetchCache = 'force-no-store'"), 'the admin client or the entry events cron can be answered from cache')
 }
 
 const red = rows.filter((r) => !r.ok).map((r) => r.id).sort()

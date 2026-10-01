@@ -17,6 +17,8 @@ import { twilioSmsProvider } from '@/lib/marketing/providers/twilio-sms'
 
 export const maxDuration = 60
 export const dynamic = 'force-dynamic'
+// and no fetch in this route may be answered from the Data Cache (see createAdminSupabase)
+export const fetchCache = 'force-no-store'
 
 export async function GET(req: NextRequest) {
   if (!cronAuthorized(req, 'cron/campaign-steps')) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
