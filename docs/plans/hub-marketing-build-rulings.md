@@ -665,3 +665,30 @@ Steps for Cameron are in the review pack.
 Membership"; it was in "Checkout started", which is not a column on the board. And the existing
 `call:inbound` route on campaign `c2616c69...` now receives real answered calls on both lines,
 because ring-complete raises `call:inbound` alongside `call:answered` (A34).
+
+### Enrolled pipeline: unplaced contacts (2026-10-01)
+
+**SUPERSEDED, DO NOT APPLY: `supabase/data-fixes/2026-10-01_enrolled_missing_stages.sql`** (branch
+`data/enrolled-missing-stages`, `c10030a`, sha256 `dbcbef27...`). It added "Signed up", "Checkout
+started" and "Paid" as stages. Cameron ruled against it: "Paid" is a defect value the Hub already
+corrected to "Paid/ payment plan" (`accounting-auth.ts:56-60`), and "Signed up" is the NeuroReport
+sync's old default, since replaced by the pipeline's first stage (`cf6c5ce`). Adding them would
+create near-duplicate columns.
+
+**PROPOSED instead: `supabase/data-fixes/2026-10-01_enrolled_checkout_started.sql`**, not applied.
+Adds only "Checkout started" (settings JSON plus the existing sync, no stage emails), moves the 6
+"Signed up" contacts to "Signed up - add user email used to sign up in Circle; dependency has to be
+joined circle " and the 1 "Paid" contact to "Paid/ payment plan", and places all 8, including
+contact 4cb236f6 at "Checkout started". "Checkout started" is written live by the University's
+checkout (`npu-platform-v2/src/app/api/stripe/create-checkout/route.ts:363, 385`).
+
+- **A44. The two target stages DO have stage emails configured** ("Signed up - add user email...":
+  one client email with empty subject and body, plus legacy fields marked enabled, subject "Test",
+  to internal; "Paid/ payment plan": one internal email, subject "Test"). Cameron's precondition was
+  that they have none; it does not hold. The write still sends nothing: stage emails are sent only
+  by `POST /api/crm/stage-emails`, which only the board calls from the browser on a drag, and no
+  database trigger, function or webhook sends one (pg_catalog, all three repos searched). The file
+  aborts if any `stage_email_sends` or `message_sends` row is written in its transaction. Dragging
+  one of these 7 contacts on the board later will send that stage's email as it always has.
+- **A45. Side effect:** `trg_pipeline_timeline` writes one "pipeline_changed" row per moved contact
+  (7), and the rollback writes 7 more.
