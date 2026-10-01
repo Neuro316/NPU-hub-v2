@@ -95,12 +95,13 @@ const active = sel === '1' ? Object.keys(TAMPERS) : sel ? sel.split(',') : []
 for (const t of active) if (!TAMPERS[t]) { console.error(`unknown selector ${t}`); process.exit(2) }
 if (base && active.length) { console.error('BASE and TAMPER are separate runs'); process.exit(2) }
 
+// Line endings normalised: a Windows checkout (autocrlf) must not kill a multi-line anchor.
 function read(rel) {
   if (base) {
-    try { return execFileSync('git', ['show', `${base}:${rel}`], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) } catch { return '' }
+    try { return execFileSync('git', ['show', `${base}:${rel}`], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).replace(/\r\n/g, '\n') } catch { return '' }
   }
   const p = path.join(ROOT, rel)
-  return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : ''
+  return fs.existsSync(p) ? fs.readFileSync(p, 'utf8').replace(/\r\n/g, '\n') : ''
 }
 const used = new Set()
 function tampered(rel, src) {
