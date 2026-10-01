@@ -53,7 +53,7 @@ export default function UniversityAccessPage() {
       )}
       {!data ? <p className="flex items-center gap-2 text-sm text-gray-400"><Loader2 className="h-4 w-4 animate-spin" aria-hidden />Loading</p> : (
         <div className="grid gap-3 md:grid-cols-2">
-          {data.assets.length === 0 && <p className="col-span-full rounded-card border border-dashed border-gray-200 p-6 text-center text-sm text-gray-400">No assets yet.</p>}
+          {data.assets.length === 0 && <p className="col-span-full rounded-card border border-dashed border-gray-200 p-6 text-center text-sm text-gray-400">You have no assets yet. Press Add an asset and give the page on university.neuroprogeny.com that it should open, for example a free lesson's sign-up page.</p>}
           {data.assets.map((a) => (
             <button key={a.id} type="button" onClick={() => setEdit({ ...a, description: a.description ?? '' })} className="rounded-card border border-gray-100 bg-white p-4 text-left shadow-card hover:shadow-card-hover">
               <div className="flex items-center gap-2"><GraduationCap className="h-4 w-4 text-fire" aria-hidden /><b className="flex-1 text-sm text-np-dark">{a.title}</b>

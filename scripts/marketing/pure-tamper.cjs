@@ -18,6 +18,8 @@
 //   unsubreq    a marketing email may go without unsubscribe        {RS1}
 //   noescape    merge values enter email HTML unescaped             {R6}
 //   stopmerged  the STOP line check reads the merged text           {R7}
+//   connected   every entry source claims to be connected today      {K3}
+//   optout      readiness forgets the unsubscribe requirement        {Q1}
 // TAMPER=1 runs every selector at once and must redden the union.
 // Exit: 0 green (untampered) or the declared set reddened (tampered); 1 a red that
 // was not declared; 2 unknown selector or a substitution that matched nothing;
@@ -29,7 +31,7 @@ const ROOT = path.resolve(__dirname, '..', '..')
 const SRC = path.join(ROOT, 'src')
 const MODULES = ['lib/marketing/flags.ts', 'lib/marketing/policy.ts', 'lib/marketing/tokens.ts', 'lib/marketing/svix.ts',
   'lib/marketing/university.ts', 'lib/marketing/engine.ts', 'lib/marketing/render.ts', 'lib/marketing/watchdog.ts',
-  'lib/marketing/intake.ts', 'lib/marketing/providers/resend.ts', 'lib/marketing/providers/types.ts', 'lib/crm-server.ts', 'lib/phone.ts', 'lib/sms-split.ts']
+  'lib/marketing/intake.ts', 'lib/marketing/providers/resend.ts', 'lib/marketing/providers/types.ts', 'lib/crm-server.ts', 'lib/phone.ts', 'lib/sms-split.ts', 'lib/marketing/ui-logic.ts']
 
 const TAMPERS = {
   flagson: [['lib/marketing/flags.ts', "out[k] = (raw as Record<string, unknown>)[k] === 'on'", 'out[k] = Boolean((raw as Record<string, unknown>)[k])']],
@@ -44,8 +46,10 @@ const TAMPERS = {
   unsubreq: [['lib/marketing/providers/resend.ts', "if (msg.kind === 'marketing' && !msg.unsubscribeUrl) return { refused: 'marketing_without_unsubscribe' }", '']],
   noescape: [['lib/marketing/render.ts', 'resolveMergeTags(template, escaped, escapeHtml(i.orgName))', 'resolveMergeTags(template, c, i.orgName)']],
   stopmerged: [['lib/marketing/render.ts', '!/reply stop/i.test(template))', '!/reply stop/i.test(plain))']],
+  connected: [['lib/marketing/ui-logic.ts', "return key.startsWith('form:') || key.startsWith('manual:')", 'return true']],
+  optout: [['lib/marketing/ui-logic.ts', 'ok: !marketingEmail || i.unsubscribeReady,', 'ok: true,']],
 }
-const RED_OF = { flagson: ['F1'], placeholder: ['P1'], svixopen: ['S3'], redirect: ['U2', 'U3', 'U4'], nostop: ['R2'], onefail: ['W4'], unsubreq: ['RS1'], noescape: ['R6'], stopmerged: ['R7'] }
+const RED_OF = { flagson: ['F1'], placeholder: ['P1'], svixopen: ['S3'], redirect: ['U2', 'U3', 'U4'], nostop: ['R2'], onefail: ['W4'], unsubreq: ['RS1'], noescape: ['R6'], stopmerged: ['R7'], connected: ['K3'], optout: ['Q1'] }
 
 const sel = process.env.TAMPER || ''
 const active = sel === '1' ? Object.keys(TAMPERS) : sel ? sel.split(',') : []
@@ -81,6 +85,7 @@ const { findProblems } = L('lib/marketing/watchdog.js')
 const { validateIntake, definitionProblems } = L('lib/marketing/intake.js')
 const { buildResendRequest } = L('lib/marketing/providers/resend.js')
 const { emailIdempotencyKey } = L('lib/marketing/engine.js')
+const ui = L('lib/marketing/ui-logic.js')
 const crypto = require('crypto')
 
 const rows = []
@@ -162,6 +167,23 @@ check('RS2', rq.body?.headers?.['List-Unsubscribe'] === '<https://h/u?t=1>' && r
 check('RS3', rq.headers?.['Idempotency-Key'] === 'hub-k1')
 check('E1', emailIdempotencyKey('c1', 'campaign:x:enr:y:step:z') === emailIdempotencyKey('c1', 'campaign:x:enr:y:step:z')
   && emailIdempotencyKey('c1', 'campaign:x:enr:y:step:z') !== emailIdempotencyKey('c2', 'campaign:x:enr:y:step:z'), emailIdempotencyKey('c1', 'k'))
+
+// Funnels screens: sources, readiness, reasons, copy
+check('K1', ui.sourceKeyFor('booking', 'Intro Call!') === 'booking:intro-call' && ui.sourceKeyFor('call_missed', '') === 'call:missed'
+  && ui.sourceKeyFor('stage', '1b4e28ba-2fa1-41d2-883f-0016d3cca427') === 'stage:1b4e28ba-2fa1-41d2-883f-0016d3cca427', ui.sourceKeyFor('booking', 'Intro Call!'))
+check('K2', ui.sourceKeyFor('tag', '  ') === null && ui.sourceKeyFor('form', 'Bad Key') === null && ui.sourceKeyFor('stage', 'x') === null)
+check('K3', ui.sourceIsConnected('form:webinar') && !ui.sourceIsConnected('tag:vip') && !ui.sourceIsConnected('call:missed'))
+const base0 = { senderProblem: null, unsubscribeReady: false, routeKeys: [], forms: [], previewed: [0], testDriveDone: true }
+const rd = (x) => Object.fromEntries(ui.readiness({ ...base0, ...x }).map((r) => [r.id, r]))
+check('Q1', rd({ steps: [{ channel: 'email', kind: 'marketing' }] }).optout.ok === false && rd({ steps: [{ channel: 'sms', kind: 'marketing' }] }).optout.ok === true)
+const qf = rd({ steps: [{ channel: 'sms', kind: 'service' }], routeKeys: ['form:a'], forms: [{ id: 'F1', source_key: 'form:a', name: 'A', status: 'draft', consents: [{ text: 'x' }] }] }).consent
+check('Q2', qf.ok === false && qf.fix === 'forms' && qf.formId === 'F1', qf)
+check('Q3', rd({ steps: [{ channel: 'sms', kind: 'service' }, { channel: 'email', kind: 'service' }], previewed: [0] }).previews.ok === false
+  && rd({ steps: [{ channel: 'email', kind: 'service' }], senderProblem: 'sender_is_placeholder' }).sender.fix === 'settings')
+check('N1', /switched off/.test(ui.reasonText('engine_off')) && /opted out or bounced/.test(ui.reasonText('suppressed_complaint')) && ui.reasonText('weird_code').includes('weird code'))
+const copy = [JSON.stringify(ui.TEMPLATES), ...['engine_off', 'no_marketing_consent', 'cap_reached', 'outside_send_window'].map(ui.reasonText),
+  ...fs.readdirSync(path.join(SRC, 'components', 'marketing')).map((f) => fs.readFileSync(path.join(SRC, 'components', 'marketing', f), 'utf8'))].join(' ')
+check('N2', !copy.includes(EM_DASH), 'an em dash in Funnels copy')
 
 fs.rmSync(out, { recursive: true, force: true })
 const red = rows.filter((r) => !r.ok).map((r) => r.id).sort()

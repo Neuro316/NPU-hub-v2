@@ -28,6 +28,12 @@ export default function FormsPage() {
     try { setData(await api(`/api/marketing/overview?org=${currentOrg.id}`)) } catch (e: any) { toast.show(e.message, 'error') }
   }, [currentOrg, toast])
   useEffect(() => { load() }, [load])
+  // ?id=<form id> opens that form (the funnel readiness checklist links here)
+  useEffect(() => {
+    const want = new URLSearchParams(window.location.search).get('id')
+    const hit = want && data?.forms.find((x) => x.id === want)
+    if (hit) setF((cur) => cur ?? hit)
+  }, [data])
 
   async function save() {
     if (!currentOrg || !f) return
@@ -50,7 +56,7 @@ export default function FormsPage() {
       {!data ? <p className="flex items-center gap-2 text-sm text-gray-400"><Loader2 className="h-4 w-4 animate-spin" aria-hidden />Loading</p> : (
         <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
           <div className="space-y-2">
-            {data.forms.length === 0 && <p className="text-xs text-gray-400">No forms yet.</p>}
+            {data.forms.length === 0 && <p className="text-xs text-gray-500">You have no forms yet. Press New form; it starts with a name field, an email field and an email consent box you can edit.</p>}
             {data.forms.map((x) => (
               <button key={x.id} type="button" onClick={() => setF(x)} className={`w-full rounded-card border bg-white p-3 text-left shadow-card ${f?.id === x.id ? 'border-np-blue' : 'border-gray-100'}`}>
                 <div className="flex items-center gap-2"><FileText className="h-3.5 w-3.5 text-np-blue" aria-hidden /><b className="flex-1 truncate text-sm text-np-dark">{x.name}</b><span className="text-[10px] text-gray-400">v{x.version}</span></div>
@@ -97,7 +103,7 @@ export default function FormsPage() {
                 <p className="mt-1 text-[11px] text-gray-400">Keep an empty hidden field named website on the page. Real people never fill it in, and submissions that do are dropped.</p></div>}
               <div className="flex justify-end"><button type="button" onClick={save} className="rounded-lg bg-np-blue px-3 py-1.5 text-xs font-medium text-white hover:bg-np-blue-hover">Save form</button></div>
             </div>
-          ) : <div className="rounded-card border border-dashed border-gray-200 p-8 text-center text-sm text-gray-400">Choose a form or start a new one.</div>}
+          ) : <div className="rounded-card border border-dashed border-gray-200 p-8 text-center text-sm text-gray-500">Choose a form on the left to edit it, or press New form to build one. A published form can start a funnel campaign from its Starts from section.</div>}
         </div>
       )}
     </div>

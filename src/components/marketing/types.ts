@@ -26,5 +26,5 @@ export interface Overview {
   steps: Step[]; routes: Route[]
   enrollment_counts: Record<string, Record<string, number>>; stage_counts: Record<string, number>
   forms: FormDef[]; assets: Asset[]; test_contacts: Array<{ id: string; email: string | null; phone: string | null; label: string }>
-  flags: Flags; policy: Record<string, any> | null; sender_problem: string | null; can_go_live: boolean
+  flags: Flags; policy: Record<string, any> | null; sender_problem: string | null; unsubscribe_ready: boolean; can_go_live: boolean
 }
