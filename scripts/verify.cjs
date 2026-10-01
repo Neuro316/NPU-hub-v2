@@ -18,7 +18,8 @@ const run = (cmd, args, env = {}) => {
   return { code: r.status, out: `${r.stdout || ''}${r.stderr || ''}` }
 }
 const HARNESSES = [
-  { file: 'scripts/marketing/pure-tamper.cjs', selectors: ['flagson', 'placeholder', 'svixopen', 'redirect', 'nostop', 'onefail', 'unsubreq', 'noescape', 'stopmerged', 'connected', 'optout', '1'] },
+  { file: 'scripts/marketing/pure-tamper.cjs', selectors: ['flagson', 'placeholder', 'svixopen', 'redirect', 'nostop', 'onefail', 'unsubreq', 'noescape', 'stopmerged', 'connected', 'optout', 'nocap', '1'] },
+  { file: 'scripts/marketing/entry-wiring-tamper.cjs', selectors: ['nocall', 'mergeorder', 'importoptin', 'nosummary', 'hardcoded', 'consent', '1'] },
   { file: 'scripts/marketing/flags-off-parity.cjs', selectors: ['outside', 'untouched', '1'] },
 ]
 let fail = 0

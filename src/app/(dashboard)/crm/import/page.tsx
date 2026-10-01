@@ -320,6 +320,10 @@ export default function ImportPage() {
   const [importing, setImporting] = useState(false)
   const [importProgress, setImportProgress] = useState(0)
   const [importResult, setImportResult] = useState<{ imported: number; skipped: number; errors: number; merged: number; connections: number } | null>(null)
+  // Funnel campaigns (hub_212): an import starts campaigns only when the person ticks this.
+  const [startCampaigns, setStartCampaigns] = useState(false)
+  const [importEventName, setImportEventName] = useState('')
+  const [campaignNote, setCampaignNote] = useState<string | null>(null)
 
   // Duplicate detection
   const [existingContacts, setExistingContacts] = useState<any[]>([])
@@ -564,6 +568,31 @@ export default function ImportPage() {
     const sb = createClient()
     const selected = importRows.filter(r => r._selected)
     let imported = 0, skipped = 0, errors = 0, merged = 0, connections = 0
+    setCampaignNote(null)
+
+    // Updating an existing contact can change its stage or tags, which would raise
+    // campaign entry events. Guard those contacts for the length of the import, so a
+    // plain import or merge never starts a campaign. If the guard cannot be set,
+    // nothing is imported.
+    const mergeIds = Array.from(new Set(selected
+      .filter(r => r._mergeDupe !== false)
+      .map(r => duplicates.get(r._rowId)?.id)
+      .filter((id): id is string => typeof id === 'string')))
+    const importEvents = async (body: Record<string, unknown>) => {
+      const res = await fetch('/api/marketing/import-events', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ org_id: currentOrg.id, ...body }) })
+      const json = await res.json().catch(() => ({}))
+      return { ok: res.ok, json }
+    }
+    if (mergeIds.length) {
+      const g = await importEvents({ action: 'guard', contact_ids: mergeIds }).catch(() => ({ ok: false, json: {} as any }))
+      if (!g.ok) {
+        setCampaignNote(g.json?.error || 'Could not pause campaign entry for the contacts this import updates, so nothing was imported. Try again.')
+        setImporting(false)
+        setStep('preview')
+        return
+      }
+    }
 
     const { data: batch } = await sb.from('contact_import_batches').insert({
       org_id: currentOrg.id, imported_by: user.id,
@@ -755,6 +784,13 @@ export default function ImportPage() {
         status: 'completed',
         notes: connections > 0 ? `Auto-created ${connections} connections` : null,
       }).eq('id', batchId)
+    }
+
+    if (mergeIds.length) await importEvents({ action: 'release', contact_ids: mergeIds }).catch(() => null)
+    if (startCampaigns && batchId) {
+      const e = await importEvents({ action: 'enroll', batch_id: batchId, name: importEventName, contact_ids: mergeIds })
+        .catch(() => ({ ok: false, json: {} as any }))
+      setCampaignNote(e.json?.message || e.json?.error || 'Starting these contacts into campaigns failed. Nothing was sent.')
     }
 
     setImportRows([...importRows])
@@ -1055,11 +1091,31 @@ export default function ImportPage() {
                   className="text-[10px] text-gray-500 px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                   Back to Mapping
                 </button>
-                <button onClick={executeImport} disabled={selectedCount === 0}
+                <button onClick={executeImport} disabled={selectedCount === 0 || (startCampaigns && !importEventName.trim())}
                   className="text-[10px] font-bold text-white bg-green-600 px-4 py-1.5 rounded-lg hover:bg-green-700 disabled:opacity-40 transition-colors">
                   Import {selectedCount} Contacts
                 </button>
               </div>
+            </div>
+
+            {/* Funnel campaigns: opt in only */}
+            <div className="mb-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
+              <label className="flex items-center gap-2 text-[11px] text-np-dark">
+                <input type="checkbox" checked={startCampaigns} onChange={e => setStartCampaigns(e.target.checked)} />
+                Start funnel campaigns for these contacts
+              </label>
+              {startCampaigns && (
+                <div className="mt-1.5 flex items-center gap-2">
+                  <input value={importEventName} onChange={e => setImportEventName(e.target.value)} placeholder="Import name, for example spring workshop list"
+                    className="flex-1 text-[11px] border border-gray-200 rounded-md px-2 py-1" />
+                </div>
+              )}
+              <p className="mt-1 text-[10px] text-gray-500">
+                {startCampaigns
+                  ? 'Only campaigns whose starting point is this import name will start. They take in 100 people every 5 minutes, and nothing is sent that the send checks would refuse.'
+                  : 'Left unticked, this import only adds or updates contacts. No campaign starts.'}
+              </p>
+              {campaignNote && <p className="mt-1 text-[10px] text-amber-700">{campaignNote}</p>}
             </div>
 
             {/* Bulk actions */}
@@ -1231,6 +1287,9 @@ export default function ImportPage() {
             </div>
           </div>
 
+          {campaignNote && (
+            <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-800">{campaignNote}</p>
+          )}
           {importResult.connections > 0 && (
             <div className="bg-purple-50 border border-purple-100 rounded-lg p-3 mb-4 max-w-lg mx-auto text-center">
               <p className="text-[10px] text-purple-700">

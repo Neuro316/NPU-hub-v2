@@ -5,7 +5,7 @@ import { useMemo, useState } from 'react'
 import { Play, ShieldCheck, Link2, X, Target, Wand2 } from 'lucide-react'
 import { api } from '@/lib/marketing/client'
 import { useToast } from '@/components/ui/toast'
-import { describeSource, sourceIsConnected } from '@/lib/marketing/ui-logic'
+import { describeSource, sourceGapText } from '@/lib/marketing/ui-logic'
 import { SequenceEditor } from './sequence-editor'
 import { SourcePicker } from './source-picker'
 import { TestDriveResult } from './test-drive-result'
@@ -100,11 +100,13 @@ export function FunnelDetail({ orgId, data, campaign, reload, onGuided }: { orgI
         <ul className="mb-2 space-y-1">{routes.map((r) => (
           <li key={r.id} className="flex items-center gap-2 rounded-lg border border-gray-100 px-3 py-1.5 text-sm">
             <span className="flex-1">{describeSource(r.source_key, data.forms, data.stages)}
-              {!sourceIsConnected(r.source_key) && <span className="ml-2 text-[10px] text-gold">Nothing sends this event yet</span>}</span>
+              {data.sources && (sourceGapText(r.source_key, data.sources)
+                ? <span className="ml-2 text-[10px] text-gold" title={sourceGapText(r.source_key, data.sources) ?? ''}>Not connected yet</span>
+                : <span className="ml-2 text-[10px] text-teal">Connected</span>)}</span>
             <span className="font-mono text-[10px] text-gray-400">{r.source_key}</span>
             <button type="button" aria-label={`Remove ${describeSource(r.source_key, data.forms, data.stages)}`} onClick={() => route(r.source_key, true)} className="text-gray-400 hover:text-fire"><X className="h-3.5 w-3.5" aria-hidden /></button>
           </li>))}</ul>
-        <SourcePicker forms={data.forms} pipelines={data.pipelines} stages={data.stages} taken={routes.map((r) => r.source_key)} onAdd={(k) => route(k)} />
+        <SourcePicker forms={data.forms} pipelines={data.pipelines} stages={data.stages} taken={routes.map((r) => r.source_key)} onAdd={(k) => route(k)} sources={data.sources} />
       </div>
 
       <div className={card}>

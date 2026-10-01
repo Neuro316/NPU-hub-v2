@@ -3,6 +3,7 @@ import { createServerSupabase, createAdminSupabase } from '@/lib/supabase';
 import { logActivity } from '@/lib/crm-server';
 import { ADMIN_ROLES } from '@/lib/org-settings-keys';
 import { resolveConsent, CONSENT_FIELDS } from '@/lib/consent-merge';
+import { guardContacts, releaseGuard } from '@/lib/marketing/entry-events';
 
 // ─── POST /api/contacts/merge ───
 // Soft-merge one contact into another. The loser keeps its row and becomes
@@ -154,6 +155,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // ── Entry events (hub_212): a merge must never start a campaign. ────────
+    // The winner update below can change its stage or tags, which would otherwise
+    // raise stage and tag entry events. The guard makes any event raised for these
+    // two contacts while the merge runs a skip, and it is released at the end.
+    if (!(await guardContacts(admin, winner.org_id, [winnerId, loserId], 'contact_merge', 10))) {
+      return NextResponse.json(
+        { error: 'Could not pause campaign entry for these contacts, so the merge was not performed. Try again.' },
+        { status: 500 }
+      );
+    }
+
     // ── 2. Repoint EVERY contact-referencing column (migration 073) ─────────
     const { data: repoint, error: repointError } = await admin.rpc('merge_contact_repoint', {
       p_loser: loserId,
@@ -235,6 +247,7 @@ export async function POST(request: NextRequest) {
       ref_id: loserId,
       actor_id: user.id,
     });
+    await releaseGuard(admin, [winnerId, loserId], 'contact_merge');
 
     return NextResponse.json({
       success: true,

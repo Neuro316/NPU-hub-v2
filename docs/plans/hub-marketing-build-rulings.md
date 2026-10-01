@@ -463,3 +463,160 @@ captured and never sent, and requires the `created_by` it would insert to be nul
 
 - **A33. A missing team_members row saves with `created_by` null** rather than refusing, because the
   column is nullable and authorship is not worth blocking a save for.
+
+## 13. Entry events: stage, calls, tags, imports (2026-10-01)
+
+Request: wire the entry events the Funnels page lists but nothing fired, behind the engine flag,
+through the existing `route_and_enroll` and routing rules, idempotent on a stable event id.
+Branch `feat/entry-events`. Migration `hub_212_entry_events.sql`: **PROPOSED, not applied to live.**
+
+### Every code path that writes a contact's stage (measured by grep for `pipeline_stage` writes)
+
+| # | Path | Write | Raises a stage event? |
+|---|---|---|---|
+| 1 | Board drag, `crm/pipelines/page.tsx:880` via `crm-client.ts updateContact` (browser) | UPDATE | **yes**, trigger |
+| 2 | Board pipeline change `:891`, clear pipeline `:898` | UPDATE | yes when it lands on a stage; clearing has no stage |
+| 3 | Contact drawer, `components/crm/contact-detail.tsx:1679, 1683, 1696` | UPDATE | **yes**, trigger |
+| 4 | Bulk "move to stage" and "set pipeline", `api/contacts/bulk-action` | UPDATE, one statement | **yes**, trigger; plus one job log summary and the cap note |
+| 5 | Accounting payment marks paid, `api/accounting/payments:120` | UPDATE | **yes**, trigger |
+| 6 | Identity resolve, `api/identity/resolve:98`, `lib/identity-client.ts:359` | UPDATE | **yes**, trigger |
+| 7 | Onboarding pipeline existing contact, `lib/onboarding-pipeline.ts:219` | UPDATE | **yes**, trigger |
+| 8 | Any write from another app on the shared database (the University, NeuroReport) | UPDATE | **yes**: the trigger is on the table, so it sees writes this repo cannot |
+| 9 | Board create `:713`, contacts page create `:770`, EHR client create `ehr/ecr:448`, equipment import `:134`, identity resolve `:81`, onboarding new contact `:240`, Stripe auto tagger new buyer `:155`, NeuroReport sync `:233`, accounting signup `accounting-auth.ts:211`, CRM import new rows | INSERT | **no** (A35) |
+| 10 | Engine moves: `move_stage` mirroring a campaign's entry stage | UPDATE | **no**, deliberately (A37) |
+| 11 | Contact merge, winner update, `api/contacts/merge` | UPDATE | **no**: guarded (A38) |
+| 12 | CRM import updating an existing duplicate | UPDATE | **no**: guarded (A38) |
+
+Tags follow the same rule: every UPDATE that adds to `contacts.tags` (drawer, bulk add tags,
+Stripe auto tagger, onboarding, any other app) and every INSERT into `contact_tags` raises
+`tag:<slug>`. `merge_union_tags` (075) is honoured exactly as `trg_contact_tag_change` honours it.
+
+### How it is built
+
+- **Triggers queue, a cron enrolls.** Stage and tag changes are caught by statement-level
+  triggers on `contacts` and `contact_tags`, because nine paths write them and some are in the
+  browser or in other repos. Calls are raised from `api/twilio/ring-complete`. Chosen imports are
+  queued by `POST /api/marketing/import-events`. All of them only insert into `entry_events`
+  through `raise_entry_event`, which does nothing unless the engine flag is on **and** an active
+  route listens for that key. `/api/cron/entry-events` (every 5 minutes, `CRON_SECRET`) feeds the
+  queue to the existing `route_and_enroll`, at most 100 per run, one `job_runs` row per run.
+- **Enrolling sends nothing by itself.** Every message still goes through `gate_check` when its
+  step runs, so a bulk move enrolls people without sending anything the gate would block.
+- **No event creates or changes consent.** Nothing on this path calls `record_consent` or touches
+  `consent_events`, `suppressions` or the consent columns; the contract proves the counts are
+  unchanged and `entry-wiring-tamper` W10 proves no such call exists in the code.
+- **A trigger can never block the write it observes.** Each trigger body is wrapped so any failure
+  is a warning and the contact update still commits. `contacts` is shared with the University.
+- **Cheap when idle.** Each trigger first checks whether any active route listens for a stage or a
+  tag at all, and returns at once when none does, which is the state of every org today.
+
+### Event ids (idempotency)
+
+| Source | Source key | Event id |
+|---|---|---|
+| Stage change | `stage:<stage uuid>` | `stage_change:<contact>:<stage>:<transaction id>` |
+| Tag added | `tag:<slug>` | `tag_added:<contact>:<slug>:<transaction id>` |
+| Call answered | `call:answered` and the older `call:inbound` | `call:<CallSid>` |
+| Call missed | `call:missed` | `call:<CallSid>` |
+| Import, chosen | `import:<slug>` | `import_completed:<batch>:<contact>` |
+
+`entry_events` is unique on (org, source key, event id), and `enroll` is unique on (contact,
+campaign, source key, event id). A Twilio retry, a double click or a re-run of the import enroll is
+the same event and starts nothing new.
+
+### Branch results (preview branch `lapearkxzeqrfeavchsq`)
+
+Loaded `hub_211_dependencies.sql`, hub_211's statements, `branch-bootstrap/hub_212_dependencies.sql`
+(objects copied by hand from live pg_catalog: `contact_tag_definitions`, `contact_tags`,
+`contact_import_batches`, and `merge_union_tags` verbatim from 075), then hub_212 through
+`apply_migration`. The ledger's stored statement hashed to the file body's sha256
+(`d12ba8f6...`), so the branch ran exactly the file. The rollback block was run once on the branch
+and left 0 functions, 0 tables, 0 triggers and 0 ledger rows; hub_212 was then reapplied.
+
+`scripts/marketing/contract-212.sql`: **22 cases green** under `none`, and each planted defect
+reddened exactly its declared set: `flagoff` {F_OFF_RAISE}, `noidem` {D_SAME_EVENT_ONCE},
+`noguard` {M_GUARD_SKIPS}, `mergetags` {T_MERGE_UNION_SILENT}, `enginemove` {E_ENGINE_MOVE_SILENT},
+`nocap` {B_BULK_CAP}.
+
+**Found by the contract and fixed before proposing:** `process_entry_events` first set its
+"engine is writing" switch for the whole transaction, so any later stage change in the same
+transaction raised nothing (`S_STAGE_RAISED` read 0). It is now switched on for the
+`route_and_enroll` call only. Production runs the cron in its own transaction, so this was latent,
+not live.
+
+### Assumptions recorded
+
+- **A34. "call:answered", "tag:added" and "import:completed" are event NAMES; the source keys a
+  route listens on stay specific.** A funnel must say which tag or which import starts it, so the
+  keys are `tag:<slug>` and `import:<slug>`, and the event names live in the event id. An answered
+  call raises both `call:answered` and the older `call:inbound`, because one live route
+  (`call:inbound`) already exists; the picker now offers `call:answered`.
+- **A35. Creating a contact is not a stage change or a tag being added.** INSERTs raise nothing.
+  Otherwise every plain import (which inserts with a stage and tags) would enroll, which the
+  request forbids. Cost: a Stripe buyer whose contact is created with a tag does not raise
+  `tag:<slug>`; only a later tag addition does.
+- **A36. The per-run cap is 100 every 5 minutes, and one import may queue at most 1,000.** Above
+  1,000 the import enroll refuses with a message to split the file, and queues nobody. Bulk stage
+  moves are never refused: they queue, and the person is told how long entry will take.
+- **A37. Stage moves the engine makes itself raise nothing.** When `enroll` moves a contact into a
+  campaign's entry stage, that is not a person's action; letting it raise an event would chain
+  campaigns into each other.
+- **A38. Merges and import updates are guarded by a time window, per contact.** The merge route
+  opens a 10 minute window on both contacts before it repoints anything and closes it at the end;
+  the import page opens a 60 minute window on the duplicates it will update and closes it when
+  done. Any event raised for those contacts inside the window is skipped. Cost: a real stage
+  change made to those exact contacts during that window is skipped too. If the guard cannot be
+  set, the merge or import does not run.
+- **A39. Import enrollment is open to any staff member running the import**, because the person
+  importing is the one who chooses, as the request says. It still needs the engine on and an
+  active campaign listening for that import name.
+- **A40. "Connected" comes from the database and the line settings**: the triggers and queue
+  function exist (`entry_source_status()`, read through pg_catalog), and the org has at least one
+  phone line in CRM Settings, Twilio. Booking and quiz show "not connected yet" because nothing in
+  the Hub raises them.
+- **A41. The bulk summary counts this org's stage events since the move started**, so a stage
+  move by someone else in the same second is counted too. It is a summary line, not a ledger.
+
+### Not connected yet, and why
+
+- **Booking** (`booking:<slug>`): the Hub has no booking flow that knows the booking kind; the
+  session ledger lives in the University. Needs a decision on which system fires it.
+- **Quiz** (`quiz:<slug>`): quiz results are written by the University and NeuroReport
+  (`nr_quiz_results`), not the Hub. A trigger on that table would work, and is a separate change to a
+  shared table the University owns.
+- **A new contact created with a tag or a stage** (A35).
+
+### Overhead benchmark and the revision it forced (2026-10-01, before any live apply)
+
+Cameron's condition on the go: measure a bulk stage update of at least 300 contacts with the
+engine off, on with nobody listening, and listening, against the same update without the trigger,
+and stop if the first two add noticeable overhead.
+
+**Method.** 400 contacts on the branch; per case, 12 rounds of updating all 400, each round
+running no trigger, the approved trigger and the revised trigger in a rotating order, so table
+bloat from earlier updates hits all three equally; first round dropped, medians reported, every
+run rolled back. A first, sequential attempt was discarded: each case ran after the previous ones
+in one transaction, so later cases were slowed by dead rows regardless of design.
+
+| case (400-row update, median ms) | no trigger | approved file (d656be3f) | revised file (0630d111) |
+|---|---|---|---|
+| engine off, a campaign listening | 17.5 / 23.5 | 32.2 / 35.7 (+12 to 15) | 19.7 / 23.7 (+0 to 2) |
+| engine on, nobody listening | 19.3 / 26.0 | 19.8 / 25.3 (none) | 19.7 / 25.0 (none) |
+| engine on, listening to a different stage | 22.3 | 76.1 (+54) | 70.2 (+48) |
+| engine on, listening, 400 events queued | 23.8 | 168.6 | 165.2 (+141, about 0.35 ms an event) |
+| unrelated column only, a campaign listening | 27.4 | 44.5 | 45.5 (+17) |
+
+**The approved file failed the engine-off condition**: its cheap exit asked only whether any stage
+or tag route existed, so with the engine off it still joined and checked the flag row by row. The
+revised file's exit asks whether any org **with the engine on** has an active stage or tag route,
+once per statement. Only the trigger bodies changed; the contract (22 cases, 6 planted defects)
+was rerun on the revised body and is green.
+
+**A row-level trigger was tried and rejected**: limited to the stage and tag columns it costs
+nothing on unrelated updates, but it runs its checks once per row, and a 400-row stage move with
+nobody listening cost +26 ms (later +70 ms) against about 0 for the statement trigger.
+
+- **A42. The remaining cost is accepted and stated**: once an org with the engine on has a stage or
+  tag campaign, every update of `contacts` pays about 0.04 ms a row to materialise the changed rows,
+  including updates that touch neither column (+17 ms per 400 rows). Until then it is about zero.
+  On live today no stage or tag route exists, so the exit is taken on every update.

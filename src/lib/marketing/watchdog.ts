@@ -10,6 +10,7 @@ export interface Problem { job: string; problem: 'not_running' | 'failed_twice';
 /** Jobs this build adds. Existing crons do not write job_runs and are not listed. */
 export const EXPECTED_JOBS: ExpectedJob[] = [
   { job: 'campaign-steps', maxGapMinutes: 20 },
+  { job: 'entry-events', maxGapMinutes: 20 },
 ]
 
 export function findProblems(expected: ExpectedJob[], runs: RunRow[], now: Date): Problem[] {

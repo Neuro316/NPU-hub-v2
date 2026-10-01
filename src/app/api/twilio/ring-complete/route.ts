@@ -2,6 +2,29 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminSupabase } from '@/lib/supabase';
 import { resolveInboundOrgContext, appendVoicemail, resolveAppUrl } from '@/lib/inbound-voice';
 import twilio from 'twilio';
+import { raiseEntryEvent } from '@/lib/marketing/entry-events';
+
+// Entry events for funnel campaigns (hub_212). Attributed by CallSid through the
+// inbound call row, never by "latest ringing row", so an overlapping call cannot
+// enroll the wrong person. Answered calls raise call:answered and the older
+// call:inbound key a live route already uses. Best effort: a failure here never
+// changes the TwiML the caller hears. Covers every line, since every line rings
+// through this action.
+async function raiseCallEvent(callSid: string, outcome: 'answered' | 'missed') {
+  if (!callSid) return;
+  try {
+    const admin = createAdminSupabase();
+    const { data: row } = await admin.from('call_logs').select('org_id, contact_id, direction')
+      .eq('external_call_sid', callSid).maybeSingle();
+    if (!row?.org_id || !row.contact_id || row.direction !== 'inbound') return;
+    const keys = outcome === 'answered' ? ['call:answered', 'call:inbound'] : ['call:missed'];
+    for (const sourceKey of keys) {
+      await raiseEntryEvent(admin, { orgId: row.org_id, contactId: row.contact_id, sourceKey, eventId: `call:${callSid}`, origin: 'call' });
+    }
+  } catch (e) {
+    console.warn('ring-complete: call entry event skipped:', e);
+  }
+}
 
 // `action` handler for the inbound ring <Dial><Client> leg.
 //
@@ -64,6 +87,7 @@ export async function POST(request: NextRequest) {
           console.warn('ring-complete: call_log close skipped:', e);
         }
       }
+      await raiseCallEvent(callSid, 'answered');
       response.hangup();
       return new NextResponse(response.toString(), {
         headers: { 'Content-Type': 'text/xml' },
@@ -71,6 +95,7 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Nobody answered: voicemail, exactly as before. ──────────────────────
+    await raiseCallEvent(params.CallSid || '', 'missed');
     // Per-line greeting (audio, else spoken text), org greeting as fallback.
     const admin = createAdminSupabase();
     const { greetingUrl, greetingText } = await resolveInboundOrgContext(admin, to);

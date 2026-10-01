@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { withStaff, requireOrg } from '@/lib/api-guard'
 import { getFlags } from '@/lib/marketing/flags'
 import { getSendPolicy, senderProblem } from '@/lib/marketing/policy'
+import { buildSourceStatus } from '@/lib/marketing/ui-logic'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,7 +12,7 @@ export const GET = withStaff(async (req, ctx) => {
   const org = requireOrg(ctx, req.nextUrl.searchParams.get('org'))
   if (typeof org !== 'string') return org
   const db = ctx.db
-  const [campaigns, pipelines, stages, sequences, steps, routes, enrollments, forms, assets, tests, flags, policy, positions] = await Promise.all([
+  const [campaigns, pipelines, stages, sequences, steps, routes, enrollments, forms, assets, tests, flags, policy, positions, wiring, twilio] = await Promise.all([
     db.from('funnel_campaigns').select('*').eq('org_id', org).order('created_at', { ascending: false }),
     db.from('pipelines').select('id, name, legacy_key, position, archived_at').eq('org_id', org).order('position'),
     db.from('pipeline_stages').select('id, pipeline_id, name, position, color, archived_at').eq('org_id', org).order('position'),
@@ -25,6 +26,8 @@ export const GET = withStaff(async (req, ctx) => {
     getFlags(db, org),
     getSendPolicy(db, org),
     db.from('contact_pipeline_positions').select('stage_id').eq('org_id', org),
+    db.rpc('entry_source_status'),
+    db.from('org_settings').select('setting_value').eq('org_id', org).eq('setting_key', 'crm_twilio').maybeSingle(),
   ])
   const firstError = [campaigns, pipelines, stages, sequences, steps, routes, enrollments, forms, assets, tests, positions].find((r: any) => r.error)
   if (firstError) return NextResponse.json({ error: 'Some campaign data could not be loaded. Try again.' }, { status: 500 })
@@ -45,5 +48,12 @@ export const GET = withStaff(async (req, ctx) => {
     // whether marketing email can carry an unsubscribe link; the secret itself never leaves the server
     unsubscribe_ready: (process.env.HUB_UNSUBSCRIBE_SECRET || '').trim().length >= 32,
     can_go_live: ctx.isSuperadmin,
+    // read from the database and line settings, so it says what is actually wired
+    sources: buildSourceStatus({
+      queue: (wiring.data as any)?.queue === true,
+      stageTrigger: (wiring.data as any)?.stage === true,
+      tagTrigger: (wiring.data as any)?.tag === true,
+      lines: Array.isArray((twilio.data as any)?.setting_value?.numbers) ? (twilio.data as any).setting_value.numbers.length : 0,
+    }),
   })
 })

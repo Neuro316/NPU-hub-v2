@@ -3,13 +3,13 @@
 // "advanced: type a key" fallback. The key is shown small, for anyone who needs it.
 import { useState } from 'react'
 import { Plus } from 'lucide-react'
-import { SOURCE_KINDS, sourceKeyFor, sourceIsConnected, type SourceKind } from '@/lib/marketing/ui-logic'
+import { SOURCE_KINDS, sourceKeyFor, kindGroup, sourceGapText, type SourceKind, type SourceStatus } from '@/lib/marketing/ui-logic'
 import type { FormDef, Pipeline, Stage } from './types'
 
 const input = 'w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/30'
 
-export function SourcePicker({ forms, pipelines, stages, taken, onAdd }: {
-  forms: FormDef[]; pipelines: Pipeline[]; stages: Stage[]; taken: string[]; onAdd: (key: string) => void
+export function SourcePicker({ forms, pipelines, stages, taken, onAdd, sources }: {
+  forms: FormDef[]; pipelines: Pipeline[]; stages: Stage[]; taken: string[]; onAdd: (key: string) => void; sources?: SourceStatus
 }) {
   const [kind, setKind] = useState<SourceKind>('form')
   const [detail, setDetail] = useState('')
@@ -25,7 +25,7 @@ export function SourcePicker({ forms, pipelines, stages, taken, onAdd }: {
       <div className="grid gap-2 md:grid-cols-2">
         <div><label className="mb-1 block text-[11px] font-medium text-gray-500" htmlFor="sp-kind">A person enters when</label>
           <select id="sp-kind" className={input} value={kind} onChange={(e) => { setKind(e.target.value as SourceKind); setDetail('') }}>
-            {SOURCE_KINDS.map((s) => <option key={s.kind} value={s.kind}>{s.label}</option>)}
+            {SOURCE_KINDS.map((s) => <option key={s.kind} value={s.kind}>{s.label}{sources ? (sources[kindGroup(s.kind)]?.connected ? ' (connected)' : ' (not connected yet)') : ''}</option>)}
           </select></div>
         {spec.needs === 'form' && <div><label className="mb-1 block text-[11px] font-medium text-gray-500" htmlFor="sp-form">Which form</label>
           {forms.length ? <select id="sp-form" className={input} value={detail} onChange={(e) => setDetail(e.target.value)}>
@@ -41,7 +41,7 @@ export function SourcePicker({ forms, pipelines, stages, taken, onAdd }: {
             </optgroup>)}
           </select></div>}
       </div>
-      {key && !sourceIsConnected(key) && <p className="text-[11px] text-gold">Nothing in the Hub sends this event yet, so it will not start the campaign until that event is connected. Forms work today.</p>}
+      {key && sources && sourceGapText(key, sources) && <p className="text-[11px] text-gold">Not connected yet: {sourceGapText(key, sources)} It will not start the campaign until that changes.</p>}
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" disabled={!key || taken.includes(key)} onClick={() => key && add(key)}
           className="inline-flex items-center gap-1 rounded-lg bg-np-blue px-3 py-1.5 text-xs font-medium text-white hover:bg-np-blue-hover disabled:opacity-40"><Plus className="h-3.5 w-3.5" aria-hidden />Add this</button>

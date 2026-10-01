@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabase, createAdminSupabase } from '@/lib/supabase';
+import { summariseBulkStageMove } from '@/lib/marketing/entry-events';
 
 export async function POST(request: NextRequest) {
   // Auth check with user-context client
@@ -48,6 +49,10 @@ export async function POST(request: NextRequest) {
   // record was NOT. Tracked separately because the two writes can diverge and
   // the operator has to be told when they do.
   let dncAuditFailures = 0;
+  // Funnel campaigns (hub_212): a stage move raises stage entry events through a
+  // database trigger. The cron enrolls them, capped per run; this only reports.
+  const stageMoveStarted = new Date().toISOString();
+  let campaignNote: string | null = null;
 
   switch (action) {
     case 'add_tags': {
@@ -88,6 +93,7 @@ export async function POST(request: NextRequest) {
         .select('id');
       error = err;
       affected = data?.length || 0;
+      if (!err && affected) campaignNote = (await summariseBulkStageMove(supabase, orgId, stageMoveStarted, affected, user.id)).note;
       break;
     }
 
@@ -102,6 +108,7 @@ export async function POST(request: NextRequest) {
         .select('id');
       error = err;
       affected = data?.length || 0;
+      if (!err && affected && params.pipeline_stage) campaignNote = (await summariseBulkStageMove(supabase, orgId, stageMoveStarted, affected, user.id)).note;
       break;
     }
 
@@ -206,5 +213,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: error.message, affected }, { status: 500 });
   }
 
-  return NextResponse.json({ success: true, affected });
+  return NextResponse.json({ success: true, affected, ...(campaignNote ? { campaign_note: campaignNote } : {}) });
 }

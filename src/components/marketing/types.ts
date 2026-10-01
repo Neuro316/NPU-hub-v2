@@ -1,4 +1,5 @@
 // Shapes returned by GET /api/marketing/overview.
+import type { SourceStatus } from '@/lib/marketing/ui-logic'
 export interface FunnelCampaign {
   id: string; org_id: string; name: string; description: string | null
   status: 'draft' | 'active' | 'paused' | 'archived'
@@ -27,4 +28,5 @@ export interface Overview {
   enrollment_counts: Record<string, Record<string, number>>; stage_counts: Record<string, number>
   forms: FormDef[]; assets: Asset[]; test_contacts: Array<{ id: string; email: string | null; phone: string | null; label: string }>
   flags: Flags; policy: Record<string, any> | null; sender_problem: string | null; unsubscribe_ready: boolean; can_go_live: boolean
+  sources?: SourceStatus
 }

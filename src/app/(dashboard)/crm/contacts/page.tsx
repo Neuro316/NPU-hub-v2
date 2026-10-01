@@ -336,7 +336,7 @@ function ContactsPageContent() {
     try {
       const result = await bulkUpdateContacts(Array.from(selected), action, params)
       if (result.success && result.affected > 0) {
-        setBulkFeedback({ type: 'success', msg: `Updated ${result.affected} contact${result.affected === 1 ? '' : 's'}` })
+        setBulkFeedback({ type: 'success', msg: `Updated ${result.affected} contact${result.affected === 1 ? '' : 's'}${(result as any).campaign_note ? `. ${(result as any).campaign_note}` : ''}` })
         setSelected(new Set())
         load()
       } else if (result.affected === 0) {

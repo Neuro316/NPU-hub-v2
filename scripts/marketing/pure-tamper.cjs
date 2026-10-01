@@ -18,7 +18,8 @@
 //   unsubreq    a marketing email may go without unsubscribe        {RS1}
 //   noescape    merge values enter email HTML unescaped             {R6}
 //   stopmerged  the STOP line check reads the merged text           {R7}
-//   connected   every entry source claims to be connected today      {K3}
+//   connected   phone calls claim to be connected with no phone line  {K3}
+//   nocap       a bulk move over the per-run cap gets no message      {K5}
 //   optout      readiness forgets the unsubscribe requirement        {Q1}
 // TAMPER=1 runs every selector at once and must redden the union.
 // Exit: 0 green (untampered) or the declared set reddened (tampered); 1 a red that
@@ -31,7 +32,7 @@ const ROOT = path.resolve(__dirname, '..', '..')
 const SRC = path.join(ROOT, 'src')
 const MODULES = ['lib/marketing/flags.ts', 'lib/marketing/policy.ts', 'lib/marketing/tokens.ts', 'lib/marketing/svix.ts',
   'lib/marketing/university.ts', 'lib/marketing/engine.ts', 'lib/marketing/render.ts', 'lib/marketing/watchdog.ts',
-  'lib/marketing/intake.ts', 'lib/marketing/providers/resend.ts', 'lib/marketing/providers/types.ts', 'lib/crm-server.ts', 'lib/phone.ts', 'lib/sms-split.ts', 'lib/marketing/ui-logic.ts', 'lib/marketing/db-errors.ts']
+  'lib/marketing/intake.ts', 'lib/marketing/providers/resend.ts', 'lib/marketing/providers/types.ts', 'lib/crm-server.ts', 'lib/phone.ts', 'lib/sms-split.ts', 'lib/marketing/ui-logic.ts', 'lib/marketing/db-errors.ts', 'lib/marketing/entry-events.ts', 'lib/marketing/job-runs.ts']
 
 const TAMPERS = {
   flagson: [['lib/marketing/flags.ts', "out[k] = (raw as Record<string, unknown>)[k] === 'on'", 'out[k] = Boolean((raw as Record<string, unknown>)[k])']],
@@ -46,10 +47,11 @@ const TAMPERS = {
   unsubreq: [['lib/marketing/providers/resend.ts', "if (msg.kind === 'marketing' && !msg.unsubscribeUrl) return { refused: 'marketing_without_unsubscribe' }", '']],
   noescape: [['lib/marketing/render.ts', 'resolveMergeTags(template, escaped, escapeHtml(i.orgName))', 'resolveMergeTags(template, c, i.orgName)']],
   stopmerged: [['lib/marketing/render.ts', '!/reply stop/i.test(template))', '!/reply stop/i.test(plain))']],
-  connected: [['lib/marketing/ui-logic.ts', "return key.startsWith('form:') || key.startsWith('manual:')", 'return true']],
+  connected: [['lib/marketing/ui-logic.ts', ': i.lines < 1 ?', ': false ?']],
+  nocap: [['lib/marketing/entry-events.ts', 'if (count <= ENTRY_CAP_PER_RUN) return null', 'return null']],
   optout: [['lib/marketing/ui-logic.ts', 'ok: !marketingEmail || i.unsubscribeReady,', 'ok: true,']],
 }
-const RED_OF = { flagson: ['F1'], placeholder: ['P1'], svixopen: ['S3'], redirect: ['U2', 'U3', 'U4'], nostop: ['R2'], onefail: ['W4'], unsubreq: ['RS1'], noescape: ['R6'], stopmerged: ['R7'], connected: ['K3'], optout: ['Q1'] }
+const RED_OF = { flagson: ['F1'], placeholder: ['P1'], svixopen: ['S3'], redirect: ['U2', 'U3', 'U4'], nostop: ['R2'], onefail: ['W4'], unsubreq: ['RS1'], noescape: ['R6'], stopmerged: ['R7'], connected: ['K3'], optout: ['Q1'], nocap: ['K5'] }
 
 const sel = process.env.TAMPER || ''
 const active = sel === '1' ? Object.keys(TAMPERS) : sel ? sel.split(',') : []
@@ -86,6 +88,7 @@ const { validateIntake, definitionProblems } = L('lib/marketing/intake.js')
 const { buildResendRequest } = L('lib/marketing/providers/resend.js')
 const { emailIdempotencyKey } = L('lib/marketing/engine.js')
 const ui = L('lib/marketing/ui-logic.js')
+const entry = L('lib/marketing/entry-events.js')
 const { constraintMessage } = L('lib/marketing/db-errors.js')
 const crypto = require('crypto')
 
@@ -173,7 +176,17 @@ check('E1', emailIdempotencyKey('c1', 'campaign:x:enr:y:step:z') === emailIdempo
 check('K1', ui.sourceKeyFor('booking', 'Intro Call!') === 'booking:intro-call' && ui.sourceKeyFor('call_missed', '') === 'call:missed'
   && ui.sourceKeyFor('stage', '1b4e28ba-2fa1-41d2-883f-0016d3cca427') === 'stage:1b4e28ba-2fa1-41d2-883f-0016d3cca427', ui.sourceKeyFor('booking', 'Intro Call!'))
 check('K2', ui.sourceKeyFor('tag', '  ') === null && ui.sourceKeyFor('form', 'Bad Key') === null && ui.sourceKeyFor('stage', 'x') === null)
-check('K3', ui.sourceIsConnected('form:webinar') && !ui.sourceIsConnected('tag:vip') && !ui.sourceIsConnected('call:missed'))
+// connection status comes from the real state; nothing is connected when it is unknown
+const st0 = ui.buildSourceStatus({ queue: true, stageTrigger: true, tagTrigger: true, lines: 0 })
+const st2 = ui.buildSourceStatus({ queue: true, stageTrigger: true, tagTrigger: true, lines: 2 })
+const stq = ui.buildSourceStatus({ queue: false, stageTrigger: true, tagTrigger: true, lines: 2 })
+check('K3', ui.sourceIsConnected('form:webinar', st0) && !ui.sourceIsConnected('call:missed', st0) && ui.sourceIsConnected('call:missed', st2)
+  && ui.sourceIsConnected('tag:vip', st2) && !ui.sourceIsConnected('tag:vip', stq) && !ui.sourceIsConnected('stage:x', stq)
+  && !ui.sourceIsConnected('booking:intro', st2) && !ui.sourceIsConnected('quiz:x', st2) && !ui.sourceIsConnected('form:webinar', undefined))
+check('K4', ui.sourceKeyFor('call_inbound', '') === 'call:answered' && ui.sourceGroup('call:inbound') === 'call_answered'
+  && ui.sourceGroup('call:answered') === 'call_answered' && ui.sourceGapText('call:answered', st2) === null && typeof ui.sourceGapText('booking:x', st2) === 'string')
+check('K5', entry.entryCapNote(entry.ENTRY_CAP_PER_RUN) === null && /100 people every 5 minutes/.test(String(entry.entryCapNote(250)))
+  && /about 15 minutes/.test(String(entry.entryCapNote(250))) && !/\u2014/.test(String(entry.entryCapNote(250))), entry.entryCapNote(250))
 const base0 = { senderProblem: null, unsubscribeReady: false, routeKeys: [], forms: [], previewed: [0], testDriveDone: true }
 const rd = (x) => Object.fromEntries(ui.readiness({ ...base0, ...x }).map((r) => [r.id, r]))
 check('Q1', rd({ steps: [{ channel: 'email', kind: 'marketing' }] }).optout.ok === false && rd({ steps: [{ channel: 'sms', kind: 'marketing' }] }).optout.ok === true)
