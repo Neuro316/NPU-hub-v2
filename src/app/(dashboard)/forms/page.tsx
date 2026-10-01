@@ -46,11 +46,11 @@ export default function FormsPage() {
   const snippet = f?.slug ? `<script>\nasync function sendForm(values, consents) {\n  const r = await fetch('${appUrl}/api/intake', { method: 'POST', headers: { 'Content-Type': 'application/json' },\n    body: JSON.stringify({ form: '${f.slug}', values, consents, website: '', utm: Object.fromEntries(new URLSearchParams(location.search)) }) })\n  return r.json()\n}\n</script>` : ''
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4">
+    <div className="mx-auto max-w-5xl space-y-4" data-help-screen="forms">
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex-1"><h1 className="text-xl font-semibold text-np-dark">Forms and Pages</h1>
           <p className="text-sm text-gray-500">Sign-up forms that create the contact, record exactly what they agreed to, and start the right campaign.</p></div>
-        <button type="button" onClick={() => setF(fresh())} className="inline-flex items-center gap-1 rounded-lg bg-np-blue px-3 py-2 text-xs font-medium text-white hover:bg-np-blue-hover"><Plus className="h-3.5 w-3.5" aria-hidden />New form</button>
+        <button type="button" data-help-id="forms.new" onClick={() => setF(fresh())} className="inline-flex items-center gap-1 rounded-lg bg-np-blue px-3 py-2 text-xs font-medium text-white hover:bg-np-blue-hover"><Plus className="h-3.5 w-3.5" aria-hidden />New form</button>
       </div>
       {data && !data.flags.intake && <p className="rounded-lg bg-np-light p-3 text-xs text-gray-500">Form intake is switched off for this organization. You can build and publish forms now; they accept submissions once intake is switched on.</p>}
       {!data ? <p className="flex items-center gap-2 text-sm text-gray-400"><Loader2 className="h-4 w-4 animate-spin" aria-hidden />Loading</p> : (
@@ -69,7 +69,7 @@ export default function FormsPage() {
                 <div><label className="text-[11px] text-gray-500" htmlFor="fm-name">Name</label><input id="fm-name" className={input} value={f.name ?? ''} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
                 <div><label className="text-[11px] text-gray-500" htmlFor="fm-slug">Form address</label><input id="fm-slug" className={`${input} font-mono`} placeholder="webinar-signup" value={f.slug ?? ''} onChange={(e) => setF({ ...f, slug: e.target.value })} /></div>
                 <div><label className="text-[11px] text-gray-500" htmlFor="fm-src">Starts campaigns routed from</label><input id="fm-src" className={`${input} font-mono`} placeholder={`form:${f.slug || 'webinar-signup'}`} value={f.source_key ?? ''} onChange={(e) => setF({ ...f, source_key: e.target.value })} /></div>
-                <div><label className="text-[11px] text-gray-500" htmlFor="fm-status">Status</label><select id="fm-status" className={input} value={f.status} onChange={(e) => setF({ ...f, status: e.target.value as FormDef['status'] })}><option value="draft">Draft</option><option value="published">Published</option><option value="archived">Archived</option></select></div>
+                <div><label className="text-[11px] text-gray-500" htmlFor="fm-status">Status</label><select id="fm-status" data-help-id="forms.status" className={input} value={f.status} onChange={(e) => setF({ ...f, status: e.target.value as FormDef['status'] })}><option value="draft">Draft</option><option value="published">Published</option><option value="archived">Archived</option></select></div>
               </div>
               <div><p className="mb-1 text-xs font-semibold text-np-dark">Fields</p>
                 {f.fields!.map((x: any, i: number) => (
@@ -82,7 +82,7 @@ export default function FormsPage() {
                     <button type="button" aria-label="Remove field" onClick={() => setF({ ...f, fields: f.fields!.filter((_: any, j: number) => j !== i) })} className="p-1 text-gray-400 hover:text-fire"><Trash2 className="h-3.5 w-3.5" aria-hidden /></button>
                   </div>))}
                 <button type="button" onClick={() => setF({ ...f, fields: [...f.fields!, { key: '', label: '', type: 'text' }] })} className="text-xs text-np-blue">Add a field</button></div>
-              <div><p className="mb-1 text-xs font-semibold text-np-dark">Consent boxes</p>
+              <div data-help-id="forms.consents"><p className="mb-1 text-xs font-semibold text-np-dark">Consent boxes</p>
                 <p className="mb-1 text-[11px] text-gray-400">The wording here is exactly what the visitor sees and what the Hub records when they tick the box.</p>
                 {f.consents!.map((x: any, i: number) => (
                   <div key={i} className="mb-2 space-y-1 rounded-lg border border-gray-100 p-2">
@@ -97,11 +97,11 @@ export default function FormsPage() {
                   </div>))}
                 <button type="button" onClick={() => setF({ ...f, consents: [...f.consents!, { id: '', channel: 'sms', kind: 'marketing', text: '' }] })} className="text-xs text-np-blue">Add a consent box</button></div>
               <div><label className="text-[11px] text-gray-500" htmlFor="fm-thanks">Message after submitting</label><input id="fm-thanks" className={input} value={f.success_message ?? ''} onChange={(e) => setF({ ...f, success_message: e.target.value })} /></div>
-              {snippet && <div><div className="mb-1 flex items-center gap-2"><p className="text-xs font-semibold text-np-dark">Embed on a website</p><span className="flex-1" />
+              {snippet && <div data-help-id="forms.embed"><div className="mb-1 flex items-center gap-2"><p className="text-xs font-semibold text-np-dark">Embed on a website</p><span className="flex-1" />
                 <button type="button" onClick={() => { navigator.clipboard?.writeText(snippet); toast.show('The snippet is copied.') }} className="inline-flex items-center gap-1 text-xs text-np-blue"><Copy className="h-3 w-3" aria-hidden />Copy</button></div>
                 <pre className="overflow-x-auto rounded-lg bg-np-light p-2 text-[10px] text-gray-600">{snippet}</pre>
                 <p className="mt-1 text-[11px] text-gray-400">Keep an empty hidden field named website on the page. Real people never fill it in, and submissions that do are dropped.</p></div>}
-              <div className="flex justify-end"><button type="button" onClick={save} className="rounded-lg bg-np-blue px-3 py-1.5 text-xs font-medium text-white hover:bg-np-blue-hover">Save form</button></div>
+              <div className="flex justify-end"><button type="button" data-help-id="forms.save" onClick={save} className="rounded-lg bg-np-blue px-3 py-1.5 text-xs font-medium text-white hover:bg-np-blue-hover">Save form</button></div>
             </div>
           ) : <div className="rounded-card border border-dashed border-gray-200 p-8 text-center text-sm text-gray-500">Choose a form on the left to edit it, or press New form to build one. A published form can start a funnel campaign from its Starts from section.</div>}
         </div>

@@ -19,7 +19,7 @@ function listTs(dir) {
   for (const e of fs.readdirSync(abs, { withFileTypes: true })) {
     const rel = `${dir}/${e.name}`
     if (e.isDirectory()) out.push(...listTs(rel))
-    else if (/\.tsx?$/.test(e.name)) out.push(rel)
+    else if (/\.(tsx?|json)$/.test(e.name)) out.push(rel)
   }
   return out
 }
@@ -34,11 +34,18 @@ function compile(tampers, active, prefix) {
   const hits = Object.fromEntries(active.map((t) => [t, 0]))
   const files = [...new Set([...DIRS.flatMap(listTs), ...EXTRA])]
   for (const rel of files) {
-    let src = fs.readFileSync(path.join(SRC, rel), 'utf8')
+    // CRLF normalised: with core.autocrlf a Windows checkout has CRLF, and anchors use LF
+    let src = fs.readFileSync(path.join(SRC, rel), 'utf8').replace(/\r\n/g, '\n')
     for (const t of active) for (const [file, from, to] of tampers[t]) {
       if (file !== rel) continue
       if (!src.includes(from)) { console.error(`dead anchor: ${t} in ${file}`); process.exit(2) }
       src = src.split(from).join(to); hits[t]++
+    }
+    if (rel.endsWith('.json')) {
+      const dest = path.join(out, rel)
+      fs.mkdirSync(path.dirname(dest), { recursive: true })
+      fs.writeFileSync(dest, src)
+      continue
     }
     const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true, jsx: ts.JsxEmit.React } }).outputText
     const dest = path.join(out, rel.replace(/\.tsx?$/, '.js'))
@@ -106,7 +113,7 @@ function stubDb(data = {}, handlers = {}) {
     from(table) {
       const ops = []
       const b = {}
-      for (const m of ['select', 'eq', 'neq', 'is', 'in', 'gte', 'order', 'insert', 'update', 'upsert', 'delete', 'limit']) {
+      for (const m of ['select', 'eq', 'neq', 'is', 'not', 'in', 'gte', 'order', 'insert', 'update', 'upsert', 'delete', 'limit']) {
         b[m] = (...args) => { ops.push([m, args]); return b }
       }
       const run = (mode) => {

@@ -196,7 +196,9 @@ check('Q3', rd({ steps: [{ channel: 'sms', kind: 'service' }, { channel: 'email'
   && rd({ steps: [{ channel: 'email', kind: 'service' }], senderProblem: 'sender_is_placeholder' }).sender.fix === 'settings')
 check('N1', /switched off/.test(ui.reasonText('engine_off')) && /opted out or bounced/.test(ui.reasonText('suppressed_complaint')) && ui.reasonText('weird_code').includes('weird code'))
 const copy = [JSON.stringify(ui.TEMPLATES), ...['engine_off', 'no_marketing_consent', 'cap_reached', 'outside_send_window'].map(ui.reasonText),
-  ...fs.readdirSync(path.join(SRC, 'components', 'marketing')).map((f) => fs.readFileSync(path.join(SRC, 'components', 'marketing', f), 'utf8'))].join(' ')
+  // recursive: the Campaign Builder's components live in components/marketing/agent and are Funnels copy too
+  ...fs.readdirSync(path.join(SRC, 'components', 'marketing'), { recursive: true }).map(String).filter((f) => /\.tsx?$/.test(f))
+    .map((f) => fs.readFileSync(path.join(SRC, 'components', 'marketing', f), 'utf8'))].join(' ')
 check('N2', !copy.includes(EM_DASH), 'an em dash in Funnels copy')
 const fkMsg = constraintMessage({ code: '23503', message: 'insert or update on table "sequences" violates foreign key constraint "sequences_created_by_fkey"' }, 'The steps')
 check('D1', fkMsg === 'The steps could not be saved because your team member record could not be matched to this organization.'

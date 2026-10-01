@@ -7,7 +7,9 @@ import { Mail, MessageSquare, Clock, Plus, Trash2, Eye, GraduationCap } from 'lu
 import { api } from '@/lib/marketing/client'
 import { useToast } from '@/components/ui/toast'
 import { Help } from './help'
+import { helpId } from '@/lib/agent/help/help-id'
 import type { Asset, Step } from './types'
+import { AiChip, approveDraft, needsReview } from './agent/ai-chip'
 
 export const blankStep = (): Step => ({ channel: 'email', delay_minutes: 0, subject: '', body: '', kind: 'marketing', step_type: 'message', asset_id: null })
 const label = 'mb-1 flex items-center text-[11px] font-medium text-gray-500'
@@ -23,6 +25,14 @@ export function StepsEditor({ orgId, steps, setSteps, assets, previewed, setPrev
   previewed: number[]; setPreviewed: (p: number[]) => void
 }) {
   const toast = useToast()
+  // narrowed and built outside the JSX: an inline spread-in-map here crashed the next build
+  // type-check worker (0xC0000005), a known Windows build-worker crash
+  function markReviewed(i: number) {
+    const next: Step[] = steps.slice()
+    const reviewed: Step = Object.assign({}, steps[i], { ai_reviewed_at: new Date().toISOString() })
+    next[i] = reviewed
+    setSteps(next)
+  }
   const [preview, setPreview] = useState<{ i: number; subject: string; text: string } | null>(null)
   const set = (i: number, patch: Partial<Step>) => {
     setSteps(steps.map((x, j) => (j === i ? { ...x, ...patch } : x)))
@@ -54,8 +64,9 @@ export function StepsEditor({ orgId, steps, setSteps, assets, previewed, setPrev
               <b className="text-sm text-np-dark">Step {i + 1}</b>
               {s.step_type === 'deliver_asset' && <span className="inline-flex items-center gap-1 rounded-full bg-fire-light px-2 py-0.5 text-[10px] font-medium text-fire"><GraduationCap className="h-3 w-3" aria-hidden />Deliver</span>}
               {s.channel !== 'wait' && !previewed.includes(i) && <span className="rounded-full bg-gold-light px-2 py-0.5 text-[10px] text-gold">Not previewed</span>}
+              {s.id && needsReview(s) && <AiChip orgId={orgId} kind="step" id={s.id} onApproved={() => markReviewed(i)} />}
               <span className="flex-1" />
-              {s.channel !== 'wait' && <span className="inline-flex items-center"><button type="button" onClick={() => show(i)} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-np-blue hover:bg-np-blue-light"><Eye className="h-3.5 w-3.5" aria-hidden />Preview</button><Help topic="Preview" k="preview" /></span>}
+              {s.channel !== 'wait' && <span className="inline-flex items-center"><button type="button" data-help-id={i === 0 ? helpId('steps.preview') : undefined} onClick={() => show(i)} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-np-blue hover:bg-np-blue-light"><Eye className="h-3.5 w-3.5" aria-hidden />Preview</button><Help topic="Preview" k="preview" /></span>}
               <button type="button" aria-label={`Remove step ${i + 1}`} onClick={() => remove(i)} className="rounded-lg p-1 text-gray-400 hover:bg-gray-50 hover:text-fire"><Trash2 className="h-3.5 w-3.5" aria-hidden /></button>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
@@ -67,7 +78,7 @@ export function StepsEditor({ orgId, steps, setSteps, assets, previewed, setPrev
                 <input id={`st-d-${i}`} className={input} type="number" min={0} value={Math.round(s.delay_minutes / 60)} onChange={(e) => set(i, { delay_minutes: Math.max(0, Number(e.target.value) || 0) * 60 })} /></div>
               {s.channel !== 'wait' && <>
                 <div><span className={label}><label htmlFor={`st-k-${i}`}>Kind of message</label><Help topic="Kind of message" k="kind" /></span>
-                  <select id={`st-k-${i}`} className={input} value={kind} onChange={(e) => set(i, { kind: e.target.value as 'marketing' | 'service' })}>
+                  <select id={`st-k-${i}`} data-help-id={i === 0 ? helpId('steps.kind') : undefined} className={input} value={kind} onChange={(e) => set(i, { kind: e.target.value as 'marketing' | 'service' })}>
                     <option value="marketing">Marketing</option><option value="service">Service (confirmation, reminder)</option>
                   </select></div>
                 <div><span className={label}><label htmlFor={`st-t-${i}`}>What it does</label><Help topic="What it does" k="whatItDoes" /></span>
@@ -114,6 +125,8 @@ export function SequenceEditor({ orgId, campaignId, sequenceId, name, initial, a
     setSaving(true)
     try {
       await api('/api/marketing/sequences', { org_id: orgId, id: sequenceId, name: `${name} steps`, campaign_id: campaignId, steps })
+      // a person who edited and saved AI-drafted steps has reviewed them (ruling 14)
+      for (const s of steps) if (s.id && needsReview(s)) await approveDraft(orgId, 'step', s.id).catch(() => null)
       toast.show('The steps are saved.')
       onSaved()
     } catch (e: any) { toast.show(`${e.message} Your edits are still on screen; fix the step it names and save again.`, 'error') } finally { setSaving(false) }
@@ -122,9 +135,9 @@ export function SequenceEditor({ orgId, campaignId, sequenceId, name, initial, a
     <div className="space-y-3">
       <StepsEditor orgId={orgId} steps={steps} setSteps={setSteps} assets={assets} previewed={previewed} setPreviewed={setPreviewed} />
       <div className="flex flex-wrap gap-2">
-        <button type="button" onClick={() => setSteps([...steps, blankStep()])} className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-np-dark hover:bg-gray-50"><Plus className="h-3.5 w-3.5" aria-hidden />Add a step</button>
+        <button type="button" data-help-id="steps.add" onClick={() => setSteps([...steps, blankStep()])} className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-np-dark hover:bg-gray-50"><Plus className="h-3.5 w-3.5" aria-hidden />Add a step</button>
         <span className="flex-1" />
-        <button type="button" disabled={saving} onClick={save} className="rounded-lg bg-np-blue px-3 py-1.5 text-xs font-medium text-white hover:bg-np-blue-hover disabled:opacity-50">{saving ? 'Saving' : 'Save steps'}</button>
+        <button type="button" data-help-id="steps.save" disabled={saving} onClick={save} className="rounded-lg bg-np-blue px-3 py-1.5 text-xs font-medium text-white hover:bg-np-blue-hover disabled:opacity-50">{saving ? 'Saving' : 'Save steps'}</button>
       </div>
     </div>
   )

@@ -11,6 +11,7 @@ import { useWorkspace } from '@/lib/workspace-context'
 import CampaignFlowBuilder, { type FlowNode, type FlowEdge } from '@/components/campaigns/campaign-flow-builder'
 import { CampaignPhaseView } from '@/components/campaigns/campaign-phase-view'
 import { FunnelsPanel } from '@/components/marketing/funnels-panel'
+import { helpId } from '@/lib/agent/help/help-id'
 import {
   Plus, Wand2, Target, TrendingUp, Calendar, DollarSign, Zap, X, Send, Bot,
   ArrowLeft, ArrowRight, CheckCircle2, Loader2, Edit3, Trash2, ExternalLink,
@@ -150,6 +151,11 @@ export default function CampaignsPage() {
 
   // Tabs
   const [activeTab, setActiveTab] = useState<TabId>('automations')
+  // ?tab=funnels opens that tab (links from Client Tasks left by the Campaign Builder)
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get('tab')
+    if (t === 'funnels' || t === 'marketing' || t === 'automations' || t === 'social') setActiveTab(t)
+  }, [])
   const [permissions, setPermissions] = useState<Record<string, string>>({})
 
   // Marketing campaigns (existing)
@@ -457,7 +463,7 @@ export default function CampaignsPage() {
   }
 
   return (
-    <div className="space-y-4 animate-in fade-in duration-300">
+    <div className="space-y-4 animate-in fade-in duration-300" data-help-screen="campaigns">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -471,7 +477,7 @@ export default function CampaignsPage() {
         {visibleTabs.map(tab => {
           const Icon = tab.icon
           return (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)} data-help-id={tab.id === 'funnels' ? helpId('campaigns.tab-funnels') : undefined}
               className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium transition-all ${
                 activeTab === tab.id ? 'bg-white shadow-sm text-np-dark' : 'text-gray-400 hover:text-gray-600'
               }`}>

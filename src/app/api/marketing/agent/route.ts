@@ -4,17 +4,20 @@
 //       runs the agent and returns a plan to review; nothing is written but the run log
 //   { action: 'build', org_id, run_id }
 //       writes that plan, all at once and only as drafts, through public.agent_build
+//   { action: 'ask',   org_id, question, route?, help_id?, session_id? }
+//       the Hub Guide: answers from the help articles, writes nothing but its log and help_gaps
 // The org comes from membership (withStaff, requireOrg), never from the body alone. The
 // service role is used, so the checks in this file are the boundary.
 import { NextResponse } from 'next/server'
 import { withStaff, requireOrg, bad, forbidden } from '@/lib/api-guard'
 import { getFlags } from '@/lib/marketing/flags'
-import { getPolicy, MAX_PASTED_CHARS, MAX_PROMPT_CHARS } from '@/lib/agent/config'
+import { getPolicy, helpRoleOf, mayUseGuide, MAX_PASTED_CHARS, MAX_PROMPT_CHARS } from '@/lib/agent/config'
 import { rateLimited, useSession } from '@/lib/agent/session'
 import { readHubSetup } from '@/lib/agent/tools/read'
 import { runBuilder } from '@/lib/agent/loop'
 import { liveClient } from '@/lib/agent/model'
 import { planForReview } from '@/lib/agent/review'
+import { runGuide } from '@/lib/agent/guide'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -26,6 +29,53 @@ export const POST = withStaff(async (req, ctx) => {
   const org = requireOrg(ctx, b?.org_id)
   if (typeof org !== 'string') return org
   const db = ctx.db
+
+  if (b.action === 'approve') {
+    // a person approving an AI draft (ruling 14): any staff member of the org, as for editing it
+    const id = typeof b.id === 'string' ? b.id : ''
+    const now = new Date().toISOString()
+    let rows: any[] | null = null
+    if (b.kind === 'campaign' || b.kind === 'form' || b.kind === 'page') {
+      const table = b.kind === 'campaign' ? 'funnel_campaigns' : b.kind === 'form' ? 'form_definitions' : 'page_definitions'
+      ;({ data: rows } = await db.from(table).update({ ai_reviewed_at: now }).eq('id', id).eq('org_id', org).not('ai_run_id', 'is', null).select('id'))
+    } else if (b.kind === 'step') {
+      const { data: step } = await db.from('sequence_steps').select('id, sequences!inner(org_id)').eq('id', id).eq('sequences.org_id', org).maybeSingle()
+      if (step) ({ data: rows } = await db.from('sequence_steps').update({ ai_reviewed_at: now }).eq('id', id).not('ai_run_id', 'is', null).select('id'))
+    } else return bad('Say what to approve.')
+    if ((rows?.length ?? 0) !== 1) return NextResponse.json({ error: 'That draft was not found.' }, { status: 404 })
+    return NextResponse.json({ approved: true })
+  }
+
+  if (b.action === 'task') {
+    if (!['open', 'done', 'dismissed'].includes(b.status)) return bad('Say whether the task is open, done or dismissed.')
+    const { data: rows } = await db.from('campaign_tasks').update({ status: b.status, updated_at: new Date().toISOString() })
+      .eq('id', typeof b.id === 'string' ? b.id : '').eq('org_id', org).select('id')
+    if ((rows?.length ?? 0) !== 1) return NextResponse.json({ error: 'That task was not found.' }, { status: 404 })
+    return NextResponse.json({ updated: true })
+  }
+
+  if (b.action === 'ask') {
+    // ── the Hub Guide: read only, its own flag, its own role setting and cap (rulings 15 to 21) ──
+    const flags = await getFlags(db, org)
+    if (!flags.help_bot_enabled) return forbidden('The Hub Guide is switched off for this organization.')
+    const policy = await getPolicy(db, org)
+    if (!mayUseGuide(policy, helpRoleOf(ctx.isSuperadmin, ctx.orgRoles[org]))) return forbidden('The Hub Guide is not open to your role yet.')
+    const question = typeof b.question === 'string' ? b.question.trim() : ''
+    if (!question) return bad('Type a question.')
+    if (question.length > MAX_PROMPT_CHARS) return bad(`Keep the question under ${MAX_PROMPT_CHARS} characters.`)
+    if (await rateLimited(db, ctx.userId, 'guide')) return NextResponse.json({ error: 'You have asked a lot of questions in the last few minutes. Wait a little, then try again.' }, { status: 429 })
+    const session = await useSession(db, { org, userId: ctx.userId, mode: 'guide', surface: 'panel', sessionId: b.session_id, policy })
+    if (!session.ok) return NextResponse.json({ error: session.message }, { status: session.status })
+    // ruling 19: only the route and the screen id are accepted; any other field is ignored
+    const result = await runGuide({ db, client: liveClient(), org, userId: ctx.userId, sessionId: session.sessionId, policy, question,
+      route: typeof b.route === 'string' ? b.route.slice(0, 300) : null, helpId: typeof b.help_id === 'string' ? b.help_id.slice(0, 120) : null })
+    console.info(`[agent] guide run=${result.runId} org=${org} outcome=${result.outcome} cost=${result.costUsd.toFixed(4)}`)
+    const status = result.outcome === 'answered' || result.outcome === 'no_answer' ? 200 : result.outcome === 'cap_hit' ? 429 : result.outcome === 'model_unavailable' ? 503 : 500
+    return NextResponse.json({ session_id: session.sessionId, run_id: result.runId, outcome: result.outcome, message: result.message,
+      error: status === 200 ? undefined : result.message, answer: result.answer,
+      // the hand-off is offered only when the server would accept it (ruling 15)
+      handoff_allowed: !!result.answer?.handoff && ctx.isSuperadmin && flags.agent_enabled }, { status })
+  }
 
   if (b.action === 'plan' || b.action === 'build') {
     // the builder is superadmin only (ruling 10); hiding the button is not the check, this is
@@ -91,5 +141,5 @@ export const POST = withStaff(async (req, ctx) => {
   const status = result.outcome === 'planned' || result.outcome === 'refused' ? 200
     : result.outcome === 'cap_hit' ? 429 : result.outcome === 'model_unavailable' ? 503 : 500
   return NextResponse.json({ session_id: session.sessionId, run_id: result.runId, outcome: result.outcome, message: result.message,
-    plan: result.plan ? planForReview(result.plan, setup) : null }, { status })
+    error: status === 200 ? undefined : result.message, plan: result.plan ? planForReview(result.plan, setup) : null }, { status })
 })

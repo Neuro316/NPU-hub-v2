@@ -29,6 +29,8 @@ const HARNESSES = [
   { file: 'scripts/agent/caps-tamper.cjs', selectors: ['nostep', 'nocap', 'session', 'rate', 'cheap', '1'] },
   { file: 'scripts/agent/leak-tamper.cjs', selectors: ['star', 'passthrough', 'noscrub', '1'] },
   { file: 'scripts/agent/flag-off-parity.cjs', selectors: ['noflag', 'nosuper', 'touch', '1'] },
+  { file: 'scripts/agent/guide-tamper.cjs', selectors: ['nocite', 'anytarget', 'anyroute', 'noflag', 'nogap', 'leakctx', 'dash', 'writetask', 'clickme', '1'] },
+  { file: 'scripts/agent/help-ci.cjs', selectors: ['orphan', 'ghost', 'badref', 'dash', 'banned', 'stale', '1'] },
 ]
 let fail = 0
 const report = (ok, label) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${label}`); if (!ok) fail++ }

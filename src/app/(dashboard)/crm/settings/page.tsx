@@ -206,7 +206,7 @@ export default function SettingsPage() {
     setTwilioNumbers(prev => prev.map((n, idx) => idx === i ? { ...n, ...patch } : n))
 
   return (
-    <div className="flex gap-6 animate-in fade-in duration-300">
+    <div className="flex gap-6 animate-in fade-in duration-300" data-help-screen="crm-settings">
       {/* Section Nav */}
       <div className="w-48 flex-shrink-0 space-y-0.5">
         {SECTIONS.map(s => (

@@ -52,7 +52,7 @@ export function ContactMarketingTab({ contactId, mode }: { contactId: string; mo
           </div>
         ))}
       </div>
-      <fieldset className="space-y-2 rounded-lg border border-gray-100 p-2">
+      <fieldset className="space-y-2 rounded-lg border border-gray-100 p-2" data-help-id="contact.consent-record">
         <legend className="px-1 text-[11px] font-semibold text-np-dark">Record a decision made outside a form</legend>
         <div className="grid grid-cols-3 gap-1.5">
           {([['channel', [['email', 'Email'], ['sms', 'Text']]], ['kind', [['marketing', 'Marketing'], ['service', 'Service']]], ['action', [['granted', 'Agreed'], ['revoked', 'Withdrew']]]] as const).map(([k, opts]) => (

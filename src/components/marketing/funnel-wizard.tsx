@@ -89,7 +89,7 @@ export function FunnelWizard({ orgId, data, existing, onClose, onSaved }: {
         <span className="flex-1" />
         <button type="button" onClick={onClose} aria-label="Close the guided setup" className="rounded p-1 text-gray-400 hover:text-np-dark"><X className="h-4 w-4" aria-hidden /></button>
       </div>
-      <ol className="mb-4 flex flex-wrap gap-1" aria-label="Progress">
+      <ol className="mb-4 flex flex-wrap gap-1" aria-label="Progress" data-help-id="wizard.progress">
         {STEPS.map((s, i) => (
           <li key={s} aria-current={i === at ? 'step' : undefined}>
             <button type="button" onClick={() => (i === 0 || name.trim()) && setAt(i)}
@@ -160,8 +160,8 @@ export function FunnelWizard({ orgId, data, existing, onClose, onSaved }: {
           </li>))}</ul>
         {!data.flags.engine && <p className="rounded-lg bg-np-light p-2 text-[11px] text-gray-600">The campaign engine is switched off for this organization, so a test drive will report that and nothing will run. A superadmin can switch it on in CRM Settings, Campaign Sending.</p>}
         <div className="flex flex-wrap items-center gap-2">
-          <button type="button" disabled={busy} onClick={saveDraft} className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium hover:bg-gray-50 disabled:opacity-50"><Save className="h-3.5 w-3.5" aria-hidden />Save as draft</button>
-          <span className="inline-flex items-center"><button type="button" disabled={busy} onClick={activateAndTest} className="inline-flex items-center gap-1 rounded-lg bg-np-blue px-3 py-1.5 text-xs font-medium text-white hover:bg-np-blue-hover disabled:opacity-50"><Play className="h-3.5 w-3.5" aria-hidden />Save, set Active and test drive</button><Help topic="Test drive" k="testDrive" /></span>
+          <button type="button" data-help-id="wizard.save-draft" disabled={busy} onClick={saveDraft} className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium hover:bg-gray-50 disabled:opacity-50"><Save className="h-3.5 w-3.5" aria-hidden />Save as draft</button>
+          <span className="inline-flex items-center"><button type="button" data-help-id="wizard.activate-test" disabled={busy} onClick={activateAndTest} className="inline-flex items-center gap-1 rounded-lg bg-np-blue px-3 py-1.5 text-xs font-medium text-white hover:bg-np-blue-hover disabled:opacity-50"><Play className="h-3.5 w-3.5" aria-hidden />Save, set Active and test drive</button><Help topic="Test drive" k="testDrive" /></span>
         </div>
         <p className="text-[11px] text-gray-500">Setting the campaign to Active lets people who arrive from its sources enter it. While live sending is off, they only get dry runs: the Hub records what it would have sent and sends nothing.</p>
         {drive && savedId && <TestDriveResult campaignId={savedId} startedAt={drive.at} enrollResult={drive.result} />}
