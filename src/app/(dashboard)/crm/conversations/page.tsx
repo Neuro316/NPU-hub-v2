@@ -21,6 +21,9 @@ import { fmtListStamp, fmtFull } from '@/lib/date-format'
 import type { CrmContact } from '@/types/crm'
 import { buildTimeline, TimelineStream, LineBadge, type TimelineEntry } from '@/components/crm/comms-timeline'
 import { VoipCall } from '@/components/crm/twilio-comms'
+// CLICK-TO-CALL-BEGIN
+import { ClickToCallButton } from '@/components/crm/click-to-call-button'
+// CLICK-TO-CALL-END
 
 // Channel is no longer a list filter — one card per contact covers all channels.
 type DirectionFilter = 'both' | 'inbound' | 'outbound'
@@ -498,7 +501,18 @@ export default function ConversationsPage() {
                   <span className="text-[9px] font-bold text-np-blue">{selectedThread.contact_initials}</span>
                 </div>
                 <div>
+                  {/* CLICK-TO-CALL-BEGIN */}
+                  <div className="flex items-center gap-1">
+                  {/* CLICK-TO-CALL-END */}
                   <h3 className="text-xs font-bold text-np-dark">{selectedThread.contact_name}</h3>
+                  {/* CLICK-TO-CALL-BEGIN */}
+                  <ClickToCallButton
+                    conversationId={selectedThread.id}
+                    contactName={selectedThread.contact_name}
+                    onPlaced={() => { const t = selectedThreadRef.current; if (t) loadTimeline(t) }}
+                  />
+                  </div>
+                  {/* CLICK-TO-CALL-END */}
                   <p className="text-[10px] text-gray-400 flex items-center gap-1.5">
                     <span>{selectedThread.contact_phone || ''} · {selectedThread.channel}</span>
                     <LineBadge label={labelFor(selectedThread.line_e164 || defaultLine)} />
