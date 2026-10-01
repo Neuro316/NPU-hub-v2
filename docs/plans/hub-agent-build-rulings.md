@@ -215,7 +215,7 @@ marketing §12).
 | d | `scripts/agent/contract-213.sql` (branch) | killed mid build, nothing persists; same run id replayed, same ids and no new rows; a draft campaign's route enrolls nobody |
 | e | `scripts/agent/caps-tamper.cjs` | step limit, monthly cap (with reservation) and per-session limit each stop the run with the right message |
 | f | `scripts/agent/leak-tamper.cjs` | each read tool run against a stub database returning every contact column with fixture values; output holds only allowlisted keys and none of the fixture values; no read tool names a contact-bearing table |
-| g | `scripts/agent/claims-tamper.cjs` | **built in Phase 0**, 18 cases, 6 selectors, union 8 |
+| g | `scripts/agent/claims-tamper.cjs` | **built in Phase 0**, 19 cases, 6 selectors, union 8 |
 | h | every harness | run against the tree before the merge (HEAD~1): each must fail |
 | i | `npm run verify` | existing guards and harnesses green, `tsc` clean; `scripts/agent/flag-off-parity.cjs` compares main and branch for the funnel, sequence and intake paths with `agent_enabled` absent |
 | j | browser | wizard step and side panel end to end with the stub model, flag on, locally against the branch |
@@ -246,10 +246,10 @@ Every new pure harness uses the SET convention and joins `scripts/verify.cjs`.
 
 ## 10. Phase 0 results (2026-10-01)
 
-- `scripts/agent/claims-tamper.cjs`: untampered 18 of 18; `emdash` {E1,E2}, `certified` {B2,G2},
+- `scripts/agent/claims-tamper.cjs`: untampered 19 of 19; `emdash` {E1,E2}, `certified` {B2,G2},
   `noboundary` {B4}, `stopline` {L2}, `program` {P1}, `version` {G1}; `TAMPER=1` reddens the union of
   8, equal to the sum of the individual runs. Case B4 is the false positive control: realistic clean
-  copy with near misses ("healthy", "secure", "retreat", "fixed time") raises nothing. G1 to G3 keep
+  copy with near misses ("healthy", "secure", "retreat", "fixed time") raises nothing. G1 to G4 keep
   the guide and the checker in step.
 - `npm run verify`: passed, including `tsc --noEmit`, the five guards and every existing harness.
 
