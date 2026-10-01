@@ -1,7 +1,24 @@
 # Hub marketing engine: rulings and plan
 
 **Branch:** `feat/hub-marketing-engine` (NPU-hub-v2 only)
-**Status:** Stage 0, awaiting plan approval. Nothing built, nothing applied.
+**Status:** Stage 0 APPROVED 2026-09-30. Stage 1 in progress.
+
+## 0. Stage 0 approval rulings (Cameron, 2026-09-30)
+
+1. `funnel_campaigns` approved (A1).
+2. The consent ledger starts empty; only the two real SMS decisions are imported. No re-permission campaign in this build (A5).
+3. Contact position in its own table approved (A2).
+4. Direct Resend REST API approved (A6).
+5. Branch fallback approved (A7). Every object copied by hand is listed in the Stage 1 results, and the tests run the real functions.
+6. `university_assets` and `/a/<token>` approved (A9, A10). The token is single-purpose, expiring and carries no personal data; the redirect is allowed only to the University's own domain.
+7. Middleware public paths approved as **exact paths only**: intake, unsubscribe, the Resend webhook (signature verified, unsigned rejected), and `/a/*`. No other wildcards.
+8. **Marketing sender** is read from an org setting (`org_settings` key `hub_send_policy`, fields `from_address` and `from_domain`), defaulting to a placeholder subdomain value Cameron will set. Never hardcoded. The provider refuses a live send while the placeholder is in place.
+9. **Migration files are named with a `hub_` prefix**, starting at 211: `hub_211_marketing_engine.sql`.
+
+### Assumptions recorded in Stage 1 (2026-09-30)
+
+- **A15. The two imported SMS decisions are recorded narrowly.** Cameron's checkout grant is recorded as `kind = service` only, because a checkout reminders checkbox is not evidence of marketing consent. Melissa's revocation is recorded for both `service` and `marketing`, because a refusal is read as broadly as possible.
+- **A16. Team membership helper.** RLS for staff reads uses a new security-definer function `hub_team_org_ids()` over active `team_profiles` rows, per ruling 17. The platform's `user_org_ids()` reads `org_members`, which is a different membership model, so it is not reused.
 **Written:** 2026-09-30
 **Queue ref:** this file is the record for the Hub. Hub has no Addendum C; the Hub backlog lives in `CURRENT.md` and `docs/`. A pointer entry goes into `CURRENT.md` at Stage 4.
 
@@ -42,7 +59,7 @@
 | `hub_sms_outbox` | exists, **0 policies**, service-role only | watchdog inserts there |
 | Hub migrations on disk | max **210** | |
 | Platform migrations | max **pf_201** (applied today) | ⚠ the platform has entered the 200s with the `pf_` prefix; recorded as a finding |
-| **Next Hub number** | **211** | one bundle, `211_hub_marketing_engine.sql` |
+| **Next Hub number** | **211** | one bundle, `hub_211_marketing_engine.sql` |
 | Supabase branches | `preview` exists, status **MIGRATIONS_FAILED**, schema-only | see A7 |
 | Resend in the Hub | **none**: no package, no key read; only a provider dropdown label in settings | new module |
 | Resend in the platform | `src/lib/notify/send.ts`, sender `NPU University <onboarding@neuroprogeny.com>`, npm `resend` | root domain `neuroprogeny.com` is already a Resend sender |
@@ -83,7 +100,7 @@
 
 ---
 
-## 4. Migration bundle outline (`211_hub_marketing_engine.sql`, one file, one apply)
+## 4. Migration bundle outline (`hub_211_marketing_engine.sql`, one file, one apply)
 
 Rollback block written first, in the file.
 
@@ -149,3 +166,72 @@ Tests: `scripts/marketing/contract-*.cjs` (live), `scripts/guards/*.cjs` (pure, 
 - `inbound-sms` and `process-step` are live paths; their changes are flag-gated and covered by the parity harness.
 - Middleware public-path change is an auth change and is listed for review.
 - CI suite does not exist in the Hub, so there is no budget to exceed; the new suite is pure and should run in well under a minute.
+
+---
+
+## 8. Stage 1 results (2026-09-30)
+
+**Branch:** `hub-marketing-211`, project ref `ykhgxzpagiviimshzfxc`. Like the existing `preview`
+branch it came up `MIGRATIONS_FAILED` with 0 tables, so fallback A7 was used.
+
+**Objects copied by hand onto the branch** (`supabase/branch-bootstrap/hub_211_dependencies.sql`,
+copied from live `pg_catalog`, columns, defaults, PK/unique/check constraints and the FKs between
+them; no policies, triggers or indexes):
+type `user_role`; tables `organizations`, `profiles`, `team_profiles`, `contacts`, `org_settings`,
+`sequences`, `sequence_steps`, `sequence_enrollments`, `do_not_contact_list`, `campaigns`,
+`contact_timeline`; two fixture `organizations` rows (Neuro Progeny, Sensorium). One correction was
+needed: `contacts.search_vector` is a generated column on live, so it is created `generated always`.
+
+**The tests run the real functions** from `hub_211` (`scripts/marketing/contract-211.sql`), with
+fixtures inside a subtransaction that is always rolled back.
+
+| Run | Cases | Red | Declared | Verdict |
+|---|---|---|---|---|
+| none | 45 | {} | {} | pass |
+| quiet (end boundary inclusive) | 45 | {G_QUIET_2000} | same | pass |
+| cap (`>` for `>=`) | 45 | {G_CAP_AT_LIMIT} | same | pass |
+| dupactive (no active check) | 45 | {E_ACTIVE_NO_2ND_SEQ, M_GOAL_ENDS_DRIP} | same | pass |
+| revokeorder (oldest event wins) | 45 | {C_STOP_SUPPRESSES, C_UNSUB_KEEPS_SERVICE, G_REVOKED_MID} | same | pass |
+| merge (no merge resolution) | 45 | {E_MERGED_DUP, E_MERGED_TO_SURVIVOR} | same | pass |
+
+Covered: duplicate event, revoked consent mid-sequence, stage rename (id kept) and stage removal
+(archived), contact merge during enrollment, quiet-hours boundaries at 07:59:59, 08:00, 19:59:59 and
+20:00 local, frequency-cap boundary (2 allowed, 3 refused, a send exactly 7 days old not counted,
+service exempt), live versus dry-run mode, claim-once, append-only ledger, cross-org refusal, RLS as a
+real `authenticated` staff member (own org readable, other org not, no writes, no function execute,
+`job_runs` closed).
+
+**A defect the tamper run found, fixed before proposing.** The first `revokeorder` run reddened
+nothing. Cause: two consent events in one transaction share `now()`, so "the latest event" had no
+defined order and the result depended on heap order. `consent_events` now carries a
+`seq bigint generated always as identity` tiebreaker and every read orders by
+`occurred_at desc, seq desc`. The rollback block was then exercised on the branch (it left exactly the
+11 bootstrap tables and 0 functions), the bundle reapplied, and the suite rerun to the table above.
+
+**Branch default privileges differ from live.** On the branch a new table gives `service_role` no DML;
+on live it gets all 8. The bundle now grants `service_role` explicitly (the ledger gets SELECT and
+INSERT only), so the result is the same in both. Probed as `service_role`: insert accepted, update
+refused `42501`. That delta was applied to the branch as a separate statement after the reapply.
+
+**pg_catalog posture on the branch:** 17 new tables, RLS on 17, `anon` grants 0, `authenticated`
+holds SELECT only on 16 (not `job_runs`), 16 policies all SELECT, the only new function executable
+beyond `service_role` is `hub_team_org_ids` (to `authenticated`, needed by the policies).
+
+**Live pre-flight (read-only, 2026-09-30):** no name collisions for the 17 tables, the 17 functions
+or the 5 columns (controls in the same query form found 2 of 2 known objects); ledger has no `211`;
+sequences tables hold 0 rows; no `hub_marketing_flags` or `hub_send_policy` rows exist, so every
+flag is off after apply. Expected data effects: 24 pipelines, 175 stages, 270 contact positions (of
+280 contacts carrying a legacy pipeline; 10 have a stage name not found in their pipeline and are
+left unpositioned), 3 consent rows (Cameron service grant; Melissa service and marketing revoke),
+1 allowlist row.
+
+### Assumptions recorded in Stage 1, continued
+
+- **A17. Stages without a JSON id** (15 of them, in the NP `Subscribed` and `Mastermind` pipelines)
+  are keyed `name:<name>`. Renaming one of those in the old editor creates a new stage and archives
+  the old one, because there is no id to follow. Stages with ids keep their uuid through a rename.
+- **A18. A second entry event while a contact is active in the same campaign** is recorded with
+  status `duplicate` and starts nothing, so one person never runs two copies of one drip.
+- **A19. A service message needs a service basis**: the latest service-kind event for that channel,
+  or, when there is none, a standing marketing grant. An email unsubscribe revokes marketing only;
+  SMS STOP revokes both kinds.
