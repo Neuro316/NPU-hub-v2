@@ -10,6 +10,7 @@ import { Sidebar } from '@/components/sidebar'
 import { TrackerInit } from '@/components/tracker-init'
 import { HelpBot } from '@/components/help-bot'
 import { DynamicFavicon } from '@/components/dynamic-favicon'
+import { ToastProvider } from '@/components/ui/toast'
 import { Menu } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 
@@ -71,6 +72,7 @@ export default function DashboardLayout({
             content so the Device registration survives route changes. */}
         <VoiceReceiverProvider>
           <SidebarProvider>
+           <ToastProvider>
             <TrackerInit />
             <DynamicFavicon />
             <DashboardContent>{children}</DashboardContent>
@@ -79,6 +81,7 @@ export default function DashboardLayout({
                 between CRM and non-CRM routes never unmounts it. */}
             <IncomingCallBanner />
             <HelpBot />
+           </ToastProvider>
           </SidebarProvider>
         </VoiceReceiverProvider>
       </PermissionsProvider>

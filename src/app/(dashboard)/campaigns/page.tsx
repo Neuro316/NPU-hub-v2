@@ -10,6 +10,7 @@ import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
 import CampaignFlowBuilder, { type FlowNode, type FlowEdge } from '@/components/campaigns/campaign-flow-builder'
 import { CampaignPhaseView } from '@/components/campaigns/campaign-phase-view'
+import { FunnelsPanel } from '@/components/marketing/funnels-panel'
 import {
   Plus, Wand2, Target, TrendingUp, Calendar, DollarSign, Zap, X, Send, Bot,
   ArrowLeft, ArrowRight, CheckCircle2, Loader2, Edit3, Trash2, ExternalLink,
@@ -49,7 +50,7 @@ interface EmailCampaign {
   created_at: string
 }
 
-type TabId = 'marketing' | 'automations' | 'social'
+type TabId = 'marketing' | 'automations' | 'social' | 'funnels'
 
 // ─── CONFIG ───
 
@@ -206,6 +207,7 @@ export default function CampaignsPage() {
     { id: 'automations', label: 'Automations & Drips', icon: GitBranch, visible: hasCrmAccess },
     { id: 'marketing',   label: 'Marketing Campaigns', icon: Megaphone,  visible: hasCampaignAccess },
     { id: 'social',      label: 'Social Campaigns',    icon: Share2,     visible: hasSocialAccess },
+    { id: 'funnels',     label: 'Funnels',             icon: Filter,     visible: hasCampaignAccess },
   ]
   const visibleTabs = tabs.filter(t => t.visible)
 
@@ -583,6 +585,9 @@ export default function CampaignsPage() {
           )}
         </>
       )}
+
+      {/* ═══ Funnels Tab (marketing engine, docs/plans/hub-marketing-build-rulings.md) ═══ */}
+      {activeTab === 'funnels' && <FunnelsPanel />}
 
       {/* ═══ Marketing Campaigns Tab ═══ */}
       {activeTab === 'marketing' && (

@@ -13,8 +13,15 @@
 //   6. the form's source_key is routed into campaigns (public.route_and_enroll), with
 //      the submission id as the event id, so a replayed submission enrolls once
 // Returns only the form's success message; never echoes or reveals contact data.
+//
+// SERVER MODE (docs/INTEGRATION_CONTRACT.md): a caller presenting
+// `Authorization: Bearer <HUB_INTAKE_SERVER_SECRET>` is another of our systems (the
+// University platform). It must send `event_id`, which makes the call idempotent: the
+// same event is accepted once and replays answer `duplicate: true`. The per-address rate
+// limit and the honeypot do not apply, since every server call shares one address. A
+// wrong or present-but-unset secret is refused 401; it never falls back to public mode.
 import { NextRequest, NextResponse } from 'next/server'
-import { createHash } from 'node:crypto'
+import { createHash, timingSafeEqual } from 'node:crypto'
 import { createAdminSupabase } from '@/lib/supabase'
 import { getFlags } from '@/lib/marketing/flags'
 import { validateIntake, type FormDefinition } from '@/lib/marketing/intake'
@@ -38,6 +45,18 @@ function cors(req: NextRequest): Record<string, string> | null {
 
 const json = (body: unknown, status: number, h: Record<string, string>) => NextResponse.json(body, { status, headers: h })
 
+/** null: no server credential offered (public mode). true: valid. false: offered and wrong, or the secret is unset. */
+function serverCaller(req: NextRequest): boolean | null {
+  const auth = req.headers.get('authorization')
+  if (!auth) return null
+  const secret = process.env.HUB_INTAKE_SERVER_SECRET
+  if (!secret || secret.trim().length < 32) return false
+  const got = createHash('sha256').update(auth).digest()
+  const want = createHash('sha256').update(`Bearer ${secret}`).digest()
+  return timingSafeEqual(got, want)
+}
+const EVENT_ID = /^[A-Za-z0-9:_.-]{1,120}$/
+
 export async function OPTIONS(req: NextRequest) {
   const h = cors(req)
   return h ? new NextResponse(null, { status: 204, headers: h }) : new NextResponse(null, { status: 403 })
@@ -46,8 +65,12 @@ export async function OPTIONS(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const h = cors(req)
   if (!h) return new NextResponse(null, { status: 403 })
+  const server = serverCaller(req)
+  if (server === false) return json({ error: 'unauthorized' }, 401, h)
   let body: any
   try { body = await req.json() } catch { return json({ error: 'Please send the form again.' }, 400, h) }
+  const eventId = server ? (typeof body?.event_id === 'string' && EVENT_ID.test(body.event_id) ? body.event_id : null) : null
+  if (server && !eventId) return json({ error: 'event_id is required: letters, numbers and : _ . - only, up to 120 characters' }, 400, h)
   const slug = typeof body?.form === 'string' ? body.form : ''
   const db = createAdminSupabase()
 
@@ -58,8 +81,12 @@ export async function POST(req: NextRequest) {
     return json({ error: 'This form is not taking submissions right now.' }, 404, h)
   }
 
-  const ip = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim() || 'unknown'
+  const ip = server ? 'server' : (req.headers.get('x-forwarded-for') || '').split(',')[0].trim() || 'unknown'
   const ipHash = createHash('sha256').update(`${ip}|${form.org_id}`).digest('hex')
+  if (server) {
+    const { data: seen } = await db.from('form_submissions').select('id').eq('form_id', form.id).eq('payload->>event_id', eventId).limit(1)
+    if (seen?.length) return json({ ok: true, duplicate: true, message: form.success_message }, 200, h)
+  }
   const ua = (req.headers.get('user-agent') || '').slice(0, 200)
 
   const since = new Date(Date.now() - RATE_WINDOW_MINUTES * 60_000).toISOString()
@@ -68,11 +95,11 @@ export async function POST(req: NextRequest) {
     db.from('form_submissions').select('id', { count: 'exact', head: true }).eq('ip_hash', ipHash).gte('created_at', since),
     db.from('form_submissions').select('id', { count: 'exact', head: true }).eq('form_id', form.id).gte('created_at', minute),
   ])
-  if ((perIp ?? 0) >= RATE_PER_IP || (perForm ?? 0) >= RATE_PER_FORM) {
+  if (!server && ((perIp ?? 0) >= RATE_PER_IP || (perForm ?? 0) >= RATE_PER_FORM)) {
     return json({ error: 'Too many submissions. Please wait a few minutes and try again.' }, 429, h)
   }
 
-  if (typeof body?.website === 'string' && body.website.trim() !== '') {
+  if (!server && typeof body?.website === 'string' && body.website.trim() !== '') {
     await db.from('form_submissions').insert({ org_id: form.org_id, form_id: form.id, form_version: form.version, ip_hash: ipHash, outcome: 'honeypot' })
     return json({ ok: true, message: form.success_message }, 200, h)
   }
@@ -87,7 +114,7 @@ export async function POST(req: NextRequest) {
     .filter(([k, x]) => /^utm_[a-z]+$/.test(k) && typeof x === 'string').map(([k, x]) => [k, String(x).slice(0, 200)])) : null
   const { data: sub, error: sErr } = await db.from('form_submissions').insert({
     org_id: form.org_id, form_id: form.id, form_version: form.version, ip_hash: ipHash, outcome: 'received',
-    payload: { values: v.values, consents: v.consents.map((c) => c.id), utm },
+    payload: { values: v.values, consents: v.consents.map((c) => c.id), utm, event_id: eventId },
   }).select('id').single()
   if (sErr || !sub) return json({ error: 'We could not save your details. Please try again.' }, 500, h)
 
@@ -117,10 +144,10 @@ export async function POST(req: NextRequest) {
     if (error) console.error(`[intake] submission=${sub.id} consent ${c.id} failed: ${error.code ?? 'unknown'}`)
   }
   const { data: routed, error: rErr } = await db.rpc('route_and_enroll', {
-    p_org: form.org_id, p_contact: contactId, p_source_key: form.source_key, p_event_id: `form_submission:${sub.id}`,
+    p_org: form.org_id, p_contact: contactId, p_source_key: form.source_key, p_event_id: eventId ? `platform:${eventId}` : `form_submission:${sub.id}`,
   })
   if (rErr) console.error(`[intake] submission=${sub.id} routing failed: ${rErr.code ?? 'unknown'}`)
   await db.from('form_submissions').update({ outcome: 'accepted', contact_id: contactId,
-    payload: { values: v.values, consents: v.consents.map((c) => c.id), consents_not_recorded: skipped, utm, routed: routed ?? null } }).eq('id', sub.id)
+    payload: { values: v.values, consents: v.consents.map((c) => c.id), consents_not_recorded: skipped, utm, event_id: eventId, routed: routed ?? null } }).eq('id', sub.id)
   return json({ ok: true, message: form.success_message }, 200, h)
 }

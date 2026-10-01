@@ -7,7 +7,7 @@ import {
   TrendingUp, Send, Pencil, Trash2, Plus, User, Activity, Brain,
   Route, Target, Calendar, FileText, Sparkles, ChevronRight, Heart,
   ArrowRightLeft, GraduationCap, BarChart3, Shield, ExternalLink, Paperclip, GitBranch, MapPin, ChevronDown, Upload, FolderOpen,
-  Globe, Lightbulb, Linkedin, Instagram, Twitter, Youtube, BookOpen, Mic, Link2, ThumbsUp, ThumbsDown, Workflow, Sliders, Package, Loader2
+  Globe, Lightbulb, Linkedin, Instagram, Twitter, Youtube, BookOpen, Mic, Link2, ThumbsUp, ThumbsDown, Workflow, Sliders, Package, Loader2, ShieldCheck, Megaphone
 } from 'lucide-react'
 import {
   fetchContact, updateContact, deleteContact, fetchNotes, createNote,
@@ -22,6 +22,7 @@ import { ContactCommsButtons } from '@/components/crm/twilio-comms'
 import { CrmTaskCard, CrmTaskDetail } from '@/components/crm/crm-task-card'
 import ContactCommPanel from '@/components/crm/contact-comm-panel'
 import { ContactEquipmentTab } from '@/components/crm/contact-equipment-tab'
+import { ContactMarketingTab } from '@/components/marketing/contact-marketing-tab'
 import EmailComposer from '@/components/crm/email-composer'
 import { createClient } from '@/lib/supabase-browser'
 
@@ -365,7 +366,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
     !cardConfig || cardConfig.sections[key] !== false
   const supabase = createClient()
   const [contact, setContact] = useState<CrmContact | null>(null)
-  const [tab, setTab] = useState<'overview' | 'intel' | 'connections' | 'timeline' | 'tasks' | 'notes' | 'comms' | 'stats' | 'equipment'>('overview')
+  const [tab, setTab] = useState<'overview' | 'intel' | 'connections' | 'timeline' | 'tasks' | 'notes' | 'comms' | 'stats' | 'equipment' | 'consent' | 'campaigns'>('overview')
   const [engagementTopics, setEngagementTopics] = useState<any[]>([])
   const [showEngagementForm, setShowEngagementForm] = useState(false)
   const [engTopic, setEngTopic] = useState('')
@@ -752,6 +753,8 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
     { key: 'comms', label: 'Comms', icon: MessageCircle },
     { key: 'stats', label: 'Stats', icon: BarChart3 },
     { key: 'equipment', label: 'Equipment', icon: Package },
+    { key: 'consent', label: 'Consent', icon: ShieldCheck },
+    { key: 'campaigns', label: 'Campaigns', icon: Megaphone },
   ] as const
 
   return (
@@ -2126,6 +2129,10 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
 
               {tab === 'equipment' && contactId && (
                 <ContactEquipmentTab contactId={contactId} />
+              )}
+
+              {(tab === 'consent' || tab === 'campaigns') && contactId && (
+                <ContactMarketingTab contactId={contactId} mode={tab} />
               )}
             </div>
           </>
