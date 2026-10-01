@@ -8,9 +8,9 @@
 // call itself is a call_logs row with direction 'outbound', which is what the
 // Conversations timeline shows and what ring-complete never raises entry events for.
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { getOrgTwilioConfig, getVoiceCallerId, type OrgTwilioConfig } from '@/lib/twilio-org'
+import { getOrgTwilioConfig, getVoiceCallerId, createOrgTwilioClient, type OrgTwilioConfig } from '@/lib/twilio-org'
 import { toE164, formatUsPhone } from '@/lib/phone'
-import { parseC2CFlags, last10, pickLine, type Facts } from './logic'
+import { parseC2CFlags, last10, pickLine, eligibleLines, type Facts, type RegistryLine, type AccountNumber, type EligibleLine } from './logic'
 
 export const C2C_EVENT = 'click_to_call'
 
@@ -104,4 +104,41 @@ export async function mergeAttempt(db: SupabaseClient, where: { id?: string; cal
   const { error: uErr } = await db.from('crm_activity_log')
     .update({ event_data: { ...((data as any).event_data || {}), ...patch } }).eq('id', (data as any).id)
   if (uErr) console.error('[click-to-call] attempt merge failed', uErr.message)
+}
+
+// ── Line picker ─────────────────────────────────────────────────────────────────
+// The Twilio account's own number list is the only record of which numbers still
+// exist and can place voice calls. Cached per org for a minute so switching
+// conversations does not call Twilio every time. null means Twilio could not be
+// asked: the picker then offers no alternative lines and refuses any override.
+const ACCOUNT_TTL_MS = 60_000
+const accountCache = new Map<string, { at: number; numbers: AccountNumber[] }>()
+
+export async function accountNumbers(orgId: string, config: OrgTwilioConfig): Promise<AccountNumber[] | null> {
+  const hit = accountCache.get(orgId)
+  if (hit && Date.now() - hit.at < ACCOUNT_TTL_MS) return hit.numbers
+  if (!config.account_sid || !config.auth_token) return null
+  try {
+    const list = await createOrgTwilioClient(config).incomingPhoneNumbers.list({ limit: 200 })
+    const numbers = list.map((n: any) => ({ phoneNumber: String(n.phoneNumber || ''), voice: n.capabilities?.voice === true }))
+    accountCache.set(orgId, { at: Date.now(), numbers })
+    return numbers
+  } catch (e: any) {
+    console.error('[click-to-call] Twilio number list failed:', e?.code, e?.message)
+    return null
+  }
+}
+
+/** The org's eligible lines, for the preflight. Throws on a database error (fails closed). */
+export async function loadEligibleLines(db: SupabaseClient, orgId: string, config: OrgTwilioConfig): Promise<EligibleLine[]> {
+  const { data, error } = await db.from('crm_twilio_numbers').select('id, org_id, phone_e164, friendly_name').eq('org_id', orgId)
+  if (error) throw new Error(`lines: ${error.message}`)
+  return eligibleLines(orgId, (data ?? []) as RegistryLine[], config.numbers || [], await accountNumbers(orgId, config))
+}
+
+/** One line by id, deliberately NOT filtered by org, so a forged id is refused by name. */
+export async function loadLineRow(db: SupabaseClient, lineId: string): Promise<RegistryLine | null> {
+  const { data, error } = await db.from('crm_twilio_numbers').select('id, org_id, phone_e164, friendly_name').eq('id', lineId).maybeSingle()
+  if (error) throw new Error(`line: ${error.message}`)
+  return (data as RegistryLine | null) ?? null
 }

@@ -204,3 +204,27 @@ delete from public.org_settings where org_id = '<np_org_id>' and setting_key = '
 - Flag off, before and after: `parity.cjs` pins every existing voice webhook, the browser call path,
   the Twilio and org libraries, notify-sms, the entry event raiser, the auth wrapper and middleware
   byte-equal to `d49d00e`, and the Conversations page and timeline equal outside the markers.
+
+## 10. Follow-up: "Call from" line picker (branch `feat/c2c-line-picker`, base `d3be328`)
+
+- **Identifier.** The client sends `line_id` = `crm_twilio_numbers.id`, never a number. Without
+  `line_id` the request and the line are exactly as before (the conversation's line, else the
+  org default).
+- **Eligible line.** No column records "active" or "voice capable", and no migration is allowed,
+  so both are derived. A line is eligible when it (1) has a `crm_twilio_numbers` row in the
+  caller's org, (2) is still listed in the org's `crm_twilio` config, and (3) appears in the
+  Twilio account's own number list with voice capability (`incomingPhoneNumbers`, cached per org
+  for 60 seconds). If Twilio cannot be asked, the picker lists nothing extra and any override is
+  refused (`line_unverified`, 503).
+- **Refusals** (403, plain sentence, logged as a refused attempt): `line_unknown`,
+  `line_other_org` (looked up by id without an org filter so a forged id is refused by name),
+  `line_inactive`, `line_not_voice`.
+- **Recorded as before.** The chosen line is the caller ID for both legs, `call_logs.from_number`,
+  and the attempt's `line`, `line_label`, `from_number`, plus `line_id` and `line_overridden`.
+- **UI.** A "Call from" select when two or more lines are eligible, plain text otherwise. The
+  last choice is remembered per user in `localStorage` (`npu_hub_c2c_line:<user id>`) behind
+  try/catch, and is used only while it is still listed; the default applies otherwise. A
+  remembered choice takes precedence over the conversation's line (rule 4).
+- **Tests.** `c2c-tamper.cjs` L1 to L9 with nine new selectors; `BASE=d3be328` reddens exactly
+  the L set. `parity.cjs` pins the Conversations page, the timeline and both webhooks byte-equal
+  to `d3be328` (new selector `webhook`).
