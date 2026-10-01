@@ -9,10 +9,17 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Phone, AlertTriangle } from 'lucide-react'
 import { formatUsPhone } from '@/lib/phone'
+import { useWorkspace } from '@/lib/workspace-context'
 import {
   IDLE, startPreflight, acceptPreflight, disabledReason, callRequestBody,
+  lineStorageKey, readStoredLine, writeStoredLine, initialLine, lineControl,
   type PreState, type Preflight,
 } from '@/lib/click-to-call/ui-logic'
+
+// Reading window.localStorage itself can throw (blocked site data), not only its methods.
+function browserStorage(): Storage | null {
+  try { return typeof window === 'undefined' ? null : window.localStorage } catch { return null }
+}
 
 async function readJson(r: Response): Promise<any> {
   // An expired session is a 307 to /login, which fetch follows to a 200 HTML page.
@@ -31,6 +38,9 @@ export function ClickToCallButton({ conversationId, contactName, onPlaced }: {
   const [open, setOpen] = useState(false)
   const [placing, setPlacing] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
+  const [lineId, setLineId] = useState<string | null>(null)
+  const { user } = useWorkspace()
+  const storageKey = lineStorageKey(user?.id)
   const openIdRef = useRef(conversationId)
   openIdRef.current = conversationId
 
@@ -55,8 +65,19 @@ export function ClickToCallButton({ conversationId, contactName, onPlaced }: {
   const reason = disabledReason(pre)
   const d = pre.data
 
+  // Each preflight starts the picker from the remembered line, else the default.
+  useEffect(() => {
+    setLineId(pre.status === 'ready' ? initialLine(pre.data, readStoredLine(browserStorage(), storageKey)) : null)
+  }, [pre, storageKey])
+
+  function chooseLine(id: string) {
+    setLineId(id || null)
+    if (id) writeStoredLine(browserStorage(), storageKey, id)
+  }
+  const chosen = d?.lines?.find((l) => l.id === lineId) ?? null
+
   async function place() {
-    const body = callRequestBody(openIdRef.current, pre)
+    const body = callRequestBody(openIdRef.current, pre, lineId)
     if (!body) { setResult({ ok: false, text: 'The open conversation changed. Check the details and try again.' }); return }
     setPlacing(true)
     setResult(null)
@@ -108,10 +129,29 @@ export function ClickToCallButton({ conversationId, contactName, onPlaced }: {
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 mb-2">
             <dt className="text-gray-400">Contact</dt>
             <dd data-testid="c2c-contact-phone">{formatUsPhone(d.contact_phone || '')}</dd>
-            <dt className="text-gray-400">From line</dt>
+            <dt className="text-gray-400">Call from</dt>
             <dd data-testid="c2c-line">
-              {d.line?.label} {formatUsPhone(d.line?.e164 || '')}
-              {d.line?.is_default && <span className="text-gray-400"> (default line, the conversation has none set)</span>}
+              {lineControl(d) === 'select' ? (
+                <select
+                  aria-label="Call from"
+                  data-testid="c2c-line-select"
+                  value={lineId ?? ''}
+                  onChange={(e) => chooseLine(e.target.value)}
+                  className="w-full rounded-md border border-gray-200 bg-white px-1.5 py-0.5 text-[11px]"
+                >
+                  {!d.default_line_id && d.line && (
+                    <option value="">{d.line.label} {formatUsPhone(d.line.e164)} (default)</option>
+                  )}
+                  {(d.lines ?? []).map((l) => (
+                    <option key={l.id} value={l.id}>{l.label} {formatUsPhone(l.e164)}</option>
+                  ))}
+                </select>
+              ) : (
+                <>
+                  {(chosen ?? d.line)?.label} {formatUsPhone((chosen ?? d.line)?.e164 || '')}
+                  {!chosen && d.line?.is_default && <span className="text-gray-400"> (default line, the conversation has none set)</span>}
+                </>
+              )}
             </dd>
             <dt className="text-gray-400">Rings first</dt>
             <dd data-testid="c2c-staff-phone">{formatUsPhone(d.staff_phone || '')} (your phone)</dd>

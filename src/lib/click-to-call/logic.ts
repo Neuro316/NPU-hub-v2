@@ -192,3 +192,54 @@ export function callbackUrls(base: string, callLogId: string) {
     dialAction: `${b}/api/twilio/click-to-call/status?log=${id}&leg=dial`,
   }
 }
+
+// ── Line picker (docs/plans/hub-click-to-call-rulings.md, follow-up). The client sends a
+// line id (crm_twilio_numbers.id), never a number. No column says "active" or "voice
+// capable", so both are derived from what exists: a line is ELIGIBLE when it has a
+// crm_twilio_numbers row in the org, is still in the org's crm_twilio config, and the
+// Twilio account reports it with voice capability.
+export interface RegistryLine { id: string; org_id: string; phone_e164: string; friendly_name: string | null }
+export interface AccountNumber { phoneNumber: string; voice: boolean }
+export interface EligibleLine { id: string; e164: string; label: string }
+export function eligibleLines(
+  orgId: string,
+  registry: RegistryLine[],
+  configNumbers: { phone: string; nickname?: string }[],
+  account: AccountNumber[] | null,
+): EligibleLine[] {
+  const out: EligibleLine[] = []
+  for (const r of registry) {
+    if (r.org_id !== orgId) continue
+    const e164 = toE164(r.phone_e164)
+    const cfg = configNumbers.find((n) => toE164(n.phone) === e164)
+    const acct = (account || []).find((a) => toE164(a.phoneNumber) === e164)
+    if (!e164 || !cfg || !acct || acct.voice !== true) continue
+    out.push({ id: r.id, e164, label: cfg.nickname || r.friendly_name || formatUsPhone(e164) })
+  }
+  return out.sort((a, b) => a.label.localeCompare(b.label))
+}
+
+export type LineRefusal = 'line_unknown' | 'line_other_org' | 'line_unverified' | 'line_inactive' | 'line_not_voice'
+/**
+ * Resolve the line the caller picked. No id means no override: the caller keeps the
+ * line decide() chose, exactly as before the picker existed.
+ */
+export function resolveLineOverride(
+  lineId: string | null | undefined,
+  orgId: string,
+  row: RegistryLine | null,
+  configNumbers: { phone: string; nickname?: string }[],
+  account: AccountNumber[] | null,
+): { line: LineChoice; id: string } | null | { refused: LineRefusal; message: string } {
+  if (lineId == null || lineId === '') return null
+  if (!row || row.id !== lineId) return { refused: 'line_unknown', message: 'That line could not be found.' }
+  if (row.org_id !== orgId) return { refused: 'line_other_org', message: 'That line does not belong to this organization.' }
+  // Fail closed: if Twilio could not be asked, the line cannot be shown to be active.
+  if (account === null) return { refused: 'line_unverified', message: 'That line could not be checked with Twilio. Try again in a minute.' }
+  const e164 = toE164(row.phone_e164)
+  const cfg = configNumbers.find((n) => toE164(n.phone) === e164)
+  const acct = account.find((a) => toE164(a.phoneNumber) === e164)
+  if (!e164 || !cfg || !acct) return { refused: 'line_inactive', message: 'That line is no longer active for this organization.' }
+  if (acct.voice !== true) return { refused: 'line_not_voice', message: 'That line cannot place voice calls.' }
+  return { id: row.id, line: { e164, label: cfg.nickname || row.friendly_name || formatUsPhone(e164), isDefault: false } }
+}

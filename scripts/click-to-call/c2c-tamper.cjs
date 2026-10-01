@@ -29,7 +29,7 @@
 //   allowlistonly  test mode refuses even allowlisted contacts             {A9}
 //   notallowlisted test mode lets anyone through                           {A10}
 //   quiethoursblock quiet hours block instead of warn                      {A11}
-//   dialfirst      the route dials before it refuses                       {A15}
+//   dialfirst      the route dials before it refuses                       {A15,L7}
 //   sigcore        the core check accepts any signature                    {S2,S5,V2,V4}
 //   sigbridge      the bridge webhook stops refusing a bad signature       {S6}
 //   sigstatus      the status webhook stops refusing a bad signature       {S7}
@@ -38,8 +38,19 @@
 //   inboundroute   the bridge URL points at inbound-call                   {E2}
 //   directionin    the call row is written as inbound                      {E3}
 //   recording      the dial TwiML records                                  {N1}
+// Line picker (L: "Call from"):
+//   forgedline     another org's line id is no longer refused by name      {L1}
+//   inactiveline   a line missing from config or the account passes        {L2}
+//   novoice        a line without voice capability passes                  {L3}
+//   defaultshift   choosing the default line sends a line_id               {L4}
+//   storagecrash   a throwing localStorage breaks the picker               {L5}
+//   singleselect   one eligible line still renders a dropdown              {L6}
+//   rawline        the call row takes the client's line_id, not the line   {L7}
+//   eligibleorg    the list offers another org's lines                     {L8}
+//   unverified     an override passes when Twilio could not be asked       {L9}
 // TAMPER=1 runs every selector at once and must redden the union.
-// BASE=<git ref> reads every file from that ref; against the commit before this build
+// BASE=<git ref> reads every file from that ref. Against the click-to-call commit before
+// the line picker (d3be328) exactly the L cases must be red. Against the commit before this build
 // (BASE=HEAD~1 on the feature commit) every case must be red.
 // Exit: 0 green or exactly the declared set; 1 undeclared red; 2 unknown selector or dead
 // anchor; 3 a tampered run whose red set is not the declaration.
@@ -79,15 +90,28 @@ const TAMPERS = {
   inboundroute: [[L, '/api/twilio/click-to-call/bridge?log=${id}`', '/api/twilio/inbound-call?log=${id}`']],
   directionin: [[FILES.route, "direction: 'outbound', status: 'ringing'", "direction: 'inbound', status: 'ringing'"]],
   recording: [[L, '<Dial callerId=', '<Dial record="record-from-answer-dual" callerId=']],
+  forgedline: [[L, "  if (row.org_id !== orgId) return { refused: 'line_other_org'", "  if (false) return { refused: 'line_other_org'"]],
+  inactiveline: [[L, "  if (!e164 || !cfg || !acct) return { refused: 'line_inactive'", "  if (!e164) return { refused: 'line_inactive'"]],
+  novoice: [[L, "  if (acct.voice !== true) return { refused: 'line_not_voice'", "  if (false) return { refused: 'line_not_voice'"]],
+  defaultshift: [['src/lib/click-to-call/ui-logic.ts', 'if (selectedLineId && selectedLineId !== state.data.default_line_id && lines.some', 'if (selectedLineId && lines.some']],
+  storagecrash: [['src/lib/click-to-call/ui-logic.ts', '  try { return storage?.getItem(key) || null } catch { return null }', '  return storage?.getItem(key) || null']],
+  singleselect: [['src/lib/click-to-call/ui-logic.ts', "return (data?.lines?.length ?? 0) > 1 ? 'select' : 'text'", "return (data?.lines?.length ?? 0) > 0 ? 'select' : 'text'"]],
+  rawline: [[FILES.route, '    from_number: line.e164, to_number: d.contactPhone,', '    from_number: body.line_id, to_number: d.contactPhone,']],
+  eligibleorg: [[L, '    if (r.org_id !== orgId) continue\n', '']],
+  unverified: [[L, "  if (account === null) return { refused: 'line_unverified'", "  if (false) return { refused: 'line_unverified'"]],
 }
 const RED_OF = {
   wrongorg: ['A1'], nophone: ['A2'], suppressed: ['A3'], dnclist: ['A5'], nostaffphone: ['A6'], ratelimit: ['A7'],
-  flagoff: ['A8'], allowlistonly: ['A9'], notallowlisted: ['A10'], quiethoursblock: ['A11'], dialfirst: ['A15'],
+  flagoff: ['A8'], allowlistonly: ['A9'], notallowlisted: ['A10'], quiethoursblock: ['A11'], dialfirst: ['A15', 'L7'],
   sigcore: ['S2', 'S5', 'V2', 'V4'], sigbridge: ['S6'], sigstatus: ['S7'], staleswitch: ['U1'], entryevent: ['E1'],
   inboundroute: ['E2'], directionin: ['E3'], recording: ['N1'],
+  forgedline: ['L1'], inactiveline: ['L2'], novoice: ['L3'], defaultshift: ['L4'], storagecrash: ['L5'],
+  singleselect: ['L6'], rawline: ['L7'], eligibleorg: ['L8'], unverified: ['L9'],
 }
 const ALL = ['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'A10', 'A11', 'A12', 'A13', 'A14', 'A15', 'A16',
-  'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'V1', 'V2', 'V3', 'V4', 'U1', 'U2', 'E1', 'E2', 'E3', 'E4', 'N1']
+  'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'V1', 'V2', 'V3', 'V4', 'U1', 'U2', 'E1', 'E2', 'E3', 'E4', 'N1',
+  'L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8', 'L9']
+const LINE_IDS = ALL.filter((id) => id.startsWith('L'))
 
 const sel = process.env.TAMPER || ''
 const base = process.env.BASE || ''
@@ -210,11 +234,12 @@ async function main() {
       && gone.isDefault && none.isDefault && none.label === 'Main' && envOnly.label === 'Primary' && logic.pickLine([], null, '') === null,
       [own, gone, none, envOnly])
   })
-  // A14 the route reads nothing from the body but the conversation id, and the server derives the org from membership
+  // A14 the route reads nothing from the body but the conversation id (and, since the line
+  // picker, a line id the server resolves), and the server derives the org from membership
   guard('A14', () => {
     const post = src.route.slice(src.route.indexOf('export const POST'))
-    const bodyFields = Array.from(post.matchAll(/body\?\.(\w+)/g)).map((m) => m[1])
-    check('A14', post.includes('withStaff(') && bodyFields.length > 0 && bodyFields.every((f) => f === 'conversation_id')
+    const bodyFields = Array.from(post.matchAll(/body\??\.(\w+)/g)).map((m) => m[1])
+    check('A14', post.includes('withStaff(') && bodyFields.length > 0 && bodyFields.every((f) => f === 'conversation_id' || f === 'line_id')
       && /caller\.orgIds\.includes\(conv\.org_id\)/.test(src.server) && src.route.includes('export const GET = withStaff('), bodyFields)
   })
   // A15 the route refuses, then logs, then dials; the preflight never dials or writes
@@ -284,8 +309,68 @@ async function main() {
   })
   guard('U2', () => {
     const b = src.button
-    check('U2', /\}, \[conversationId\]\)/.test(b) && b.includes('callRequestBody(openIdRef.current, pre)') && b.includes('openIdRef.current = conversationId')
+    check('U2', /\}, \[conversationId\]\)/.test(b) && /callRequestBody\(openIdRef\.current, pre(, lineId)?\)/.test(b) && b.includes('openIdRef.current = conversationId')
       && /acceptPreflight\(s, forId/.test(b) && /conversationId=\{selectedThread\.id\}/.test(read('src/app/(dashboard)/crm/conversations/page.tsx')), 'the button is not keyed to the open conversation')
+  })
+
+  // ── L: the line picker ───────────────────────────────────────────────────────
+  const CFG = [{ phone: '+18284155050', nickname: 'Primary' }, { phone: '(828) 900-9821', nickname: 'WNW Office' }]
+  const ACCT = [{ phoneNumber: '+18284155050', voice: true }, { phoneNumber: '+18289009821', voice: true }, { phoneNumber: '+18285551234', voice: false }]
+  const row = (o) => ({ id: 'line-1', org_id: 'org-1', phone_e164: '+18289009821', friendly_name: 'WNW Office', ...o })
+  const lo = (id, r, cfg = CFG, acct = ACCT) => logic.resolveLineOverride(id, 'org-1', r, cfg, acct)
+  guard('L1', () => {
+    const forged = lo('line-9', row({ id: 'line-9', org_id: 'org-2', phone_e164: '+15550001111' }))
+    check('L1', forged.refused === 'line_other_org' && /does not belong/.test(forged.message) && lo('line-9', null).refused === 'line_unknown'
+      && lo('line-9', row()).refused === 'line_unknown', forged)
+  })
+  guard('L2', () => {
+    const notCfg = lo('line-1', row(), [CFG[0]]), notAcct = lo('line-1', row(), CFG, [ACCT[0]])
+    check('L2', notCfg.refused === 'line_inactive' && notAcct.refused === 'line_inactive' && /no longer active/.test(notCfg.message), [notCfg, notAcct])
+  })
+  guard('L3', () => {
+    const nv = lo('line-3', row({ id: 'line-3', phone_e164: '+18285551234' }), [...CFG, { phone: '+18285551234', nickname: 'Fax' }])
+    check('L3', nv.refused === 'line_not_voice' && /cannot place voice calls/.test(nv.message), nv)
+  })
+  guard('L4', () => {
+    const data = { conversation_id: 'c', ok: true, lines: [{ id: 'p', e164: '+18284155050', label: 'Primary' }, { id: 'w', e164: '+18289009821', label: 'WNW Office' }], default_line_id: 'w' }
+    const st = { forId: 'c', status: 'ready', data, error: null }
+    const post = src.route.slice(src.route.indexOf('export const POST'))
+    check('L4', lo(undefined, null) === null && lo(null, null) === null
+      && JSON.stringify(ui.callRequestBody('c', st, null)) === '{"conversation_id":"c"}'
+      && JSON.stringify(ui.callRequestBody('c', st, 'w')) === '{"conversation_id":"c"}'
+      && JSON.stringify(ui.callRequestBody('c', st, 'p')) === '{"conversation_id":"c","line_id":"p"}'
+      && JSON.stringify(ui.callRequestBody('c', st, 'zzz')) === '{"conversation_id":"c"}'
+      && post.includes('let line = d.line!') && post.includes('if (body?.line_id !== undefined && body?.line_id !== null) {'), 'the default request changed')
+  })
+  guard('L5', () => {
+    const boom = { getItem: () => { throw new Error('denied') }, setItem: () => { throw new Error('denied') } }
+    const data = { lines: [{ id: 'p' }, { id: 'w' }], default_line_id: 'w' }
+    let wrote = true
+    try { ui.writeStoredLine(boom, 'k', 'p') } catch { wrote = false }
+    check('L5', ui.readStoredLine(boom, 'k') === null && wrote && ui.readStoredLine(null, 'k') === null
+      && ui.initialLine(data, ui.readStoredLine(boom, 'k')) === 'w' && ui.initialLine(data, 'gone') === 'w' && ui.initialLine(data, 'p') === 'p'
+      && ui.lineStorageKey('u1') === 'npu_hub_c2c_line:u1' && /try \{ return typeof window === 'undefined'/.test(src.button), 'storage failure leaks')
+  })
+  guard('L6', () => check('L6', ui.lineControl({ lines: [{ id: 'p' }] }) === 'text' && ui.lineControl({ lines: [] }) === 'text'
+    && ui.lineControl(null) === 'text' && ui.lineControl({ lines: [{ id: 'p' }, { id: 'w' }] }) === 'select'
+    && /lineControl\(d\) === 'select' \?/.test(src.button), 'one line renders a dropdown'))
+  guard('L7', () => {
+    const post = src.route.slice(src.route.indexOf('export const POST'))
+    const iResolve = post.indexOf('resolveLineOverride('), iInsert = post.indexOf("from('call_logs').insert("), iDial = post.indexOf('.calls.create(')
+    check('L7', post.includes('from_number: line.e164, to_number: d.contactPhone,') && post.includes('to: d.staffPhone, from: line.e164,')
+      && post.includes('line_id: r.id') && iResolve > 0 && iResolve < iInsert && iInsert < iDial
+      && !/(from_number|from):\s*body/.test(post), [iResolve, iInsert, iDial])
+  })
+  guard('L8', () => {
+    const reg = [row({ id: 'w' }), row({ id: 'p', phone_e164: '+18284155050', friendly_name: 'Primary' }), row({ id: 'x', org_id: 'org-2', phone_e164: '+18284155050' }),
+      row({ id: 'f', phone_e164: '+18285551234' }), row({ id: 'g', phone_e164: '+18287770000' })]
+    const list = logic.eligibleLines('org-1', reg, [...CFG, { phone: '+18285551234' }], ACCT)
+    check('L8', JSON.stringify(list.map((l) => l.id)) === '["p","w"]' && list[1].label === 'WNW Office' && list[1].e164 === '+18289009821'
+      && logic.eligibleLines('org-1', reg, CFG, null).length === 0, list)
+  })
+  guard('L9', () => {
+    const r = lo('line-1', row(), CFG, null)
+    check('L9', r && r.refused === 'line_unverified', r)
   })
 
   // ── E: no entry events ───────────────────────────────────────────────────────
@@ -317,8 +402,10 @@ main().then(() => {
   const sortIds = (a) => a.slice().sort()
   if (!base) for (const r of rows) console.log(`${r.ok ? 'ok  ' : 'RED '} ${r.id}${r.ok ? '' : `  got ${JSON.stringify(r.got)}`}`)
   if (base) {
-    console.log(`\nBASE=${base}: red {${red.join(',')}}, declared {${sortIds(ALL).join(',')}}`)
-    process.exit(JSON.stringify(red) === JSON.stringify(sortIds(ALL)) ? 0 : 3)
+    // A base with click-to-call but no line picker must redden exactly the L cases.
+    const declared = sortIds(read(L) ? LINE_IDS : ALL)
+    console.log(`\nBASE=${base}: red {${red.join(',')}}, declared {${declared.join(',')}}`)
+    process.exit(JSON.stringify(red) === JSON.stringify(declared) ? 0 : 3)
   }
   if (!active.length) {
     console.log(red.length ? `FAIL: ${red.length} red of ${ALL.length}` : `PASS: ${ALL.length} of ${ALL.length}`)

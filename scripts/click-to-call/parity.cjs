@@ -16,9 +16,14 @@
 // With the flag off the only visible change is a disabled phone icon whose tooltip
 // says click-to-call is turned off; nothing else on the page or in any call path moves.
 //
+// SINCE_C2C  byte-for-byte equal to the click-to-call merge (d3be328): the line picker
+//            touches only the button, the route and the click-to-call libraries, so the
+//            Conversations page, the timeline and both Twilio webhooks must not move.
+//
 // TAMPER=outside   change one character outside a marked block      {M_conversations}
 // TAMPER=untouched change one character of ring-complete             {U_ring-complete}
-// TAMPER=1         both, union of the two
+// TAMPER=webhook   change one character of the bridge webhook        {C_bridge}
+// TAMPER=1         all three, union
 // Exit: 0 green or declared set; 1 undeclared red; 2 unknown selector / git failure; 3 set mismatch.
 const { execFileSync } = require('child_process')
 const fs = require('fs'), path = require('path')
@@ -47,19 +52,29 @@ const UNTOUCHED = {
   'supabase-middleware': 'src/lib/supabase-middleware.ts',
   'twilio-comms': 'src/components/crm/twilio-comms.tsx',
 }
+const C2C_BASE = process.env.C2C_BASE || 'd3be328'
+const SINCE_C2C = {
+  'conversations': 'src/app/(dashboard)/crm/conversations/page.tsx',
+  'timeline': 'src/components/crm/comms-timeline.tsx',
+  'bridge': 'src/app/api/twilio/click-to-call/bridge/route.ts',
+  'status': 'src/app/api/twilio/click-to-call/status/route.ts',
+  'webhook': 'src/lib/click-to-call/webhook.ts',
+  'verify': 'src/lib/click-to-call/verify.ts',
+  'signature': 'src/lib/click-to-call/signature.ts',
+}
 const MARKED = {
   'conversations': 'src/app/(dashboard)/crm/conversations/page.tsx',
   'timeline': 'src/components/crm/comms-timeline.tsx',
 }
-const RED_OF = { outside: ['M_conversations'], untouched: ['U_ring-complete'] }
+const RED_OF = { outside: ['M_conversations'], untouched: ['U_ring-complete'], webhook: ['C_bridge'] }
 const sel = process.env.TAMPER || ''
 const active = sel === '1' ? Object.keys(RED_OF) : sel ? sel.split(',') : []
 for (const t of active) if (!RED_OF[t]) { console.error(`unknown selector ${t}`); process.exit(2) }
 
 const norm = (s) => s.replace(/\r\n/g, '\n')
-const base = (f) => {
-  try { return norm(execFileSync('git', ['show', `${BASE}:${f}`], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })) }
-  catch (e) { console.error(`git show ${BASE}:${f} failed (is the history fetched?)`); process.exit(2) }
+const base = (f, ref = BASE) => {
+  try { return norm(execFileSync('git', ['show', `${ref}:${f}`], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })) }
+  catch (e) { console.error(`git show ${ref}:${f} failed (is the history fetched?)`); process.exit(2) }
 }
 const work = (f) => norm(fs.readFileSync(path.join(ROOT, f), 'utf8'))
 const stripMarked = (s) => {
@@ -86,6 +101,12 @@ for (const [k, f] of Object.entries(MARKED)) {
   const s = stripMarked(now)
   const same = s.text === base(f)
   rows.push({ id: `M_${k}`, ok: same && s.blocks > 0 && !s.unclosed, got: `${s.blocks} marked block(s)${s.unclosed ? ', unclosed' : ''}, ${same ? 'identical outside them' : 'differs outside them'}` })
+}
+for (const [k, f] of Object.entries(SINCE_C2C)) {
+  let now = work(f)
+  if (active.includes('webhook') && k === 'bridge') now = swap(now, "searchParams.get('step')", "searchParams.get('stepx')")
+  const same = now === base(f, C2C_BASE)
+  rows.push({ id: `C_${k}`, ok: same, got: same ? `identical to ${C2C_BASE}` : `differs from ${C2C_BASE}` })
 }
 
 const red = rows.filter((r) => !r.ok).map((r) => r.id).sort()
