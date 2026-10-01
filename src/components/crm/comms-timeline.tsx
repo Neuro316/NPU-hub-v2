@@ -225,6 +225,9 @@ function CallRow({ entry, onCallBack, lineLabel }: {
         <span className="text-[9px] text-gray-500">
           {entry.direction === 'outbound' ? 'Outgoing' : 'Incoming'} {isMissed ? 'call · Missed' : 'call'}
           {(entry.duration_seconds ?? 0) > 0 ? ` · ${fmtDuration(entry.duration_seconds!)}` : ''}
+          {/* CLICK-TO-CALL-BEGIN: every outcome visible, including a call that never connected */}
+          {entry.status === 'failed' ? ' · Not connected' : ''}
+          {/* CLICK-TO-CALL-END */}
         </span>
         <span className="text-[8px] text-gray-400 ml-1" title={fmtFull(entry.created_at)}>
           {fmtClock(entry.created_at)}

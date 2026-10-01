@@ -31,7 +31,9 @@ const G1_REVIEWED_PUBLIC = {
   'src/app/api/intake/route.ts': 'published form + intake flag + honeypot + rate limit',
   'src/app/a/[token]/route.ts': 'hashed single-purpose expiring token, redirect to the University only',
 }
-const G1_WRAPPERS = /\bwithStaff\s*\(|\bcronAuthorized\s*\(|\bverifySvix\s*\(|\bverifyUnsubscribeToken\s*\(/
+// verifyTwilioWebhook: the click-to-call webhooks (always enforced, fail closed). That it
+// runs before the first database call is proved by scripts/click-to-call/c2c-tamper.cjs.
+const G1_WRAPPERS = /\bwithStaff\s*\(|\bcronAuthorized\s*\(|\bverifySvix\s*\(|\bverifyUnsubscribeToken\s*\(|\bverifyTwilioWebhook\s*\(/
 function g1(tree) {
   const out = []
   for (const [f, src] of Object.entries(tree)) {
