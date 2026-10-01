@@ -6,6 +6,8 @@ import { NextResponse } from 'next/server'
 import { withStaff, requireOrg, bad } from '@/lib/api-guard'
 import { SMS_PART_MAX } from '@/lib/sms-split'
 import { SMS_STOP_LINE } from '@/lib/marketing/render'
+import { teamMemberId } from '@/lib/marketing/team-member'
+import { constraintMessage } from '@/lib/marketing/db-errors'
 
 export const dynamic = 'force-dynamic'
 
@@ -52,10 +54,13 @@ export const POST = withStaff(async (req, ctx) => {
   if (seqId) {
     const { data, error } = await db.from('sequences').update({ name, campaign_id: b.campaign_id || null, updated_at: new Date().toISOString() })
       .eq('id', seqId).eq('org_id', org).select('id')
-    if (error || (data?.length ?? 0) !== 1) return NextResponse.json({ error: 'The sequence was not found.' }, { status: 404 })
+    if (error) return NextResponse.json({ error: constraintMessage(error, 'The steps') ?? 'The steps could not be saved. Try again in a moment.' }, { status: 500 })
+    if ((data?.length ?? 0) !== 1) return NextResponse.json({ error: "This campaign's step list was not found. Reload the page and save again." }, { status: 404 })
   } else {
-    const { data, error } = await db.from('sequences').insert({ org_id: org, name, campaign_id: b.campaign_id || null, created_by: ctx.userId, is_active: true }).select('id').single()
-    if (error || !data) return NextResponse.json({ error: 'The sequence could not be created.' }, { status: 500 })
+    // created_by references team_members(id), not the auth user id (src/lib/marketing/team-member.ts)
+    const createdBy = await teamMemberId(db, org, ctx.userId)
+    const { data, error } = await db.from('sequences').insert({ org_id: org, name, campaign_id: b.campaign_id || null, created_by: createdBy, is_active: true }).select('id').single()
+    if (error || !data) return NextResponse.json({ error: constraintMessage(error, 'The steps') ?? 'The steps could not be saved. Try again in a moment.' }, { status: 500 })
     seqId = data.id
   }
   // Update in place by position, so a step keeps its id (the send dedupe key includes it:
@@ -69,7 +74,7 @@ export const POST = withStaff(async (req, ctx) => {
     const { data, error } = id
       ? await db.from('sequence_steps').update(r).eq('id', id).select('id')
       : await db.from('sequence_steps').insert({ ...r, sequence_id: seqId }).select('id')
-    if (error || (data?.length ?? 0) !== 1) return NextResponse.json({ error: `Step ${r.step_order + 1} could not be saved. Earlier steps were saved.` }, { status: 500 })
+    if (error || (data?.length ?? 0) !== 1) return NextResponse.json({ error: constraintMessage(error, `Step ${r.step_order + 1}`)?.concat(' Earlier steps were saved.') ?? `Step ${r.step_order + 1} could not be saved. Earlier steps were saved.` }, { status: 500 })
   }
   const extra = (existing ?? []).filter((x: any) => x.step_order >= rows.length).map((x: any) => x.id)
   if (extra.length) {

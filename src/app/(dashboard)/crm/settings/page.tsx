@@ -64,6 +64,11 @@ const GREETING_KEYS = ['greeting_url', 'greeting_path', 'greeting_filename', 'gr
 export default function SettingsPage() {
   const { currentOrg } = useWorkspace()
   const [active, setActive] = useState<Section>('general')
+  // ?section=<id> opens one section directly (the funnel readiness checklist links here)
+  useEffect(() => {
+    const want = new URLSearchParams(window.location.search).get('section')
+    if (want && SECTIONS.some((x) => x.id === want)) setActive(want as Section)
+  }, [])
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [twilioTest, setTwilioTest] = useState<{ loading: boolean; result: any | null }>({ loading: false, result: null })

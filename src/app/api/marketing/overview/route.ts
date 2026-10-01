@@ -42,6 +42,8 @@ export const GET = withStaff(async (req, ctx) => {
     steps: (steps.data ?? []).map(({ sequences: _s, ...s }: any) => s), routes: routes.data,
     enrollment_counts: counts, stage_counts: stageCounts, forms: forms.data, assets: assets.data,
     test_contacts: tests.data, flags, policy, sender_problem: policy ? senderProblem(policy) : 'policy_unreadable',
+    // whether marketing email can carry an unsubscribe link; the secret itself never leaves the server
+    unsubscribe_ready: (process.env.HUB_UNSUBSCRIBE_SECRET || '').trim().length >= 32,
     can_go_live: ctx.isSuperadmin,
   })
 })
