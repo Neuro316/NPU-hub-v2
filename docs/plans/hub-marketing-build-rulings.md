@@ -351,3 +351,28 @@ lives in `engine.ts`, and the Twilio provider is `providers/twilio-sms.ts`.
 
 - **A26. Single opt-in.** A form records consent on submission without a confirmation email. Double
   opt-in is listed as a decision.
+
+---
+
+## 10. Stage 4 (2026-10-01)
+
+- **Merged** `feat/hub-marketing-engine` into `main` as `5f22e95fc573061163520a5bf918dea456f577e1`
+  (69 files, +5584 -10 against `3492d97`). **Deployed** as `dpl_Ben8FXWTX4if9ktoaL5b9RnV8kPx`, Ready,
+  holding `hub.neuroprogeny.com`, selected by `vercel ls --meta githubCommitSha=<merge sha>` (1 row; the
+  pre-merge sha selects a different deployment).
+- **Production probes:** unsubscribe with a bad token 400, `/api/cron/campaign-steps` without the
+  secret 401, `/api/webhooks/resend` unsigned 401, `/api/intake` unknown form 404, `/a/<bad>` 410,
+  `/api/marketing/overview` without a session 307 to `/login`.
+- **HEAD~1 discrimination:** today's harnesses run against the tree before the merge: parity 3 red
+  (no marked blocks), guards 26 new G3 findings (no `.env.example`), pure harness fails (modules absent).
+- **End to end dry run on live, once:** NP `engine` switched on and the send window opened to all day
+  (both via org_settings rows that did not exist before), one active campaign "Dry run check
+  (2026-10-01)" with a single SMS service step, the owner's contact enrolled through `public.enroll`.
+  The deployed cron ran at 00:55:09 UTC:
+  - `job_runs`: `campaign-steps ok=true rows=1 {"counts":{"dry_run_completed":1}}`
+  - `send_log`: `sms service allow mode=dry_run step=all reason=passed`
+  - `message_sends`: `sms service status=dry_run dry_run=true body="Hub dry run check for Cameron. Nothing is sent in a dry run."`
+  - the enrollment completed.
+  Afterwards both settings rows were deleted (back to absent, `hub_flag(engine)` reads `off`) and the
+  campaign archived. Nothing was sent: before and after the deploy and the run, `stage_email_sends` 13,
+  `hub_sms_outbox` 1, `crm_messages` 62.

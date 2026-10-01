@@ -9,7 +9,7 @@ Running state of in-flight Hub work. Newest first.
 **Plan and every ruling and assumption: `docs/plans/hub-marketing-build-rulings.md`.** Platform
 contract: `docs/INTEGRATION_CONTRACT.md`.
 
-**State: built, merged, deployed, every switch OFF.** Migration `hub_211_marketing_engine` applied
+**State: built, merged (`5f22e95`), deployed (`dpl_Ben8FXWTX4if9ktoaL5b9RnV8kPx`, holds hub.neuroprogeny.com), every switch OFF. One end to end dry run passed on live, 2026-10-01 00:55 UTC.** Migration `hub_211_marketing_engine` applied
 to live 2026-10-01 (ledger version `20261001002152`, recorded sha256 `e5a61a82...13e6`), after a
 byte-identical rerun on a fresh Supabase branch: 45 contract cases green, 5 planted defects each
 reddening exactly their declared set. 24 pipelines, 175 stages, 270 contact positions, 3 consent
