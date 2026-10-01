@@ -1,7 +1,7 @@
 {
   "name": "npu-platform",
   "version": "2.0.0",
-  "description": "Neuro Progeny Universe — VR Biofeedback Companion Platform",
+  "description": "Neuro Progeny Universe \u2014 VR Biofeedback Companion Platform",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -13,7 +13,8 @@
     "check:kj": "node scripts/hrv/kj-hub-writers-tamper.cjs",
     "verify": "node scripts/verify.cjs",
     "guards": "node scripts/guards/run-guards.cjs",
-    "check:marketing": "node scripts/marketing/pure-tamper.cjs && node scripts/marketing/flags-off-parity.cjs"
+    "check:marketing": "node scripts/marketing/pure-tamper.cjs && node scripts/marketing/flags-off-parity.cjs",
+    "agent:content": "node scripts/agent/gen-content.cjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",

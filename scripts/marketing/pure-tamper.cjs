@@ -97,7 +97,7 @@ const check = (id, ok, got) => rows.push({ id, ok: !!ok, got })
 const EM_DASH = String.fromCharCode(0x2014)
 
 // flags
-check('F1', JSON.stringify(parseFlags({ engine: 'on', intake: 'true', gate_live_sends: true })) === JSON.stringify({ engine: true, gate_live_sends: false, provider_email: false, provider_sms: false, intake: false, deliver_asset: false, mirror_legacy_stage: false }), parseFlags({ engine: 'on', intake: 'true', gate_live_sends: true }))
+check('F1', JSON.stringify(parseFlags({ engine: 'on', intake: 'true', gate_live_sends: true })) === JSON.stringify({ engine: true, gate_live_sends: false, provider_email: false, provider_sms: false, intake: false, deliver_asset: false, mirror_legacy_stage: false, agent_enabled: false, help_bot_enabled: false, pages: false }), parseFlags({ engine: 'on', intake: 'true', gate_live_sends: true }))
 check('F2', Object.values(parseFlags(null)).every((x) => x === false), parseFlags(null))
 // sender
 check('P1', senderProblem({ from_address: 'NP <hello@sender-not-set.neuroprogeny.com>', from_domain: 'sender-not-set.neuroprogeny.com' }) === 'sender_is_placeholder')

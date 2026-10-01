@@ -4,8 +4,7 @@
 // Steps are numbered 0..n in the order given; a step keeps its id at its position.
 import { NextResponse } from 'next/server'
 import { withStaff, requireOrg, bad } from '@/lib/api-guard'
-import { SMS_PART_MAX } from '@/lib/sms-split'
-import { SMS_STOP_LINE } from '@/lib/marketing/render'
+import { checkSequenceHead, checkSteps } from '@/lib/marketing/validate/sequence'
 import { teamMemberId } from '@/lib/marketing/team-member'
 import { constraintMessage } from '@/lib/marketing/db-errors'
 
@@ -16,35 +15,16 @@ export const POST = withStaff(async (req, ctx) => {
   const org = requireOrg(ctx, b?.org_id)
   if (typeof org !== 'string') return org
   const db = ctx.db
-  const name = typeof b.name === 'string' ? b.name.trim() : ''
-  if (!name) return bad('Give the sequence a name.')
-  const steps: any[] = Array.isArray(b.steps) ? b.steps : []
-  if (steps.length > 30) return bad('A sequence can have at most 30 steps.')
+  // the same checks the Campaign Builder agent runs (src/lib/marketing/validate/sequence.ts)
+  const head = checkSequenceHead(b)
+  if (!head.ok) return bad(head.message)
+  const name = head.name
 
   const { data: assets } = await db.from('university_assets').select('id').eq('org_id', org)
-  const assetIds = new Set((assets ?? []).map((a: any) => a.id))
-  const rows: any[] = []
-  for (let i = 0; i < steps.length; i++) {
-    const s = steps[i] ?? {}
-    const n = `Step ${i + 1}`
-    const channel = s.channel
-    if (!['email', 'sms', 'wait'].includes(channel)) return bad(`${n} needs a channel: email, text message, or wait.`)
-    const delay = Number.isFinite(Number(s.delay_minutes)) ? Math.max(0, Math.round(Number(s.delay_minutes))) : 0
-    const stepType = s.step_type === 'deliver_asset' ? 'deliver_asset' : 'message'
-    const kind = channel === 'wait' ? null : (s.kind === 'service' ? 'service' : 'marketing')
-    const body = typeof s.body === 'string' ? s.body : ''
-    if (channel !== 'wait') {
-      if (!body.trim() && stepType === 'message') return bad(`${n} needs a message.`)
-      if (channel === 'email' && !String(s.subject || '').trim()) return bad(`${n} needs a subject line.`)
-      // leave room for the STOP line marketing texts get, and for names merged in
-      if (channel === 'sms' && body.length + (kind === 'marketing' ? SMS_STOP_LINE.length + 1 : 0) + 60 > SMS_PART_MAX) {
-        return bad(`${n} is too long for one text message once names and the opt out line are added.`)
-      }
-    }
-    if (stepType === 'deliver_asset' && !assetIds.has(s.asset_id)) return bad(`${n} delivers a University asset, so choose one from the list.`)
-    rows.push({ step_order: i, channel, delay_minutes: delay, subject: channel === 'email' ? String(s.subject).trim() : null,
-      body: channel === 'wait' ? null : body, kind, step_type: stepType, asset_id: stepType === 'deliver_asset' ? s.asset_id : null })
-  }
+  const assetIds = new Set<string>((assets ?? []).map((a: any) => a.id))
+  const stepCheck = checkSteps(head.steps, assetIds)
+  if (!stepCheck.ok) return bad(stepCheck.message)
+  const rows = stepCheck.rows
   if (b.campaign_id) {
     const { data: c } = await db.from('funnel_campaigns').select('id').eq('id', b.campaign_id).eq('org_id', org).maybeSingle()
     if (!c) return bad('That campaign was not found in this organization.')

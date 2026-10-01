@@ -18,6 +18,9 @@ const FLAG_TEXT: Record<keyof Flags, string> = {
   intake: 'Public forms accept submissions',
   deliver_asset: 'Deliver steps hand out University links',
   mirror_legacy_stage: 'Campaign stage moves also update the existing pipeline board',
+  agent_enabled: 'Campaign Builder: a superadmin can describe a campaign and get drafts to review',
+  help_bot_enabled: 'Hub Guide: answers how to use the Hub and walks people through it',
+  pages: 'Landing pages: published pages are shown at their public address',
 }
 
 export function MarketingSettings() {

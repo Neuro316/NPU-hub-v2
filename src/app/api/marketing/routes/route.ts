@@ -4,16 +4,18 @@
 import { NextResponse } from 'next/server'
 import { withStaff, requireOrg, bad } from '@/lib/api-guard'
 import { constraintMessage } from '@/lib/marketing/db-errors'
+import { checkSourceKey } from '@/lib/marketing/validate/route'
 
 export const dynamic = 'force-dynamic'
-const KEY = /^[a-z0-9][a-z0-9_.:-]{0,79}$/
 
 export const POST = withStaff(async (req, ctx) => {
   const b = await req.json().catch(() => ({}))
   const org = requireOrg(ctx, b?.org_id)
   if (typeof org !== 'string') return org
-  const key = typeof b.source_key === 'string' ? b.source_key.trim().toLowerCase() : ''
-  if (!KEY.test(key)) return bad('A source key uses lower case letters, numbers, and the characters . _ : -')
+  // the same check the Campaign Builder agent runs (src/lib/marketing/validate/route.ts)
+  const keyCheck = checkSourceKey(b.source_key)
+  if (!keyCheck.ok) return bad(keyCheck.message)
+  const key = keyCheck.key
   const { data: camp } = await ctx.db.from('funnel_campaigns').select('id').eq('id', b.campaign_id).eq('org_id', org).maybeSingle()
   if (!camp) return bad('That campaign was not found in this organization.')
   if (b.remove === true) {

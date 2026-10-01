@@ -20,7 +20,8 @@ export interface FormDef {
   id: string; slug: string; name: string; status: 'draft' | 'published' | 'archived'; version: number
   fields: any[]; consents: any[]; source_key: string; success_message: string
 }
-export interface Flags { engine: boolean; gate_live_sends: boolean; provider_email: boolean; provider_sms: boolean; intake: boolean; deliver_asset: boolean; mirror_legacy_stage: boolean }
+export interface Flags { engine: boolean; gate_live_sends: boolean; provider_email: boolean; provider_sms: boolean; intake: boolean; deliver_asset: boolean; mirror_legacy_stage: boolean
+  agent_enabled: boolean; help_bot_enabled: boolean; pages: boolean }
 export interface Overview {
   campaigns: FunnelCampaign[]; pipelines: Pipeline[]; stages: Stage[]
   sequences: Array<{ id: string; name: string; campaign_id: string | null }>
