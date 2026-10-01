@@ -452,3 +452,42 @@ live holds 4 `funnel_campaigns`, 1 `campaign_routes` row, no triggers on either 
 next file is likely `pf_213`, the same number as this file with a different prefix. The ledger keys on
 timestamps and the names differ, so nothing collides; it is the ambiguity the band rule was meant to
 prevent, and it is the platform's to resolve.
+
+### Stage 1 go (Cameron, 2026-10-01) and the live apply
+
+**Ruling 25 (Cameron, 2026-10-01): the platform's next migration number must exceed the max across
+both repos, so 214 or above.** The `pf_` sequence had reached `pf_212`; `pf_213` would have shared
+this file's number. Stated here so the Hub record carries it; the platform session applies it.
+
+**Before the live apply, on the branch with hub_213 reapplied** (stored statement again
+`5557b95f...7092`), the existing harnesses ran unchanged:
+
+| harness | cases | none | planted defects |
+|---|---|---|---|
+| `scripts/marketing/contract-211.sql` | 45 | green | quiet {G_QUIET_2000}, cap {G_CAP_AT_LIMIT}, dupactive {E_ACTIVE_NO_2ND_SEQ, M_GOAL_ENDS_DRIP}, revokeorder {C_STOP_SUPPRESSES, C_UNSUB_KEEPS_SERVICE, G_REVOKED_MID}, merge {E_MERGED_DUP, E_MERGED_TO_SURVIVOR} |
+| `scripts/marketing/contract-212.sql` | 22 | green | flagoff {F_OFF_RAISE}, noidem {D_SAME_EVENT_ONCE}, noguard {M_GUARD_SKIPS}, mergetags {T_MERGE_UNION_SILENT}, enginemove {E_ENGINE_MOVE_SILENT}, nocap {B_BULK_CAP} |
+
+Each exactly as recorded at its own live apply (sections 8 and 13).
+
+**Live apply:** `apply_migration` on `htfrfaxlcuyawtlztxxm`, ledger version `20261001221730`, stored
+statement sha256 `5557b95f...7092`, equal to the committed file at `d58ac5e` and to the branch run.
+The file header still reads PROPOSED because the file is exactly what the ledger holds; this section is
+the record that it is applied.
+
+**Read back from live:**
+
+- `funnel_campaigns_activate_agent_routes`: `AFTER UPDATE OF status ... FOR EACH ROW`, body fires only
+  when `new.status = 'active' and old.status = 'draft'`, and touches only rows with
+  `activate_with_campaign and ai_run_id is not null`.
+- `campaign_routes_disarm_on_change`: `BEFORE UPDATE OF active ... FOR EACH ROW`; the only column it
+  is attached to is `active`, and its only write is `new.activate_with_campaign := false`, made only
+  when `new.active is distinct from old.active`.
+- Existing rows against a before-image taken at 22:16:23 UTC, comparing every column except the new
+  ones: the 4 `funnel_campaigns` (`d0fe3344...`), the 1 `campaign_routes` row (`8e0167a9...`,
+  `call:inbound`, still active) and the 7 `sequence_steps` (`0600a91e...`) are byte-identical; 0 old
+  rows carry any marker or arm.
+- Posture: RLS on all 6 new tables, `anon` nothing, `authenticated` SELECT only on `campaign_tasks`
+  and `page_definitions` (one policy each); the 5 functions are security definer and executable by
+  `service_role` only.
+
+**Branch `hub-agent-213` deleted** after the harness runs.
