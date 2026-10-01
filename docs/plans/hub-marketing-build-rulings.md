@@ -235,3 +235,45 @@ left unpositioned), 3 consent rows (Cameron service grant; Melissa service and m
 - **A19. A service message needs a service basis**: the latest service-kind event for that channel,
   or, when there is none, a standing marketing grant. An email unsubscribe revokes marketing only;
   SMS STOP revokes both kinds.
+
+### Stage 1 re-verification and live apply (2026-10-01, on Cameron's go)
+
+**Fresh branch, verbatim files.** `reset_branch` replays the branch's own recorded history, so it
+restored the earlier objects rather than an empty schema. That branch was deleted and a fresh one
+created (`hub-marketing-211b`, ref `wprcaujbcprnondqziuj`, 0 tables). Both files were then loaded
+unmodified and proven byte-identical from the branch ledger: sha256 of the recorded statements
+`2c4c0482...59fc` (bootstrap) and `e5a61a82...13e6` (hub_211), equal to the local files.
+
+**Rerun:** 45 cases green; quiet {G_QUIET_2000}, cap {G_CAP_AT_LIMIT}, dupactive
+{E_ACTIVE_NO_2ND_SEQ, M_GOAL_ENDS_DRIP}, revokeorder {C_STOP_SUPPRESSES, C_UNSUB_KEEPS_SERVICE,
+G_REVOKED_MID}, merge {E_MERGED_DUP, E_MERGED_TO_SURVIVOR}. Identical to the earlier run.
+service_role on the fresh branch: funnel_campaigns full DML, consent_events SELECT and INSERT only.
+
+**Live apply:** ledger version `20261001002152`, recorded sha256 `e5a61a82...13e6`. Read back through
+pg_catalog: 17 tables, RLS on 17, 16 policies, 17 functions, 5 new columns, 0 anon grants, engine
+functions not executable by PUBLIC, anon or authenticated; consent_events service_role privileges
+SELECT and INSERT only. Data: 24 pipelines, 175 stages, 270 positions, 3 consent rows (service
+granted, service revoked, marketing revoked), 1 allowlist row, 0 flag rows (every flag off).
+Both test branches deleted.
+
+**Concurrent activity seen:** `pf_202_platform_ledger` was applied by a platform session at
+`20261001001328`, between the preflight and the apply. It touches only `commission_ledger`.
+
+**The 10 contacts left without a stage position** (their stage text is not a stage of their pipeline):
+
+| Contact | Pipeline | Stage text on the contact |
+|---|---|---|
+| Bradley Mitchell | Enrolled | Signed up |
+| Cameron Allen | Enrolled | Checkout started |
+| Dyann Meyers | Enrolled | Paid |
+| Dylan Constance | Enrolled | Signed up |
+| Laurie Tewksbury | Enrolled | Signed up |
+| Logan Berzenski | Enrolled | Signed up |
+| Luke Harris | Enrolled | Signed up |
+| Savanna Poole | Enrolled | Signed up |
+| Hazel Thornton | (pipeline key not found) | Enrolled |
+| Test Test | (pipeline key not found) | Application |
+
+All Neuro Progeny. Eight sit on stage names the `Enrolled` pipeline does not define (`Signed up`,
+`Checkout started`, `Paid`); Dyann Meyers is the `Paid` case CURRENT.md already records for repair
+206. Two carry a pipeline key that matches no pipeline in the settings.
