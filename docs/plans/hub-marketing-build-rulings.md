@@ -277,3 +277,47 @@ Both test branches deleted.
 All Neuro Progeny. Eight sit on stage names the `Enrolled` pipeline does not define (`Signed up`,
 `Checkout started`, `Paid`); Dyann Meyers is the `Paid` case CURRENT.md already records for repair
 206. Two carry a pipeline key that matches no pipeline in the settings.
+
+---
+
+## 9. Stage 2 (2026-10-01)
+
+Built: engine (`src/lib/marketing/engine.ts`), gate client, Resend and Twilio providers behind
+`providers/types.ts`, unsubscribe (`/api/email/unsubscribe`), Resend webhook (`/api/webhooks/resend`),
+intake (`/api/intake`), asset redirect (`/a/<token>`), crons `/api/cron/campaign-steps` and
+`/api/cron/watchdog` with `job_runs`, flags, the staff routes under `/api/marketing/*` behind
+`withStaff`, the guards (`scripts/guards/run-guards.cjs`), the harnesses and `npm run verify`
+(also `.github/workflows/verify.yml`, no secrets).
+
+### Assumptions recorded in Stage 2
+
+- **A20. Campaign steps run on their own cron, `/api/cron/campaign-steps`.** The existing
+  `/api/sequences/process-step` is one of the six crons middleware redirects to `/login`, so it has
+  never run; ruling 13 says not to fix it. The new cron processes the same `sequence_enrollments` and
+  `sequence_steps` tables (still one drip engine) but only rows with `campaign_enrollment_id`, and
+  `process-step` now skips those rows so no enrollment can ever be handled by both.
+- **A21. Existing crons do not write `job_runs`.** Ruling 13 says every cron writes it; adding writes
+  to `sms-outbox` would break the promise that the stage-email and sms-outbox paths are unchanged.
+  The two new crons write it and the watchdog monitors them. Wiring the existing ones in is listed
+  as a decision.
+- **A22. STOP and START write the consent ledger even with every flag off.** STOP revokes both
+  kinds and suppresses the number; START restores service messages only, because marketing needs an
+  express opt-in. The existing contact writes and the reply to Twilio are unchanged (parity harness).
+- **A23. `.env.example` was gitignored** by the existing `.env*` rule. A negation `!.env.example` was
+  added so the variable catalogue ruling 15 asks for can be committed. It holds names only.
+- **A24. Unlabelled steps are treated as marketing**, the stricter of the two consent rules.
+- **A25. A live marketing email also needs `HUB_UNSUBSCRIBE_SECRET`**, since no email may go without
+  a working one-click unsubscribe. A missing secret skips the send with a recorded reason.
+
+### Findings while building (not fixed)
+
+- Six crons in `vercel.json` can never run: middleware redirects a cookieless request to `/login`
+  (`/api/sequences/process-step`, `/api/sms/process-scheduled`, `/api/inbox/process-unsnooze`,
+  `/api/stats/daily-rollup`, `/api/usage/rollup`, `/api/maintenance/cleanup-recordings`).
+- `verifyCronSecret` (`src/lib/crm-server.ts:525`) and `/api/cron/crm-due-dates` compare against
+  `` `Bearer ${process.env.CRON_SECRET}` ``, which accepts the literal `Bearer undefined` if the secret
+  is ever unset. Guard G2 lists nine crons that do not fail closed.
+- Guard G1 lists 74 existing service-role routes that do not use a shared auth wrapper. Most hand-roll
+  `getUser()`; they are listed, not audited one by one.
+- Platform migrations `pf_200`, `pf_201`, `pf_202` sit in the Hub's 200 band; `pf_202` and the Hub's
+  `202_crm_messages_recovered_at` share a number.

@@ -9,6 +9,8 @@
     { "path": "/api/maintenance/cleanup-recordings", "schedule": "0 3 * * *" },
     { "path": "/api/integrations/process-pending-participants", "schedule": "*/30 * * * *" },
     { "path": "/api/cron/crm-due-dates", "schedule": "0 14 * * *" },
-    { "path": "/api/cron/sms-outbox", "schedule": "* * * * *" }
+    { "path": "/api/cron/sms-outbox", "schedule": "* * * * *" },
+    { "path": "/api/cron/campaign-steps", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/watchdog", "schedule": "*/10 * * * *" }
   ]
 }

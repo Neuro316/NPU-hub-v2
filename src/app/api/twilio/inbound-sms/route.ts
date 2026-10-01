@@ -71,6 +71,20 @@ export async function POST(request: NextRequest) {
           event_data: { keyword, phone: from },
           created_at: new Date().toISOString(),
         });
+        // HUB-MARKETING-BEGIN: the consent ledger (ruling 7). Additive: the writes above
+        // are unchanged, and a ledger error is logged, never thrown, so the reply to
+        // Twilio cannot change. STOP revokes every kind and suppresses the number; START
+        // restores service messages only, because marketing needs an express opt-in.
+        {
+          const { error: ledgerErr } = await supabase.rpc('record_consent', {
+            p_contact: c.id, p_channel: 'sms', p_kind: isStop ? 'all' : 'service',
+            p_action: isStop ? 'revoked' : 'granted', p_basis: isStop ? 'stop' : 'express_consent',
+            p_source: isStop ? 'sms_stop' : 'sms_start', p_text_shown: isStop ? null : `Replied ${keyword}`,
+            p_evidence: { keyword, message_sid: params.MessageSid ?? null },
+          });
+          if (ledgerErr) console.error(`inbound-sms: consent ledger write failed: ${ledgerErr.code ?? 'unknown'}`);
+        }
+        // HUB-MARKETING-END
       }
     }
 

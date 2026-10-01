@@ -10,7 +10,10 @@
     "lint": "next lint",
     "type-check": "tsc --noEmit",
     "check:twiml": "node scripts/np-twiml-snapshot.mjs",
-    "check:kj": "node scripts/hrv/kj-hub-writers-tamper.cjs"
+    "check:kj": "node scripts/hrv/kj-hub-writers-tamper.cjs",
+    "verify": "node scripts/verify.cjs",
+    "guards": "node scripts/guards/run-guards.cjs",
+    "check:marketing": "node scripts/marketing/pure-tamper.cjs && node scripts/marketing/flags-off-parity.cjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
