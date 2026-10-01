@@ -20,13 +20,18 @@ export const POST = withStaff(async (req, ctx) => {
   if (typeof b.reply_to === 'string') p.reply_to = b.reply_to.trim()
   if (b.quiet_start !== undefined) { if (!HHMM.test(b.quiet_start)) return bad('Use a 24 hour time like 08:00 for the start of the send window.'); p.quiet_start = b.quiet_start }
   if (b.quiet_end !== undefined) { if (!HHMM.test(b.quiet_end)) return bad('Use a 24 hour time like 20:00 for the end of the send window.'); p.quiet_end = b.quiet_end }
-  if (b.default_timezone !== undefined) p.default_timezone = String(b.default_timezone)
+  if (b.default_timezone !== undefined) {
+    try { new Intl.DateTimeFormat('en-US', { timeZone: String(b.default_timezone) }) } catch { return bad('That time zone is not recognised. Use a name like America/New_York.') }
+    p.default_timezone = String(b.default_timezone)
+  }
   if (b.cap_count !== undefined) { const n = Number(b.cap_count); if (!Number.isInteger(n) || n < 1 || n > 20) return bad('The cap is a whole number from 1 to 20.'); p.cap_count = n }
   if (b.cap_days !== undefined) { const n = Number(b.cap_days); if (!Number.isInteger(n) || n < 1 || n > 60) return bad('The cap window is a whole number of days from 1 to 60.'); p.cap_days = n }
-  if (p.quiet_start && p.quiet_end && String(p.quiet_start) >= String(p.quiet_end)) return bad('The send window must start before it ends.')
 
   const { data: cur } = await ctx.db.from('org_settings').select('setting_value').eq('org_id', org).eq('setting_key', 'hub_send_policy').maybeSingle()
   const next = { ...((cur?.setting_value as object) ?? {}), ...p }
+  // judge the window as it will be stored, defaults included, so setting one end alone cannot empty it
+  const effective = { ...((await getSendPolicy(ctx.db, org)) ?? {}), ...next } as Record<string, unknown>
+  if (String(effective.quiet_start ?? '08:00') >= String(effective.quiet_end ?? '20:00')) return bad('The send window must start before it ends.')
   if ((next as any).from_address !== undefined || (next as any).from_domain !== undefined) {
     const problem = senderProblem({ from_address: String((next as any).from_address ?? ''), from_domain: String((next as any).from_domain ?? '') })
     if (problem && problem !== 'sender_is_placeholder') return bad('The sender address must be on the sending domain, for example News <hello@mail.example.com> on mail.example.com.', { problem })

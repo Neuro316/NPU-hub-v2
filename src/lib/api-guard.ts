@@ -23,7 +23,9 @@ export interface StaffContext {
   db: SupabaseClient
 }
 
-export type StaffHandler<P> = (req: NextRequest, ctx: StaffContext, params: P) => Promise<Response>
+export const STAFF_TEAM_ROLES = ['super_admin', 'admin', 'team_member']
+
+export type StaffHandler<P> =(req: NextRequest, ctx: StaffContext, params: P) => Promise<Response>
 
 export function withStaff<P = Record<string, string>>(handler: StaffHandler<P>) {
   return async (req: NextRequest, route: { params: P }): Promise<Response> => {
@@ -35,10 +37,15 @@ export function withStaff<P = Record<string, string>>(handler: StaffHandler<P>) 
       db.from('profiles').select('role').eq('id', user.id).maybeSingle(),
     ])
     if (tErr) return NextResponse.json({ error: 'Your access could not be checked. Try again.' }, { status: 503 })
+    // Only staff roles count. team_profiles also holds 'participant' and 'facilitator'
+    // rows, and neither may run campaigns, record consent, or read contact histories here.
     const orgRoles: Record<string, string> = {}
-    for (const t of tps ?? []) orgRoles[(t as any).org_id] = String((t as any).role ?? 'team_member')
+    for (const t of tps ?? []) {
+      const role = String((t as any).role ?? 'team_member')
+      if (STAFF_TEAM_ROLES.includes(role)) orgRoles[(t as any).org_id] = role
+    }
     const orgIds = Object.keys(orgRoles)
-    if (!orgIds.length) return NextResponse.json({ error: 'You are not a team member of any organization.' }, { status: 403 })
+    if (!orgIds.length) return NextResponse.json({ error: 'This area is for team members of an organization.' }, { status: 403 })
     return handler(req, { userId: user.id, orgIds, orgRoles, isSuperadmin: prof?.role === 'superadmin', db }, route?.params ?? ({} as P))
   }
 }

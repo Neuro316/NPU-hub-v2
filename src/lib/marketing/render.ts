@@ -31,22 +31,32 @@ export const SMS_STOP_LINE = 'Reply STOP to opt out.'
 export function renderStep(i: RenderInput): Rendered {
   // asset link first, so a template that names it gets it in place and one that
   // does not gets it appended
-  let body = i.body || ''
+  // The TEMPLATE is staff-written and trusted; merge VALUES can come from a public form,
+  // so they are escaped before they enter HTML, and nothing about the template's own
+  // wording (HTML or not, carries a STOP line or not) is judged after values are merged.
+  let template = i.body || ''
   if (i.assetUrl) {
-    body = body.includes('{{asset_link}}') ? body.split('{{asset_link}}').join(i.assetUrl) : `${body}\n\n${i.assetUrl}`
+    template = template.includes('{{asset_link}}') ? template.split('{{asset_link}}').join(i.assetUrl) : `${template}\n\n${i.assetUrl}`
   }
-  body = resolveMergeTags(body, i.contact as CrmContact, i.orgName)
-  const subject = resolveMergeTags(i.subject || '', i.contact as CrmContact, i.orgName).trim()
+  const c = i.contact as CrmContact
+  const plain = resolveMergeTags(template, c, i.orgName)
+  const subject = resolveMergeTags(i.subject || '', c, i.orgName).trim()
 
   if (i.channel === 'sms') {
-    let text = htmlToText(body)
-    if (i.kind === 'marketing' && !/reply stop/i.test(text)) text = `${text} ${SMS_STOP_LINE}`
+    let text = htmlToText(plain)
+    if (i.kind === 'marketing' && !/reply stop/i.test(template)) text = `${text} ${SMS_STOP_LINE}`
     return { subject: '', html: '', text: text.trim() }
   }
 
-  const looksHtml = /<[a-z][\s\S]*>/i.test(body)
-  let html = looksHtml ? body : body.split(/\n{2,}/).map((p) => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`).join('')
-  let text = looksHtml ? htmlToText(body) : body
+  const looksHtml = /<[a-z][\s\S]*>/i.test(template)
+  const escaped = {
+    first_name: escapeHtml(c.first_name || ''), last_name: escapeHtml(c.last_name || ''), email: escapeHtml(c.email || ''),
+    phone: escapeHtml(c.phone || ''), pipeline_stage: escapeHtml(c.pipeline_stage || ''),
+  } as CrmContact
+  let html = looksHtml
+    ? resolveMergeTags(template, escaped, escapeHtml(i.orgName))
+    : plain.split(/\n{2,}/).map((p) => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`).join('')
+  let text = looksHtml ? htmlToText(plain) : plain
   if (i.kind === 'marketing') {
     const why = `You are receiving this because you asked to hear from ${escapeHtml(i.orgName)}.`
     const link = i.unsubscribeUrl

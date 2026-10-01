@@ -321,3 +321,33 @@ intake (`/api/intake`), asset redirect (`/a/<token>`), crons `/api/cron/campaign
   `getUser()`; they are listed, not audited one by one.
 - Platform migrations `pf_200`, `pf_201`, `pf_202` sit in the Hub's 200 band; `pf_202` and the Hub's
   `202_crm_messages_recovered_at` share a number.
+
+### Stage 2 code review (code-reviewer subagent, 2026-10-01) and what was done
+
+Fixed in code: (1) a retry after an ambiguous provider outcome could send twice: email now carries
+an idempotency key that is the same on every retry, an SMS whose request may have reached Twilio is
+recorded `outcome_unknown` and never retried, and a reaper converts sends stuck in `sending` for 30
+minutes into `outcome_unknown`; (2) a public form could reverse someone's opt-out or grant SMS
+consent to a number already on file: it may now only add consent, never override a revocation, and
+SMS consent counts only for the number the visitor typed; (3) merge values were pasted raw into email
+HTML: they are escaped, and the STOP-line check reads the template, not merged text; (4) `withStaff`
+admitted participant and facilitator team rows: it now admits super_admin, admin and team_member
+only; (5) a failure after the claim stranded the row: before the provider call the row is marked
+failed and retried, after it the reaper applies; (6) saving a sequence deleted and re-inserted steps:
+steps are now updated in place by position, keeping their ids; (7) SMS length is checked after merge
+tags and the STOP line, in dry runs too; (9) time zone and send window are validated as stored;
+(10) unsubscribes and bounces also suppress the address the message was sent to; (11) engine writes
+check their row count; (12) the honeypot path is rate limited; (13) START records consent only in
+the org that owns the receiving number; (14) SMS now has its own flag, `provider_sms`.
+
+Not fixed, recorded: (8) deleting a funnel campaign sets `sequence_enrollments.campaign_enrollment_id`
+to NULL (the FK is `on delete set null` in hub_211), which would make those rows look like legacy
+enrollments to `/api/sequences/process-step`. It is latent: nothing in the UI deletes a campaign
+(campaigns are archived), and `process-step` cannot run while middleware redirects it. A follow-up
+migration should change that FK; it is listed as a decision. (15) Naming differences from the Stage 0
+file list: intake is `/api/intake` with the form slug in the body, the watchdog is
+`/api/cron/watchdog`, the unsubscribe confirmation is the GET of the same route, the gate client
+lives in `engine.ts`, and the Twilio provider is `providers/twilio-sms.ts`.
+
+- **A26. Single opt-in.** A form records consent on submission without a confirmation email. Double
+  opt-in is listed as a decision.

@@ -65,10 +65,10 @@ export async function POST(req: NextRequest) {
         p_source: 'resend_webhook', p_text_shown: null, p_evidence: { send_id: send.id, event: type },
       })
       if (error) console.error(`[webhooks/resend] record_consent ${basis} failed: ${error.code ?? 'unknown'}`)
-    } else {
-      await db.from('suppressions').insert({ org_id: send.org_id, channel: 'email', address: send.to_address,
-        scope: 'all', reason: hardBounce ? 'hard_bounce' : 'complaint', source: 'resend_webhook' })
     }
+    // the address that bounced or complained, which may no longer be the contact's current one
+    await db.from('suppressions').insert({ org_id: send.org_id, channel: 'email', address: send.to_address,
+      scope: 'all', reason: hardBounce ? 'hard_bounce' : 'complaint', source: 'resend_webhook' })
   }
   await db.from('provider_events').update({ processed_at: new Date().toISOString() })
     .eq('provider', 'resend').eq('provider_event_id', req.headers.get('svix-id'))

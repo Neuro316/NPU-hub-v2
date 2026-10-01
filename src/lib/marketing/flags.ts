@@ -9,12 +9,12 @@
 // provider, the deliver step).
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-export const FLAG_KEYS = ['engine', 'gate_live_sends', 'provider_email', 'intake', 'deliver_asset', 'mirror_legacy_stage'] as const
+export const FLAG_KEYS = ['engine', 'gate_live_sends', 'provider_email', 'provider_sms', 'intake', 'deliver_asset', 'mirror_legacy_stage'] as const
 export type FlagKey = (typeof FLAG_KEYS)[number]
 export type Flags = Record<FlagKey, boolean>
 
 export const ALL_OFF: Flags = {
-  engine: false, gate_live_sends: false, provider_email: false,
+  engine: false, gate_live_sends: false, provider_email: false, provider_sms: false,
   intake: false, deliver_asset: false, mirror_legacy_stage: false,
 }
 

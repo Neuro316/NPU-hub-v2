@@ -17,7 +17,7 @@ export function buildResendRequest(msg: EmailMessage): { headers: Record<string,
     mailHeaders['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click'
   }
   return {
-    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': `hub-send-${msg.sendId}` },
+    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': msg.idempotencyKey },
     body: {
       from: msg.from, to: [msg.to], subject: msg.subject, html: msg.html, text: msg.text,
       ...(msg.replyTo ? { reply_to: msg.replyTo } : {}),
@@ -31,9 +31,9 @@ export const resendProvider: EmailProvider = {
   name: 'resend',
   async send(msg: EmailMessage): Promise<ProviderResult> {
     const key = process.env.RESEND_API_KEY
-    if (!key || !key.trim()) return { ok: false, provider: 'resend', permanent: false, code: 'resend_key_missing' }
+    if (!key || !key.trim()) return { ok: false, provider: 'resend', permanent: false, ambiguous: false, code: 'resend_key_missing' }
     const req = buildResendRequest(msg)
-    if ('refused' in req) return { ok: false, provider: 'resend', permanent: true, code: req.refused }
+    if ('refused' in req) return { ok: false, provider: 'resend', permanent: true, ambiguous: false, code: req.refused }
     let res: Response
     try {
       res = await fetch(ENDPOINT, {
@@ -43,12 +43,12 @@ export const resendProvider: EmailProvider = {
       })
     } catch (e: any) {
       console.error(`[resend] send=${msg.sendId} network error ${e?.name ?? 'Error'}`)
-      return { ok: false, provider: 'resend', permanent: false, code: 'resend_network' }
+      return { ok: false, provider: 'resend', permanent: false, ambiguous: true, code: 'resend_network' }
     }
     const json: any = await res.json().catch(() => ({}))
     if (res.ok && typeof json?.id === 'string') return { ok: true, provider: 'resend', externalId: json.id }
     const permanent = res.status >= 400 && res.status < 500 && res.status !== 429
     console.error(`[resend] send=${msg.sendId} status=${res.status} name=${String(json?.name ?? '-').slice(0, 60)}`)
-    return { ok: false, provider: 'resend', permanent, code: `resend_${res.status}` }
+    return { ok: false, provider: 'resend', permanent, ambiguous: res.status >= 500, code: `resend_${res.status}` }
   },
 }

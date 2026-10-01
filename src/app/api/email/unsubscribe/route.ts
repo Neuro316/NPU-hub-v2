@@ -56,12 +56,14 @@ export async function POST(req: NextRequest) {
     })
     ok = !cErr
     if (cErr) console.error(`[unsubscribe] send=${sendId} record_consent error ${cErr.code ?? 'unknown'}`)
-  } else {
-    // the contact was deleted; suppress the address itself
-    const { error: sErr } = await db.from('suppressions').insert({ org_id: send.org_id, channel: 'email',
-      address: send.to_address, scope: 'marketing', reason: 'unsubscribe', source: 'unsubscribe_link' })
-    ok = !sErr || sErr.code === '23505'
   }
+  // Always suppress the address this email was actually sent to as well: the contact may
+  // have been deleted, or its email changed since, and record_consent suppresses the
+  // contact's CURRENT address. 23505 means it is already suppressed.
+  const { error: sErr } = await db.from('suppressions').insert({ org_id: send.org_id, channel: 'email',
+    address: send.to_address, scope: 'marketing', reason: 'unsubscribe', source: 'unsubscribe_link' })
+  if (!send.contact_id) ok = !sErr || sErr.code === '23505'
+  else if (sErr && sErr.code !== '23505') console.error(`[unsubscribe] send=${sendId} address suppression error ${sErr.code ?? 'unknown'}`)
   if (!ok) {
     return oneClick ? new NextResponse('error', { status: 500 })
       : page('Something went wrong', '<p>We could not record your request just now. Reply to any email from us and we will remove you by hand.</p>', 500)

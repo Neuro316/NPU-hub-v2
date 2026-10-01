@@ -4,7 +4,9 @@
 
 export interface EmailMessage {
   orgId: string
-  sendId: string            // message_sends.id, used as the provider idempotency key
+  sendId: string            // message_sends.id
+  /** Same on every retry of one step for one person, so the provider sends it at most once. */
+  idempotencyKey: string
   from: string
   replyTo?: string
   to: string
@@ -25,7 +27,9 @@ export interface SmsMessage {
 
 export type ProviderResult =
   | { ok: true; provider: string; externalId: string }
-  | { ok: false; provider: string; permanent: boolean; code: string }
+  | { ok: false; provider: string; permanent: boolean; code: string
+      /** The request may have reached the provider (network error, 5xx): the message may have gone out. */
+      ambiguous: boolean }
 
 export interface EmailProvider {
   name: string

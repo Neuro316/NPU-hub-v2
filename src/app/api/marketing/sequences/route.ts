@@ -1,10 +1,11 @@
 // POST /api/marketing/sequences   (staff)
 // Create or update the sequence that carries a campaign's steps (ruling 6: campaign
 // steps live on sequences). { org_id, id?, name, campaign_id?, steps: [...] }.
-// Steps are replaced as a set, numbered 0..n in the order given.
+// Steps are numbered 0..n in the order given; a step keeps its id at its position.
 import { NextResponse } from 'next/server'
 import { withStaff, requireOrg, bad } from '@/lib/api-guard'
 import { SMS_PART_MAX } from '@/lib/sms-split'
+import { SMS_STOP_LINE } from '@/lib/marketing/render'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,7 +34,10 @@ export const POST = withStaff(async (req, ctx) => {
     if (channel !== 'wait') {
       if (!body.trim() && stepType === 'message') return bad(`${n} needs a message.`)
       if (channel === 'email' && !String(s.subject || '').trim()) return bad(`${n} needs a subject line.`)
-      if (channel === 'sms' && body.length > SMS_PART_MAX) return bad(`${n} is longer than one text message allows.`)
+      // leave room for the STOP line marketing texts get, and for names merged in
+      if (channel === 'sms' && body.length + (kind === 'marketing' ? SMS_STOP_LINE.length + 1 : 0) + 60 > SMS_PART_MAX) {
+        return bad(`${n} is too long for one text message once names and the opt out line are added.`)
+      }
     }
     if (stepType === 'deliver_asset' && !assetIds.has(s.asset_id)) return bad(`${n} delivers a University asset, so choose one from the list.`)
     rows.push({ step_order: i, channel, delay_minutes: delay, subject: channel === 'email' ? String(s.subject).trim() : null,
@@ -54,11 +58,23 @@ export const POST = withStaff(async (req, ctx) => {
     if (error || !data) return NextResponse.json({ error: 'The sequence could not be created.' }, { status: 500 })
     seqId = data.id
   }
-  const { error: dErr } = await db.from('sequence_steps').delete().eq('sequence_id', seqId)
-  if (dErr) return NextResponse.json({ error: 'The steps could not be replaced.' }, { status: 500 })
-  if (rows.length) {
-    const { error: iErr } = await db.from('sequence_steps').insert(rows.map((r) => ({ ...r, sequence_id: seqId })))
-    if (iErr) return NextResponse.json({ error: 'The steps could not be saved.' }, { status: 500 })
+  // Update in place by position, so a step keeps its id (the send dedupe key includes it:
+  // a new id would let an edited, already-sent step go out again), and so the sequence is
+  // never empty part way through a save (an empty sequence ends every enrollment in it).
+  const { data: existing, error: eErr } = await db.from('sequence_steps').select('id, step_order').eq('sequence_id', seqId)
+  if (eErr) return NextResponse.json({ error: 'The steps could not be read.' }, { status: 500 })
+  const byOrder = new Map((existing ?? []).map((x: any) => [x.step_order as number, x.id as string]))
+  for (const r of rows) {
+    const id = byOrder.get(r.step_order)
+    const { data, error } = id
+      ? await db.from('sequence_steps').update(r).eq('id', id).select('id')
+      : await db.from('sequence_steps').insert({ ...r, sequence_id: seqId }).select('id')
+    if (error || (data?.length ?? 0) !== 1) return NextResponse.json({ error: `Step ${r.step_order + 1} could not be saved. Earlier steps were saved.` }, { status: 500 })
+  }
+  const extra = (existing ?? []).filter((x: any) => x.step_order >= rows.length).map((x: any) => x.id)
+  if (extra.length) {
+    const { error: dErr } = await db.from('sequence_steps').delete().in('id', extra)
+    if (dErr) return NextResponse.json({ error: 'The removed steps could not be deleted.' }, { status: 500 })
   }
   if (b.campaign_id) await db.from('funnel_campaigns').update({ sequence_id: seqId }).eq('id', b.campaign_id).eq('org_id', org)
   return NextResponse.json({ sequence_id: seqId, steps: rows.length })

@@ -18,7 +18,7 @@ const run = (cmd, args, env = {}) => {
   return { code: r.status, out: `${r.stdout || ''}${r.stderr || ''}` }
 }
 const HARNESSES = [
-  { file: 'scripts/marketing/pure-tamper.cjs', selectors: ['flagson', 'placeholder', 'svixopen', 'redirect', 'nostop', 'onefail', 'unsubreq', '1'] },
+  { file: 'scripts/marketing/pure-tamper.cjs', selectors: ['flagson', 'placeholder', 'svixopen', 'redirect', 'nostop', 'onefail', 'unsubreq', 'noescape', 'stopmerged', '1'] },
   { file: 'scripts/marketing/flags-off-parity.cjs', selectors: ['outside', 'untouched', '1'] },
 ]
 let fail = 0

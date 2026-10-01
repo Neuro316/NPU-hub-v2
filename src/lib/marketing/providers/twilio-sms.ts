@@ -14,11 +14,11 @@ const PRIMARY_NICKNAME = 'Primary'
 export const twilioSmsProvider: SmsProvider = {
   name: 'twilio',
   async send(msg: SmsMessage): Promise<ProviderResult> {
-    if (msg.body.length > SMS_PART_MAX) return { ok: false, provider: 'twilio', permanent: true, code: 'sms_too_long' }
+    if (msg.body.length > SMS_PART_MAX) return { ok: false, provider: 'twilio', permanent: true, ambiguous: false, code: 'sms_too_long' }
     const config = await getOrgTwilioConfig(createAdminSupabase(), msg.orgId)
-    if (!config.account_sid) return { ok: false, provider: 'twilio', permanent: false, code: 'twilio_not_configured' }
+    if (!config.account_sid) return { ok: false, provider: 'twilio', permanent: false, ambiguous: false, code: 'twilio_not_configured' }
     const primary = toE164(config.numbers.find((x) => x.nickname === PRIMARY_NICKNAME)?.phone || '')
-    if (!primary) return { ok: false, provider: 'twilio', permanent: false, code: 'no_primary_line' }
+    if (!primary) return { ok: false, provider: 'twilio', permanent: false, ambiguous: false, code: 'no_primary_line' }
     try {
       const m: any = await sendOrgSms(config, msg.to, msg.body, 'campaign', null, { from: primary })
       return { ok: true, provider: 'twilio', externalId: String(m.sid) }
@@ -26,7 +26,7 @@ export const twilioSmsProvider: SmsProvider = {
       const status = Number(e?.status) || 0
       const permanent = status >= 400 && status < 500 && status !== 401 && status !== 403 && status !== 429
       console.error(`[twilio-sms] send=${msg.sendId} status=${status || 'network'} code=${e?.code ?? '-'}`)
-      return { ok: false, provider: 'twilio', permanent, code: `twilio_${status || 'network'}${e?.code ? `_${e.code}` : ''}` }
+      return { ok: false, provider: 'twilio', permanent, ambiguous: status === 0 || status >= 500, code: `twilio_${status || 'network'}${e?.code ? `_${e.code}` : ''}` }
     }
   },
 }

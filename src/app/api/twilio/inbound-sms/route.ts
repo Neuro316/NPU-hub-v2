@@ -75,7 +75,9 @@ export async function POST(request: NextRequest) {
         // are unchanged, and a ledger error is logged, never thrown, so the reply to
         // Twilio cannot change. STOP revokes every kind and suppresses the number; START
         // restores service messages only, because marketing needs an express opt-in.
-        {
+        // A START counts only in the org that owns the number it was sent to; a STOP counts
+        // everywhere, because withdrawing is never the risky direction.
+        if (isStop || c.org_id === (await resolveOrgByReceivingNumber(supabase, to))) {
           const { error: ledgerErr } = await supabase.rpc('record_consent', {
             p_contact: c.id, p_channel: 'sms', p_kind: isStop ? 'all' : 'service',
             p_action: isStop ? 'revoked' : 'granted', p_basis: isStop ? 'stop' : 'express_consent',

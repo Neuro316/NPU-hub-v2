@@ -18,6 +18,7 @@ import { createHash } from 'node:crypto'
 import { createAdminSupabase } from '@/lib/supabase'
 import { getFlags } from '@/lib/marketing/flags'
 import { validateIntake, type FormDefinition } from '@/lib/marketing/intake'
+import { toE164 } from '@/lib/phone'
 
 export const dynamic = 'force-dynamic'
 
@@ -61,11 +62,6 @@ export async function POST(req: NextRequest) {
   const ipHash = createHash('sha256').update(`${ip}|${form.org_id}`).digest('hex')
   const ua = (req.headers.get('user-agent') || '').slice(0, 200)
 
-  if (typeof body?.website === 'string' && body.website.trim() !== '') {
-    await db.from('form_submissions').insert({ org_id: form.org_id, form_id: form.id, form_version: form.version, ip_hash: ipHash, outcome: 'honeypot' })
-    return json({ ok: true, message: form.success_message }, 200, h)
-  }
-
   const since = new Date(Date.now() - RATE_WINDOW_MINUTES * 60_000).toISOString()
   const minute = new Date(Date.now() - 60_000).toISOString()
   const [{ count: perIp }, { count: perForm }] = await Promise.all([
@@ -74,6 +70,11 @@ export async function POST(req: NextRequest) {
   ])
   if ((perIp ?? 0) >= RATE_PER_IP || (perForm ?? 0) >= RATE_PER_FORM) {
     return json({ error: 'Too many submissions. Please wait a few minutes and try again.' }, 429, h)
+  }
+
+  if (typeof body?.website === 'string' && body.website.trim() !== '') {
+    await db.from('form_submissions').insert({ org_id: form.org_id, form_id: form.id, form_version: form.version, ip_hash: ipHash, outcome: 'honeypot' })
+    return json({ ok: true, message: form.success_message }, 200, h)
   }
 
   const v = validateIntake(form as unknown as FormDefinition, body?.values, body?.consents)
@@ -99,7 +100,15 @@ export async function POST(req: NextRequest) {
     console.error(`[intake] submission=${sub.id} contact failed: ${cErr?.code ?? 'no id'}`)
     return json({ error: 'We could not save your details. Please try again.' }, 500, h)
   }
+  // A public form can be filled in by anyone with someone else's details, so it may ADD a
+  // consent but never reverse a person's own opt-out, and an SMS consent counts only for
+  // the number the visitor typed, never for a different number already on the contact.
+  const { data: who } = await db.from('contacts').select('phone').eq('id', contactId).maybeSingle()
+  const skipped: string[] = []
   for (const c of v.consents) {
+    if (c.channel === 'sms' && toE164(String(who?.phone ?? '')) !== v.phone) { skipped.push(`${c.id}:phone_differs`); continue }
+    const { data: st } = await db.rpc('consent_state', { p_contact: contactId, p_channel: c.channel, p_kind: c.kind })
+    if (String((st as any)?.reason ?? '').endsWith('_revoked')) { skipped.push(`${c.id}:opted_out`); continue }
     const { error } = await db.rpc('record_consent', {
       p_contact: contactId, p_channel: c.channel, p_kind: c.kind, p_action: 'granted', p_basis: 'express_consent',
       p_source: `form:${form.slug}`, p_text_shown: c.text,
@@ -112,6 +121,6 @@ export async function POST(req: NextRequest) {
   })
   if (rErr) console.error(`[intake] submission=${sub.id} routing failed: ${rErr.code ?? 'unknown'}`)
   await db.from('form_submissions').update({ outcome: 'accepted', contact_id: contactId,
-    payload: { values: v.values, consents: v.consents.map((c) => c.id), utm, routed: routed ?? null } }).eq('id', sub.id)
+    payload: { values: v.values, consents: v.consents.map((c) => c.id), consents_not_recorded: skipped, utm, routed: routed ?? null } }).eq('id', sub.id)
   return json({ ok: true, message: form.success_message }, 200, h)
 }
