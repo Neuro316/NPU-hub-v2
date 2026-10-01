@@ -620,3 +620,48 @@ nobody listening cost +26 ms (later +70 ms) against about 0 for the statement tr
   tag campaign, every update of `contacts` pays about 0.04 ms a row to materialise the changed rows,
   including updates that touch neither column (+17 ms per 400 rows). Until then it is about zero.
   On live today no stage or tag route exists, so the exit is taken on every update.
+
+### Live apply, deploy and click-through (2026-10-01, on Cameron's go for the revised file)
+
+- **Applied** the body of `hub_212_entry_events.sql` (the file's first 46 lines are comments only).
+  Ledger `20261001114831`, stored statement sha256 `cdb0c469...`, matching the tested body;
+  8 functions, 3 triggers, `raise_entry_event` executable by postgres and service_role only.
+- **Deployed** `69b92af` (deployment `dvu4v9pwe`, holding `hub.neuroprogeny.com`), then the fix
+  below as `246b3a2` (deployment `339ykq3mt`, holding the alias). Each confirmed by
+  `vercel ls --meta githubCommitSha`, with the previous commit selecting a different deployment.
+
+**Defect found by the click-through, fixed the same hour.** The entry-events cron logged runs at
+12:00, 12:05 and 12:10 reporting "processed 0, still waiting 0" while a pending event sat in the
+queue. `pg_stat_statements` showed **one** call to `process_entry_events` across three runs: the
+repeated rpc, a POST with an identical body inside a GET route handler, was answered from the
+Next.js Data Cache and never reached the database. `force-dynamic` did not prevent it.
+`createAdminSupabase` now forces `cache: 'no-store'` on every request, and the three crons set
+`fetchCache = 'force-no-store'`. `entry-wiring-tamper` W11 guards it (`TAMPER=cached`); against the
+pre-fix `main` exactly W11 is red. The first run after the fix (12:15) processed the event.
+
+- **A43. The same cache could have answered any repeated identical rpc from a service-role client
+  in a GET route**, including a repeated `gate_check` in the campaign-steps engine. Measured: the
+  campaign-steps table reads did reach the database on every run (135 runs, 135 reads), so the
+  exposure was to repeated identical POST bodies. The factory fix covers every caller.
+
+**Board drag, end to end (test funnel "TEST entry events 2026-10-01", one service text step,
+source `stage:c4810bd4...`, "Completed course Joined Alumni Membership", a stage with no stage
+emails):**
+
+| time (UTC) | what |
+|---|---|
+| 12:01:40 | the card for Cameron's own contact dragged on the Enrolled board; one `entry_events` row, `pending` |
+| 12:15:20 | cron: "processed 1, enrolled 1, skipped 0, failed 0, still waiting 0 (cap 100 per run)" |
+| 12:20:09 | campaign-steps: `dry_run_completed: 1`; gate `allow`, mode `dry_run`, reason `passed`; one `message_sends` row, `dry_run`, SMS to the test number |
+
+Afterwards the route was removed and the campaign archived. Read back: **0** active stage or tag
+routes, the test funnel archived, its one enrollment Cameron's own contact, **0** live sends.
+No stage email was sent by the drag.
+
+**Missed call: not triggered.** Nothing available to this session can place an inbound call.
+Steps for Cameron are in the review pack.
+
+**Left as found, for Cameron:** the test contact now sits in "Completed course Joined Alumni
+Membership"; it was in "Checkout started", which is not a column on the board. And the existing
+`call:inbound` route on campaign `c2616c69...` now receives real answered calls on both lines,
+because ring-complete raises `call:inbound` alongside `call:answered` (A34).
