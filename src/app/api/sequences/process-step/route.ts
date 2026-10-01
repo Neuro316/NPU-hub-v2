@@ -20,6 +20,9 @@ export async function GET(request: NextRequest) {
       contacts!inner(*)
     `)
     .eq('status', 'active')
+    // HUB-MARKETING-BEGIN: campaign-linked enrollments belong to /api/cron/campaign-steps, which gates every send
+    .is('campaign_enrollment_id', null)
+    // HUB-MARKETING-END
     .lte('next_step_at', new Date().toISOString())
     .limit(50);
 

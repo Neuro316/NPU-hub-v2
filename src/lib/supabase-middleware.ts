@@ -29,7 +29,15 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith('/api/auth') ||
     pathname.startsWith('/api/twilio') ||
       pathname.startsWith('/api/webhooks') ||
-    pathname.startsWith('/policies')
+    pathname.startsWith('/policies') ||
+    // Marketing build, approved as exact paths only (2026-09-30 ruling 7). Each route
+    // carries its own check: intake validates a published form and rate-limits,
+    // unsubscribe verifies an HMAC token, /a/<token> redeems a hashed single-purpose
+    // token. The Resend webhook is already public under /api/webhooks and refuses
+    // anything without a valid Svix signature.
+    pathname === '/api/intake' ||
+    pathname === '/api/email/unsubscribe' ||
+    /^\/a\/[A-Za-z0-9_-]+$/.test(pathname)
 
   // Not logged in — redirect to login
   if (!user && !isPublicPath) {

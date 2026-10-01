@@ -4,6 +4,40 @@ Running state of in-flight Hub work. Newest first.
 
 ---
 
+## 2026-10-01: Marketing engine: campaigns, consent ledger, send gate (branch `feat/hub-marketing-engine`)
+
+**Plan and every ruling and assumption: `docs/plans/hub-marketing-build-rulings.md`.** Platform
+contract: `docs/INTEGRATION_CONTRACT.md`.
+
+**State: built, merged, deployed, every switch OFF.** Migration `hub_211_marketing_engine` applied
+to live 2026-10-01 (ledger version `20261001002152`, recorded sha256 `e5a61a82...13e6`), after a
+byte-identical rerun on a fresh Supabase branch: 45 contract cases green, 5 planted defects each
+reddening exactly their declared set. 24 pipelines, 175 stages, 270 contact positions, 3 consent
+rows (the two real SMS decisions), 1 allowlist row.
+
+**What exists:** funnel campaigns with entry and goal stages, routing from source keys, one
+enrollment engine (`public.enroll`), the consent ledger (`public.record_consent`, append-only), the
+send gate (`public.gate_check`: switch, consent, do not contact and suppression, quiet hours, cap, then
+claim-then-send), Resend and Twilio behind one provider interface, one-click unsubscribe, the Resend
+webhook, public intake (with a server mode for the platform), University asset delivery through
+`/a/<token>`, `job_runs` and a watchdog that texts the owner through `hub_sms_outbox`. UI: Campaigns >
+Funnels, contact drawer Consent and Campaigns tabs, University Access, Forms and Pages, CRM Settings >
+Campaign Sending.
+
+**Switches** (org_settings `hub_marketing_flags`, superadmin only, CRM Settings > Campaign Sending):
+`engine`, `gate_live_sends`, `provider_email`, `provider_sms`, `intake`, `deliver_asset`,
+`mirror_legacy_stage`. All off. Live sending to real contacts also needs the per-campaign switch.
+
+**Checks:** `npm run verify` (type check, five build guards, harnesses with every tamper selector; CI
+in `.github/workflows/verify.yml`). Contract tests: `scripts/marketing/contract-211.sql`, run on a
+Supabase branch after loading `supabase/branch-bootstrap/hub_211_dependencies.sql`.
+
+**Not done, recorded:** the six crons middleware has always redirected to `/login` (ruling 13: listed,
+not fixed); existing crons do not write `job_runs`; the campaign FK that turns a deleted campaign's
+drips into legacy rows (latent); double opt-in. Details in the plan file.
+
+---
+
 ## 2026-09-26 — §KJ hub-side: email-keyed identity writers disabled, §KF cron disabled by ruling (branch `fix/kj-hub-side`)
 
 **Record: `docs/HUB_KJ_Hub_Side_2026-09-26.md`. Rulings: Addendum C §JM / §KE / §KF / §KJ
