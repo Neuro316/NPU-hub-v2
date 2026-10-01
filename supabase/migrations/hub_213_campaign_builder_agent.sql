@@ -6,13 +6,14 @@
 -- STATUS: PROPOSED 2026-10-01. NOT applied to the live project until Cameron gives an
 -- explicit go. Tested on a fresh Supabase branch with scripts/agent/contract-213.sql.
 --
--- ADDITIVE ONLY. Creates six tables, four functions and one trigger; adds nullable or
+-- ADDITIVE ONLY. Creates six tables, five functions and two triggers; adds nullable or
 -- defaulted columns to funnel_campaigns, sequence_steps, form_definitions and
 -- campaign_routes. It alters, drops or rewrites no existing column, table, policy or
 -- function, and inserts no data. Nothing it creates runs unless something calls it, except
--- the activation trigger, which acts only on campaign_routes rows whose
--- activate_with_campaign is true. No existing row has that (the column defaults to false),
--- so every existing campaign behaves exactly as before.
+-- the two route triggers. The activation trigger acts only on campaign_routes rows that carry
+-- the AI-draft marker (ai_run_id) AND are armed (activate_with_campaign); no existing row is
+-- either. The disarm trigger only ever sets activate_with_campaign to false, which every
+-- existing row already is. So every existing campaign and route behaves exactly as before.
 --
 -- ============================================================================
 -- ROLLBACK (written first). Run as one transaction. Destroys every agent run, usage
@@ -22,6 +23,8 @@
 -- begin;
 -- drop trigger if exists funnel_campaigns_activate_agent_routes on public.funnel_campaigns;
 -- drop function if exists public.hub_activate_agent_routes();
+-- drop trigger if exists campaign_routes_disarm_on_change on public.campaign_routes;
+-- drop function if exists public.hub_campaign_routes_disarm();
 -- drop function if exists public.agent_build(uuid);
 -- drop function if exists public.agent_reserve(uuid, text, numeric);
 -- drop function if exists public.agent_settle(uuid, text, text, numeric, numeric);
@@ -158,20 +161,36 @@ alter table public.campaign_routes  add column ai_run_id uuid references public.
 alter table public.campaign_routes  add column activate_with_campaign boolean not null default false;
 
 -- ─── Activation switches the agent's routes on, in the same statement (AG19) ──
+-- Ruled 2026-10-01: fires ONLY on draft to active, touches ONLY routes carrying the AI-draft
+-- marker, and never re-enables a route someone switched off.
 -- The existing activation action is POST /api/marketing/campaigns with status 'active',
 -- one UPDATE of funnel_campaigns. This AFTER ROW trigger runs inside that statement, so
--- the campaign and its routes change together or not at all. One shot: the flag is
--- cleared, so a route a person later switches off stays off through pause and resume.
+-- the campaign and its routes change together or not at all.
 create function public.hub_activate_agent_routes() returns trigger
 language plpgsql security definer set search_path = '' as $$
 begin
-  if new.status = 'active' and old.status is distinct from 'active' then
+  if new.status = 'active' and old.status = 'draft' then
     update public.campaign_routes r
        set active = true, activate_with_campaign = false
-     where r.campaign_id = new.id and r.activate_with_campaign;
+     where r.campaign_id = new.id and r.activate_with_campaign and r.ai_run_id is not null;
   end if;
   return null;
 end $$;
+
+-- Any change to a route's on or off value disarms it, whoever makes it. So a route a person
+-- switched on and then off while the campaign was a draft is not switched back on by the
+-- activation, and an armed route is switched on at most once.
+create function public.hub_campaign_routes_disarm() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if new.active is distinct from old.active then
+    new.activate_with_campaign := false;
+  end if;
+  return new;
+end $$;
+create trigger campaign_routes_disarm_on_change
+  before update of active on public.campaign_routes
+  for each row execute function public.hub_campaign_routes_disarm();
 create trigger funnel_campaigns_activate_agent_routes
   after update of status on public.funnel_campaigns
   for each row execute function public.hub_activate_agent_routes();
@@ -362,7 +381,7 @@ do $$
 declare f text;
 begin
   foreach f in array array[
-    'public.hub_activate_agent_routes()', 'public.agent_reserve(uuid, text, numeric)',
+    'public.hub_activate_agent_routes()', 'public.hub_campaign_routes_disarm()', 'public.agent_reserve(uuid, text, numeric)',
     'public.agent_settle(uuid, text, text, numeric, numeric)', 'public.agent_build(uuid)']
   loop
     execute format('revoke execute on function %s from public, anon, authenticated', f);

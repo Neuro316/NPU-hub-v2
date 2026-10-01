@@ -15,8 +15,10 @@
 --   crossorg      {B_CROSS_ORG}                         the goal stage's org is not checked
 --   noflag        {B_FLAG_OFF}                          agent_build ignores agent_enabled
 --   kanban        {T_NO_BOARD_CARD}                     the Project Board guard is not set
---   notrigger     {A_ACTIVATE_ON,A_ACTIVE_RAISES}       activation does not switch agent routes on
---   reenable      {A_RESUME_KEEPS_OFF}                  the one-shot flag is not cleared
+--   notrigger     {A_ACTIVATE_ON,A_ACTIVE_RAISES,A_MARKER_ONLY}  activation does not switch agent routes on
+--   anytransition {A_DRAFT_ONLY_TRANSITION}             activation fires from paused as well as draft
+--   nomarker      {A_MARKER_ONLY}                       an armed route without the AI-draft marker is switched on
+--   noclear       {A_SWITCHED_OFF_IN_DRAFT}             a person's switch-off does not disarm the route
 --   swallow       {A_ATOMIC}                            the trigger swallows a failure, so the campaign
 --                                                       goes active while its routes stay off
 --   nocap         {U_CAP_REFUSES}                       agent_reserve ignores the monthly cap
@@ -27,9 +29,10 @@ declare
   np uuid := '00000000-0000-0000-0000-000000000001';
   snw uuid := 'b9fd8b2e-ded6-468b-ab1e-10b50ca40629';
   u1 uuid := gen_random_uuid(); c1 uuid := gen_random_uuid(); cm uuid := gen_random_uuid();
+  cp uuid := gen_random_uuid(); co uuid := gen_random_uuid();
   sess uuid; run1 uuid; run2 uuid; run3 uuid; run4 uuid; tm uuid; col uuid;
   pl uuid; st0 uuid; st2 uuid; snw_st uuid; camp uuid; res jsonb; res2 jsonb; plan jsonb;
-  n int; n2 int; ok boolean; def text; newdef text; v_err boolean; v_st text; v_ra boolean;
+  n int; n2 int; ok boolean; def text; newdef text; v_err boolean; v_st text; v_ra boolean; v_ra0 boolean;
   kb0 int; nt0 int; ob0 int; tl0 int; tasks0 int; camps0 int;
 begin
   begin
@@ -55,13 +58,19 @@ begin
       elsif p_tamper = 'notrigger' then
         def := pg_get_functiondef('public.hub_activate_agent_routes()'::regprocedure);
         newdef := replace(def, 'set active = true, activate_with_campaign = false', 'set active = r.active');
-      elsif p_tamper = 'reenable' then
+      elsif p_tamper = 'anytransition' then
         def := pg_get_functiondef('public.hub_activate_agent_routes()'::regprocedure);
-        newdef := replace(def, 'set active = true, activate_with_campaign = false', 'set active = true');
+        newdef := replace(def, 'and old.status = ''draft'' then', 'and old.status is distinct from ''active'' then');
+      elsif p_tamper = 'nomarker' then
+        def := pg_get_functiondef('public.hub_activate_agent_routes()'::regprocedure);
+        newdef := replace(def, 'and r.activate_with_campaign and r.ai_run_id is not null;', 'and r.activate_with_campaign;');
+      elsif p_tamper = 'noclear' then
+        def := pg_get_functiondef('public.hub_campaign_routes_disarm()'::regprocedure);
+        newdef := replace(def, 'new.activate_with_campaign := false;', 'null;');
       elsif p_tamper = 'swallow' then
         def := pg_get_functiondef('public.hub_activate_agent_routes()'::regprocedure);
         newdef := replace(replace(def,
-          'if new.status = ''active'' and old.status is distinct from ''active'' then', 'begin if new.status = ''active'' and old.status is distinct from ''active'' then'),
+          'if new.status = ''active'' and old.status = ''draft'' then', 'begin if new.status = ''active'' and old.status = ''draft'' then'),
           'end if;' || chr(10) || '  return null;', 'end if; exception when others then null; end;' || chr(10) || '  return null;');
       elsif p_tamper = 'nocap' then
         def := pg_get_functiondef('public.agent_reserve(uuid,text,numeric)'::regprocedure);
@@ -216,7 +225,9 @@ begin
     select count(*) into n2 from public.campaign_enrollments where campaign_id = camp;
     r := r || jsonb_build_object('id', 'A_DRAFT_NO_EVENT', 'ok', not ok and n = 0 and n2 = 0, 'got', jsonb_build_array(ok, n, n2));
 
-    -- ── activation is atomic: a failure in the route update leaves the campaign a draft ──
+    -- ── activation is atomic: a failure in the route update leaves the campaign a draft and its
+    --    routes exactly as they were (compared with their state before, not with "off") ──
+    select bool_or(active) into v_ra0 from public.campaign_routes where campaign_id = camp;
     begin
       -- created inside this block and rolled back with it
       execute 'create function public.hub_test_fail_route() returns trigger language plpgsql as $x$ begin raise exception ''planted route failure''; end $x$';
@@ -235,7 +246,7 @@ begin
         r := r || jsonb_build_object('id', 'CRASH_A_ATOMIC', 'ok', false, 'got', sqlstate || ' ' || sqlerrm);
       end if;
     end;
-    r := r || jsonb_build_object('id', 'A_ATOMIC', 'ok', v_err and v_st = 'draft' and not v_ra, 'got', jsonb_build_array(v_err, v_st, v_ra));
+    r := r || jsonb_build_object('id', 'A_ATOMIC', 'ok', v_err and v_st = 'draft' and v_ra is not distinct from v_ra0, 'got', jsonb_build_array(v_err, v_st, v_ra0, v_ra));
 
     -- ── activation through the SAME statement the existing route issues ──
     insert into public.funnel_campaigns (id, org_id, name, status) values (cm, np, 'Manual funnel', 'draft');
@@ -250,6 +261,28 @@ begin
     r := r || jsonb_build_object('id', 'A_NONAGENT_UNTOUCHED', 'ok',
             (select not active from public.campaign_routes where source_key = 'form:manual-off')
             and (select active from public.campaign_routes where source_key = 'form:manual-on'), 'got', null);
+    -- ruling 2026-10-01, three cases. (1) only draft to active fires: an agent campaign that
+    -- goes draft, paused, active keeps its armed routes off
+    insert into public.funnel_campaigns (id, org_id, name, status, ai_run_id) values (cp, np, 'Paused first', 'draft', run1);
+    insert into public.campaign_routes (org_id, source_key, campaign_id, active, activate_with_campaign, ai_run_id)
+      values (np, 'form:paused-first', cp, false, true, run1);
+    update public.funnel_campaigns set status = 'paused' where id = cp;
+    update public.funnel_campaigns set status = 'active' where id = cp;
+    r := r || jsonb_build_object('id', 'A_DRAFT_ONLY_TRANSITION', 'ok', (select not active from public.campaign_routes where source_key = 'form:paused-first'), 'got', null);
+    -- (2) only routes carrying the AI-draft marker: an armed route with no marker stays off
+    insert into public.funnel_campaigns (id, org_id, name, status) values (co, np, 'Marker check', 'draft');
+    insert into public.campaign_routes (org_id, source_key, campaign_id, active, activate_with_campaign, ai_run_id)
+      values (np, 'form:no-marker', co, false, true, null), (np, 'form:with-marker', co, false, true, run1),
+             (np, 'form:switched-off', co, false, true, run1);
+    -- (3) a person switches an agent route on and then off while the campaign is still a draft
+    update public.campaign_routes set active = true where source_key = 'form:switched-off';
+    update public.campaign_routes set active = false where source_key = 'form:switched-off';
+    update public.funnel_campaigns set status = 'active' where id = co;
+    r := r || jsonb_build_object('id', 'A_MARKER_ONLY', 'ok',
+            (select not active from public.campaign_routes where source_key = 'form:no-marker')
+            and (select active from public.campaign_routes where source_key = 'form:with-marker'), 'got', null);
+    r := r || jsonb_build_object('id', 'A_SWITCHED_OFF_IN_DRAFT', 'ok', (select not active from public.campaign_routes where source_key = 'form:switched-off'), 'got', null);
+
     -- a person switches the agent route off, then pauses and resumes the campaign
     update public.campaign_routes set active = false where campaign_id = camp;
     update public.funnel_campaigns set status = 'paused' where id = camp;
@@ -324,8 +357,10 @@ with runs as (
                ('crossorg', '{B_CROSS_ORG}'),
                ('noflag', '{B_FLAG_OFF}'),
                ('kanban', '{T_NO_BOARD_CARD}'),
-               ('notrigger', '{A_ACTIVATE_ON,A_ACTIVE_RAISES}'),
-               ('reenable', '{A_RESUME_KEEPS_OFF}'),
+               ('notrigger', '{A_ACTIVATE_ON,A_ACTIVE_RAISES,A_MARKER_ONLY}'),
+               ('anytransition', '{A_DRAFT_ONLY_TRANSITION}'),
+               ('nomarker', '{A_MARKER_ONLY}'),
+               ('noclear', '{A_SWITCHED_OFF_IN_DRAFT}'),
                ('swallow', '{A_ATOMIC}'),
                ('nocap', '{U_CAP_REFUSES}')) as s(sel, want)
 ), red as (

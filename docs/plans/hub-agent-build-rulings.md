@@ -380,3 +380,75 @@ Answered 2026-10-01 (section 1a). Open:
 - `npm run verify`: passed, including `tsc --noEmit`, the five guards and every existing harness.
 - Found while writing: the file tool turned the unicode escape for an em dash in `claims.ts` into the literal
   character. The line now builds the character with `String.fromCharCode`, and G4 fails if one returns.
+
+---
+
+## 11. Stage 1: rulings on the two findings, and branch results (2026-10-01)
+
+### Cameron's rulings on the Stage 0 findings
+
+1. **Skip the Project Board.** Agent tasks land in Client Tasks only (AG21 stands; section 9 item 1
+   is closed).
+2. **The route-activation trigger is acceptable if it fires only on draft to active, touches only
+   routes carrying the AI-draft marker, and never re-enables a route someone switched off.** The
+   file was changed to match: the trigger tests `old.status = 'draft'` (it previously also fired on
+   paused to active) and `ai_run_id is not null`, and a second trigger,
+   `campaign_routes_disarm_on_change`, clears `activate_with_campaign` whenever a route's on or off
+   value changes, whoever changes it. A test case was added for each of the three conditions.
+
+- **AG29. Draft, paused, active never activates agent routes.** Only the literal draft to active
+  transition does. A campaign paused before its first activation keeps its armed routes off, and a
+  person switches them on by hand. This is the ruling read literally; it is the safer direction.
+
+### Branch `hub-agent-213` (ref `ambfcvyefxensyeyohvc`), fresh, 0 tables at start
+
+Loaded with `apply_migration` in the ruled order, so the branch ledger holds exactly what ran. Each
+stored statement hashed (sha256) equal to the local file with its final newline:
+
+| file | sha256 |
+|---|---|
+| `branch-bootstrap/hub_211_dependencies.sql` | `2c4c0482...59fc` |
+| `migrations/hub_211_marketing_engine.sql` | `e5a61a82...13e6` (the hash recorded for the live apply) |
+| `branch-bootstrap/hub_212_dependencies.sql` | `7ee1f210...d605` |
+| `migrations/hub_212_entry_events.sql` | `0630d111...fe56` (the revised file applied live) |
+| `branch-bootstrap/hub_213_dependencies.sql` | `30c791dc...1b75` |
+| `migrations/hub_213_campaign_builder_agent.sql` | `5557b95f...7092` |
+
+`scripts/agent/contract-213.sql`: 32 cases. `none` green. Every planted defect reddened exactly its
+declared set: `liveforce` {B_DRAFT_ONLY}, `activeroutes` {A_DRAFT_NO_EVENT, B_ROUTES_INACTIVE},
+`noidem` {B_REPLAY_SAME}, `crossorg` {B_CROSS_ORG}, `noflag` {B_FLAG_OFF}, `kanban` {T_NO_BOARD_CARD},
+`notrigger` {A_ACTIVATE_ON, A_ACTIVE_RAISES, A_MARKER_ONLY}, `anytransition`
+{A_DRAFT_ONLY_TRANSITION}, `nomarker` {A_MARKER_ONLY}, `noclear` {A_SWITCHED_OFF_IN_DRAFT},
+`swallow` {A_ATOMIC}, `nocap` {U_CAP_REFUSES}.
+
+**A test defect the first run found, fixed before proposing.** `activeroutes` also reddened
+`A_ATOMIC`. The migration was right; the assertion was not: it checked that routes were "off" after a
+failed activation, where the property is "unchanged". Under that defect the routes were on before the
+activation began. The case now compares route state before and after; the declaration was not
+widened to fit the run. The second run is the one reported above.
+
+**The controls that make the zeros mean something:** `A_ACTIVE_RAISES` (once the campaign is active,
+the same source DOES raise an event, with the engine on throughout) for `A_DRAFT_NO_EVENT`;
+`C_BOARD_TRIGGER_LIVE` (an ordinary Client Task DOES get a Project Board card on the branch) for
+`T_NO_BOARD_CARD`; `R_IDENTITY` (`current_user = authenticated`, `auth.uid()` the fixture user) for
+the RLS cases.
+
+**pg_catalog posture:** 6 new tables, RLS on 6, `anon` 0 grants, `authenticated` SELECT on
+`campaign_tasks` and `page_definitions` only, one staff-read policy each; `agent_runs`, `agent_sessions`,
+`agent_usage` and `help_gaps` refuse `authenticated` with 42501 (probed). 5 functions, all security
+definer, `search_path=""`, executable by `service_role` only. 2 triggers. 8 new columns, all nullable
+or defaulted (`activate_with_campaign` defaults to false).
+
+**Rollback, run once:** left 0 of the 6 tables, 0 of the 5 functions, 0 of the 2 triggers, 0 of the
+8 columns, 0 ledger rows; the controls stayed: 6 of 6 kept tables, 4 of 4 kept functions, 2 of 2 kept
+triggers.
+
+**Live pre-flight (read only, 2026-10-01):** 0 collisions for the tables, functions, triggers and
+columns (controls in the same query found 4 of 4 and 2 of 2 known objects); no ledger row for any 213;
+live holds 4 `funnel_campaigns`, 1 `campaign_routes` row, no triggers on either table, no
+`hub_agent_policy` row, and `agent_enabled` absent for Neuro Progeny (off).
+
+**Finding, not fixed:** the platform's `pf_` sequence has reached `pf_212` inside the 200 band, so its
+next file is likely `pf_213`, the same number as this file with a different prefix. The ledger keys on
+timestamps and the names differ, so nothing collides; it is the ambiguity the band rule was meant to
+prevent, and it is the platform's to resolve.
