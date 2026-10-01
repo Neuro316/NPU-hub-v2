@@ -10,7 +10,8 @@
 //   star        a read selects every column                  {L_SELECTS}
 //   passthrough raw form consent objects reach the model       {L_OUTPUT}
 //   noscrub     the request is sent unscrubbed               {L_PROMPT_SCRUB}
-// TAMPER=1 reddens the union (3).
+//   colleak     a read list names a contact column               {L_DENY}
+// TAMPER=1 reddens the union (4).
 const fs = require('fs'), path = require('path')
 const H = require('./lib/harness.cjs')
 
@@ -20,9 +21,10 @@ const TAMPERS = {
     ['lib/agent/tools/read.ts', 'consents: Array.isArray(x.consents) ? x.consents.map((c: any) => ({ channel: String(c?.channel), kind: String(c?.kind) })) : [] })),', 'consents: x.consents })),'],
     ['lib/agent/tools/read.ts', 'consent_boxes: x.consents.map((c) => `${c.channel} ${c.kind}`) })),', 'consent_boxes: x.consents })),'],
   ],
+  colleak: [['lib/agent/tools/read.ts', "  page_definitions: 'slug',", "  page_definitions: 'slug, contact_id',"]],
   noscrub: [['lib/agent/untrusted.ts', "  return String(text ?? '')\n    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}/gi, '[email]')\n    .replace(/(\\+?\\d[\\d\\s().-]{7,}\\d)/g, '[phone]')", "  return String(text ?? '')"]],
 }
-const RED_OF = { star: ['L_SELECTS'], passthrough: ['L_OUTPUT'], noscrub: ['L_PROMPT_SCRUB'] }
+const RED_OF = { star: ['L_SELECTS'], passthrough: ['L_OUTPUT'], noscrub: ['L_PROMPT_SCRUB'], colleak: ['L_DENY'] }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-leak')
 const load = H.install(out)
@@ -65,6 +67,11 @@ const handlers = {
   const setup = await readHubSetup(db, 'O1')
   const seen = JSON.stringify(setupForModel(setup))
 
+  // independent of READ_COLUMNS itself: L_SELECTS compares reads against that same constant, so a
+  // contact column added to it would pass there. This list is fixed and does not come from the code.
+  const CONTACT_COLS = ['email', 'phone', 'first_name', 'last_name', 'full_name', 'mobile', 'address', 'dob', 'date_of_birth', 'notes', 'body', 'contact_id', 'ip_address']
+  const named = Object.values(READ_COLUMNS).flatMap((cols) => cols.split(',').map((c) => c.trim()))
+  check('L_DENY', named.length > 0 && named.every((c) => !CONTACT_COLS.includes(c)), named.filter((c) => CONTACT_COLS.includes(c)))
   check('L_COLUMNS', Object.keys(READ_COLUMNS).every((t) => !FORBIDDEN.includes(t)), Object.keys(READ_COLUMNS))
   const reads = db.calls.filter((c) => c.table)
   check('L_SELECTS', reads.every((c) => { const s = c.ops.find((o) => o[0] === 'select'); return s && s[1][0] !== '*' && (READ_COLUMNS[c.table] === s[1][0] || (c.table === 'org_settings' && s[1][0] === 'setting_value')) })

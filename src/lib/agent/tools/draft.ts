@@ -170,7 +170,10 @@ export async function runBuilderTool(name: string, input: any, st: ToolState): P
   }
 
   if (name === 'draft_form') {
-    const check = checkForm({ ...input, status: 'draft' })
+    // the source key always comes from the slug: a model-supplied one could aim the form at a
+    // call or another form's campaigns (the tool schema has no source_key; this enforces it)
+    const { source_key: _ignored, ...fields } = (input ?? {}) as Record<string, unknown>
+    const check = checkForm({ ...fields, status: 'draft' })
     if (!check.ok) return { ok: false, text: check.message }
     if (setup.forms.some((f) => f.slug === check.row.slug) || plan.forms.some((f) => f.slug === check.row.slug)) {
       return { ok: false, text: `A form already uses the address ${check.row.slug}. Choose another.` }

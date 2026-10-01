@@ -6,7 +6,7 @@
 // read with `git show`, so the comparison cannot drift as main moves.
 //
 //   UNTOUCHED  byte-for-byte equal to the base (line endings normalised): the stage
-//              email route, the sms-outbox cron and its two libraries, sequence enroll.
+//              email route, the sms-outbox cron and its two libraries.
 //   MARKED     equal to the base once the lines between HUB-MARKETING-BEGIN and
 //              HUB-MARKETING-END are removed: every change to these files is inside a
 //              marked block, and nothing outside one moved.
@@ -30,9 +30,10 @@ const UNTOUCHED = {
   'sms-outbox-cron': 'src/app/api/cron/sms-outbox/route.ts',
   'notify-sms': 'src/lib/notify-sms.ts',
   'sms-outbox-lib': 'src/lib/sms-outbox.ts',
-  'sequence-enroll': 'src/app/api/sequences/enroll/route.ts',
 }
 const MARKED = {
+  // marked since the Campaign Builder: enroll refuses a sequence holding unreviewed AI steps
+  'sequence-enroll': 'src/app/api/sequences/enroll/route.ts',
   'process-step': 'src/app/api/sequences/process-step/route.ts',
   'inbound-sms': 'src/app/api/twilio/inbound-sms/route.ts',
 }

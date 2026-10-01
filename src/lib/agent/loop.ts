@@ -7,6 +7,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ModelClient, MessageParam, ToolUseBlock } from './model'
 import { ModelMisconfigured, ModelUnavailable } from './model'
+import { settle } from './settle'
 import { MAX_OUTPUT_TOKENS, modelFor, type AgentPolicy } from './config'
 import { costOf, priceFor, worstCase } from './pricing'
 import { BUILDER_TOOLS, emptyPlan, runBuilderTool, type Plan, type ToolState } from './tools/draft'
@@ -89,7 +90,7 @@ export async function runBuilder(i: BuilderRunInput): Promise<BuilderRunResult> 
       } catch (e) {
         // an abandoned call may still have been billed, so the reservation is kept as spent
         const spent = e instanceof ModelUnavailable ? reserve : 0
-        await i.db.rpc('agent_settle', { p_org: i.org, p_month: month, p_mode: 'builder', p_reserved: reserve, p_actual: spent })
+        await settle(i.db, { p_org: i.org, p_month: month, p_mode: 'builder', p_reserved: reserve, p_actual: spent })
         cost += spent
         throw e
       }
@@ -97,7 +98,7 @@ export async function runBuilder(i: BuilderRunInput): Promise<BuilderRunResult> 
       cost += c
       tokens.input += reply.usage.input_tokens ?? 0; tokens.output += reply.usage.output_tokens ?? 0
       tokens.cacheRead += reply.usage.cache_read_input_tokens ?? 0; tokens.cacheWrite += reply.usage.cache_creation_input_tokens ?? 0
-      await i.db.rpc('agent_settle', { p_org: i.org, p_month: month, p_mode: 'builder', p_reserved: reserve, p_actual: c })
+      await settle(i.db, { p_org: i.org, p_month: month, p_mode: 'builder', p_reserved: reserve, p_actual: c })
       if (reply.stop_reason === 'refusal') { outcome = 'refused'; break }
 
       messages.push({ role: 'assistant', content: reply.content as any })

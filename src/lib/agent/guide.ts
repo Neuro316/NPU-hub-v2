@@ -6,6 +6,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ModelClient, MessageParam, TextBlockParam, Tool, ToolUseBlock } from './model'
 import { ModelUnavailable } from './model'
+import { settle } from './settle'
 import { MAX_OUTPUT_TOKENS, modelFor, type AgentPolicy } from './config'
 import { costOf, priceFor, worstCase } from './pricing'
 import { articles, articleIndex, type Article } from './help/corpus'
@@ -95,7 +96,7 @@ export async function runGuide(i: {
       try { reply = await i.client.create(req) }
       catch (e) {
         const spent = e instanceof ModelUnavailable ? reserve : 0
-        await i.db.rpc('agent_settle', { p_org: i.org, p_month: month, p_mode: 'guide', p_reserved: reserve, p_actual: spent })
+        await settle(i.db, { p_org: i.org, p_month: month, p_mode: 'guide', p_reserved: reserve, p_actual: spent })
         cost += spent
         throw e
       }
@@ -103,7 +104,7 @@ export async function runGuide(i: {
       cost += c
       tokens.input += reply.usage.input_tokens ?? 0; tokens.output += reply.usage.output_tokens ?? 0
       tokens.cacheRead += reply.usage.cache_read_input_tokens ?? 0; tokens.cacheWrite += reply.usage.cache_creation_input_tokens ?? 0
-      await i.db.rpc('agent_settle', { p_org: i.org, p_month: month, p_mode: 'guide', p_reserved: reserve, p_actual: c })
+      await settle(i.db, { p_org: i.org, p_month: month, p_mode: 'guide', p_reserved: reserve, p_actual: c })
       if (reply.stop_reason === 'refusal') { outcome = 'no_answer'; break }
 
       messages.push({ role: 'assistant', content: reply.content as any })
@@ -142,9 +143,11 @@ export async function runGuide(i: {
     const { error: gErr } = await i.db.from('help_gaps').insert({ org_id: i.org, user_id: i.userId, route, help_id: helpId, question, run_id: runId })
     if (gErr) console.error(`[agent/guide] help gap not recorded for run ${runId}: ${gErr.code ?? 'unknown'}`)
   }
-  await i.db.from('agent_runs').update({ outcome, error, tool_calls: log, cited_article_ids: answer?.cited ?? [],
+  const { data: logged, error: logErr } = await i.db.from('agent_runs').update({ outcome, error, tool_calls: log, cited_article_ids: answer?.cited ?? [],
     input_tokens: tokens.input, output_tokens: tokens.output, cache_read_tokens: tokens.cacheRead, cache_write_tokens: tokens.cacheWrite,
-    cost_usd: Number(cost.toFixed(6)), finished_at: new Date().toISOString() }).eq('id', runId)
+    cost_usd: Number(cost.toFixed(6)), finished_at: new Date().toISOString() }).eq('id', runId).select('id')
+  // a zero-row update returns no error, so count the row: a run left 'running' has lost its cost record
+  if (logErr || (logged?.length ?? 0) !== 1) console.error(`[agent/guide] run ${runId} log not finalised (${logErr?.code ?? 'no row'}); cost ${cost.toFixed(4)} recorded only in agent_usage`)
 
   const message = outcome === 'answered' ? answer!.text : answer?.text ?? MESSAGES[outcome as Exclude<GuideOutcome, 'answered'>]
   return { runId, outcome, answer, message, costUsd: cost }

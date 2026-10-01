@@ -1,40 +1,17 @@
 // /p/<slug>   (PUBLIC, approved as /p/* behind the `pages` switch; agent ruling 12, Stage 0 answer 1)
-// A landing page is data: a list of checked blocks (src/lib/marketing/validate/page.ts). It is
-// shown only when the page is published AND its org has the `pages` flag on; anything else is a
-// plain not-found, so a draft or a switched-off org reveals nothing. Only the page's own fields
-// and its published form are read, through the service role, by named columns.
+// A landing page is data: a list of checked blocks. What may be shown, and when, is decided in
+// src/lib/marketing/public-page.ts (published, org `pages` flag on, published form only); this
+// file only renders it, and turns anything else into a plain not-found.
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { createAdminSupabase } from '@/lib/supabase'
-import { getFlags } from '@/lib/marketing/flags'
-import { checkPage, type PageBlock } from '@/lib/marketing/validate/page'
+import { loadPublicPage } from '@/lib/marketing/public-page'
+import type { PageBlock } from '@/lib/marketing/validate/page'
 import { PageForm } from './page-form'
 
 export const dynamic = 'force-dynamic'
 
-const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/
-
-async function load(slug: string) {
-  if (!SLUG.test(slug) || slug.length > 60) return null
-  const db = createAdminSupabase()
-  // slugs are unique per org, so two orgs could each publish one; refuse rather than guess
-  const { data, error } = await db.from('page_definitions').select('org_id, slug, title, blocks, form_definition_id')
-    .eq('slug', slug).eq('status', 'published').limit(2)
-  if (error) { console.error(`[p/slug] read failed: ${error.code ?? 'unknown'}`); return null }
-  if (!data || data.length !== 1) return null
-  const page = data[0] as any
-  if (!(await getFlags(db, page.org_id)).pages) return null
-  let form: any = null
-  if (page.form_definition_id) {
-    const { data: f } = await db.from('form_definitions').select('slug, fields, consents, status')
-      .eq('id', page.form_definition_id).eq('org_id', page.org_id).maybeSingle()
-    if (f && (f as any).status === 'published') form = f
-  }
-  // re-check what is stored: a row written before a validator change is never rendered unchecked
-  const check = checkPage({ slug: page.slug, title: page.title, status: 'published', blocks: page.blocks, form_slug: form?.slug ?? null })
-  if (!check.ok) { console.error(`[p/slug] stored page ${slug} fails its checks: ${check.message}`); return null }
-  return { title: check.row.title, blocks: check.row.blocks, form }
-}
+const load = (slug: string) => loadPublicPage(createAdminSupabase(), slug)
 
 export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
   const p = await load(params.slug)

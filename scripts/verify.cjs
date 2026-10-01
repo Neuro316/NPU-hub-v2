@@ -24,12 +24,13 @@ const HARNESSES = [
   { file: 'scripts/agent/claims-tamper.cjs', selectors: ['emdash', 'certified', 'noboundary', 'stopline', 'program', 'version', '1'] },
   { file: 'scripts/agent/validator-parity.cjs', selectors: ['message', 'delay', 'lower', 'slug', '1'] },
   { file: 'scripts/agent/golden-goals.cjs', selectors: ['noresolve', 'connectedany', 'nosms', 'nosender', 'noconsent', 'noclaims', '1'] },
-  { file: 'scripts/agent/adversarial-tamper.cjs', selectors: ['sendtool', 'unknowntool', 'livefield', 'nowrap', '1'] },
+  { file: 'scripts/agent/adversarial-tamper.cjs', selectors: ['sendtool', 'unknowntool', 'livefield', 'nowrap', 'reqdata', 'formsrc', '1'] },
   { file: 'scripts/agent/contract-tamper.cjs', selectors: ['channel', 'taskkind', 'block', '1'] },
   { file: 'scripts/agent/caps-tamper.cjs', selectors: ['nostep', 'nocap', 'session', 'rate', 'cheap', '1'] },
-  { file: 'scripts/agent/leak-tamper.cjs', selectors: ['star', 'passthrough', 'noscrub', '1'] },
+  { file: 'scripts/agent/leak-tamper.cjs', selectors: ['star', 'passthrough', 'noscrub', 'colleak', '1'] },
   { file: 'scripts/agent/flag-off-parity.cjs', selectors: ['noflag', 'nosuper', 'touch', '1'] },
   { file: 'scripts/agent/guide-tamper.cjs', selectors: ['nocite', 'anytarget', 'anyroute', 'noflag', 'nogap', 'leakctx', 'dash', 'writetask', 'policyopen', 'stubprod', 'anytag', 'clickme', '1'] },
+  { file: 'scripts/agent/scope-tamper.cjs', selectors: ['approveorg', 'steporg', 'taskorg', 'pagesorg', 'pubdraft', 'pubflag', 'pubform', 'noreview', 'nocaller', '1'] },
   { file: 'scripts/agent/help-ci.cjs', selectors: ['orphan', 'ghost', 'badref', 'dash', 'banned', 'stale', '1'] },
 ]
 let fail = 0

@@ -10,6 +10,16 @@ export function wrapUntrusted(source: string, text: string): string {
   return `<untrusted_input source="${safeSource}">\n${body}\n</untrusted_input>`
 }
 
+/**
+ * The superadmin's own request is the task, not data, so it is NOT an untrusted block (ruling 6
+ * covers pasted text and text read back from the Hub). It still cannot open or close any block,
+ * so it can never pose as setup, existing copy or pasted material.
+ */
+export function wrapRequest(text: string): string {
+  const body = String(text ?? '').replace(/<\s*\/?\s*(untrusted_input|request)[^>]*>/gi, '[tag removed]')
+  return `<request>\n${body}\n</request>`
+}
+
 /** Email addresses and phone numbers replaced before a question is sent or stored (AG25). */
 export function scrubContactDetails(text: string): string {
   return String(text ?? '')
