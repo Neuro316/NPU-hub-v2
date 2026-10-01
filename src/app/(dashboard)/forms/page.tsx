@@ -4,11 +4,13 @@
 // campaign. Publishing checks the form can create a contact and that every consent box
 // has its text. The embed snippet posts to /api/intake.
 import { useCallback, useEffect, useState } from 'react'
-import { FileText, Loader2, Plus, Trash2, Copy } from 'lucide-react'
+import { FileText, Loader2, Plus, Trash2, Copy, Sparkles } from 'lucide-react'
 import { useWorkspace } from '@/lib/workspace-context'
 import { api } from '@/lib/marketing/client'
 import { useToast } from '@/components/ui/toast'
 import type { FormDef, Overview } from '@/components/marketing/types'
+import { AiChip, approveDraft, needsReview } from '@/components/marketing/agent/ai-chip'
+import { PagesEditor } from '@/components/marketing/pages-editor'
 
 const input = 'w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/30'
 const small = 'rounded border border-gray-200 px-1.5 py-1 text-xs'
@@ -37,7 +39,12 @@ export default function FormsPage() {
 
   async function save() {
     if (!currentOrg || !f) return
-    try { const r = await api('/api/marketing/forms', { ...f, org_id: currentOrg.id }); setF(r.form); toast.show('The form is saved.'); load() }
+    try {
+      const r = await api('/api/marketing/forms', { ...f, org_id: currentOrg.id })
+      // a person saving an AI-drafted form on its screen has reviewed it (ruling 14)
+      if (f.id && needsReview(f)) { await approveDraft(currentOrg.id, 'form', f.id).catch(() => null); r.form.ai_reviewed_at = new Date().toISOString() }
+      setF(r.form); toast.show('The form is saved.'); load()
+    }
     catch (e: any) { toast.show(e.body?.problems ? `${e.message} ${e.body.problems.join('. ')}.` : e.message, 'error') }
   }
   const setField = (i: number, p: any) => setF({ ...f!, fields: f!.fields!.map((x, j) => (j === i ? { ...x, ...p } : x)) })
@@ -59,7 +66,7 @@ export default function FormsPage() {
             {data.forms.length === 0 && <p className="text-xs text-gray-500">You have no forms yet. Press New form; it starts with a name field, an email field and an email consent box you can edit.</p>}
             {data.forms.map((x) => (
               <button key={x.id} type="button" onClick={() => setF(x)} className={`w-full rounded-card border bg-white p-3 text-left shadow-card ${f?.id === x.id ? 'border-np-blue' : 'border-gray-100'}`}>
-                <div className="flex items-center gap-2"><FileText className="h-3.5 w-3.5 text-np-blue" aria-hidden /><b className="flex-1 truncate text-sm text-np-dark">{x.name}</b><span className="text-[10px] text-gray-400">v{x.version}</span></div>
+                <div className="flex items-center gap-2"><FileText className="h-3.5 w-3.5 text-np-blue" aria-hidden /><b className="flex-1 truncate text-sm text-np-dark">{x.name}</b>{needsReview(x) && <Sparkles className="h-3 w-3 text-purple-600" aria-label="AI draft, needs review" />}<span className="text-[10px] text-gray-400">v{x.version}</span></div>
                 <p className="mt-1 font-mono text-[11px] text-gray-400">{x.slug} . {x.status}</p>
               </button>))}
           </div>
@@ -101,11 +108,14 @@ export default function FormsPage() {
                 <button type="button" onClick={() => { navigator.clipboard?.writeText(snippet); toast.show('The snippet is copied.') }} className="inline-flex items-center gap-1 text-xs text-np-blue"><Copy className="h-3 w-3" aria-hidden />Copy</button></div>
                 <pre className="overflow-x-auto rounded-lg bg-np-light p-2 text-[10px] text-gray-600">{snippet}</pre>
                 <p className="mt-1 text-[11px] text-gray-400">Keep an empty hidden field named website on the page. Real people never fill it in, and submissions that do are dropped.</p></div>}
-              <div className="flex justify-end"><button type="button" data-help-id="forms.save" onClick={save} className="rounded-lg bg-np-blue px-3 py-1.5 text-xs font-medium text-white hover:bg-np-blue-hover">Save form</button></div>
+              <div className="flex items-center justify-end gap-2">
+                {f.id && needsReview(f) && <AiChip orgId={currentOrg!.id} kind="form" id={f.id} onApproved={() => { setF({ ...f, ai_reviewed_at: new Date().toISOString() }); load() }} />}
+                <button type="button" data-help-id="forms.save" onClick={save} className="rounded-lg bg-np-blue px-3 py-1.5 text-xs font-medium text-white hover:bg-np-blue-hover">Save form</button></div>
             </div>
           ) : <div className="rounded-card border border-dashed border-gray-200 p-8 text-center text-sm text-gray-500">Choose a form on the left to edit it, or press New form to build one. A published form can start a funnel campaign from its Starts from section.</div>}
         </div>
       )}
+      {data && currentOrg && <PagesEditor orgId={currentOrg.id} data={data} reload={load} />}
     </div>
   )
 }
