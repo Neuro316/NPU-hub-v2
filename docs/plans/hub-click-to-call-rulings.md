@@ -189,3 +189,18 @@ delete from public.org_settings where org_id = '<np_org_id>' and setting_key = '
 - A5 Refused attempts count toward the rate limit.
 - A6 `call_logs.team_member_id` stays null (it references `team_members`, not users); the staff
   member is `crm_activity_log.actor_id`.
+
+## 9. Build results (2026-10-01)
+
+- `npx tsc --noEmit` clean. `npm run verify` PASSED: tsc, guards G1 to G5 (each tamper exits 3), the
+  marketing harnesses, `c2c-tamper.cjs` (34 of 34, each of 19 selectors reddens exactly its declared
+  set, `TAMPER=1` the union) and `parity.cjs` (22 of 22, both selectors exact).
+- HEAD~1 discrimination: `BASE=HEAD~1 c2c-tamper.cjs` reddens all 34 cases. `parity.cjs` run inside a
+  worktree of HEAD~1 reddens `M_conversations` and `M_timeline` (no marked blocks). G1 without the
+  `verifyTwilioWebhook` entry reports both new webhooks as NEW.
+- `npm run build`: compiled successfully; it then halts at `/api/integrations/neuroreport/sync`
+  ("supabaseUrl is required"), the known environmental stop with no `.env.local`. Not a route this
+  build touched.
+- Flag off, before and after: `parity.cjs` pins every existing voice webhook, the browser call path,
+  the Twilio and org libraries, notify-sms, the entry event raiser, the auth wrapper and middleware
+  byte-equal to `d49d00e`, and the Conversations page and timeline equal outside the markers.
