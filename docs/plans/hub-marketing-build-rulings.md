@@ -585,3 +585,38 @@ not live.
   (`nr_quiz_results`), not the Hub. A trigger on that table would work, and is a separate change to a
   shared table the University owns.
 - **A new contact created with a tag or a stage** (A35).
+
+### Overhead benchmark and the revision it forced (2026-10-01, before any live apply)
+
+Cameron's condition on the go: measure a bulk stage update of at least 300 contacts with the
+engine off, on with nobody listening, and listening, against the same update without the trigger,
+and stop if the first two add noticeable overhead.
+
+**Method.** 400 contacts on the branch; per case, 12 rounds of updating all 400, each round
+running no trigger, the approved trigger and the revised trigger in a rotating order, so table
+bloat from earlier updates hits all three equally; first round dropped, medians reported, every
+run rolled back. A first, sequential attempt was discarded: each case ran after the previous ones
+in one transaction, so later cases were slowed by dead rows regardless of design.
+
+| case (400-row update, median ms) | no trigger | approved file (d656be3f) | revised file (0630d111) |
+|---|---|---|---|
+| engine off, a campaign listening | 17.5 / 23.5 | 32.2 / 35.7 (+12 to 15) | 19.7 / 23.7 (+0 to 2) |
+| engine on, nobody listening | 19.3 / 26.0 | 19.8 / 25.3 (none) | 19.7 / 25.0 (none) |
+| engine on, listening to a different stage | 22.3 | 76.1 (+54) | 70.2 (+48) |
+| engine on, listening, 400 events queued | 23.8 | 168.6 | 165.2 (+141, about 0.35 ms an event) |
+| unrelated column only, a campaign listening | 27.4 | 44.5 | 45.5 (+17) |
+
+**The approved file failed the engine-off condition**: its cheap exit asked only whether any stage
+or tag route existed, so with the engine off it still joined and checked the flag row by row. The
+revised file's exit asks whether any org **with the engine on** has an active stage or tag route,
+once per statement. Only the trigger bodies changed; the contract (22 cases, 6 planted defects)
+was rerun on the revised body and is green.
+
+**A row-level trigger was tried and rejected**: limited to the stage and tag columns it costs
+nothing on unrelated updates, but it runs its checks once per row, and a 400-row stage move with
+nobody listening cost +26 ms (later +70 ms) against about 0 for the statement trigger.
+
+- **A42. The remaining cost is accepted and stated**: once an org with the engine on has a stage or
+  tag campaign, every update of `contacts` pays about 0.04 ms a row to materialise the changed rows,
+  including updates that touch neither column (+17 ms per 400 rows). Until then it is about zero.
+  On live today no stage or tag route exists, so the exit is taken on every update.

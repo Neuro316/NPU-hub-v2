@@ -179,20 +179,26 @@ begin
      or coalesce(current_setting('app.hub_engine_write', true), '') = 'on' or pg_trigger_depth() > 1 then
     return null;
   end if;
-  -- cheap exit for the common case: no active campaign listens for a stage or a tag
-  if not exists (select 1 from public.campaign_routes cr where cr.active and (cr.source_key like 'stage:%' or cr.source_key like 'tag:%')) then
+  -- cheap exit, one query per statement: unless some org with the engine ON has an active
+  -- stage or tag route, there is nothing to raise (measured on the branch: about 1 ms per
+  -- 400-row update with the engine off or nobody listening)
+  if not exists (select 1 from public.campaign_routes cr where cr.active and (cr.source_key like 'stage:%' or cr.source_key like 'tag:%')
+                   and public.hub_flag(cr.org_id, 'engine') = 'on') then
     return null;
   end if;
   begin
     for r in
-      select n.id, n.org_id, s.id as stage_id
-        from new_rows n
-        join old_rows o on o.id = n.id
-        join public.pipelines p on p.org_id = n.org_id and p.legacy_key = n.pipeline_id and p.archived_at is null
-        join public.pipeline_stages s on s.pipeline_id = p.id and s.name = n.pipeline_stage and s.archived_at is null
-       where n.merged_into_id is null and o.merged_into_id is not distinct from n.merged_into_id
-         and (n.pipeline_id, n.pipeline_stage) is distinct from (o.pipeline_id, o.pipeline_stage)
-         and public.hub_flag(n.org_id, 'engine') = 'on'
+      with changed as (
+        select n.id, n.org_id, n.pipeline_id, n.pipeline_stage,
+               (n.pipeline_id, n.pipeline_stage) is distinct from (o.pipeline_id, o.pipeline_stage) as stage_changed
+          from new_rows n join old_rows o on o.id = n.id
+         where n.merged_into_id is null and o.merged_into_id is not distinct from n.merged_into_id
+           and ((n.pipeline_id, n.pipeline_stage) is distinct from (o.pipeline_id, o.pipeline_stage) or n.tags is distinct from o.tags))
+      select c.id, c.org_id, s.id as stage_id
+        from changed c
+        join public.pipelines p on p.org_id = c.org_id and p.legacy_key = c.pipeline_id and p.archived_at is null
+        join public.pipeline_stages s on s.pipeline_id = p.id and s.name = c.pipeline_stage and s.archived_at is null
+       where c.stage_changed and public.hub_flag(c.org_id, 'engine') = 'on'
     loop
       perform public.raise_entry_event(r.org_id, r.id, 'stage:' || r.stage_id,
         'stage_change:' || r.id || ':' || r.stage_id || ':' || txid_current(), 'stage');
@@ -200,7 +206,7 @@ begin
     for r in
       select n.id, n.org_id, x.tag
         from new_rows n
-        join old_rows o on o.id = n.id
+        join old_rows o on o.id = n.id and n.tags is distinct from o.tags
         cross join lateral (select unnest(coalesce(n.tags, '{}'::text[])) except select unnest(coalesce(o.tags, '{}'::text[]))) as x(tag)
        where n.merged_into_id is null and o.merged_into_id is not distinct from n.merged_into_id
          and public.hub_flag(n.org_id, 'engine') = 'on'
@@ -224,7 +230,8 @@ begin
      or coalesce(current_setting('app.hub_engine_write', true), '') = 'on' or pg_trigger_depth() > 1 then
     return null;
   end if;
-  if not exists (select 1 from public.campaign_routes cr where cr.active and cr.source_key like 'tag:%') then
+  if not exists (select 1 from public.campaign_routes cr where cr.active and cr.source_key like 'tag:%'
+                   and public.hub_flag(cr.org_id, 'engine') = 'on') then
     return null;
   end if;
   begin
