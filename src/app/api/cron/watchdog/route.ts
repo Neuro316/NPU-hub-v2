@@ -11,6 +11,8 @@ import { withJobRun } from '@/lib/marketing/job-runs'
 import { EXPECTED_JOBS, ALERT_REPEAT_HOURS, alertBody, alertSignature, findProblems } from '@/lib/marketing/watchdog'
 
 export const dynamic = 'force-dynamic'
+// and no fetch in this route may be answered from the Data Cache (see createAdminSupabase)
+export const fetchCache = 'force-no-store'
 
 // The owner's Hub profile (Neuro Progeny superadmin). Overridable without a deploy.
 const DEFAULT_RECIPIENT = '22456608-5f7d-495e-af02-7037fea125cc'

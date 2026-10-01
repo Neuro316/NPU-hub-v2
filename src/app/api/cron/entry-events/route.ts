@@ -13,6 +13,8 @@ import { ENTRY_CAP_PER_RUN } from '@/lib/marketing/entry-events'
 
 export const maxDuration = 60
 export const dynamic = 'force-dynamic'
+// and no fetch in this route may be answered from the Data Cache (see createAdminSupabase)
+export const fetchCache = 'force-no-store'
 
 export async function GET(req: NextRequest) {
   if (!cronAuthorized(req, 'cron/entry-events')) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
