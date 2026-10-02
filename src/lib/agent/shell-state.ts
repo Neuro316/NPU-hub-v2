@@ -80,6 +80,27 @@ export function saveShell(store: StorageLike, userId: string, orgId: string, s: 
 export function loadShell(store: StorageLike, userId: string, orgId: string): Partial<ShellState> | null {
   try { const raw = store.getItem(storageKey(userId, orgId)); return raw ? (JSON.parse(raw) as Partial<ShellState>) : null } catch { return null }
 }
+/**
+ * A switch of user or org: the state stored for the scope being LEFT is removed (the plan: cleared on
+ * org switch), and the state stored for the new scope, if any, is returned to restore. A first
+ * load (no previous scope, as after a reload) removes nothing, so a reload keeps the walkthrough.
+ */
+export function switchScope(store: StorageLike, prev: { userId: string; orgId: string } | null, next: { userId: string; orgId: string } | null): Partial<ShellState> | null {
+  // switching org from most pages reloads the whole page (workspace switchOrg sets location), so the
+  // scope last served is also kept in storage: the in-memory one alone would be lost on that reload
+  let last = prev
+  if (!last) {
+    try { const raw = store.getItem(LAST_SCOPE); if (raw) { const [u, o] = raw.split(':'); if (u && o) last = { userId: u, orgId: o } } } catch { /* storage blocked */ }
+  }
+  if (last && (!next || last.userId !== next.userId || last.orgId !== next.orgId)) {
+    try { store.removeItem(storageKey(last.userId, last.orgId)) } catch { /* storage blocked */ }
+  }
+  try { if (next) store.setItem(LAST_SCOPE, `${next.userId}:${next.orgId}`); else store.removeItem(LAST_SCOPE) } catch { /* storage blocked */ }
+  return next ? loadShell(store, next.userId, next.orgId) : null
+}
+/** Which user and org this tab's panel last served (prefixed, so sign-out clears it too). */
+export const LAST_SCOPE = `${STORAGE_PREFIX}last`
+
 /** Sign-out: every stored panel state for every user and org on this tab is removed. */
 export function clearShellStorage(store: StorageLike): number {
   const keys: string[] = []

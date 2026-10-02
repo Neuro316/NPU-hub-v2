@@ -14,7 +14,7 @@ import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
 import { HelpBot } from '@/components/help-bot'
 import { AgentPanel } from './agent-panel'
-import { INITIAL, reducer, clearShellStorage, launcherPlacement, loadShell, panelModes, saveShell, showHelpBot,
+import { INITIAL, reducer, clearShellStorage, launcherPlacement, panelModes, saveShell, showHelpBot, switchScope,
   type Caps, type ShellAction, type ShellMode, type ShellState } from '@/lib/agent/shell-state'
 
 interface ShellApi { caps: Caps | null; state: ShellState; open: (mode: ShellMode, campaignId?: string | null) => void; dispatch: (a: ShellAction) => void }
@@ -44,15 +44,20 @@ export function AgentShellProvider({ children }: { children: React.ReactNode }) 
     return () => { live = false }
   }, [userId, orgId])
 
-  // a new user or org starts clean, then takes back what this tab stored for that user and org
+  // a new user or org starts clean: the scope being left is removed from storage, and what this tab
+  // stored for the new scope (after a reload) is taken back
+  const prevScope = useRef<{ userId: string; orgId: string } | null>(null)
   useEffect(() => {
     const key = userId && orgId ? `${userId}:${orgId}` : null
     if (key === scope.current) return
     scope.current = key
     dispatch({ type: 'reset' })
     dispatch({ type: 'close' })
+    const next = userId && orgId ? { userId, orgId } : null
     const s = store()
-    if (s && userId && orgId) { const saved = loadShell(s, userId, orgId); if (saved) dispatch({ type: 'hydrate', state: saved }) }
+    const saved = s ? switchScope(s, prevScope.current, next) : null
+    prevScope.current = next
+    if (saved) dispatch({ type: 'hydrate', state: saved })
   }, [userId, orgId])
 
   useEffect(() => { const s = store(); if (s && userId && orgId && scope.current === `${userId}:${orgId}`) saveShell(s, userId, orgId, state) }, [state, userId, orgId])

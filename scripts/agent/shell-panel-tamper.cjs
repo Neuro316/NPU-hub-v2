@@ -12,6 +12,8 @@
 //                   and org, and nothing else
 //   S_SIGNOUT_WIRED the sidebar clears BEFORE signOut (the redirect can beat a listener), and the
 //                   shell clears on SIGNED_OUT
+//   S_ORGSWITCH     the plan: switching org removes the stored state of the org left; a reload (no
+//                   previous scope) removes nothing and restores; the shell calls switchScope
 //   S_CAPS          the real GET: guide only with the flag on and the role allowed, builder only for a
 //                   superadmin with agent_enabled
 //   S_HELPBOT       decision 1: HelpBot hides only for someone the Guide allows; otherwise it shows,
@@ -28,10 +30,11 @@
 //   noclear     sign-out clearing removes nothing                     {S_SIGNOUT_CLEAR}
 //   nosidebar   the sidebar signs out without clearing                {S_SIGNOUT_WIRED}
 //   capsflag    the GET stops checking help_bot_enabled               {S_CAPS}
+//   keepprev    switching org leaves the old org's state stored       {S_ORGSWITCH}
 //   hidealways  HelpBot is hidden for everyone                        {S_HELPBOT}
 //   launcherpos the Guide's launcher sits above the corner            {S_LAUNCHER}
 //   builderguide the Builder tab needs the Guide too                  {S_BUILDER}
-// TAMPER=1 reddens the union (10, equal to the sum).
+// TAMPER=1 reddens the union (11, equal to the sum).
 const fs = require('fs'), path = require('path')
 const H = require('./lib/harness.cjs')
 
@@ -39,6 +42,7 @@ const TAMPERS = {
   resetkeeps: [['lib/agent/shell-state.ts', "case 'reset': return { ...INITIAL, open: s.open, mode: s.mode }", "case 'reset': return s"]],
   noclear: [['lib/agent/shell-state.ts', '  for (const k of keys) store.removeItem(k)\n', '']],
   capsflag: [['app/api/marketing/agent/route.ts', 'guide: flags.help_bot_enabled && mayUseGuide(', 'guide: mayUseGuide(']],
+  keepprev: [['lib/agent/shell-state.ts', 'try { store.removeItem(storageKey(last.userId, last.orgId)) } catch', 'try { void 0 } catch']],
   hidealways: [['lib/agent/shell-state.ts', 'export const showHelpBot = (caps: Caps | null) => !caps?.guide', 'export const showHelpBot = (caps: Caps | null) => false']],
   launcherpos: [['lib/agent/shell-state.ts', "caps.guide ? 'corner' : 'stacked'", "caps.guide ? 'stacked' : 'stacked'"]],
   builderguide: [['lib/agent/shell-state.ts', "...(caps?.builder ? ['builder' as const] : [])", "...(caps?.builder && caps?.guide ? ['builder' as const] : [])"]],
@@ -47,7 +51,7 @@ const TAMPERS = {
 }
 const STATIC = ['unmount', 'secondpanel', 'typedq', 'nosidebar']
 const RED_OF = { unmount: ['S_MOUNTED'], secondpanel: ['S_SINGLE'], resetkeeps: ['S_NAVIGATE'], typedq: ['S_STORAGE'], noclear: ['S_SIGNOUT_CLEAR'],
-  nosidebar: ['S_SIGNOUT_WIRED'], capsflag: ['S_CAPS'], hidealways: ['S_HELPBOT'], launcherpos: ['S_LAUNCHER'], builderguide: ['S_BUILDER'] }
+  nosidebar: ['S_SIGNOUT_WIRED'], keepprev: ['S_ORGSWITCH'], capsflag: ['S_CAPS'], hidealways: ['S_HELPBOT'], launcherpos: ['S_LAUNCHER'], builderguide: ['S_BUILDER'] }
 const active = H.selectors(TAMPERS)
 const out = H.compile(Object.fromEntries(Object.entries(TAMPERS).filter(([k]) => !STATIC.includes(k))), active.filter((t) => !STATIC.includes(t)), 'hub-shell')
 const load = H.install(out)
@@ -122,6 +126,25 @@ const fakeStore = (init = {}) => {
   const clearAt = fnBody.indexOf('clearShellStorage('), outAt = fnBody.indexOf('auth.signOut(')
   const shellSrc = strip(src('components/marketing/agent/agent-shell.tsx'))
   check('S_SIGNOUT_WIRED', clearAt > -1 && outAt > clearAt && /event === 'SIGNED_OUT'[\s\S]{0,120}clearShellStorage\(/.test(shellSrc), { clearAt, outAt })
+
+  // S_ORGSWITCH
+  {
+    const st3 = fakeStore()
+    S.saveShell(st3, 'U1', 'O1', S.reducer(S.INITIAL, { type: 'open', mode: 'guide' }))
+    const reload = S.switchScope(st3, null, { userId: 'U1', orgId: 'O1' })
+    const afterReload = st3.length
+    const toOther = S.switchScope(st3, { userId: 'U1', orgId: 'O1' }, { userId: 'U1', orgId: 'O2' })
+    // the common path: the switch reloads the page, so there is no in-memory previous scope
+    const st4 = fakeStore()
+    S.saveShell(st4, 'U1', 'O1', S.reducer(S.INITIAL, { type: 'open', mode: 'guide' }))
+    S.switchScope(st4, null, { userId: 'U1', orgId: 'O1' })
+    const afterSameReload = st4.getItem(S.storageKey('U1', 'O1')) !== null
+    S.switchScope(st4, null, { userId: 'U1', orgId: 'O2' })
+    const reloadSwitchCleared = st4.getItem(S.storageKey('U1', 'O1')) === null
+    check('S_ORGSWITCH', !!reload && reload.open === true && afterReload >= 1 && toOther === null && st3.getItem(S.storageKey('U1', 'O1')) === null
+      && afterSameReload && reloadSwitchCleared
+      && /switchScope\(s, prevScope\.current, next\)/.test(shellSrc), { afterReload, afterSameReload, reloadSwitchCleared, left: Array.from(st3.m.keys()) })
+  }
 
   // S_CAPS: the real GET
   const caps = async ({ flags = {}, roles, team = 'admin', superadmin = false }) => {

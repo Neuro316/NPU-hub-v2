@@ -33,7 +33,11 @@ export function stubClient(): ModelClient {
         if (!m) return reply('answer', { found: false, text: 'The help articles do not cover this yet.', cited: [], steps: [], handoff: false }, turn)
         const control = m[3].split(',')[0].trim()
         return reply('answer', { found: true, text: `Here is how, from the help article ${m[1]}. (Stub model: the text is canned.)`, cited: [m[1]],
-          steps: [{ article: m[1], text: m[4], route: m[2], ...(control && control !== 'none' ? { target: control } : {}) }], handoff: /build|draft|create/i.test(lastText(req.messages)) }, turn)
+          // up to three of the article's own steps, so a walkthrough can be followed across pages;
+          // the first points at the article's page and first control
+          steps: [{ article: m[1], text: m[4], route: m[2], ...(control && control !== 'none' ? { target: control } : {}) },
+            ...(found.slice(m.index).split('\n\n# ')[0].match(/\n[23]\. [^\n]+/g) ?? []).map((l) => ({ article: m[1], text: l.replace(/^\n\d\. /, '') }))],
+          handoff: /build|draft|create/i.test(lastText(req.messages)) }, turn)
       }
       // the builder: one campaign, three steps, one task, then finish
       const script = [
