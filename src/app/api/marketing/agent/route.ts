@@ -26,6 +26,20 @@ export const maxDuration = 300
 
 const LIVE_STATUSES = ['active', 'paused']
 
+// GET /api/marketing/agent?org_id=   what the shell may show this person (ruling 26): the same
+// checks the POST actions make, so a tab is offered only when its action would be accepted.
+// Hiding a tab is still not the guard: every POST checks again.
+export const GET = withStaff(async (req, ctx) => {
+  const org = requireOrg(ctx, new URL(req.url).searchParams.get('org_id'))
+  if (typeof org !== 'string') return org
+  const flags = await getFlags(ctx.db, org)
+  const policy = await getPolicy(ctx.db, org)
+  return NextResponse.json({
+    guide: flags.help_bot_enabled && mayUseGuide(policy, helpRoleOf(ctx.isSuperadmin, ctx.orgRoles[org])),
+    builder: ctx.isSuperadmin && flags.agent_enabled,
+  })
+})
+
 export const POST = withStaff(async (req, ctx) => {
   const b = await req.json().catch(() => ({}))
   const org = requireOrg(ctx, b?.org_id)
@@ -100,7 +114,7 @@ export const POST = withStaff(async (req, ctx) => {
     console.info(`[agent] guide run=${result.runId} org=${org} outcome=${result.outcome} cost=${result.costUsd.toFixed(4)}`)
     const status = result.outcome === 'answered' || result.outcome === 'no_answer' ? 200 : result.outcome === 'cap_hit' ? 429 : result.outcome === 'model_unavailable' ? 503 : 500
     return NextResponse.json({ session_id: session.sessionId, run_id: result.runId, outcome: result.outcome, message: result.message,
-      error: status === 200 ? undefined : result.message, answer: result.answer,
+      error: status === 200 ? undefined : result.message, answer: result.answer, question: result.question,
       // the hand-off is offered only when the server would accept it (ruling 15)
       handoff_allowed: !!result.answer?.handoff && ctx.isSuperadmin && flags.agent_enabled }, { status })
   }
