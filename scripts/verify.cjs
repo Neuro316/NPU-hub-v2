@@ -33,6 +33,7 @@ const HARNESSES = [
   { file: 'scripts/agent/scope-tamper.cjs', selectors: ['approveorg', 'steporg', 'taskorg', 'pagesorg', 'pubdraft', 'pubflag', 'pubform', 'noreview', 'nocaller', '1'] },
   { file: 'scripts/agent/task-notify-tamper.cjs', selectors: ['importsms', 'deep', 'directtask', '1'] },
   { file: 'scripts/agent/review-gates-tamper.cjs', selectors: ['noguard', 'failopen', 'positional', 'nohash', 'editkeeps', '1'] },
+  { file: 'scripts/agent/org-keys-tamper.cjs', selectors: ['lookuporg', 'status400', 'enrollseq', 'enrollwho', '1'] },
   { file: 'scripts/agent/help-ci.cjs', selectors: ['orphan', 'ghost', 'badref', 'dash', 'banned', 'stale', '1'] },
   { file: 'scripts/click-to-call/c2c-tamper.cjs', selectors: ['wrongorg', 'nophone', 'suppressed', 'dnclist', 'nostaffphone', 'ratelimit', 'flagoff', 'allowlistonly', 'notallowlisted', 'quiethoursblock', 'dialfirst', 'sigcore', 'sigbridge', 'sigstatus', 'staleswitch', 'entryevent', 'inboundroute', 'directionin', 'recording', 'forgedline', 'inactiveline', 'novoice', 'defaultshift', 'storagecrash', 'singleselect', 'rawline', 'eligibleorg', 'unverified', '1'] },
   { file: 'scripts/click-to-call/parity.cjs', selectors: ['outside', 'untouched', 'webhook', '1'] },
