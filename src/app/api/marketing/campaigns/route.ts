@@ -6,6 +6,7 @@ import { NextResponse } from 'next/server'
 import { withStaff, requireOrg, bad } from '@/lib/api-guard'
 import { constraintMessage } from '@/lib/marketing/db-errors'
 import { checkCampaign, dbCampaignLookup } from '@/lib/marketing/validate/campaign'
+import { unreviewedAiStepCount } from '@/lib/marketing/ai-review'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,6 +25,25 @@ export const POST = withStaff(async (req, ctx) => {
     goal_stage_id: b.goal_stage_id || null, goal: b.goal && typeof b.goal === 'object' ? b.goal : {},
     sequence_id: b.sequence_id || null, planning_campaign_id: b.planning_campaign_id || null,
     updated_at: new Date().toISOString(),
+  }
+  if (row.status === 'active') {
+    // decision 3 (2026-10-02): a campaign does not go active while any step the Campaign Builder
+    // drafted is unreviewed. Both the sequence it has now and the one this save sets are checked,
+    // each only if it belongs to this org; a failed read refuses.
+    const seqIds: string[] = []
+    if (b.id) {
+      const { data: cur } = await db.from('funnel_campaigns').select('sequence_id').eq('id', b.id).eq('org_id', org).maybeSingle()
+      if ((cur as any)?.sequence_id) seqIds.push((cur as any).sequence_id)
+    }
+    if (row.sequence_id) {
+      const { data: own } = await db.from('sequences').select('id').eq('id', row.sequence_id).eq('org_id', org).maybeSingle()
+      if (own) seqIds.push(row.sequence_id)
+    }
+    const pending = await unreviewedAiStepCount(db, seqIds)
+    if (pending === null) return NextResponse.json({ error: 'The campaign\'s steps could not be checked, so it was not activated. Try again in a moment.' }, { status: 503 })
+    if (pending > 0) {
+      return NextResponse.json({ error: `${pending} ${pending === 1 ? 'step was' : 'steps were'} drafted by the Campaign Builder and ${pending === 1 ? 'has' : 'have'} not been reviewed. Open this campaign's steps, press Approve on each step marked "AI draft, needs review" (or edit and save it), then set the campaign to Active.`, unreviewed_steps: pending }, { status: 409 })
+    }
   }
   const q = b.id
     ? db.from('funnel_campaigns').update(row).eq('id', b.id).eq('org_id', org).select('*')

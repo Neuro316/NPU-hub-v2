@@ -2,14 +2,14 @@
 // The steps of a campaign, stored on its sequence (ruling 6). StepsEditor is controlled,
 // so the guided setup can use it before the campaign exists; SequenceEditor wraps it with
 // a Save button for the campaign screen.
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Mail, MessageSquare, Clock, Plus, Trash2, Eye, GraduationCap } from 'lucide-react'
 import { api } from '@/lib/marketing/client'
 import { useToast } from '@/components/ui/toast'
 import { Help } from './help'
 import { helpId } from '@/lib/agent/help/help-id'
 import type { Asset, Step } from './types'
-import { AiChip, approveDraft, needsReview } from './agent/ai-chip'
+import { AiChip, needsReview } from './agent/ai-chip'
 
 export const blankStep = (): Step => ({ channel: 'email', delay_minutes: 0, subject: '', body: '', kind: 'marketing', step_type: 'message', asset_id: null })
 const label = 'mb-1 flex items-center text-[11px] font-medium text-gray-500'
@@ -121,13 +121,18 @@ export function SequenceEditor({ orgId, campaignId, sequenceId, name, initial, a
   const [steps, setSteps] = useState<Step[]>(initial.length ? initial : [blankStep()])
   const [previewed, setPreviewed] = useState<number[]>([])
   const [saving, setSaving] = useState(false)
+  const resync = useRef(false)
+  // after a save, adopt the steps as stored once; never on other re-renders, so edits in progress stay
+  useEffect(() => { if (resync.current && initial.length) { resync.current = false; setSteps(initial) } }, [initial])
   async function save() {
     setSaving(true)
     try {
+      // the server works out each step's review marker from the step it came from: an AI step
+      // whose text was edited here counts as reviewed, and one left unchanged stays unreviewed
+      // until someone presses Approve (src/lib/marketing/step-markers.ts)
       await api('/api/marketing/sequences', { org_id: orgId, id: sequenceId, name: `${name} steps`, campaign_id: campaignId, steps })
-      // a person who edited and saved AI-drafted steps has reviewed them (ruling 14)
-      for (const s of steps) if (s.id && needsReview(s)) await approveDraft(orgId, 'step', s.id).catch(() => null)
       toast.show('The steps are saved.')
+      resync.current = true // take the saved steps back: rows keep their ids by position, markers move
       onSaved()
     } catch (e: any) { toast.show(`${e.message} Your edits are still on screen; fix the step it names and save again.`, 'error') } finally { setSaving(false) }
   }

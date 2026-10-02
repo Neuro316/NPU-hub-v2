@@ -526,3 +526,22 @@ tab, so after Take me there the person lands on a page with no panel and the wal
 continue. Merge as built with `help_bot_enabled` off. Before the flag is switched on for any org: mount
 the panel in the dashboard layout so it appears on every screen, and keep its session state (the
 question, the answer, the step reached) across navigation.
+
+**Stage end, 2026-10-02.** Merged to `main` as `9507c74` (tree identical to the verified branch,
+`verify` 162 checks on main) and deployed as `f5uu8vmyw`: Ready, target production, holding
+`hub.neuroprogeny.com`. Discriminated by SHA: `HEAD~1` selects `qyjaa1a73`. `agent_enabled`,
+`help_bot_enabled` and `pages` are unset (off) for all four orgs. Live probe: `/p/no-such-page` is a
+public 404, and the agent API without a session redirects to login.
+
+**Lines for npu-platform-v2 (option 2).** The platform checkout was dirty when this was written (branch
+`fix/sms-body-split`, uncommitted changes to `src/app/api/jobs/run/route.ts` and
+`src/lib/jobs/adapters.ts`, and an untracked doc), so by Cameron's condition no worktree was made there.
+Cameron adds these himself:
+
+`docs/NPU_Future_Features_Queue_v4_AddendumC.md`, as a new section after MM:
+
+    ## MN. HUB CAMPAIGN BUILDER AGENT AND HUB GUIDE. **BUILT BEHIND FLAGS 2026-10-02** in NPU-hub-v2 (merge `9507c74`, deployment `f5uu8vmyw`); `agent_enabled`, `help_bot_enabled` and `pages` are off for every org. Before `help_bot_enabled` is switched on for anyone, the Guide panel moves into the shared app shell with its state kept across navigation (Hub ruling 26). Spec and record: NPU-hub-v2 `docs/plans/hub-agent-build-rulings.md`.
+
+`docs/state/CURRENT.md`, under the header:
+
+    **2026-10-02, NPU-hub-v2:** the Campaign Builder agent and the Hub Guide are merged (`9507c74`) and deployed (`f5uu8vmyw`, Ready, holding `hub.neuroprogeny.com`) with every new flag off. Next there: Hub ruling 26 (Guide panel into the app shell) before any flag is switched on. Queue: Addendum C §MN.

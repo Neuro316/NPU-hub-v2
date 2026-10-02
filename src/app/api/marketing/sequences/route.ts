@@ -7,6 +7,7 @@ import { withStaff, requireOrg, bad } from '@/lib/api-guard'
 import { checkSequenceHead, checkSteps } from '@/lib/marketing/validate/sequence'
 import { teamMemberId } from '@/lib/marketing/team-member'
 import { constraintMessage } from '@/lib/marketing/db-errors'
+import { carryMarkers, type ExistingStep } from '@/lib/marketing/step-markers'
 
 export const dynamic = 'force-dynamic'
 
@@ -46,14 +47,19 @@ export const POST = withStaff(async (req, ctx) => {
   // Update in place by position, so a step keeps its id (the send dedupe key includes it:
   // a new id would let an edited, already-sent step go out again), and so the sequence is
   // never empty part way through a save (an empty sequence ends every enrollment in it).
-  const { data: existing, error: eErr } = await db.from('sequence_steps').select('id, step_order').eq('sequence_id', seqId)
+  const { data: existing, error: eErr } = await db.from('sequence_steps')
+    .select('id, step_order, channel, delay_minutes, subject, body, kind, step_type, asset_id, ai_run_id, ai_reviewed_at').eq('sequence_id', seqId)
   if (eErr) return NextResponse.json({ error: 'The steps could not be read.' }, { status: 500 })
   const byOrder = new Map((existing ?? []).map((x: any) => [x.step_order as number, x.id as string]))
-  for (const r of rows) {
+  // the AI review marker follows each step's content, not the row it lands on (step-markers.ts)
+  const markers = carryMarkers((existing ?? []) as ExistingStep[], rows.map((r, i) => ({ id: head.steps[i]?.id, row: r })), new Date().toISOString())
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i]
     const id = byOrder.get(r.step_order)
+    const full = { ...r, ...markers[i] }
     const { data, error } = id
-      ? await db.from('sequence_steps').update(r).eq('id', id).select('id')
-      : await db.from('sequence_steps').insert({ ...r, sequence_id: seqId }).select('id')
+      ? await db.from('sequence_steps').update(full).eq('id', id).select('id')
+      : await db.from('sequence_steps').insert({ ...full, sequence_id: seqId }).select('id')
     if (error || (data?.length ?? 0) !== 1) return NextResponse.json({ error: constraintMessage(error, `Step ${r.step_order + 1}`)?.concat(' Earlier steps were saved.') ?? `Step ${r.step_order + 1} could not be saved. Earlier steps were saved.` }, { status: 500 })
   }
   const extra = (existing ?? []).filter((x: any) => x.step_order >= rows.length).map((x: any) => x.id)
