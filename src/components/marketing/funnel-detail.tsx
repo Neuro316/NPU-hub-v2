@@ -10,14 +10,18 @@ import { SequenceEditor } from './sequence-editor'
 import { SourcePicker } from './source-picker'
 import { TestDriveResult } from './test-drive-result'
 import { Help, HowItWorks } from './help'
-import type { FunnelCampaign, Overview } from './types'
+import type { CampaignTask, FunnelCampaign, Overview } from './types'
+import { AiChip, approveDraft, needsReview } from './agent/ai-chip'
+import { CampaignTasks } from './agent/campaign-tasks'
 
 const lbl = 'mb-1 flex items-center text-[11px] font-medium text-gray-500'
 const input = 'w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/30'
 const card = 'rounded-card border border-gray-100 bg-white p-4 shadow-card'
 const h3 = 'mb-2 flex items-center gap-1.5 text-sm font-semibold text-np-dark'
 
-export function FunnelDetail({ orgId, data, campaign, reload, onGuided }: { orgId: string; data: Overview; campaign: FunnelCampaign; reload: () => void; onGuided: () => void }) {
+export function FunnelDetail({ orgId, data, campaign, reload, onGuided, tasks = [], onRevise }: {
+  orgId: string; data: Overview; campaign: FunnelCampaign; reload: () => void; onGuided: () => void; tasks?: CampaignTask[]; onRevise?: () => void
+}) {
   const toast = useToast()
   const [c, setC] = useState(campaign)
   const [busy, setBusy] = useState(false)
@@ -31,6 +35,8 @@ export function FunnelDetail({ orgId, data, campaign, reload, onGuided }: { orgI
     setBusy(true)
     try {
       const r = await api('/api/marketing/campaigns', { ...c, ...patch, org_id: orgId })
+      // a person editing an AI draft on its screen has reviewed it (ruling 14)
+      if (needsReview(c)) { await approveDraft(orgId, 'campaign', c.id).catch(() => null); r.campaign.ai_reviewed_at = new Date().toISOString() }
       setC(r.campaign); toast.show('The campaign is saved.'); reload()
     } catch (e: any) { toast.show(`${e.message} Your changes are still on screen; adjust and save again.`, 'error') } finally { setBusy(false) }
   }
@@ -55,12 +61,14 @@ export function FunnelDetail({ orgId, data, campaign, reload, onGuided }: { orgI
       <div className={card}>
         <div className="mb-2 flex items-center gap-1"><span className="text-xs text-gray-500">How this works</span><HowItWorks />
           <span className="flex-1" />
+          {needsReview(c) && <AiChip orgId={orgId} kind="campaign" id={c.id} onApproved={() => { setC({ ...c, ai_reviewed_at: new Date().toISOString() }); reload() }} />}
+          {onRevise && <button type="button" data-help-id="builder.revise" onClick={onRevise} className="ml-2 inline-flex items-center gap-1 text-xs text-purple-700 underline">Revise with the Campaign Builder</button>}
           {c.status === 'draft' && <button type="button" onClick={onGuided} className="inline-flex items-center gap-1 text-xs text-np-blue underline"><Wand2 className="h-3.5 w-3.5" aria-hidden />Run the guided setup again</button>}
         </div>
         <div className="grid gap-3 md:grid-cols-[1fr_180px]">
           <div><label className={lbl} htmlFor="fc-name">Campaign name</label><input id="fc-name" className={input} value={c.name} onChange={(e) => setC({ ...c, name: e.target.value })} /></div>
           <div><span className={lbl}><label htmlFor="fc-status">Status</label><Help topic="Status" k="status" /></span>
-            <select id="fc-status" className={input} value={c.status} onChange={(e) => setC({ ...c, status: e.target.value as FunnelCampaign['status'] })}>
+            <select id="fc-status" data-help-id="funnel.status" className={input} value={c.status} onChange={(e) => setC({ ...c, status: e.target.value as FunnelCampaign['status'] })}>
               <option value="draft">Draft</option><option value="active">Active</option><option value="paused">Paused</option><option value="archived">Archived</option>
             </select></div>
         </div>
@@ -91,7 +99,7 @@ export function FunnelDetail({ orgId, data, campaign, reload, onGuided }: { orgI
         {stages.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{stages.map((s) => (
           <span key={s.id} className={`rounded-lg border px-2 py-1 text-[11px] ${s.id === c.entry_stage_id ? 'border-np-blue bg-np-blue-light text-np-blue-dark' : s.id === c.goal_stage_id ? 'border-teal bg-teal-light text-teal-dark' : 'border-gray-100 text-gray-500'}`}>
             {s.name} <b>{data.stage_counts[s.id] ?? 0}</b></span>))}</div>}
-        <div className="mt-3 flex justify-end"><button type="button" disabled={busy} onClick={() => save()} className="rounded-lg bg-np-blue px-3 py-1.5 text-xs font-medium text-white hover:bg-np-blue-hover disabled:opacity-50">Save campaign</button></div>
+        <div className="mt-3 flex justify-end"><button type="button" data-help-id="funnel.save" disabled={busy} onClick={() => save()} className="rounded-lg bg-np-blue px-3 py-1.5 text-xs font-medium text-white hover:bg-np-blue-hover disabled:opacity-50">Save campaign</button></div>
       </div>
 
       <div className={card}>
@@ -110,7 +118,7 @@ export function FunnelDetail({ orgId, data, campaign, reload, onGuided }: { orgI
       </div>
 
       <div className={card}>
-        <h3 className={h3}>Steps<Help topic="Steps" k="steps" /></h3>
+        <h3 className={h3} data-help-id="funnel.steps">Steps<Help topic="Steps" k="steps" /></h3>
         <SequenceEditor key={c.sequence_id ?? 'new'} orgId={orgId} campaignId={c.id} sequenceId={c.sequence_id} name={c.name} initial={steps} assets={data.assets} onSaved={reload} />
       </div>
 
@@ -123,10 +131,10 @@ export function FunnelDetail({ orgId, data, campaign, reload, onGuided }: { orgI
             : 'Only the test contacts on the allowlist receive real messages. Everyone else gets a dry run.'}
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-center"><button type="button" onClick={testDrive} className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium hover:bg-gray-50"><Play className="h-3.5 w-3.5" aria-hidden />Test drive with my test contact</button><Help topic="Test drive" k="testDrive" /></span>
+          <span className="inline-flex items-center"><button type="button" data-help-id="funnel.test-drive" onClick={testDrive} className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium hover:bg-gray-50"><Play className="h-3.5 w-3.5" aria-hidden />Test drive with my test contact</button><Help topic="Test drive" k="testDrive" /></span>
           <span className="flex-1" />
           <label className="inline-flex items-center gap-2 text-xs text-gray-600">
-            <input type="checkbox" checked={c.live_enabled} disabled={!data.can_go_live} onChange={(e) => live(e.target.checked)} />
+            <input type="checkbox" data-help-id="funnel.live" checked={c.live_enabled} disabled={!data.can_go_live} onChange={(e) => live(e.target.checked)} />
             Live sending for this campaign
           </label><Help topic="Live sending" k="live" />
         </div>
@@ -134,6 +142,7 @@ export function FunnelDetail({ orgId, data, campaign, reload, onGuided }: { orgI
         {!data.can_go_live && <p className="mt-1 text-right text-[11px] text-gray-400">Only a platform superadmin can switch live sending on.</p>}
         <TestDriveResult campaignId={c.id} startedAt={drive?.at ?? null} enrollResult={drive?.result ?? null} />
       </div>
+      <CampaignTasks orgId={orgId} tasks={tasks} reload={reload} />
     </div>
   )
 }

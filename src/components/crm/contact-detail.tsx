@@ -25,6 +25,7 @@ import { ContactEquipmentTab } from '@/components/crm/contact-equipment-tab'
 import { ContactMarketingTab } from '@/components/marketing/contact-marketing-tab'
 import EmailComposer from '@/components/crm/email-composer'
 import { createClient } from '@/lib/supabase-browser'
+import { helpId } from '@/lib/agent/help/help-id'
 
 interface PipelineCustomField {
   id: string
@@ -1019,6 +1020,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
             <div className="flex gap-0.5 px-3 py-1.5 border-b border-gray-100 flex-shrink-0 bg-gray-50/50 overflow-x-auto">
               {TABS.map(t => (
                 <button key={t.key} onClick={() => setTab(t.key)}
+                  data-help-id={t.key === 'timeline' ? helpId('contact.tab-timeline') : t.key === 'consent' ? helpId('contact.tab-consent') : t.key === 'campaigns' ? helpId('contact.tab-campaigns') : undefined}
                   className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[10px] font-medium transition-all whitespace-nowrap ${
                     tab === t.key ? 'bg-white shadow-sm text-np-blue' : 'text-gray-500 hover:text-np-dark'
                   }`}>

@@ -8,13 +8,16 @@
 //
 //   UNTOUCHED  byte-for-byte equal to the base (line endings normalised): every existing
 //              voice webhook, the browser call token, the Twilio and org libraries, the
-//              notify path, the entry event raiser, the auth wrapper and the middleware.
+//              notify path, the entry event raiser, the auth wrapper and middleware.ts.
 //   MARKED     equal to the base once the lines between CLICK-TO-CALL-BEGIN and
 //              CLICK-TO-CALL-END are removed: the Conversations page (the button beside
 //              the name) and the timeline ("Not connected" on a failed call).
 //
 // With the flag off the only visible change is a disabled phone icon whose tooltip
 // says click-to-call is turned off; nothing else on the page or in any call path moves.
+//
+// SINCE_AGENT byte-for-byte equal to the Campaign Builder's last commit (ba4ed21): the marketing
+//            flags and the middleware, which that build changed and click-to-call must not.
 //
 // SINCE_C2C  byte-for-byte equal to the click-to-call merge (d3be328): the line picker
 //            touches only the button, the route and the click-to-call libraries, so the
@@ -46,10 +49,8 @@ const UNTOUCHED = {
   'notify-sms': 'src/lib/notify-sms.ts',
   'crm-server': 'src/lib/crm-server.ts',
   'entry-events': 'src/lib/marketing/entry-events.ts',
-  'marketing-flags': 'src/lib/marketing/flags.ts',
   'api-guard': 'src/lib/api-guard.ts',
   'middleware': 'src/middleware.ts',
-  'supabase-middleware': 'src/lib/supabase-middleware.ts',
   'twilio-comms': 'src/components/crm/twilio-comms.tsx',
 }
 const C2C_BASE = process.env.C2C_BASE || 'd3be328'
@@ -61,6 +62,14 @@ const SINCE_C2C = {
   'webhook': 'src/lib/click-to-call/webhook.ts',
   'verify': 'src/lib/click-to-call/verify.ts',
   'signature': 'src/lib/click-to-call/signature.ts',
+}
+// The Campaign Builder build (merged after click-to-call) changed these two on purpose: three
+// flags, and the public /p/<slug> path. Click-to-call still must not touch them, so they are
+// compared with that build's last commit instead of d49d00e, as SINCE_C2C does for its own.
+const AGENT_BASE = process.env.AGENT_BASE || 'ba4ed21'
+const SINCE_AGENT = {
+  'marketing-flags': 'src/lib/marketing/flags.ts',
+  'supabase-middleware': 'src/lib/supabase-middleware.ts',
 }
 const MARKED = {
   'conversations': 'src/app/(dashboard)/crm/conversations/page.tsx',
@@ -107,6 +116,10 @@ for (const [k, f] of Object.entries(SINCE_C2C)) {
   if (active.includes('webhook') && k === 'bridge') now = swap(now, "searchParams.get('step')", "searchParams.get('stepx')")
   const same = now === base(f, C2C_BASE)
   rows.push({ id: `C_${k}`, ok: same, got: same ? `identical to ${C2C_BASE}` : `differs from ${C2C_BASE}` })
+}
+for (const [k, f] of Object.entries(SINCE_AGENT)) {
+  const same = work(f) === base(f, AGENT_BASE)
+  rows.push({ id: `A_${k}`, ok: same, got: same ? `identical to ${AGENT_BASE}` : `differs from ${AGENT_BASE}` })
 }
 
 const red = rows.filter((r) => !r.ok).map((r) => r.id).sort()

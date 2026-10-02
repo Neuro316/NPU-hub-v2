@@ -3,6 +3,9 @@ import { createServerSupabase, createAdminSupabase } from '@/lib/supabase';
 import { logActivity, emitWebhookEvent, verifyCronSecret, isDNC, sendEmailViaWebhook, resolveMergeTags } from '@/lib/crm-server';
 import { sendSms } from '@/lib/twilio';
 import type { EmailWebhookPayload } from '@/types/crm';
+// HUB-MARKETING-BEGIN
+import { aiReviewState } from '@/lib/marketing/ai-review';
+// HUB-MARKETING-END
 
 // ─── POST /api/sequences/enroll ───
 export async function POST(request: NextRequest) {
@@ -11,6 +14,19 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { sequence_id, contact_id } = await request.json();
+  // HUB-MARKETING-BEGIN
+
+  // Copy the Campaign Builder drafted is never sent before a person has reviewed it (agent
+  // rulings 1 and 14). Its sequences are saved active like any other, so this path would
+  // otherwise send unreviewed AI copy while the campaign still reads "draft". Read as the
+  // caller, like every other read here; a failed read refuses. With the Builder never used
+  // there are no AI steps, so this answers clear and the route behaves exactly as before.
+  const review = await aiReviewState(supabase, String(sequence_id ?? ''));
+  if (review === 'unknown') return NextResponse.json({ error: 'The sequence could not be checked. Try again.' }, { status: 503 });
+  if (review === 'unreviewed') {
+    return NextResponse.json({ error: 'This sequence has AI-drafted steps nobody has reviewed yet. Approve them on the campaign first.' }, { status: 409 });
+  }
+  // HUB-MARKETING-END
 
   // Check not already enrolled
   const { data: existing } = await supabase

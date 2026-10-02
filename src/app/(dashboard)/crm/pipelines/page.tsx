@@ -941,7 +941,7 @@ export default function PipelinesPage() {
   if (loading) return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 rounded-lg bg-np-blue/20 animate-pulse" /></div>
 
   return (
-    <div className="space-y-4 animate-in fade-in duration-300">
+    <div className="space-y-4 animate-in fade-in duration-300" data-help-screen="crm-pipelines">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <div className="relative">
@@ -957,7 +957,7 @@ export default function PipelinesPage() {
                   </div>
                 ))}
                 <div className="border-t border-gray-100 mt-1 pt-1">
-                  <button onClick={() => { setShowNewPipeline(true); setShowDropdown(false) }} className="w-full text-left px-3 py-2 text-xs text-np-blue hover:bg-np-blue/5 flex items-center gap-1.5"><Plus size={11} /> New Pipeline</button>
+                  <button data-help-id="pipelines.new" onClick={() => { setShowNewPipeline(true); setShowDropdown(false) }} className="w-full text-left px-3 py-2 text-xs text-np-blue hover:bg-np-blue/5 flex items-center gap-1.5"><Plus size={11} /> New Pipeline</button>
                 </div>
               </div>
             )}
@@ -968,14 +968,14 @@ export default function PipelinesPage() {
           <button onClick={() => setShowMetrics(!showMetrics)} className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg transition-colors ${showMetrics ? 'bg-np-blue/10 text-np-blue' : 'bg-gray-50 text-gray-400'}`}><BarChart3 size={13} /> Metrics</button>
           <button onClick={() => setShowCustomFieldEditor(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-50 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-100 transition-colors"><Sliders size={13} /> Custom Fields</button>
           <button onClick={() => setShowCardConfig(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-50 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-100 transition-colors"><LayoutGrid size={13} /> Card Fields</button>
-          <button onClick={() => setShowStageEditor(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-50 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-100 transition-colors"><Settings size={13} /> Edit Stages</button>
+          <button data-help-id="pipelines.edit-stages" onClick={() => setShowStageEditor(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-50 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-100 transition-colors"><Settings size={13} /> Edit Stages</button>
           <button onClick={() => setShowNewContact(true)} className="flex items-center gap-1.5 px-3 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark transition-colors"><Plus size={13} /> Add Contact</button>
         </div>
       </div>
 
       {showMetrics && <PipelineMetrics contacts={pipelineContacts} stages={activePipeline.stages} />}
 
-      <div className="flex gap-3 overflow-x-auto overflow-y-hidden pb-2" style={{ height: 'calc(100vh - 300px)' }}>
+      <div data-help-id="pipelines.board" className="flex gap-3 overflow-x-auto overflow-y-hidden pb-2" style={{ height: 'calc(100vh - 300px)' }}>
         {activePipeline.stages.map(stage => {
           const sc = stageContacts(stage.name); const sv = stageValue(stage.name)
           return (

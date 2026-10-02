@@ -37,7 +37,10 @@ export async function updateSession(request: NextRequest) {
     // anything without a valid Svix signature.
     pathname === '/api/intake' ||
     pathname === '/api/email/unsubscribe' ||
-    /^\/a\/[A-Za-z0-9_-]+$/.test(pathname)
+    /^\/a\/[A-Za-z0-9_-]+$/.test(pathname) ||
+    // A landing page (agent ruling 12): renders only when published AND the org's `pages`
+    // flag is on, and is otherwise a plain not-found.
+    /^\/p\/[a-z0-9]+(-[a-z0-9]+)*$/.test(pathname)
 
   // Not logged in — redirect to login
   if (!user && !isPublicPath) {

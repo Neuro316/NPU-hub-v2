@@ -60,7 +60,8 @@ for (const t of active) if (!TAMPERS[t]) { console.error(`unknown selector ${t}`
 // ── compile into THIS run's own directory (never a fixed path: verify runs in parallel) ──
 const out = fs.mkdtempSync(path.join(os.tmpdir(), 'hub-pure-'))
 for (const rel of MODULES) {
-  let src = fs.readFileSync(path.join(SRC, rel), 'utf8')
+  // CRLF normalised: a Windows checkout (core.autocrlf) has CRLF, and anchors are written with LF
+  let src = fs.readFileSync(path.join(SRC, rel), 'utf8').replace(/\r\n/g, '\n')
   for (const t of active) for (const [file, from, to] of TAMPERS[t]) {
     if (file !== rel) continue
     if (!src.includes(from)) { console.error(`dead anchor: ${t} in ${file}`); process.exit(2) }
@@ -97,7 +98,7 @@ const check = (id, ok, got) => rows.push({ id, ok: !!ok, got })
 const EM_DASH = String.fromCharCode(0x2014)
 
 // flags
-check('F1', JSON.stringify(parseFlags({ engine: 'on', intake: 'true', gate_live_sends: true })) === JSON.stringify({ engine: true, gate_live_sends: false, provider_email: false, provider_sms: false, intake: false, deliver_asset: false, mirror_legacy_stage: false }), parseFlags({ engine: 'on', intake: 'true', gate_live_sends: true }))
+check('F1', JSON.stringify(parseFlags({ engine: 'on', intake: 'true', gate_live_sends: true })) === JSON.stringify({ engine: true, gate_live_sends: false, provider_email: false, provider_sms: false, intake: false, deliver_asset: false, mirror_legacy_stage: false, agent_enabled: false, help_bot_enabled: false, pages: false }), parseFlags({ engine: 'on', intake: 'true', gate_live_sends: true }))
 check('F2', Object.values(parseFlags(null)).every((x) => x === false), parseFlags(null))
 // sender
 check('P1', senderProblem({ from_address: 'NP <hello@sender-not-set.neuroprogeny.com>', from_domain: 'sender-not-set.neuroprogeny.com' }) === 'sender_is_placeholder')
@@ -196,7 +197,9 @@ check('Q3', rd({ steps: [{ channel: 'sms', kind: 'service' }, { channel: 'email'
   && rd({ steps: [{ channel: 'email', kind: 'service' }], senderProblem: 'sender_is_placeholder' }).sender.fix === 'settings')
 check('N1', /switched off/.test(ui.reasonText('engine_off')) && /opted out or bounced/.test(ui.reasonText('suppressed_complaint')) && ui.reasonText('weird_code').includes('weird code'))
 const copy = [JSON.stringify(ui.TEMPLATES), ...['engine_off', 'no_marketing_consent', 'cap_reached', 'outside_send_window'].map(ui.reasonText),
-  ...fs.readdirSync(path.join(SRC, 'components', 'marketing')).map((f) => fs.readFileSync(path.join(SRC, 'components', 'marketing', f), 'utf8'))].join(' ')
+  // recursive: the Campaign Builder's components live in components/marketing/agent and are Funnels copy too
+  ...fs.readdirSync(path.join(SRC, 'components', 'marketing'), { recursive: true }).map(String).filter((f) => /\.tsx?$/.test(f))
+    .map((f) => fs.readFileSync(path.join(SRC, 'components', 'marketing', f), 'utf8'))].join(' ')
 check('N2', !copy.includes(EM_DASH), 'an em dash in Funnels copy')
 const fkMsg = constraintMessage({ code: '23503', message: 'insert or update on table "sequences" violates foreign key constraint "sequences_created_by_fkey"' }, 'The steps')
 check('D1', fkMsg === 'The steps could not be saved because your team member record could not be matched to this organization.'

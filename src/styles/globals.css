@@ -43,3 +43,11 @@
     @apply w-2 h-2 rounded-full flex-shrink-0;
   }
 }
+
+/* Hub Guide "Show me" (src/lib/agent/help/show-me.ts): an outline only, never a click */
+[data-help-highlight="on"] {
+  outline: 3px solid #7c3aed;
+  outline-offset: 3px;
+  border-radius: 8px;
+  transition: outline-color 0.2s;
+}

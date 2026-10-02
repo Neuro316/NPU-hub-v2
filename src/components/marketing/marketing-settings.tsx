@@ -8,6 +8,7 @@ import { useWorkspace } from '@/lib/workspace-context'
 import { api } from '@/lib/marketing/client'
 import { useToast } from '@/components/ui/toast'
 import type { Flags, Overview } from './types'
+import { AgentSettings } from './agent/agent-settings'
 
 const input = 'w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-np-blue/30'
 const FLAG_TEXT: Record<keyof Flags, string> = {
@@ -18,6 +19,9 @@ const FLAG_TEXT: Record<keyof Flags, string> = {
   intake: 'Public forms accept submissions',
   deliver_asset: 'Deliver steps hand out University links',
   mirror_legacy_stage: 'Campaign stage moves also update the existing pipeline board',
+  agent_enabled: 'Campaign Builder: a superadmin can describe a campaign and get drafts to review',
+  help_bot_enabled: 'Hub Guide: answers how to use the Hub and walks people through it',
+  pages: 'Landing pages: published pages are shown at their public address',
 }
 
 export function MarketingSettings() {
@@ -53,7 +57,7 @@ export function MarketingSettings() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-card border border-gray-100 bg-white p-4 shadow-card">
+      <div className="rounded-card border border-gray-100 bg-white p-4 shadow-card" data-help-id="sending.settings">
         <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-np-dark"><Send className="h-4 w-4 text-np-blue" aria-hidden />Campaign sending</h3>
         {d.sender_problem && <p className="mb-3 flex items-start gap-1.5 rounded-lg bg-gold-light p-2 text-xs text-np-dark"><ShieldAlert className="mt-0.5 h-3.5 w-3.5 text-gold" aria-hidden />
           {d.sender_problem === 'sender_is_placeholder' ? 'The sender is still the placeholder, so no campaign email can go out live. Set a sending subdomain you have verified in Resend.' : `The sender cannot be used yet: ${d.sender_problem.replace(/_/g, ' ')}.`}</p>}
@@ -68,11 +72,11 @@ export function MarketingSettings() {
           {field('cap_days', 'In any number of days')}
         </div>
         <p className="mt-2 text-[11px] text-gray-400">Messages wait for the window in each person's own time zone. The cap counts marketing emails and texts together; service messages such as confirmations and reminders do not count.</p>
-        <div className="mt-3 flex justify-end"><button type="button" onClick={save} className="rounded-lg bg-np-blue px-3 py-1.5 text-xs font-medium text-white hover:bg-np-blue-hover">Save sending settings</button></div>
+        <div className="mt-3 flex justify-end"><button type="button" data-help-id="sending.save" onClick={save} className="rounded-lg bg-np-blue px-3 py-1.5 text-xs font-medium text-white hover:bg-np-blue-hover">Save sending settings</button></div>
       </div>
       <div className="rounded-card border border-gray-100 bg-white p-4 shadow-card">
         <h3 className="mb-2 text-sm font-semibold text-np-dark">Switches</h3>
-        <ul className="space-y-1.5">
+        <ul className="space-y-1.5" data-help-id="sending.switches">
           {(Object.keys(FLAG_TEXT) as Array<keyof Flags>).map((k) => (
             <li key={k} className="flex items-center gap-2 text-xs">
               <input id={`flag-${k}`} type="checkbox" checked={d.flags[k]} disabled={!d.can_go_live} onChange={(e) => flip(k, e.target.checked)} />
@@ -80,9 +84,10 @@ export function MarketingSettings() {
             </li>))}
         </ul>
         {!d.can_go_live && <p className="mt-2 text-[11px] text-gray-400">Only a platform superadmin can change these switches.</p>}
-        <p className="mt-3 text-[11px] font-medium text-gray-500">Test contacts who may receive real messages before a campaign goes live</p>
+        <p className="mt-3 text-[11px] font-medium text-gray-500" data-help-id="sending.allowlist">Test contacts who may receive real messages before a campaign goes live</p>
         {d.test_contacts.map((t) => <p key={t.id} className="text-[11px] text-gray-500">{t.label}: {t.email ?? 'no email'}{t.phone ? ', a phone number' : ''}</p>)}
       </div>
+      {d.can_go_live && currentOrg && <AgentSettings orgId={currentOrg.id} />}
     </div>
   )
 }

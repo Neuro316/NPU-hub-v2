@@ -9,13 +9,17 @@
 // provider, the deliver step).
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-export const FLAG_KEYS = ['engine', 'gate_live_sends', 'provider_email', 'provider_sms', 'intake', 'deliver_asset', 'mirror_legacy_stage'] as const
+// agent_enabled, help_bot_enabled and pages: the Campaign Builder agent, the Hub Guide and
+// public landing pages (docs/plans/hub-agent-build-rulings.md AG1, AG14, AG22).
+export const FLAG_KEYS = ['engine', 'gate_live_sends', 'provider_email', 'provider_sms', 'intake', 'deliver_asset', 'mirror_legacy_stage',
+  'agent_enabled', 'help_bot_enabled', 'pages'] as const
 export type FlagKey = (typeof FLAG_KEYS)[number]
 export type Flags = Record<FlagKey, boolean>
 
 export const ALL_OFF: Flags = {
   engine: false, gate_live_sends: false, provider_email: false, provider_sms: false,
   intake: false, deliver_asset: false, mirror_legacy_stage: false,
+  agent_enabled: false, help_bot_enabled: false, pages: false,
 }
 
 /** Pure: interpret a raw setting value. Only the exact string 'on' turns a flag on. */

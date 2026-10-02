@@ -31,11 +31,11 @@ export default function UniversityAccessPage() {
   const usedBy = (a: Asset) => (data?.steps ?? []).filter((s) => s.asset_id === a.id).length
 
   return (
-    <div className="mx-auto max-w-4xl space-y-4">
+    <div className="mx-auto max-w-4xl space-y-4" data-help-screen="university-access">
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex-1"><h1 className="text-xl font-semibold text-np-dark">University Access</h1>
           <p className="text-sm text-gray-500">Free University resources your campaigns can deliver right after someone signs up.</p></div>
-        <button type="button" onClick={() => setEdit({ ...empty })} className="inline-flex items-center gap-1 rounded-lg bg-np-blue px-3 py-2 text-xs font-medium text-white hover:bg-np-blue-hover"><Plus className="h-3.5 w-3.5" aria-hidden />Add an asset</button>
+        <button type="button" data-help-id="assets.add" onClick={() => setEdit({ ...empty })} className="inline-flex items-center gap-1 rounded-lg bg-np-blue px-3 py-2 text-xs font-medium text-white hover:bg-np-blue-hover"><Plus className="h-3.5 w-3.5" aria-hidden />Add an asset</button>
       </div>
       {data && !data.flags.deliver_asset && <p className="rounded-lg bg-np-light p-3 text-xs text-gray-500">Delivery is switched off for this organization. You can add assets now; links are sent once delivery is switched on.</p>}
       {edit && (
