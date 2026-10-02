@@ -62,8 +62,19 @@ for (const rel of LIBS) {
   compile(rel, src)
 }
 for (const t of active) if (!used.has(t)) { console.error(`dead anchor: ${t} matched no module`); process.exit(2) }
+// The campaign and sequence routes changed ON PURPOSE after the extraction (decision 3's activate
+// guard, and the review marker following each step: scripts/agent/review-gates-tamper.cjs). This
+// harness proves ruling 3 only, so for those two the "new" side is the route as merged with the
+// extraction (EXTRACTED), still running today's validators; the other two are read from disk.
+const EXTRACTED = process.env.PARITY_EXTRACTED || '9507c74'
+const PINNED = new Set(['campaigns', 'sequences'])
 for (const [k, rel] of Object.entries(ROUTES)) {
-  compile(rel.replace('route.ts', 'route_new.ts'), fs.readFileSync(path.join(ROOT, 'src', rel), 'utf8'))
+  let now
+  if (PINNED.has(k)) {
+    try { now = execFileSync('git', ['show', `${EXTRACTED}:src/${rel}`], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) }
+    catch { console.error(`git show ${EXTRACTED}:src/${rel} failed (is the history fetched?)`); process.exit(2) }
+  } else now = fs.readFileSync(path.join(ROOT, 'src', rel), 'utf8')
+  compile(rel.replace('route.ts', 'route_new.ts'), now)
   let old
   try { old = execFileSync('git', ['show', `${BASE}:src/${rel}`], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) }
   catch { console.error(`git show ${BASE}:src/${rel} failed (is the history fetched?)`); process.exit(2) }
