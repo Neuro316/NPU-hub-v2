@@ -16,6 +16,18 @@ export async function POST(request: NextRequest) {
   const { sequence_id, contact_id } = await request.json();
   // HUB-MARKETING-BEGIN
 
+  // Both ids must belong to the caller's organization, and to the SAME one (2026-10-02). The
+  // sequence_enrollments RLS policy cannot be relied on for this: its subquery selects the outer
+  // table's column, so it only asks whether the caller is in any org. Read as the caller: the
+  // sequences policy scopes by membership and the contacts policy by org, so a row the caller may
+  // not see reads as missing and is refused; nothing here can read wider than the caller.
+  const { data: seqOrg, error: seqErr } = await supabase.from('sequences').select('id, org_id').eq('id', String(sequence_id ?? '')).maybeSingle();
+  const { data: who, error: whoErr } = await supabase.from('contacts').select('id, org_id').eq('id', String(contact_id ?? '')).maybeSingle();
+  if (seqErr || whoErr) return NextResponse.json({ error: 'The enrollment could not be checked. Try again.' }, { status: 503 });
+  const sequenceOrg = seqOrg?.org_id;
+  if (!sequenceOrg) return NextResponse.json({ error: 'That sequence is not in your organization.' }, { status: 403 });
+  if (!who || who.org_id !== sequenceOrg) return NextResponse.json({ error: 'That contact is not in this sequence\'s organization.' }, { status: 403 });
+
   // Copy the Campaign Builder drafted is never sent before a person has reviewed it (agent
   // rulings 1 and 14). Its sequences are saved active like any other, so this path would
   // otherwise send unreviewed AI copy while the campaign still reads "draft". Read as the
