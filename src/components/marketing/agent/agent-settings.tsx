@@ -17,7 +17,8 @@ export function AgentSettings({ orgId }: { orgId: string }) {
   const [busy, setBusy] = useState(false)
   const load = useCallback(async () => {
     try { const r = await api('/api/marketing/agent', { action: 'policy', org_id: orgId }); setP(r.policy); setUsage(r.usage) } catch (e: any) { toast.show(e.message, 'error') }
-  }, [orgId, toast])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId]) // toast is a new object on every render, so it would refetch whenever the page reloads
   useEffect(() => { load() }, [load])
   if (!p) return null
   const spent = (mode: string) => Number(usage.find((u) => u.mode === mode)?.spent_usd ?? 0).toFixed(2)

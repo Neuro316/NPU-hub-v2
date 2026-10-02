@@ -3,10 +3,13 @@
 // worst-case reservation counted against the monthly limit, which fails closed (the limit is
 // reached early, never overspent), so it is logged rather than retried or thrown.
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { toMicros } from './pricing'
 
 export interface SettleArgs { p_org: string; p_month: string; p_mode: 'builder' | 'guide'; p_reserved: number; p_actual: number }
 
 export async function settle(db: SupabaseClient, args: SettleArgs): Promise<void> {
-  const { error } = await db.rpc('agent_settle', args)
+  // the reservation is already whole micro-dollars (worstCase); the actual cost is rounded to
+  // match, so release and spend land exactly on what agent_usage stores
+  const { error } = await db.rpc('agent_settle', { ...args, p_actual: toMicros(args.p_actual) })
   if (error) console.error(`[agent] settle failed org=${args.p_org} mode=${args.p_mode} month=${args.p_month}: ${error.code ?? 'unknown'}; the reservation stays counted`)
 }

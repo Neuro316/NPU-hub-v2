@@ -48,5 +48,12 @@ export function costOf(servedBy: string, u: Usage): number {
  * rate, plus the full output allowance, at the ceiling price so a fallback is covered.
  */
 export function worstCase(inputChars: number, maxOutput: number): number {
-  return (inputChars * CEILING.cacheWrite + maxOutput * CEILING.output) / 1_000_000
+  // whole micro-dollars, rounded up: agent_usage stores 6 decimals, so an unrounded amount was
+  // stored rounded and settled unrounded, leaving a residue reserved until the month ended
+  return toMicros((inputChars * CEILING.cacheWrite + maxOutput * CEILING.output) / 1_000_000, 'up')
+}
+
+/** An amount in whole micro-dollars, the precision agent_usage stores. */
+export function toMicros(usd: number, dir: 'up' | 'nearest' = 'nearest'): number {
+  return (dir === 'up' ? Math.ceil(usd * 1e6 - 1e-9) : Math.round(usd * 1e6)) / 1e6
 }

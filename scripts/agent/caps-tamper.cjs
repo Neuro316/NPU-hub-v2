@@ -10,7 +10,10 @@
 //   session    a full session still accepts messages               {E_SESSION_LIMIT}
 //   rate       the rate limit lets an eleventh run through         {E_RATE_LIMIT}
 //   cheap      a timed-out call is settled as costing nothing      {E_UNAVAILABLE}
-// TAMPER=1 reddens the union (5).
+//   rawmicros  the reservation is not whole micro-dollars           {E_MICROS,E_UNAVAILABLE}
+//              (an unrounded reservation also breaks E_UNAVAILABLE's release equals reserve; it
+//              shares that case with cheap, and both push it red, so they cannot cancel)
+// TAMPER=1 reddens the union (6).
 const H = require('./lib/harness.cjs')
 
 const TAMPERS = {
@@ -21,9 +24,10 @@ const TAMPERS = {
   nocap: [['lib/agent/loop.ts', "if (!(r as any)?.ok) { outcome = 'cap_hit'; break }", '']],
   session: [['lib/agent/session.ts', 'if (n >= i.policy.session_messages)', 'if (false)']],
   rate: [['lib/agent/session.ts', 'return (count ?? 0) >= RATE_LIMIT.runs', 'return (count ?? 0) > RATE_LIMIT.runs']],
+  rawmicros: [['lib/agent/pricing.ts', "return toMicros((inputChars * CEILING.cacheWrite + maxOutput * CEILING.output) / 1_000_000, 'up')", 'return (inputChars * CEILING.cacheWrite + maxOutput * CEILING.output) / 1_000_000']],
   cheap: [['lib/agent/loop.ts', 'const spent = e instanceof ModelUnavailable ? reserve : 0', 'const spent = 0']],
 }
-const RED_OF = { nostep: ['E_STEP_LIMIT'], nocap: ['E_MONTHLY_CAP'], session: ['E_SESSION_LIMIT'], rate: ['E_RATE_LIMIT'], cheap: ['E_UNAVAILABLE'] }
+const RED_OF = { nostep: ['E_STEP_LIMIT'], nocap: ['E_MONTHLY_CAP'], session: ['E_SESSION_LIMIT'], rate: ['E_RATE_LIMIT'], cheap: ['E_UNAVAILABLE'], rawmicros: ['E_MICROS', 'E_UNAVAILABLE'] }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-caps')
 const load = H.install(out)
@@ -88,6 +92,13 @@ async function run({ reserveOk = true, client, policy = { ...DEFAULT_POLICY } })
   // the rate limit: ten runs in the window allowed, the eleventh refused
   const counted = (c) => H.stubDb({}, { table: (t, ops) => (t === 'agent_runs' ? { data: null, count: c, error: null } : undefined) })
   check('E_RATE_LIMIT', (await rateLimited(counted(9), 'U1', 'builder')) === false && (await rateLimited(counted(10), 'U1', 'builder')) === true, null)
+
+  // every amount sent to the database is whole micro-dollars, the precision agent_usage stores,
+  // so a release always matches what was reserved and no residue is left counted
+  const amounts = []
+  for (const x of [down]) for (const c of x.db.calls) if (c.rpc === 'agent_reserve') amounts.push(c.args.p_amount); else if (c.rpc === 'agent_settle') amounts.push(c.args.p_reserved, c.args.p_actual)
+  const whole = (v) => Math.abs(v * 1e6 - Math.round(v * 1e6)) < 1e-6
+  check('E_MICROS', amounts.length >= 3 && amounts.every(whole), amounts)
 
   H.report(rows, active, RED_OF, () => require('fs').rmSync(out, { recursive: true, force: true }))
 })().catch((e) => { console.error(e); process.exit(2) })

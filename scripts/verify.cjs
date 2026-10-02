@@ -26,7 +26,7 @@ const HARNESSES = [
   { file: 'scripts/agent/golden-goals.cjs', selectors: ['noresolve', 'connectedany', 'nosms', 'nosender', 'noconsent', 'noclaims', '1'] },
   { file: 'scripts/agent/adversarial-tamper.cjs', selectors: ['sendtool', 'unknowntool', 'livefield', 'nowrap', 'reqdata', 'formsrc', '1'] },
   { file: 'scripts/agent/contract-tamper.cjs', selectors: ['channel', 'taskkind', 'block', '1'] },
-  { file: 'scripts/agent/caps-tamper.cjs', selectors: ['nostep', 'nocap', 'session', 'rate', 'cheap', '1'] },
+  { file: 'scripts/agent/caps-tamper.cjs', selectors: ['nostep', 'nocap', 'session', 'rate', 'cheap', 'rawmicros', '1'] },
   { file: 'scripts/agent/leak-tamper.cjs', selectors: ['star', 'passthrough', 'noscrub', 'colleak', '1'] },
   { file: 'scripts/agent/flag-off-parity.cjs', selectors: ['noflag', 'nosuper', 'touch', '1'] },
   { file: 'scripts/agent/guide-tamper.cjs', selectors: ['nocite', 'anytarget', 'anyroute', 'noflag', 'nogap', 'leakctx', 'dash', 'writetask', 'policyopen', 'stubprod', 'anytag', 'clickme', '1'] },
