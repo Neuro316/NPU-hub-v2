@@ -123,7 +123,9 @@ const GOOD = { found: true, text: 'Use a test drive on the campaign page.', cite
     const gap = db.calls.find((x) => x.table === 'help_gaps')
     const q = gap ? gap.ops[0][1][0].question : ''
     check('G_GAP', res.outcome === 'no_answer' && res.answer.steps.length === 0 && res.message.startsWith('This is not from the Hub help articles: ')
-      && gap && q.includes('[email]') && q.includes('[phone]') && !q.includes('jane.doe') && !q.includes('555-0199'), { outcome: res.outcome, message: res.message, q })
+      && gap && q.includes('[email]') && q.includes('[phone]') && !q.includes('jane.doe') && !q.includes('555-0199')
+      // ruling 26: the question handed back to the panel (and so to its storage) is that same scrubbed text
+      && res.question === q, { outcome: res.outcome, message: res.message, q, returned: res.question })
     const tables = [...new Set(writes(db).map((x) => x.table))].sort()
     check('G_READONLY', tables.includes('agent_runs') && tables.every((t) => t === 'agent_runs' || t === 'help_gaps'), tables)
   }

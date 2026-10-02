@@ -52,7 +52,8 @@ const fullArticle = (a: Article) => [`# ${a.title} (id: ${a.id}, page: ${a.route
   a.summary, 'Steps:', ...a.steps.map((s, i) => `${i + 1}. ${s}`), 'Common mistakes:', ...a.mistakes.map((m) => `- ${m}`)].join('\n')
 
 export type GuideOutcome = 'answered' | 'no_answer' | 'cap_hit' | 'model_unavailable' | 'failed'
-export interface GuideResult { runId: string | null; outcome: GuideOutcome; answer: GuideAnswer | null; message: string; costUsd: number }
+// question: as stored and as the panel may keep it, scrubbed of emails and phone numbers (ruling 26)
+export interface GuideResult { runId: string | null; outcome: GuideOutcome; answer: GuideAnswer | null; message: string; costUsd: number; question: string }
 
 const MESSAGES: Record<Exclude<GuideOutcome, 'answered'>, string> = {
   no_answer: 'I could not find this in the Hub help articles.',
@@ -71,11 +72,11 @@ export async function runGuide(i: {
   // context without data (ruling 19): only a known route and a known screen id are kept
   const route = i.route && REGISTRY.routes.includes(i.route) ? i.route : null
   const helpId = i.helpId && REGISTRY.screens.includes(i.helpId) ? i.helpId : null
-  if (!priceFor(model)) return { runId: null, outcome: 'failed', answer: null, message: 'The Hub Guide is set to a model it cannot price. Check AGENT_HELP_MODEL.', costUsd: 0 }
+  if (!priceFor(model)) return { runId: null, outcome: 'failed', answer: null, message: 'The Hub Guide is set to a model it cannot price. Check AGENT_HELP_MODEL.', costUsd: 0, question }
 
   const { data: run, error: runErr } = await i.db.from('agent_runs').insert({ session_id: i.sessionId, org_id: i.org, user_id: i.userId, mode: 'guide',
     prompt: question, route, help_id: helpId, guide_version: GUIDE_VERSION, model_id: model, outcome: 'running' }).select('id').single()
-  if (runErr || !run) return { runId: null, outcome: 'failed', answer: null, message: MESSAGES.failed, costUsd: 0 }
+  if (runErr || !run) return { runId: null, outcome: 'failed', answer: null, message: MESSAGES.failed, costUsd: 0, question }
   const runId = (run as any).id as string
 
   const retrieved = new Map<string, Article>()
@@ -150,5 +151,5 @@ export async function runGuide(i: {
   if (logErr || (logged?.length ?? 0) !== 1) console.error(`[agent/guide] run ${runId} log not finalised (${logErr?.code ?? 'no row'}); cost ${cost.toFixed(4)} recorded only in agent_usage`)
 
   const message = outcome === 'answered' ? answer!.text : answer?.text ?? MESSAGES[outcome as Exclude<GuideOutcome, 'answered'>]
-  return { runId, outcome, answer, message, costUsd: cost }
+  return { runId, outcome, answer, message, costUsd: cost, question }
 }

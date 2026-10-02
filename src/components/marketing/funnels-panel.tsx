@@ -9,7 +9,7 @@ import { api } from '@/lib/marketing/client'
 import { FunnelDetail } from './funnel-detail'
 import { FunnelWizard } from './funnel-wizard'
 import { HowItWorks } from './help'
-import { AgentPanel, type PanelMode } from './agent/agent-panel'
+import { useAgentShell } from './agent/agent-shell'
 import { BuilderFlow } from './agent/builder-flow'
 import { needsReview } from './agent/ai-chip'
 import type { Overview } from './types'
@@ -24,7 +24,8 @@ export function FunnelsPanel() {
   const [error, setError] = useState<string | null>(null)
   const [sel, setSel] = useState<string | null>(null)
   const [wizard, setWizard] = useState<{ id: string | null; key: string } | null>(null)
-  const [panel, setPanel] = useState<{ open: boolean; mode: PanelMode; campaignId: string | null }>({ open: false, mode: 'guide', campaignId: null })
+  // the Guide and Builder panel lives in the app shell (ruling 26); this tab only opens it
+  const shell = useAgentShell()
 
   const load = useCallback(async () => {
     if (!currentOrg) return
@@ -32,6 +33,13 @@ export function FunnelsPanel() {
     catch (e: any) { setError(e.message) }
   }, [currentOrg])
   useEffect(() => { load() }, [load])
+  // a Build in the shell's panel: reload so the new draft is listed, then open it
+  useEffect(() => {
+    if (!shell.state.builtAt) return
+    load()
+    if (shell.state.builtCampaignId) { setWizard(null); setSel(shell.state.builtCampaignId) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shell.state.builtAt])
   // ?funnel=<id> opens that campaign: Campaign Builder tasks in Client Tasks link here
   useEffect(() => {
     const want = new URLSearchParams(window.location.search).get('funnel')
@@ -48,8 +56,8 @@ export function FunnelsPanel() {
   const current = data.campaigns.find((c) => c.id === sel) ?? null
   const wizardFor = wizard?.id ? data.campaigns.find((c) => c.id === wizard.id) ?? null : null
   // the server checks both again on every call; these only decide what to show
-  const builderOn = data.can_go_live && data.flags.agent_enabled
-  const guideOn = data.flags.help_bot_enabled
+  const builderOn = !!shell.caps?.builder
+  const guideOn = !!shell.caps?.guide
   const built = (ids: any) => { load(); if (ids?.campaign) { setWizard(null); setSel(ids.campaign) } }
 
   return (
@@ -57,8 +65,8 @@ export function FunnelsPanel() {
       <div className="flex items-center gap-1 text-sm text-gray-600">
         <span>Funnel campaigns bring people in from an event, place them on your pipeline, and send them a series of messages until they reach a goal.</span><HowItWorks />
         <span className="flex-1" />
-        {guideOn && <button type="button" data-help-id="guide.open" onClick={() => setPanel({ open: true, mode: 'guide', campaignId: null })} className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs text-np-dark hover:bg-gray-50"><Compass className="h-3.5 w-3.5 text-np-blue" aria-hidden />Hub Guide</button>}
-        {builderOn && <button type="button" data-help-id="builder.open" onClick={() => setPanel({ open: true, mode: 'builder', campaignId: null })} className="inline-flex items-center gap-1 rounded-lg border border-purple-200 px-2.5 py-1.5 text-xs text-purple-700 hover:bg-purple-50"><Sparkles className="h-3.5 w-3.5" aria-hidden />Campaign Builder</button>}
+        {guideOn && <button type="button" data-help-id="guide.open" onClick={() => shell.open('guide')} className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs text-np-dark hover:bg-gray-50"><Compass className="h-3.5 w-3.5 text-np-blue" aria-hidden />Hub Guide</button>}
+        {builderOn && <button type="button" data-help-id="builder.open" onClick={() => shell.open('builder', null)} className="inline-flex items-center gap-1 rounded-lg border border-purple-200 px-2.5 py-1.5 text-xs text-purple-700 hover:bg-purple-50"><Sparkles className="h-3.5 w-3.5" aria-hidden />Campaign Builder</button>}
       </div>
       <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
         <div className="space-y-2" data-help-id="funnels.list">
@@ -89,12 +97,10 @@ export function FunnelsPanel() {
             : current
               ? <FunnelDetail key={current.id} orgId={currentOrg.id} data={data} campaign={current} reload={load} onGuided={() => setWizard({ id: current.id, key: current.id })}
                   tasks={(data.campaign_tasks ?? []).filter((t) => t.campaign_id === current.id)}
-                  onRevise={builderOn ? () => setPanel({ open: true, mode: 'builder', campaignId: current.id }) : undefined} />
+                  onRevise={builderOn ? () => shell.open('builder', current.id) : undefined} />
               : <div className="rounded-card border border-dashed border-gray-200 p-8 text-center text-sm text-gray-500">Choose a campaign on the left to see and edit it, or press New funnel campaign to set one up step by step.</div>}
         </div>
       </div>
-      <AgentPanel orgId={currentOrg.id} open={panel.open} mode={panel.mode} onMode={(m) => setPanel({ ...panel, mode: m })} onClose={() => setPanel({ ...panel, open: false })}
-        guideOn={guideOn} builderOn={builderOn} campaignId={panel.campaignId} onBuilt={built} />
     </div>
   )
 }

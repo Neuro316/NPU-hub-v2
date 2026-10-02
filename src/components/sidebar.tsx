@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import { NotificationBell } from '@/components/notification-bell'
 import { navCategories, applySidebarOrder } from '@/lib/nav-config'
+import { clearShellStorage } from '@/lib/agent/shell-state'
 
 /* EHR items */
 interface EhrItem {
@@ -63,6 +64,8 @@ export function Sidebar() {
 
   const handleSignOut = async () => {
     const supabase = createClient()
+    // the Hub Guide's stored panel state goes first: the redirect below may beat any listener (ruling 26)
+    try { clearShellStorage(window.sessionStorage) } catch { /* storage blocked: nothing was stored */ }
     await supabase.auth.signOut()
     window.location.href = '/login'
   }

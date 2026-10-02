@@ -8,7 +8,7 @@ import { VoiceReceiverProvider } from '@/lib/voice-receiver-context'
 import { IncomingCallBanner, useCallBannerVisible, CALL_BANNER_HEIGHT_PX } from '@/components/incoming-call-banner'
 import { Sidebar } from '@/components/sidebar'
 import { TrackerInit } from '@/components/tracker-init'
-import { HelpBot } from '@/components/help-bot'
+import { AgentShellProvider } from '@/components/marketing/agent/agent-shell'
 import { DynamicFavicon } from '@/components/dynamic-favicon'
 import { ToastProvider } from '@/components/ui/toast'
 import { Menu } from 'lucide-react'
@@ -75,12 +75,15 @@ export default function DashboardLayout({
            <ToastProvider>
             <TrackerInit />
             <DynamicFavicon />
+            {/* The Hub Guide and Campaign Builder panel, and the old HelpBot behind it (ruling 26):
+                one instance above the page tree, so it survives navigation. */}
+            <AgentShellProvider>
             <DashboardContent>{children}</DashboardContent>
             {/* Calls can arrive on any page — the banner is pinned above
                 everything and lives outside the page tree, so navigating
                 between CRM and non-CRM routes never unmounts it. */}
             <IncomingCallBanner />
-            <HelpBot />
+            </AgentShellProvider>
            </ToastProvider>
           </SidebarProvider>
         </VoiceReceiverProvider>
