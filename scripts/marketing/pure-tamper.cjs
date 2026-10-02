@@ -60,7 +60,8 @@ for (const t of active) if (!TAMPERS[t]) { console.error(`unknown selector ${t}`
 // ── compile into THIS run's own directory (never a fixed path: verify runs in parallel) ──
 const out = fs.mkdtempSync(path.join(os.tmpdir(), 'hub-pure-'))
 for (const rel of MODULES) {
-  let src = fs.readFileSync(path.join(SRC, rel), 'utf8')
+  // CRLF normalised: a Windows checkout (core.autocrlf) has CRLF, and anchors are written with LF
+  let src = fs.readFileSync(path.join(SRC, rel), 'utf8').replace(/\r\n/g, '\n')
   for (const t of active) for (const [file, from, to] of TAMPERS[t]) {
     if (file !== rel) continue
     if (!src.includes(from)) { console.error(`dead anchor: ${t} in ${file}`); process.exit(2) }
