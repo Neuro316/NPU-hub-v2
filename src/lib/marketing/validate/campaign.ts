@@ -14,7 +14,9 @@ export interface CampaignLookup {
   stagePipeline(stageId: string): Promise<string | undefined>
 }
 
-export type CampaignCheck = { ok: true; name: string } | { ok: false; message: string }
+// notInOrg: an id the request names is not a row of the caller's org. The screen answers 403 for
+// it (a reference across organizations), and 400 for every other failure.
+export type CampaignCheck = { ok: true; name: string } | { ok: false; message: string; notInOrg?: true }
 
 export async function checkCampaign(b: any, lookup: CampaignLookup): Promise<CampaignCheck> {
   const name = typeof b?.name === 'string' ? b.name.trim() : ''
@@ -29,7 +31,7 @@ export async function checkCampaign(b: any, lookup: CampaignLookup): Promise<Cam
   for (const [table, field, id] of checks) {
     if (id == null || id === '') continue
     if (!(await lookup.inOrg(table, id as string))) {
-      return { ok: false, message: `The ${field.replace(/_id$/, '').replace(/_/g, ' ')} was not found in this organization.` }
+      return { ok: false, notInOrg: true, message: `The ${field.replace(/_id$/, '').replace(/_/g, ' ')} was not found in this organization.` }
     }
   }
   if (b.entry_stage_id && (await lookup.stagePipeline(b.entry_stage_id)) !== b.entry_pipeline_id) {

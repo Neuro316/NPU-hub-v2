@@ -3,7 +3,7 @@
 // in the body is only honoured when that campaign belongs to the caller's org. The
 // live switch is NOT settable here: see /api/marketing/campaigns/live.
 import { NextResponse } from 'next/server'
-import { withStaff, requireOrg, bad } from '@/lib/api-guard'
+import { withStaff, requireOrg, bad, forbidden } from '@/lib/api-guard'
 import { constraintMessage } from '@/lib/marketing/db-errors'
 import { checkCampaign, dbCampaignLookup } from '@/lib/marketing/validate/campaign'
 import { unreviewedAiStepCount } from '@/lib/marketing/ai-review'
@@ -17,7 +17,8 @@ export const POST = withStaff(async (req, ctx) => {
   const db = ctx.db
   // the same checks the Campaign Builder agent runs (src/lib/marketing/validate/campaign.ts)
   const check = await checkCampaign(b, dbCampaignLookup(db, org))
-  if (!check.ok) return bad(check.message)
+  // an id from another organization is refused as forbidden, not as a malformed request
+  if (!check.ok) return check.notInOrg ? forbidden(check.message) : bad(check.message)
   const name = check.name
   const row = {
     org_id: org, name, description: b.description ?? null, status: b.status ?? 'draft',
