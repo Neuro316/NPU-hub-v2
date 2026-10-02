@@ -491,3 +491,38 @@ the record that it is applied.
   `service_role` only.
 
 **Branch `hub-agent-213` deleted** after the harness runs.
+
+
+## 12. Stage end: click-through, cleanup and ruling 26 (2026-10-02)
+
+**Click-through j**, localhost with `AGENT_STUB_MODEL=1`, signed in as cameron@, org Neuro Progeny,
+against production (approved write by write):
+
+- Flags switched on through CRM Settings > Campaign sending; read back
+  `{"engine":"on","agent_enabled":"on","help_bot_enabled":"on"}`.
+- Guide, three questions: "How do I test a campaign before it goes live?" (cited
+  `dry-run-vs-live`), "How do I use the Hub Guide walkthrough?" (cited `hub-guide`; Show me outlined
+  `guide.open` and clicked nothing), "How do I raise the Hub Guide monthly spending limit?" (cited
+  `ai-assistant-limits`; Take me there moved `/campaigns` to `/crm/settings`).
+- Builder, wizard describe step: Draft it, review, Build as a draft. Read back: the campaign was a
+  draft with live off, 0 routes, 3 AI-marked steps, 4 campaign tasks and 4 Client Tasks assigned to the
+  runner's `team_members` row with no contact, and 0 kanban, timeline or SMS outbox rows. Approve set
+  `ai_reviewed_at`. Revise opened the side panel on the Builder tab. `?funnel=<id>` opened the draft.
+- Not run live: the enroll guard. `sequence_enrollments.contact_id` has no foreign key, so a broken
+  guard would have written a junk enrollment. `scope-tamper` covers it (X_ENROLL_GUARD, X_ENROLL_WIRED).
+- Found and fixed: a micro-dollar residue left reserved after settle (E_MICROS), and the AI assistants
+  card refetching on every parent reload.
+
+**Cleanup**, one transaction with asserted counts (4 Client Tasks, 1 campaign cascading its 4 campaign
+tasks, 1 sequence cascading 3 steps, 2 sessions cascading 4 runs, 2 usage rows, flags restored to the
+captured baseline `{"engine":"on"}`). Read back: 0 agent rows, 0 AI-marked rows anywhere, 0
+`campaign_builder` Client Tasks, `campaign_routes` 1, `entry_events` 1 with the newest row from before
+the click-through (no baseline was captured for that table; this is the closest honest check), flags
+equal to the baseline. Controls: 4 campaigns and 351 kanban rows still present.
+
+**26. The Guide panel moves to the shared app shell before `help_bot_enabled` is switched on for
+anyone.** Ruled by Cameron 2026-10-02. As built, the panel is mounted only on the Campaigns Funnels
+tab, so after Take me there the person lands on a page with no panel and the walkthrough cannot
+continue. Merge as built with `help_bot_enabled` off. Before the flag is switched on for any org: mount
+the panel in the dashboard layout so it appears on every screen, and keep its session state (the
+question, the answer, the step reached) across navigation.
