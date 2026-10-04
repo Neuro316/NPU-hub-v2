@@ -13,6 +13,7 @@
     "check:kj": "node scripts/hrv/kj-hub-writers-tamper.cjs",
     "verify": "node scripts/verify.cjs",
     "guards": "node scripts/guards/run-guards.cjs",
+    "guards:refresh": "node scripts/guards/run-guards.cjs --refresh-platform",
     "check:marketing": "node scripts/marketing/pure-tamper.cjs && node scripts/marketing/flags-off-parity.cjs",
     "agent:content": "node scripts/agent/gen-content.cjs"
   },

@@ -51,7 +51,7 @@ report(gen.code === 0, `generated agent content is current${gen.code ? `\n${gen.
 
 const g = run(process.execPath, ['scripts/guards/run-guards.cjs'])
 report(g.code === 0, `guards${g.code ? `\n${g.out.split('\n').filter((l) => /FAIL|NEW|RED/.test(l)).join('\n')}` : ''}`)
-for (const t of ['G1', 'G2', 'G3', 'G4', 'G5']) {
+for (const t of ['G1', 'G2', 'G3', 'G4', 'G5', 'G6']) {
   const r = run(process.execPath, ['scripts/guards/run-guards.cjs'], { TAMPER: t })
   report(r.code === 3, `guards TAMPER=${t} must exit 3 (got ${r.code})`)
 }

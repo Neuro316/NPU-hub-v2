@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // scripts/guards/run-guards.cjs
 //
-// Five build-failing guards (hardening b). Each guard is a pure function over a "tree"
+// Six build-failing guards (hardening b). Each guard is a pure function over a "tree"
 // (a map of path -> text), so it is first run against FIXTURES that each plant one
 // instance of the exact defect it exists to catch, and must report exactly that
 // finding, and a clean fixture must report none. Only then is it run on the real repo.
@@ -11,7 +11,10 @@
 //   G2 cron not in vercel.json, unreachable through middleware, or not failing closed
 //   G3 environment variable read in src/ but missing from .env.example
 //   G4 table created by a Hub migration (hub_211 onward) without RLS enabled
-//   G5 Hub migration number (211 onward) colliding with a platform migration number
+//   G5 Hub migration (211 onward) whose FULL PREFIXED name collides with a platform one, or a
+//      Hub number used twice. pf_NNN is the platform's; hub_NNN and bare NNN are the Hub's;
+//      equal numbers under different prefixes are not collisions (ruled 2026-10-04).
+//   G6 platform-migrations.txt missing a migration the sibling checkout has (stale snapshot)
 //
 // Code that predates this build is listed in scripts/guards/baseline.json by name, so
 // the guards fail on NEW violations. The baseline is a list of known findings, reported
@@ -109,22 +112,38 @@ function g4(tree) {
 }
 
 // ── G5 ───────────────────────────────────────────────────────────────────────
+// Keys keep their prefix: hub_211, 202, pf_211, 189. A cross-repo collision is an IDENTICAL
+// key (in practice bare NNN against bare NNN); pf_211 against hub_211 is not one. Within the
+// Hub both prefixes are ours, so hub_214 and bare 214 together are one number used twice.
+const lines = (s) => (s || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+const platformNames = (tree) => [...lines(tree['__platform_snapshot__']), ...lines(tree['__platform_sibling__'])]
 function g5(tree) {
-  const hub = Object.keys(tree).map((f) => /^supabase\/migrations\/(?:hub_)?(\d{3})_/.exec(f)).filter(Boolean).map((m) => Number(m[1]))
-  const platform = (tree['__platform__'] || '').split(/\r?\n/).map((l) => /^(?:pf_)?(\d{3})_/.exec(l.trim())).filter(Boolean).map((m) => Number(m[1]))
-  const plat = new Set(platform)
+  const hub = Object.keys(tree).map((f) => /^supabase\/migrations\/((?:hub_)?(\d{3}))_/.exec(f)).filter(Boolean)
+  const plat = new Set(platformNames(tree).map((l) => /^((?:pf_)?\d{3})_/.exec(l)).filter(Boolean).map((m) => m[1]))
   const out = []
   const seen = new Map()
-  for (const n of hub) {
+  for (const [, key, num] of hub) {
+    const n = Number(num)
     if (n < 211) continue
-    if (TAMPER !== 'G5' && plat.has(n)) out.push(`hub migration ${n} collides with platform migration ${n}`)
+    if (TAMPER !== 'G5' && plat.has(key)) out.push(`hub migration ${key} collides with platform migration ${key}`)
     if (TAMPER !== 'G5' && seen.has(n)) out.push(`hub migration ${n} is numbered twice`)
     seen.set(n, true)
   }
   return out.sort()
 }
 
-const GUARDS = { G1: g1, G2: g2, G3: g3, G4: g4, G5: g5 }
+// ── G6 ───────────────────────────────────────────────────────────────────────
+// CI has no sibling checkout, so G5 there sees the snapshot alone. Wherever the sibling IS
+// present, the snapshot must hold every migration it has, or the two G5s disagree.
+// Names, not mtimes: a git checkout resets mtimes.
+function g6(tree) {
+  if (tree['__platform_sibling__'] == null) return []
+  const snap = new Set(lines(tree['__platform_snapshot__']))
+  return lines(tree['__platform_sibling__']).filter((n) => /\.sql$/.test(n) && (TAMPER === 'G6' ? false : !snap.has(n)))
+    .map((n) => `platform-migrations.txt is stale: missing ${n} (npm run guards:refresh)`).sort()
+}
+
+const GUARDS = { G1: g1, G2: g2, G3: g3, G4: g4, G5: g5, G6: g6 }
 
 // ── self-test: one planted defect per guard, and a clean tree ────────────────
 const CLEAN = {
@@ -136,7 +155,8 @@ const CLEAN = {
   '.env.example': 'CRON_SECRET=\nRESEND_API_KEY=\n',
   'src/lib/x.ts': 'process.env.RESEND_API_KEY; process.env.CRON_SECRET',
   'supabase/migrations/hub_211_x.sql': "create table public.a (id int);\nalter table public.a enable row level security;\ndo $$ begin foreach t in array array['b'] loop execute format('alter table public.%I enable row level security', t); end loop; end $$;\ncreate table public.b (id int);",
-  '__platform__': 'pf_201_x.sql\npf_202_y.sql\n',
+  '__platform_snapshot__': 'pf_201_x.sql\npf_202_y.sql\n',
+  '__platform_sibling__': 'pf_201_x.sql\npf_202_y.sql\n',
 }
 const PLANTED = {
   G1: [{ 'src/app/api/leak/route.ts': 'export async function GET() { const db = createAdminSupabase() }' }, ['src/app/api/leak/route.ts']],
@@ -145,7 +165,13 @@ const PLANTED = {
        ['/api/stats/rollup: does not fail closed when CRON_SECRET is unset', '/api/stats/rollup: unreachable, middleware redirects a cookieless cron to /login']],
   G3: [{ 'src/lib/y.ts': 'process.env.SECRET_NOBODY_LISTED' }, ['SECRET_NOBODY_LISTED (read in src/lib/y.ts)']],
   G4: [{ 'supabase/migrations/hub_212_y.sql': 'create table public.open_table (id int);' }, ['supabase/migrations/hub_212_y.sql: table open_table has no RLS']],
-  G5: [{ 'supabase/migrations/hub_202_z.sql': '', 'supabase/migrations/hub_213_z.sql': '', '__platform__': 'pf_202_y.sql\npf_213_q.sql\n' }, ['hub migration 213 collides with platform migration 213']],
+  // a true cross-repo collision (bare 213 on both sides), a Hub number used twice, and the
+  // ruled NON-collision hub_212 vs pf_212, which must stay silent: a G5 that reports nothing
+  // fails, and so does one that still strips the prefix.
+  G5: [{ 'supabase/migrations/213_z.sql': '', 'supabase/migrations/hub_214_a.sql': '', 'supabase/migrations/hub_214_b.sql': '',
+         'supabase/migrations/hub_212_y.sql': '', '__platform_snapshot__': 'pf_202_y.sql\npf_212_y.sql\n213_q.sql\n' },
+       ['hub migration 213 collides with platform migration 213', 'hub migration 214 is numbered twice']],
+  G6: [{ '__platform_sibling__': 'pf_201_x.sql\npf_202_y.sql\npf_203_new.sql\n' }, ['platform-migrations.txt is stale: missing pf_203_new.sql (npm run guards:refresh)']],
 }
 let selfFail = 0
 for (const [g, fn] of Object.entries(GUARDS)) {
@@ -155,6 +181,13 @@ for (const [g, fn] of Object.entries(GUARDS)) {
   const ok = clean.length === 0 && JSON.stringify(got) === JSON.stringify([...want].sort())
   console.log(`${ok ? 'ok  ' : 'RED '} self-test ${g}: clean=${clean.length} planted=${JSON.stringify(got)}`)
   if (!ok) selfFail++
+}
+// G6 without a sibling (CI) reports nothing, even against an empty snapshot
+{
+  const { __platform_sibling__: _, ...noSibling } = { ...CLEAN, '__platform_snapshot__': '' }
+  const got = g6(noSibling)
+  console.log(`${got.length ? 'RED ' : 'ok  '} self-test G6 without a sibling: ${JSON.stringify(got)}`)
+  if (got.length) selfFail++
 }
 if (selfFail) {
   console.error(`FATAL: ${selfFail} guard(s) cannot find the defect they exist to catch.`)
@@ -176,10 +209,17 @@ for (const p of [...walk(path.join(ROOT, 'src')), ...walk(path.join(ROOT, 'supab
   if (/\.(ts|tsx|sql)$/.test(p)) tree[path.relative(ROOT, p).split(path.sep).join('/')] = fs.readFileSync(p, 'utf8')
 }
 for (const f of ['vercel.json', '.env.example']) tree[f] = fs.existsSync(path.join(ROOT, f)) ? fs.readFileSync(path.join(ROOT, f), 'utf8') : ''
-let platform = fs.existsSync(PLATFORM_SNAPSHOT) ? fs.readFileSync(PLATFORM_SNAPSHOT, 'utf8') : ''
 const sibling = path.resolve(ROOT, '..', 'npu-platform-v2', 'supabase', 'migrations')
-if (fs.existsSync(sibling)) platform += '\n' + fs.readdirSync(sibling).join('\n')
-tree['__platform__'] = platform
+const siblingNames = fs.existsSync(sibling) ? fs.readdirSync(sibling).filter((n) => /\.sql$/.test(n)).sort() : null
+// `npm run guards:refresh`: regenerate the snapshot from the sibling, whenever the platform adds a migration
+if (process.argv.includes('--refresh-platform')) {
+  if (!siblingNames) { console.error(`FATAL: no sibling checkout at ${sibling}; cannot refresh the snapshot`); process.exit(1) }
+  fs.writeFileSync(PLATFORM_SNAPSHOT, siblingNames.join('\n') + '\n')
+  console.log(`platform snapshot written: ${siblingNames.length} migrations, newest ${siblingNames[siblingNames.length - 1]}`)
+  process.exit(0)
+}
+tree['__platform_snapshot__'] = fs.existsSync(PLATFORM_SNAPSHOT) ? fs.readFileSync(PLATFORM_SNAPSHOT, 'utf8') : ''
+if (siblingNames) tree['__platform_sibling__'] = siblingNames.join('\n')
 
 const results = Object.fromEntries(Object.entries(GUARDS).map(([g, fn]) => [g, fn(tree)]))
 if (process.argv.includes('--write-baseline')) {
