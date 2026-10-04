@@ -99,6 +99,7 @@ export default function AdvisoryPage() {
 
   // Voices
   const [voices, setVoices] = useState<AdvisoryVoice[]>(DEFAULT_VOICES)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [selectedVoice, setSelectedVoice] = useState<string | null>(null)
   const [editingVoice, setEditingVoice] = useState<AdvisoryVoice | null>(null)
   const [uploadingTo, setUploadingTo] = useState<string | null>(null)
@@ -162,14 +163,28 @@ export default function AdvisoryPage() {
   useEffect(() => { loadConversations() }, [loadConversations])
 
   // ── Save voices ──
-  const saveVoices = useCallback(async (newVoices: AdvisoryVoice[]) => {
-    if (!currentOrg) return
-    const { data: existing } = await supabase.from('brand_profiles').select('guidelines')
-      .eq('org_id', currentOrg.id).eq('brand_key', 'np').single()
-    await supabase.from('brand_profiles')
-      .update({ guidelines: { ...(existing?.guidelines || {}), advisory_voices: newVoices } })
-      .eq('org_id', currentOrg.id).eq('brand_key', 'np')
+  // An org with no brand_profiles row gets one inserted. An update that matches no rows still
+  // returns success, so the rows written are counted, and the voices only change on screen once
+  // the write is confirmed (§MV).
+  const saveVoices = useCallback(async (newVoices: AdvisoryVoice[]): Promise<boolean> => {
+    if (!currentOrg) return false
+    setSaveError(null)
+    const { data: existing, error: readError } = await supabase.from('brand_profiles').select('id, guidelines')
+      .eq('org_id', currentOrg.id).eq('brand_key', 'np').maybeSingle()
+    const { data, error } = readError ? { data: null, error: readError }
+      : existing
+        ? await supabase.from('brand_profiles')
+            .update({ guidelines: { ...(existing.guidelines || {}), advisory_voices: newVoices } })
+            .eq('org_id', currentOrg.id).eq('brand_key', 'np').select('id')
+        : await supabase.from('brand_profiles')
+            .insert({ org_id: currentOrg.id, brand_key: 'np', display_name: currentOrg.name, guidelines: { advisory_voices: newVoices } })
+            .select('id')
+    if (error || !data?.length) {
+      setSaveError(`Advisory voices were not saved${error?.message ? `: ${error.message}` : ' (no brand profile was written for this organization)'}`)
+      return false
+    }
     setVoices(newVoices)
+    return true
   }, [currentOrg, supabase])
 
   // ── Scroll chat ──
@@ -461,6 +476,13 @@ export default function AdvisoryPage() {
           ))}
         </div>
       </div>
+
+      {saveError && (
+        <div className="fixed bottom-4 right-4 z-[60] max-w-sm flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 shadow-sm">
+          <p className="text-xs text-red-600">{saveError}</p>
+          <button onClick={() => setSaveError(null)} className="text-red-400 hover:text-red-600"><X className="w-3 h-3" /></button>
+        </div>
+      )}
 
       {/* Main 3-panel layout */}
       <div className="flex-1 flex gap-3 min-h-0">
@@ -840,15 +862,18 @@ export default function AdvisoryPage() {
             </div>
             <div className="px-5 py-3 border-t border-gray-100 flex justify-between">
               {voices.find(v => v.id === editingVoice.id) && editingVoice.id !== 'cameron' ? (
-                <button onClick={() => { saveVoices(voices.filter(v => v.id !== editingVoice.id)); if (selectedVoice === editingVoice.id) setSelectedVoice(null); setEditingVoice(null) }}
+                <button onClick={async () => {
+                  if (!(await saveVoices(voices.filter(v => v.id !== editingVoice.id)))) return
+                  if (selectedVoice === editingVoice.id) setSelectedVoice(null)
+                  setEditingVoice(null)
+                }}
                   className="text-[10px] text-red-400 flex items-center gap-1"><Trash2 className="w-3 h-3" /> Delete</button>
               ) : <div />}
               <div className="flex gap-2">
                 <button onClick={() => setEditingVoice(null)} className="text-xs text-gray-500 px-3 py-1.5 rounded-lg border border-gray-200">Cancel</button>
-                <button onClick={() => {
+                <button onClick={async () => {
                   const exists = voices.find(v => v.id === editingVoice.id)
-                  saveVoices(exists ? voices.map(v => v.id === editingVoice.id ? editingVoice : v) : [...voices, editingVoice])
-                  setEditingVoice(null)
+                  if (await saveVoices(exists ? voices.map(v => v.id === editingVoice.id ? editingVoice : v) : [...voices, editingVoice])) setEditingVoice(null)
                 }} className="text-xs font-bold text-white bg-np-blue px-4 py-1.5 rounded-lg">Save</button>
               </div>
             </div>

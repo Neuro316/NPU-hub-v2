@@ -68,8 +68,33 @@ on 2026-07-24: Hub's `084_v_platform_signups` (version 20260724152537) and the p
 `084_complete_signup_rpc` (version 20260724225937) are both applied and both objects are live.
 
 `npu-hub-v2`, `npu-platform-v2`, and `neuroreport-app` share the database `htfrfaxlcuyawtlztxxm` and
-therefore share **one migration ledger**. Before writing a migration, take the max of BOTH repos'
-numbers, and use the 200+ band so ownership is readable from the filename alone.
+therefore share **one migration ledger**.
+
+**Prefixes are the ownership signal (ruled 2026-10-04).** `pf_NNN` is the platform's. `hub_NNN` and
+bare `NNN` are the Hub's. **Equal numbers under different prefixes are not collisions** (`hub_211` and
+`pf_211` coexist correctly). New Hub migrations are `hub_NNN` in the 200+ band. Bare `NNN` is legacy.
+The number has to be unique within the Hub, and both prefixes count, so `hub_214` and `214` together
+are a duplicate. You do not need to clear the platform's numbers. This supersedes the earlier "take the
+max of both repos' numbers".
+
+Guard `G5` (`scripts/guards/run-guards.cjs`) enforces this by comparing **full prefixed names**:
+
+- a Hub key that is identical to a platform key (bare `NNN` against bare `NNN`) is a collision
+- a Hub number used twice is a finding
+
+**The platform snapshot: regenerate it whenever the platform adds a migration.**
+
+G5 reads the platform's migration names from `scripts/guards/platform-migrations.txt`, and also from
+`../npu-platform-v2/supabase/migrations` **when that sibling checkout exists**. CI has no sibling
+checkout, so in CI the snapshot is the only source. On 2026-10-04 the snapshot stopped at `pf_198`
+while the platform had reached `pf_228`, so G5 was right on a laptop and silent in CI, which is the run
+that gates a merge.
+
+**Rule: run `npm run guards:refresh` and commit the snapshot whenever the platform adds a migration.**
+This regenerates the snapshot from the sibling checkout. Guard `G6` fails when the sibling is present
+and has a migration name the snapshot lacks. It compares names, not mtimes, because a checkout resets
+mtimes. ⚠ G6 can only fire where the sibling exists, so **CI cannot detect a stale snapshot on its
+own**. Keeping it fresh depends on a local run.
 
 Related known drift: the Hub tree has no `083`, and `072_merge_duplicate_cameron_contact.sql` exists as
 a file with no ledger row, meaning it was applied outside `apply_migration`.

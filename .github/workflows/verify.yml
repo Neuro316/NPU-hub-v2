@@ -1,6 +1,6 @@
 name: verify
 
-# Type check, the five build guards, and the marketing harnesses with every tamper
+# Type check, the six build guards, and the marketing harnesses with every tamper
 # selector (scripts/verify.cjs). No secrets on purpose: a pull request from a fork must
 # never be handed production credentials by a workflow it can edit. Nothing here needs
 # the network or the database. The contract tests that DO need a database run by hand
