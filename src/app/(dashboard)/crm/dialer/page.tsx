@@ -14,6 +14,10 @@ import {
 import { createClient } from '@/lib/supabase-browser'
 import { fetchCallLogs, lookupContactByPhone } from '@/lib/crm-client'
 import type { CrmContact, CallLog, Sentiment } from '@/types/crm'
+import { DialerCall } from '@/lib/dialer-call'
+
+// the Twilio Device class, loaded on the first call (the SDK is browser only)
+let TwilioDevice: any = null
 
 const SENTIMENT_BADGE: Record<Sentiment, { label: string; color: string; bg: string }> = {
   positive: { label: '😊 Positive', color: '#059669', bg: '#ecfdf5' },
@@ -117,7 +121,12 @@ export default function DialerPage() {
     } catch {}
   }
 
-  function pressKey(d: string) { playTone(d); setDialString(p => p + d) }
+  // during a call a key press goes to the call as a tone (phone menus); otherwise it builds the number
+  function pressKey(d: string) {
+    playTone(d)
+    if (callCtl.current?.active) { callCtl.current.sendDigit(d); return }
+    setDialString(p => p + d)
+  }
 
   function selectContact(c: CrmContact) {
     setSelectedContact(c)
@@ -132,72 +141,74 @@ export default function DialerPage() {
     setActiveTab('keypad')
   }
 
+  // The live call. Hang up, Mute and in-call keypad presses act on it (src/lib/dialer-call.ts).
+  const callCtl = useRef<DialerCall | null>(null)
+  // Leaving the page ends any call in progress, so it is never left connected with no controls
+  useEffect(() => () => { callCtl.current?.hangUp() }, [])
+
+  function showEnded() {
+    callCtl.current = null
+    setIsMuted(false)
+    setShowKeypadInCall(false)
+    setCallState('ended')
+    setTimeout(() => { setCallState('idle'); setCallDuration(0); reloadCalls() }, 1500)
+  }
+
+  async function placeCall(contactId: string) {
+    const ctl = new DialerCall(
+      (token) => new TwilioDevice!(token, { logLevel: 1, codecPreferences: ['opus', 'pcmu'] as any }) as any,
+      {
+        onRinging: () => setCallState((s) => (s === 'dialing' ? 'ringing' : s)),
+        onConnected: () => { setCallState('connected'); setCallDuration(0) },
+        onEnded: showEnded,
+        onError: (e) => console.error('[dialer] call error', e),
+      })
+    callCtl.current = ctl
+    const res = await fetch('/api/voice/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contact_id: contactId }),
+    })
+    const data = await res.json()
+    if (!res.ok) { ctl.hangUp(); return }
+    const { Device } = await import('@twilio/voice-sdk')
+    TwilioDevice = Device
+    await ctl.start(data.token, {
+      To: data.contact_phone, CallerId: data.caller_id ?? '', OrgId: data.org_id ?? '',
+      // Lets inbound-call stamp external_call_sid on THIS row from the
+      // parent CallSid, which is what recording-ready matches on.
+      CallLogId: data.call_log_id ?? '',
+    })
+  }
+
   async function startCall() {
     if (!dialString.trim()) return
-    if (selectedContact) {
-      // Use existing VoIP pattern via /api/voice/token
-      setCallState('dialing')
-      try {
-        const res = await fetch('/api/voice/token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contact_id: selectedContact.id }),
-        })
-        const data = await res.json()
-        if (!res.ok) { setCallState('idle'); return }
-
-        const { Device } = await import('@twilio/voice-sdk')
-        const device = new Device(data.token, { logLevel: 1, codecPreferences: ['opus', 'pcmu'] as any })
-        const call = await device.connect({ params: {
-          To: data.contact_phone, CallerId: data.caller_id ?? '', OrgId: data.org_id ?? '',
-          // Lets inbound-call stamp external_call_sid on THIS row from the
-          // parent CallSid, which is what recording-ready matches on.
-          CallLogId: data.call_log_id ?? '',
-        } })
-
-        setCallState('ringing')
-        call.on('accept', () => { setCallState('connected'); setCallDuration(0) })
-        call.on('disconnect', () => { setCallState('ended'); setTimeout(() => { setCallState('idle'); reloadCalls() }, 1500) })
-        call.on('error', () => { setCallState('idle') })
-      } catch { setCallState('idle') }
-    } else {
-      // Manual dial - try to auto-match contact by phone number
-      setCallState('dialing')
-      try {
-        const matched = await lookupContactByPhone(dialString)
-        if (matched) {
-          setSelectedContact(matched)
-          // Now use the matched contact for proper call logging
-          const res = await fetch('/api/voice/token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contact_id: matched.id }),
-          })
-          const data = await res.json()
-          if (!res.ok) { setCallState('idle'); return }
-          const { Device } = await import('@twilio/voice-sdk')
-          const device = new Device(data.token, { logLevel: 1, codecPreferences: ['opus', 'pcmu'] as any })
-          const call = await device.connect({ params: {
-          To: data.contact_phone, CallerId: data.caller_id ?? '', OrgId: data.org_id ?? '',
-          // Lets inbound-call stamp external_call_sid on THIS row from the
-          // parent CallSid, which is what recording-ready matches on.
-          CallLogId: data.call_log_id ?? '',
-        } })
-          setCallState('ringing')
-          call.on('accept', () => { setCallState('connected'); setCallDuration(0) })
-          call.on('disconnect', () => { setCallState('ended'); setTimeout(() => { setCallState('idle'); reloadCalls() }, 1500) })
-          call.on('error', () => { setCallState('idle') })
-        } else {
-          // No match found - still dial but won't log to a contact
-          setTimeout(() => setCallState('connected'), 2000)
-        }
-      } catch { setTimeout(() => setCallState('connected'), 2000) }
+    setCallState('dialing')
+    try {
+      if (selectedContact) { await placeCall(selectedContact.id); return }
+      // Manual dial - try to auto-match contact by phone number, so the call is logged to them
+      const matched = await lookupContactByPhone(dialString)
+      if (matched) { setSelectedContact(matched); await placeCall(matched.id); return }
+      // No contact has this number. Calls are placed through /api/voice/token, which needs a
+      // contact, so nothing is dialled: say so rather than showing a call that is not happening.
+      setCallState('idle')
+      alert('No contact has this number, so the call was not placed. Add the number to a contact first.')
+    } catch (e) {
+      console.error('[dialer] could not place the call', e)
+      if (callCtl.current) callCtl.current.hangUp(); else setCallState('idle')
     }
   }
 
   function endCall() {
-    setCallState('ended')
-    setTimeout(() => { setCallState('idle'); setCallDuration(0); reloadCalls() }, 1500)
+    // Ends the real call (and releases the Twilio device); the screen follows via onEnded
+    if (callCtl.current) callCtl.current.hangUp()
+    else showEnded()
+  }
+
+  function toggleMute() {
+    const next = !isMuted
+    callCtl.current?.setMuted(next)
+    setIsMuted(next)
   }
 
   function reloadCalls() {
@@ -287,7 +298,7 @@ export default function DialerPage() {
             {/* In-call controls */}
             {isInCall && !showKeypadInCall && (
               <div className="grid grid-cols-3 gap-3 mb-4 w-full max-w-[260px]">
-                <button onClick={() => setIsMuted(!isMuted)}
+                <button onClick={toggleMute}
                   className={`flex flex-col items-center gap-1 p-3 rounded-xl transition-all ${isMuted ? 'bg-red-50 text-red-500' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>
                   {isMuted ? <MicOff size={16} /> : <Mic size={16} />}
                   <span className="text-[8px] font-medium">Mute</span>
