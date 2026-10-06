@@ -545,3 +545,16 @@ Cameron adds these himself:
 `docs/state/CURRENT.md`, under the header:
 
     **2026-10-02, NPU-hub-v2:** the Campaign Builder agent and the Hub Guide are merged (`9507c74`) and deployed (`f5uu8vmyw`, Ready, holding `hub.neuroprogeny.com`) with every new flag off. Next there: Hub ruling 26 (Guide panel into the app shell) before any flag is switched on. Queue: Addendum C §MN.
+
+## 13. Queued, not started (2026-10-02)
+
+- **Retire the old HelpBot and its `/api/ai/help-bot` route.** Ruled by Cameron 2026-10-02: queued,
+  not started. Today `HelpBot` (`src/components/help-bot.tsx`) is hidden only for people the Hub
+  Guide allows, and only while the Guide is on (ruling 26, decision 1). Retiring it means removing
+  the component, the route and whatever the route logs, once the Guide is on for every org that
+  uses HelpBot. Read what the route stores before removing it.
+- **hub_214, the sequence and email RLS fix.** Drafted, not applied:
+  `supabase/migrations/hub_214_sequence_email_rls.sql`, with its branch bootstrap
+  (`supabase/branch-bootstrap/hub_214_dependencies.sql`) and probe (`scripts/agent/contract-214.sql`).
+  The branch test has not run: `create_branch` for `hub-rls-214` timed out twice on 2026-10-02
+  with no branch created.
