@@ -5,6 +5,14 @@ import {
 } from 'react'
 import { useWorkspace } from '@/lib/workspace-context'
 import { receiverIdentity } from '@/lib/voice-identity'
+import {
+  applyCallEvent, createRinger, isMicrophoneError, shouldRing, MIC_BLOCKED_MESSAGE,
+  type CallEvent, type Ringer,
+} from '@/lib/voice-call-state'
+import {
+  keepRemoteAudioPlaying, listOutputDevices, loadVoiceSdk, setOutputDevice as routeOutput,
+  unlockCallAudio, type OutputDevice,
+} from '@/lib/voice-audio'
 
 // Persistent inbound Device — the browser softphone's registration layer.
 // Mounted once in the dashboard layout so it survives route changes; the UI that
@@ -46,6 +54,16 @@ import { receiverIdentity } from '@/lib/voice-identity'
 // it; the registration underneath it was being torn down. The effect now keys on
 // user.id, which is stable for the life of the session. Teardown happens only on
 // a genuine change: org switch, disable, sign-out.
+//
+// ── THE RINGER IS OURS, NOT THE SDK'S ────────────────────────────────────────
+// The SDK's built-in ringtone is switched off (device.audio.incoming(false)) and
+// replaced by one <audio> element driven ONLY by the call list, through
+// shouldRing() in voice-call-state.ts. On phones the SDK's ringtone was created
+// and played outside any tap, so the browser could block it or iOS could pause
+// it, with no way back. Ours is unlocked by the first tap anywhere in the Hub,
+// and every later tap can only START it if a call is ringing and it is not
+// playing. No tap can stop it: only Answer, Decline, or the far side ending the
+// call changes the list.
 
 type ReceiverStatus =
   | 'unsupported'   // no WebRTC in this browser
@@ -90,6 +108,17 @@ interface VoiceReceiverValue {
   decline: (id: string) => void
   hangUp: (id: string) => void
   setMuted: (id: string, muted: boolean) => void
+  /** Send DTMF on a connected call (in-call keypad). */
+  sendDigits: (id: string, digits: string) => void
+  /** Why the last call could not connect (blocked mic), for the call UI. '' = none. */
+  callError: string
+  clearCallError: () => void
+  /** True until a tap has unlocked the ringtone on this page load (phones). */
+  ringerLocked: boolean
+  /** Selectable audio outputs. Empty where the browser cannot choose (iOS Safari). */
+  outputDevices: OutputDevice[]
+  outputDeviceId: string
+  setOutputDevice: (id: string) => void
   /** @deprecated Drops the newest call from the list without touching the call. */
   clearIncoming: () => void
 }
@@ -98,6 +127,8 @@ const VoiceReceiverContext = createContext<VoiceReceiverValue>({
   status: 'off', error: '', identity: null, calls: [], incoming: null,
   enable: async () => {}, disable: () => {}, ringHere: async () => {},
   answer: () => {}, decline: () => {}, hangUp: () => {}, setMuted: () => {},
+  sendDigits: () => {}, callError: '', clearCallError: () => {}, ringerLocked: false,
+  outputDevices: [], outputDeviceId: 'default', setOutputDevice: () => {},
   clearIncoming: () => {},
 })
 
@@ -107,6 +138,9 @@ export function useVoiceReceiver() {
 
 const ENABLED_KEY = 'npu_hub_voice_receiver_enabled'
 
+// The same ringtone the SDK plays, from the same Twilio CDN it already loads.
+const RINGTONE_URL = 'https://sdk.twilio.com/js/client/sounds/releases/1.0.0/incoming.mp3'
+
 export function VoiceReceiverProvider({ children }: { children: React.ReactNode }) {
   const { user, currentOrg } = useWorkspace()
   const userId = user?.id ?? null
@@ -115,12 +149,65 @@ export function VoiceReceiverProvider({ children }: { children: React.ReactNode 
   const [error, setError] = useState('')
   const [calls, setCalls] = useState<IncomingCall[]>([])
   const [enabled, setEnabled] = useState(false)
+  const [callError, setCallError] = useState('')
+  const [ringerLocked, setRingerLocked] = useState(true)
+  const [outputDevices, setOutputDevices] = useState<OutputDevice[]>([])
+  const [outputDeviceId, setOutputDeviceId] = useState('default')
 
   const deviceRef = useRef<any>(null)
   const orgIdRef = useRef<string | null>(null)
   // Read inside call handlers without re-binding them.
   const callsRef = useRef<IncomingCall[]>([])
   callsRef.current = calls
+
+  const dispatch = useCallback((ev: CallEvent<IncomingCall>) => {
+    setCalls(prev => applyCallEvent(prev, ev))
+  }, [])
+
+  // ── Ringer ───────────────────────────────────────────────────────────────
+  const ringerRef = useRef<Ringer | null>(null)
+  const ringer = () => {
+    if (!ringerRef.current && typeof window !== 'undefined') {
+      ringerRef.current = createRinger(() => {
+        try {
+          const a = new Audio(RINGTONE_URL)
+          a.preload = 'auto'
+          return a
+        } catch { return null }
+      })
+    }
+    return ringerRef.current
+  }
+
+  // The call list is the only input that can start or stop ringing.
+  useEffect(() => {
+    ringer()?.sync(shouldRing(calls))
+  }, [calls])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Every tap anywhere in the Hub: unlock audio for this page load, and restart
+  // a ringtone the browser paused. Capture phase and passive, so it runs before
+  // and regardless of whatever the tap does on the page, and never blocks it.
+  useEffect(() => {
+    const opts = { capture: true, passive: true } as const
+    const onGesture = () => {
+      unlockCallAudio()
+      const r = ringer()
+      if (!r) return
+      r.onUserGesture()
+      if (r.unlocked) setRingerLocked(false)
+      else setTimeout(() => { if (r.unlocked) setRingerLocked(false) }, 250)
+    }
+    document.addEventListener('pointerdown', onGesture, opts)
+    document.addEventListener('touchend', onGesture, opts)
+    document.addEventListener('keydown', onGesture, opts)
+    return () => {
+      document.removeEventListener('pointerdown', onGesture, opts)
+      document.removeEventListener('touchend', onGesture, opts)
+      document.removeEventListener('keydown', onGesture, opts)
+      ringerRef.current?.dispose()
+      ringerRef.current = null
+    }
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const identity = currentOrg ? receiverIdentity(currentOrg.id) : null
 
@@ -144,6 +231,7 @@ export function VoiceReceiverProvider({ children }: { children: React.ReactNode 
       try { device.destroy() } catch { /* already gone */ }
     }
     setCalls([])
+    setOutputDevices([])
   }, [])
 
   // ── Registration ─────────────────────────────────────────────────────────
@@ -159,7 +247,7 @@ export function VoiceReceiverProvider({ children }: { children: React.ReactNode 
       }
 
       const token = await fetchToken(orgId)
-      const { Device } = await import('@twilio/voice-sdk')
+      const { Device } = await loadVoiceSdk()
 
       teardown()
       const device = new Device(token, {
@@ -173,7 +261,13 @@ export function VoiceReceiverProvider({ children }: { children: React.ReactNode 
       deviceRef.current = device
       orgIdRef.current = orgId
 
-      device.on('registered', () => { setStatus('ready'); setError('') })
+      // Our ringer replaces the SDK's (see the header note).
+      try { device.audio?.incoming(false) } catch { /* sdk version tolerance */ }
+
+      const refreshOutputs = () => setOutputDevices(listOutputDevices(device))
+      try { device.audio?.on?.('deviceChange', refreshOutputs) } catch { /* sdk version tolerance */ }
+
+      device.on('registered', () => { setStatus('ready'); setError(''); refreshOutputs() })
       device.on('unregistered', () => {
         // Only a warning if we still believe we should be receiving.
         setStatus(prev => (prev === 'ready' ? 'starting' : prev))
@@ -220,21 +314,24 @@ export function VoiceReceiverProvider({ children }: { children: React.ReactNode 
           connectedAt: null,
           muted: false,
         }
-        // Newest first. An existing ringing call is never replaced or dropped
-        // because another arrived; it simply moves down the list.
-        setCalls(prev => [entry, ...prev.filter(c => c.call !== call)])
+        // Newest first (applyCallEvent). An existing ringing call is never
+        // replaced or dropped because another arrived.
+        dispatch({ type: 'incoming', entry })
 
         // The ONLY ways a call leaves the list: the caller hangs up or Twilio's
         // <Dial> times out into voicemail (cancel), the call ends after being
         // answered (disconnect), or we declined it (reject).
-        const drop = () => setCalls(prev => prev.filter(c => c.call !== call))
+        const drop = () => dispatch({ type: 'ended', id: entry.id })
         call.on('cancel', drop)
         call.on('disconnect', drop)
         call.on('reject', drop)
-        call.on('accept', () => setCalls(prev => prev.map(c =>
-          c.call === call ? { ...c, phase: 'connected', connectedAt: Date.now() } : c)))
+        call.on('accept', () => {
+          dispatch({ type: 'accepted', id: entry.id, at: Date.now() })
+          keepRemoteAudioPlaying(call)
+        })
         call.on('error', (err: any) => {
           console.error('[voice-receiver] call error:', err)
+          if (isMicrophoneError(err)) setCallError(MIC_BLOCKED_MESSAGE)
           drop()
         })
       })
@@ -250,7 +347,7 @@ export function VoiceReceiverProvider({ children }: { children: React.ReactNode 
           : (e?.message || 'Could not start browser calling.')
       )
     }
-  }, [fetchToken, teardown])
+  }, [fetchToken, teardown, dispatch])
 
   // ── Call controls ────────────────────────────────────────────────────────
   const findCall = (id: string) => callsRef.current.find(c => c.id === id)
@@ -266,15 +363,22 @@ export function VoiceReceiverProvider({ children }: { children: React.ReactNode 
         try { other.call.disconnect() } catch { /* already gone */ }
       }
     }
+    // Synchronously, inside the Answer tap: stop the ringtone so it does not
+    // hold the audio session, wake call audio, then accept in the same tick so
+    // the SDK's microphone request and audio playback count as this tap.
+    ringerRef.current?.sync(false)
+    unlockCallAudio()
+    setCallError('')
     try {
       entry.call.accept()
     } catch (e) {
       console.error('[voice-receiver] accept failed:', e)
-      setCalls(prev => prev.filter(c => c.id !== id))
+      if (isMicrophoneError(e)) setCallError(MIC_BLOCKED_MESSAGE)
+      dispatch({ type: 'ended', id })
       return
     }
     // Optimistic; the 'accept' event confirms it.
-    setCalls(prev => prev.map(c => (c.id === id ? { ...c, phase: 'connected', connectedAt: Date.now() } : c)))
+    dispatch({ type: 'accepted', id, at: Date.now() })
 
     // Report who picked up. The org-shared identity can't tell the server this,
     // so the answering browser does. Fire-and-forget: bookkeeping must never
@@ -286,7 +390,7 @@ export function VoiceReceiverProvider({ children }: { children: React.ReactNode 
         body: JSON.stringify({ call_sid: entry.callSid }),
       }).catch(() => { /* non-fatal */ })
     }
-  }, [])
+  }, [dispatch])
 
   // Declining does NOT hang up on the caller: rejecting this leg ends only the
   // browser leg, Twilio's <Dial> completes with no-answer, and /ring-complete
@@ -295,22 +399,35 @@ export function VoiceReceiverProvider({ children }: { children: React.ReactNode 
     const entry = findCall(id)
     if (!entry) return
     try { entry.call.reject() } catch { /* already gone */ }
-    setCalls(prev => prev.filter(c => c.id !== id))
-  }, [])
+    dispatch({ type: 'ended', id })
+  }, [dispatch])
 
   const hangUp = useCallback((id: string) => {
     const entry = findCall(id)
     if (!entry) return
     try { entry.call.disconnect() } catch { /* already gone */ }
-    setCalls(prev => prev.filter(c => c.id !== id))
-  }, [])
+    dispatch({ type: 'ended', id })
+  }, [dispatch])
 
   const setMuted = useCallback((id: string, muted: boolean) => {
     const entry = findCall(id)
     if (!entry) return
     try { entry.call.mute(muted) } catch { /* sdk tolerance */ }
-    setCalls(prev => prev.map(c => (c.id === id ? { ...c, muted } : c)))
+    dispatch({ type: 'muted', id, muted })
+  }, [dispatch])
+
+  const sendDigits = useCallback((id: string, digits: string) => {
+    const entry = findCall(id)
+    if (!entry || entry.phase !== 'connected') return
+    try { entry.call.sendDigits(digits) } catch (e) { console.warn('[voice-receiver] sendDigits failed:', e) }
   }, [])
+
+  // Only offered where the browser supports it; a failure keeps the current output.
+  const setOutputDevice = useCallback((id: string) => {
+    routeOutput(deviceRef.current, id).then(ok => { if (ok) setOutputDeviceId(id) })
+  }, [])
+
+  const clearCallError = useCallback(() => setCallError(''), [])
 
   // ── Public controls ──────────────────────────────────────────────────────
   // Enable ALWAYS registers THIS tab and always prompts for the mic here — the
@@ -394,6 +511,8 @@ export function VoiceReceiverProvider({ children }: { children: React.ReactNode 
       value={{
         status, error, identity, calls, incoming: calls[0] ?? null,
         enable, disable, ringHere, answer, decline, hangUp, setMuted, clearIncoming,
+        sendDigits, callError, clearCallError, ringerLocked,
+        outputDevices, outputDeviceId, setOutputDevice,
       }}
     >
       {children}

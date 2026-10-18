@@ -4,6 +4,8 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Phone, PhoneOff, MessageCircle, Send, X, Mic, MicOff, Volume2, Plus } from 'lucide-react'
 import type { CrmContact } from '@/types/crm'
 import { updateContact } from '@/lib/crm-client'
+import { ensureMicrophone, keepRemoteAudioPlaying, loadVoiceSdk, unlockCallAudio } from '@/lib/voice-audio'
+import { isMicrophoneError, MIC_BLOCKED_MESSAGE } from '@/lib/voice-call-state'
 
 // ── SMS Compose Modal ──
 
@@ -174,6 +176,11 @@ export function VoipCall({ contact, onClose, onEnded, lineE164 }: {
     setCallState('connecting')
     setError('')
     try {
+      // Ask for the microphone before minting a token and a call row, so a
+      // blocked mic gets a clear message instead of a silent failed call.
+      const mic = await ensureMicrophone()
+      if (!mic.ok) { setError(mic.message); setCallState('error'); return }
+
       const res = await fetch('/api/voice/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -186,7 +193,7 @@ export function VoipCall({ contact, onClose, onEnded, lineE164 }: {
       if (data.log_warning) console.warn('Call log warning:', data.log_warning)
       if (data.log_warning) console.warn('Voice log warning:', data.log_warning)
 
-      const { Device } = await import('@twilio/voice-sdk')
+      const { Device } = await loadVoiceSdk()
 
       const device = new Device(data.token, {
         logLevel: 1,
@@ -211,6 +218,8 @@ export function VoipCall({ contact, onClose, onEnded, lineE164 }: {
         setCallState('connected')
         setDuration(0)
         timerRef.current = setInterval(() => setDuration(d => d + 1), 1000)
+        // Phones can leave the far side's audio element paused; see voice-audio.ts.
+        keepRemoteAudioPlaying(call)
       })
 
       call.on('disconnect', () => {
@@ -229,7 +238,7 @@ export function VoipCall({ contact, onClose, onEnded, lineE164 }: {
       call.on('error', (err: any) => {
         console.error('Call error:', err)
         const msg = err?.message || err?.twilioError?.message || String(err) || 'Call failed'
-        setError(msg)
+        setError(isMicrophoneError(err) ? MIC_BLOCKED_MESSAGE : msg)
         setCallState('error')
         if (timerRef.current) clearInterval(timerRef.current)
       })
@@ -365,7 +374,10 @@ export function ContactCommsButtons({ contact, size = 'sm', onContactUpdated, on
       <div className="flex gap-1" onClick={e => e.stopPropagation()}>
         {/* Call */}
         <button
-          onClick={() => hasPhone ? setShowCall(true) : setShowAddPhone(true)}
+          onClick={() => {
+            // Inside the tap: wake call audio before VoipCall mounts and dials.
+            if (hasPhone) { unlockCallAudio(); setShowCall(true) } else setShowAddPhone(true)
+          }}
           className={`${px} rounded flex items-center gap-1 transition-colors ${hasPhone ? 'bg-green-50 hover:bg-green-100' : 'bg-gray-50 hover:bg-gray-100'}`}
           title={hasPhone ? `Call ${localPhone || contact.phone}` : 'Add phone to call'}
         >

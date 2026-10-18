@@ -14,6 +14,8 @@ import {
 import { createClient } from '@/lib/supabase-browser'
 import { fetchCallLogs, lookupContactByPhone } from '@/lib/crm-client'
 import type { CrmContact, CallLog, Sentiment } from '@/types/crm'
+import { ensureMicrophone, keepRemoteAudioPlaying, loadVoiceSdk, unlockCallAudio } from '@/lib/voice-audio'
+import { isMicrophoneError, MIC_BLOCKED_MESSAGE } from '@/lib/voice-call-state'
 
 const SENTIMENT_BADGE: Record<Sentiment, { label: string; color: string; bg: string }> = {
   positive: { label: '😊 Positive', color: '#059669', bg: '#ecfdf5' },
@@ -67,13 +69,24 @@ export default function DialerPage() {
   const [activeCall, setActiveCall] = useState<any>(null)
   const [loading, setLoading] = useState(false)
   const [callNotes, setCallNotes] = useState('')
+  const [callError, setCallError] = useState('')
 
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const audioCtxRef = useRef<AudioContext | null>(null)
+  // The live Twilio Device and Call, so Hang up, Mute and the keypad act on
+  // the real call (they used to only change what the screen showed).
+  const deviceRef = useRef<any>(null)
+  const callRef = useRef<any>(null)
+  // Bumped by every Call and End tap. Setup that awaited across an End tap sees
+  // a newer value and stops, instead of dialing after you hung up.
+  const attemptRef = useRef(0)
 
   useEffect(() => {
     fetchCallLogs(undefined, 100).then(setRecentCalls).catch(console.error)
-  }, [])
+    // Load the SDK now so the Call tap can wake its audio synchronously.
+    loadVoiceSdk().catch(() => { /* retried when a call starts */ })
+    return () => { releaseCall() }
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Search contacts
   useEffect(() => {
@@ -117,7 +130,79 @@ export default function DialerPage() {
     } catch {}
   }
 
-  function pressKey(d: string) { playTone(d); setDialString(p => p + d) }
+  function pressKey(d: string) {
+    // In a connected call the keypad sends tones down the line (menus, extensions).
+    if (callState === 'connected' && callRef.current) {
+      try { callRef.current.sendDigits(d) } catch (e) { console.warn('sendDigits failed:', e) }
+      return
+    }
+    playTone(d); setDialString(p => p + d)
+  }
+
+  function releaseCall() {
+    const call = callRef.current
+    const device = deviceRef.current
+    callRef.current = null
+    deviceRef.current = null
+    if (call) try { call.disconnect() } catch { /* already gone */ }
+    if (device) try { device.destroy() } catch { /* already gone */ }
+  }
+
+  function callEnded() {
+    callRef.current = null
+    if (deviceRef.current) try { deviceRef.current.destroy() } catch { /* already gone */ }
+    deviceRef.current = null
+    setIsMuted(false)
+    setShowKeypadInCall(false)
+    setCallState('ended')
+    setTimeout(() => { setCallState('idle'); reloadCalls() }, 1500)
+  }
+
+  async function placeCall(contactId: string, attempt: number) {
+    const res = await fetch('/api/voice/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contact_id: contactId }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (attempt !== attemptRef.current) return
+    if (!res.ok) { setCallError(data?.error || 'Could not start the call.'); setCallState('idle'); return }
+
+    const { Device } = await loadVoiceSdk()
+    if (attempt !== attemptRef.current) return
+    releaseCall()
+    const device = new Device(data.token, { logLevel: 1, codecPreferences: ['opus', 'pcmu'] as any })
+    deviceRef.current = device
+    const call = await device.connect({ params: {
+      To: data.contact_phone, CallerId: data.caller_id ?? '', OrgId: data.org_id ?? '',
+      // Lets inbound-call stamp external_call_sid on THIS row from the
+      // parent CallSid, which is what recording-ready matches on.
+      CallLogId: data.call_log_id ?? '',
+    } })
+    if (attempt !== attemptRef.current) {
+      // Hung up while connecting.
+      try { call.disconnect() } catch { /* */ }
+      try { device.destroy() } catch { /* */ }
+      if (deviceRef.current === device) deviceRef.current = null
+      return
+    }
+    callRef.current = call
+
+    setCallState('ringing')
+    call.on('accept', () => {
+      setCallState('connected'); setCallDuration(0)
+      keepRemoteAudioPlaying(call)
+    })
+    call.on('disconnect', callEnded)
+    call.on('cancel', callEnded)
+    call.on('reject', callEnded)
+    call.on('error', (err: any) => {
+      console.error('Call error:', err)
+      setCallError(isMicrophoneError(err) ? MIC_BLOCKED_MESSAGE : (err?.message || 'The call failed.'))
+      releaseCall()
+      setCallState('idle')
+    })
+  }
 
   function selectContact(c: CrmContact) {
     setSelectedContact(c)
@@ -134,70 +219,50 @@ export default function DialerPage() {
 
   async function startCall() {
     if (!dialString.trim()) return
-    if (selectedContact) {
-      // Use existing VoIP pattern via /api/voice/token
-      setCallState('dialing')
-      try {
-        const res = await fetch('/api/voice/token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contact_id: selectedContact.id }),
-        })
-        const data = await res.json()
-        if (!res.ok) { setCallState('idle'); return }
-
-        const { Device } = await import('@twilio/voice-sdk')
-        const device = new Device(data.token, { logLevel: 1, codecPreferences: ['opus', 'pcmu'] as any })
-        const call = await device.connect({ params: {
-          To: data.contact_phone, CallerId: data.caller_id ?? '', OrgId: data.org_id ?? '',
-          // Lets inbound-call stamp external_call_sid on THIS row from the
-          // parent CallSid, which is what recording-ready matches on.
-          CallLogId: data.call_log_id ?? '',
-        } })
-
-        setCallState('ringing')
-        call.on('accept', () => { setCallState('connected'); setCallDuration(0) })
-        call.on('disconnect', () => { setCallState('ended'); setTimeout(() => { setCallState('idle'); reloadCalls() }, 1500) })
-        call.on('error', () => { setCallState('idle') })
-      } catch { setCallState('idle') }
-    } else {
-      // Manual dial - try to auto-match contact by phone number
-      setCallState('dialing')
-      try {
-        const matched = await lookupContactByPhone(dialString)
-        if (matched) {
-          setSelectedContact(matched)
-          // Now use the matched contact for proper call logging
-          const res = await fetch('/api/voice/token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contact_id: matched.id }),
-          })
-          const data = await res.json()
-          if (!res.ok) { setCallState('idle'); return }
-          const { Device } = await import('@twilio/voice-sdk')
-          const device = new Device(data.token, { logLevel: 1, codecPreferences: ['opus', 'pcmu'] as any })
-          const call = await device.connect({ params: {
-          To: data.contact_phone, CallerId: data.caller_id ?? '', OrgId: data.org_id ?? '',
-          // Lets inbound-call stamp external_call_sid on THIS row from the
-          // parent CallSid, which is what recording-ready matches on.
-          CallLogId: data.call_log_id ?? '',
-        } })
-          setCallState('ringing')
-          call.on('accept', () => { setCallState('connected'); setCallDuration(0) })
-          call.on('disconnect', () => { setCallState('ended'); setTimeout(() => { setCallState('idle'); reloadCalls() }, 1500) })
-          call.on('error', () => { setCallState('idle') })
-        } else {
-          // No match found - still dial but won't log to a contact
-          setTimeout(() => setCallState('connected'), 2000)
-        }
-      } catch { setTimeout(() => setCallState('connected'), 2000) }
+    // First thing in the tap, before any await: wake call audio (phones only
+    // allow this inside a gesture), then ask for the microphone if needed.
+    unlockCallAudio()
+    const attempt = ++attemptRef.current
+    setCallError('')
+    setCallState('dialing')
+    const mic = await ensureMicrophone()
+    if (attempt !== attemptRef.current) return
+    if (!mic.ok) { setCallError(mic.message); setCallState('idle'); return }
+    try {
+      // Use the picked contact, else match the typed number to one so the call
+      // is logged against it.
+      const contact = selectedContact ?? await lookupContactByPhone(dialString)
+      if (attempt !== attemptRef.current) return
+      if (!contact) {
+        // This used to pretend to connect after two seconds without dialing.
+        setCallError('This number is not in your contacts yet. Add it as a contact to call it from the Hub.')
+        setCallState('idle')
+        return
+      }
+      if (!selectedContact) setSelectedContact(contact)
+      await placeCall(contact.id, attempt)
+    } catch (e: any) {
+      if (attempt !== attemptRef.current) return
+      console.error('Call setup error:', e)
+      setCallError(isMicrophoneError(e) ? MIC_BLOCKED_MESSAGE : (e?.message || 'Could not start the call.'))
+      releaseCall()
+      setCallState('idle')
     }
   }
 
   function endCall() {
+    attemptRef.current++
+    releaseCall()
+    setIsMuted(false)
+    setShowKeypadInCall(false)
     setCallState('ended')
     setTimeout(() => { setCallState('idle'); setCallDuration(0); reloadCalls() }, 1500)
+  }
+
+  function toggleMute() {
+    const next = !isMuted
+    if (callRef.current) try { callRef.current.mute(next) } catch { /* sdk tolerance */ }
+    setIsMuted(next)
   }
 
   function reloadCalls() {
@@ -208,9 +273,9 @@ export default function DialerPage() {
   const displayName = selectedContact ? `${selectedContact.first_name} ${selectedContact.last_name}` : dialString ? fmtPhone(dialString) : ''
 
   return (
-    <div className="flex gap-4 h-[calc(100vh-200px)] animate-in fade-in duration-300">
+    <div className="flex flex-col lg:flex-row gap-4 lg:h-[calc(100vh-200px)] animate-in fade-in duration-300">
       {/* ─── LEFT: Dialer Panel ─── */}
-      <div className="w-80 flex-shrink-0 flex flex-col">
+      <div className="w-full lg:w-80 flex-shrink-0 flex flex-col">
         {/* Tab switcher */}
         <div className="flex bg-gray-50 rounded-lg p-1 mb-3">
           {(['keypad', 'contacts', 'recent'] as const).map(tab => (
@@ -287,7 +352,7 @@ export default function DialerPage() {
             {/* In-call controls */}
             {isInCall && !showKeypadInCall && (
               <div className="grid grid-cols-3 gap-3 mb-4 w-full max-w-[260px]">
-                <button onClick={() => setIsMuted(!isMuted)}
+                <button onClick={toggleMute}
                   className={`flex flex-col items-center gap-1 p-3 rounded-xl transition-all ${isMuted ? 'bg-red-50 text-red-500' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>
                   {isMuted ? <MicOff size={16} /> : <Mic size={16} />}
                   <span className="text-[8px] font-medium">Mute</span>
@@ -307,6 +372,12 @@ export default function DialerPage() {
 
             {isInCall && showKeypadInCall && (
               <button onClick={() => setShowKeypadInCall(false)} className="mb-3 text-[10px] text-np-blue hover:text-np-dark font-medium">← Back to controls</button>
+            )}
+
+            {callError && (
+              <p role="alert" className="mb-3 w-full max-w-[260px] rounded-lg bg-red-50 border border-red-100 px-3 py-2 text-xs text-red-700 text-center">
+                {callError}
+              </p>
             )}
 
             {/* Call / End button */}
