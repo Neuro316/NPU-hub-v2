@@ -188,13 +188,8 @@ export async function POST(request: NextRequest) {
         text: outLine?.recording_notice_text,
       });
 
-      // answerOnBridge: the browser leg stays unanswered until the contact
-      // picks up, so the carrier's ringback reaches the browser as early media.
-      // Without it Twilio answered the browser at once and it heard silence
-      // for the whole time the far phone rang.
       const dial = response.dial({
         ...(callerId ? { callerId } : {}),
-        answerOnBridge: true,
         ...(appUrl ? { action: `${appUrl}/api/twilio/call-status` } : {}),
         ...(outRecord ? {
           record: 'record-from-answer-dual',
