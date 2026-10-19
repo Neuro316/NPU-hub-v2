@@ -4,6 +4,11 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Phone, PhoneOff, MessageCircle, Send, X, Mic, MicOff, Volume2, Plus } from 'lucide-react'
 import type { CrmContact } from '@/types/crm'
 import { updateContact } from '@/lib/crm-client'
+import {
+  createRingback, ensureMicrophone, hangupOnServer, keepRemoteAudioPlaying, loadVoiceSdk,
+  loadedVoiceSdk, primeCallTones, unlockCallAudio,
+} from '@/lib/voice-audio'
+import { createOutboundCall, type OutboundCall } from '@/lib/voice-call-state'
 
 // ── SMS Compose Modal ──
 
@@ -136,7 +141,7 @@ function NoPhonePrompt({ contact, onClose, onSaved }: {
 
 // ── VoIP Call Interface ──
 
-type CallState = 'idle' | 'connecting' | 'ringing' | 'connected' | 'ended' | 'error'
+type CallState = 'idle' | 'connecting' | 'ringing' | 'connected' | 'ending' | 'ended' | 'error'
 
 export function VoipCall({ contact, onClose, onEnded, lineE164 }: {
   contact: CrmContact
@@ -149,8 +154,9 @@ export function VoipCall({ contact, onClose, onEnded, lineE164 }: {
   const [duration, setDuration] = useState(0)
   const [muted, setMuted] = useState(false)
   const [error, setError] = useState('')
-  const deviceRef = useRef<any>(null)
-  const callRef = useRef<any>(null)
+  // The live call, through the shared controller (voice-call-state.ts), which
+  // owns End at every stage: while connecting, ringing, and connected.
+  const outboundRef = useRef<OutboundCall | null>(null)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
 
   // ── REDIAL-LOOP GUARD ──────────────────────────────────────────────────────
@@ -171,73 +177,68 @@ export function VoipCall({ contact, onClose, onEnded, lineE164 }: {
   const startedRef = useRef(false)
 
   const startCall = useCallback(async () => {
-    setCallState('connecting')
     setError('')
-    try {
-      const res = await fetch('/api/voice/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contact_id: contact.id, ...(lineE164 ? { line_e164: lineE164 } : {}) }),
-      })
-      const data = await res.json()
-      if (!res.ok) { setError(data.error || 'Failed to connect'); setCallState('error'); return }
-
-      // Log any warnings from the server (e.g. call log failed)
-      if (data.log_warning) console.warn('Call log warning:', data.log_warning)
-      if (data.log_warning) console.warn('Voice log warning:', data.log_warning)
-
-      const { Device } = await import('@twilio/voice-sdk')
-
-      const device = new Device(data.token, {
-        logLevel: 1,
-        codecPreferences: ['opus', 'pcmu'] as any,
-      })
-
-      deviceRef.current = device
-
-      const call = await device.connect({
-        params: {
-          To: data.contact_phone, CallerId: data.caller_id ?? '', OrgId: data.org_id ?? '',
-          // Lets inbound-call stamp external_call_sid on THIS row from the
-          // parent CallSid, which is what recording-ready matches on.
-          CallLogId: data.call_log_id ?? '',
+    const stopTimer = () => { if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null } }
+    const ctl = createOutboundCall({
+      // Asked before minting a token and a call row, so a blocked mic gets a
+      // clear message instead of a silent failed call.
+      ensureMicrophone,
+      async prepare() {
+        const res = await fetch('/api/voice/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contact_id: contact.id, ...(lineE164 ? { line_e164: lineE164 } : {}) }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) return { ok: false, message: data.error || 'Failed to connect' }
+        // Log any warnings from the server (e.g. call log failed)
+        if (data.log_warning) console.warn('Voice log warning:', data.log_warning)
+        await loadVoiceSdk()
+        return {
+          ok: true,
+          token: data.token,
+          params: {
+            To: data.contact_phone, CallerId: data.caller_id ?? '', OrgId: data.org_id ?? '',
+            // Lets inbound-call stamp external_call_sid on THIS row from the
+            // parent CallSid, which is what recording-ready matches on.
+            CallLogId: data.call_log_id ?? '',
+          },
+          callLogId: data.call_log_id ?? null,
         }
-      })
-
-      callRef.current = call
-      setCallState('ringing')
-
-      call.on('accept', () => {
-        setCallState('connected')
-        setDuration(0)
-        timerRef.current = setInterval(() => setDuration(d => d + 1), 1000)
-      })
-
-      call.on('disconnect', () => {
+      },
+      // prepare() loaded the SDK, so this is synchronous.
+      createDevice: (token) => new (loadedVoiceSdk().Device)(token, { logLevel: 1, codecPreferences: ['opus', 'pcmu'] as any }),
+      onStage: (stage) => {
+        if (stage === 'dialing') setCallState('connecting')
+        else if (stage === 'ringing' || stage === 'ending') setCallState(stage)
+        else if (stage === 'connected') {
+          setCallState('connected')
+          setDuration(0)
+          stopTimer()
+          timerRef.current = setInterval(() => setDuration(d => d + 1), 1000)
+        }
+      },
+      onEnded: ({ error: err }) => {
+        stopTimer()
+        setMuted(false)
+        if (err) { console.error('Call error:', err); setError(err); setCallState('error'); return }
         setCallState('ended')
-        if (timerRef.current) clearInterval(timerRef.current)
         // Via the ref: calling onEnded directly would put it in this callback's
         // dependency chain and re-arm the redial loop.
         onEndedRef.current?.()
-      })
-
-      call.on('cancel', () => {
-        setCallState('ended')
-        if (timerRef.current) clearInterval(timerRef.current)
-      })
-
-      call.on('error', (err: any) => {
-        console.error('Call error:', err)
-        const msg = err?.message || err?.twilioError?.message || String(err) || 'Call failed'
-        setError(msg)
-        setCallState('error')
-        if (timerRef.current) clearInterval(timerRef.current)
-      })
-    } catch (e: any) {
-      console.error('Call setup error:', e)
-      setError(e?.message || String(e) || 'Failed to set up call')
-      setCallState('error')
-    }
+      },
+      // Phones can leave the far side's audio element paused; see voice-audio.ts.
+      onRemoteAudio: keepRemoteAudioPlaying,
+      ringback: createRingback(),
+      hangupOnServer,
+      later: (fn, ms) => setTimeout(fn, ms),
+    })
+    outboundRef.current = ctl
+    // The Call tap primed audio (ContactCommsButtons, and the app-wide tap
+    // listener in voice-receiver-context); this covers a still-sticky gesture.
+    unlockCallAudio()
+    primeCallTones()
+    await ctl.start()
     // lineE164 is read once at dial time; the mount effect below still runs
     // exactly once (startedRef), so a changing prop can never redial.
   }, [contact.id, lineE164])
@@ -251,25 +252,21 @@ export function VoipCall({ contact, onClose, onEnded, lineE164 }: {
     startCall()
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
-      if (callRef.current) try { callRef.current.disconnect() } catch {}
-      if (deviceRef.current) try { deviceRef.current.destroy() } catch {}
+      outboundRef.current?.dispose()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // End at any stage. The controller hangs up and reports back through
+  // onEnded once the call is actually gone; the panel follows that.
   const handleHangup = () => {
-    if (callRef.current) try { callRef.current.disconnect() } catch {}
-    if (deviceRef.current) try { deviceRef.current.destroy() } catch {}
-    setCallState('ended')
-    if (timerRef.current) clearInterval(timerRef.current)
-    onEndedRef.current?.()
+    const ctl = outboundRef.current
+    if (ctl && ctl.stage !== 'idle') ctl.hangUp()
+    else { setCallState('ended'); onEndedRef.current?.() }
   }
 
   const toggleMute = () => {
-    if (callRef.current) {
-      callRef.current.mute(!muted)
-      setMuted(!muted)
-    }
+    if (outboundRef.current?.mute(!muted)) setMuted(!muted)
   }
 
   const formatDuration = (s: number) => {
@@ -282,6 +279,7 @@ export function VoipCall({ contact, onClose, onEnded, lineE164 }: {
     idle: { color: '#6b7280', pulse: false, label: 'Initializing...' },
     connecting: { color: '#3b82f6', pulse: true, label: 'Connecting...' },
     ringing: { color: '#f59e0b', pulse: true, label: 'Ringing...' },
+    ending: { color: '#6b7280', pulse: true, label: 'Hanging up...' },
     connected: { color: '#22c55e', pulse: false, label: formatDuration(duration) },
     ended: { color: '#6b7280', pulse: false, label: 'Call ended' },
     error: { color: '#ef4444', pulse: false, label: 'Failed' },
@@ -312,7 +310,7 @@ export function VoipCall({ contact, onClose, onEnded, lineE164 }: {
             </button>
           )}
 
-          {(callState === 'connecting' || callState === 'ringing' || callState === 'connected') && (
+          {(callState === 'idle' || callState === 'connecting' || callState === 'ringing' || callState === 'connected' || callState === 'ending') && (
             <button onClick={handleHangup}
               className="w-14 h-14 rounded-full bg-red-500 flex items-center justify-center hover:bg-red-600 transition-colors shadow-lg">
               <PhoneOff size={20} className="text-white" />
@@ -365,7 +363,10 @@ export function ContactCommsButtons({ contact, size = 'sm', onContactUpdated, on
       <div className="flex gap-1" onClick={e => e.stopPropagation()}>
         {/* Call */}
         <button
-          onClick={() => hasPhone ? setShowCall(true) : setShowAddPhone(true)}
+          onClick={() => {
+            // Inside the tap: wake call audio before VoipCall mounts and dials.
+            if (hasPhone) { unlockCallAudio(); primeCallTones(); setShowCall(true) } else setShowAddPhone(true)
+          }}
           className={`${px} rounded flex items-center gap-1 transition-colors ${hasPhone ? 'bg-green-50 hover:bg-green-100' : 'bg-gray-50 hover:bg-gray-100'}`}
           title={hasPhone ? `Call ${localPhone || contact.phone}` : 'Add phone to call'}
         >

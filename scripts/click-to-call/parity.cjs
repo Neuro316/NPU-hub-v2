@@ -19,6 +19,9 @@
 // SINCE_AGENT byte-for-byte equal to the Campaign Builder's last commit (ba4ed21): the marketing
 //            flags and the middleware, which that build changed and click-to-call must not.
 //
+// SINCE_DIALER byte-for-byte equal to the mobile dialer fix (02a83d9): VoipCall in twilio-comms,
+//            and inbound-call, whose outbound browser <Dial> gained answerOnBridge.
+//
 // SINCE_C2C  byte-for-byte equal to the click-to-call merge (d3be328): the line picker
 //            touches only the button, the route and the click-to-call libraries, so the
 //            Conversations page, the timeline and both Twilio webhooks must not move.
@@ -34,7 +37,6 @@ const fs = require('fs'), path = require('path')
 const ROOT = path.resolve(__dirname, '..', '..')
 const BASE = process.env.PARITY_BASE || 'd49d00e'
 const UNTOUCHED = {
-  'inbound-call': 'src/app/api/twilio/inbound-call/route.ts',
   'ring-complete': 'src/app/api/twilio/ring-complete/route.ts',
   'call-status': 'src/app/api/twilio/call-status/route.ts',
   'recording-ready': 'src/app/api/twilio/recording-ready/route.ts',
@@ -51,7 +53,6 @@ const UNTOUCHED = {
   'entry-events': 'src/lib/marketing/entry-events.ts',
   'api-guard': 'src/lib/api-guard.ts',
   'middleware': 'src/middleware.ts',
-  'twilio-comms': 'src/components/crm/twilio-comms.tsx',
 }
 const C2C_BASE = process.env.C2C_BASE || 'd3be328'
 const SINCE_C2C = {
@@ -66,6 +67,16 @@ const SINCE_C2C = {
 // The Campaign Builder build (merged after click-to-call) changed these two on purpose: three
 // flags, and the public /p/<slug> path. Click-to-call still must not touch them, so they are
 // compared with that build's last commit instead of d49d00e, as SINCE_C2C does for its own.
+// The mobile dialer fix (fix/mobile-dialer, d797b93) changed VoipCall on purpose: mic prompt,
+// remote audio kept playing on phones. Its follow-up (02a83d9) moved VoipCall onto the shared
+// outbound controller (End at every stage) and added answerOnBridge to the outbound browser
+// <Dial> in inbound-call, for ringback. Both are compared with that commit instead of d49d00e,
+// so click-to-call still cannot move them.
+const DIALER_BASE = process.env.DIALER_BASE || '02a83d9'
+const SINCE_DIALER = {
+  'twilio-comms': 'src/components/crm/twilio-comms.tsx',
+  'inbound-call': 'src/app/api/twilio/inbound-call/route.ts',
+}
 const AGENT_BASE = process.env.AGENT_BASE || 'ba4ed21'
 const SINCE_AGENT = {
   'marketing-flags': 'src/lib/marketing/flags.ts',
@@ -116,6 +127,10 @@ for (const [k, f] of Object.entries(SINCE_C2C)) {
   if (active.includes('webhook') && k === 'bridge') now = swap(now, "searchParams.get('step')", "searchParams.get('stepx')")
   const same = now === base(f, C2C_BASE)
   rows.push({ id: `C_${k}`, ok: same, got: same ? `identical to ${C2C_BASE}` : `differs from ${C2C_BASE}` })
+}
+for (const [k, f] of Object.entries(SINCE_DIALER)) {
+  const same = work(f) === base(f, DIALER_BASE)
+  rows.push({ id: `D_${k}`, ok: same, got: same ? `identical to ${DIALER_BASE}` : `differs from ${DIALER_BASE}` })
 }
 for (const [k, f] of Object.entries(SINCE_AGENT)) {
   const same = work(f) === base(f, AGENT_BASE)
