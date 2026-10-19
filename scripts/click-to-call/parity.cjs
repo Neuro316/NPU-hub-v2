@@ -19,7 +19,8 @@
 // SINCE_AGENT byte-for-byte equal to the Campaign Builder's last commit (ba4ed21): the marketing
 //            flags and the middleware, which that build changed and click-to-call must not.
 //
-// SINCE_DIALER byte-for-byte equal to the mobile dialer fix (d797b93): VoipCall in twilio-comms.
+// SINCE_DIALER byte-for-byte equal to the mobile dialer fix (02a83d9): VoipCall in twilio-comms,
+//            and inbound-call, whose outbound browser <Dial> gained answerOnBridge.
 //
 // SINCE_C2C  byte-for-byte equal to the click-to-call merge (d3be328): the line picker
 //            touches only the button, the route and the click-to-call libraries, so the
@@ -36,7 +37,6 @@ const fs = require('fs'), path = require('path')
 const ROOT = path.resolve(__dirname, '..', '..')
 const BASE = process.env.PARITY_BASE || 'd49d00e'
 const UNTOUCHED = {
-  'inbound-call': 'src/app/api/twilio/inbound-call/route.ts',
   'ring-complete': 'src/app/api/twilio/ring-complete/route.ts',
   'call-status': 'src/app/api/twilio/call-status/route.ts',
   'recording-ready': 'src/app/api/twilio/recording-ready/route.ts',
@@ -68,11 +68,14 @@ const SINCE_C2C = {
 // flags, and the public /p/<slug> path. Click-to-call still must not touch them, so they are
 // compared with that build's last commit instead of d49d00e, as SINCE_C2C does for its own.
 // The mobile dialer fix (fix/mobile-dialer, d797b93) changed VoipCall on purpose: mic prompt,
-// remote audio kept playing on phones. It is compared with that commit instead of d49d00e, so
-// click-to-call still cannot move it.
-const DIALER_BASE = process.env.DIALER_BASE || 'd797b93'
+// remote audio kept playing on phones. Its follow-up (02a83d9) moved VoipCall onto the shared
+// outbound controller (End at every stage) and added answerOnBridge to the outbound browser
+// <Dial> in inbound-call, for ringback. Both are compared with that commit instead of d49d00e,
+// so click-to-call still cannot move them.
+const DIALER_BASE = process.env.DIALER_BASE || '02a83d9'
 const SINCE_DIALER = {
   'twilio-comms': 'src/components/crm/twilio-comms.tsx',
+  'inbound-call': 'src/app/api/twilio/inbound-call/route.ts',
 }
 const AGENT_BASE = process.env.AGENT_BASE || 'ba4ed21'
 const SINCE_AGENT = {
