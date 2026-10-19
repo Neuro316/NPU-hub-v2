@@ -8,7 +8,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   applyCallEvent, shouldRing, createRinger, isMicrophoneError,
-  createOutboundCall, MIC_BLOCKED_MESSAGE,
+  createOutboundCall, createOutboundStore, MIC_BLOCKED_MESSAGE,
 } from '../../src/lib/voice-call-state.ts'
 
 const call = (id, phase = 'ringing') => ({ id, phase, connectedAt: null, muted: false })
@@ -390,4 +390,145 @@ test('dispose ends a live call', async () => {
   h.ctl.dispose()
   assert.equal(h.ctl.stage, 'idle')
   assert.equal(h.call.disconnects, 1)
+})
+
+test('shouldRing: a call ringing over a live outbound call is silent', () => {
+  const calls = [call('A')]
+  assert.equal(shouldRing(calls, false), true)
+  assert.equal(shouldRing(calls, true), false)
+})
+
+// ── App-level outbound store (OutboundCallProvider) ──────────────────────────
+
+/** A store whose every call gets fresh fakes; `calls` lists them in order. */
+function storeHarness({ gateMic = false } = {}) {
+  const made = []
+  let clock = 1000
+  const store = createOutboundStore((target) => {
+    const call = fakeCall()
+    const device = {
+      destroyed: 0, disconnectAlls: 0,
+      async connect() { return call },
+      disconnectAll() { device.disconnectAlls++ },
+      destroy() { device.destroyed++ },
+    }
+    let grant
+    const mic = gateMic ? new Promise(r => { grant = r }) : Promise.resolve({ ok: true })
+    const rec = { target, call, device, server: [], timers: [], grant: () => grant({ ok: true }) }
+    made.push(rec)
+    return {
+      ensureMicrophone: () => mic,
+      prepare: async () => ({ ok: true, token: 't', params: { To: target.phone }, callLogId: `log-${made.length}` }),
+      createDevice: () => device,
+      onRemoteAudio: () => {},
+      ringback: { start() {}, stop() {} },
+      hangupOnServer: id => rec.server.push(id),
+      later: (fn) => { rec.timers.push(fn) },
+    }
+  }, () => clock)
+  return { store, made, tick: (ms) => { clock += ms } }
+}
+
+const target = (id) => ({ contactId: id, name: `Contact ${id}`, phone: '+15555550100' })
+
+test('store: a call survives a route change (every subscriber unmounting)', async () => {
+  const { store, made } = storeHarness()
+  // The Dialer page subscribes and places a call.
+  const dialerSeen = []
+  const unsubDialer = store.subscribe(() => dialerSeen.push(store.getSnapshot().stage))
+  const res = store.place(target('A'))
+  assert.equal(res.ok, true)
+  await flush(); await flush()
+  made[0].call.emit('accept')
+  assert.equal(store.getSnapshot().stage, 'connected')
+  // Navigate away: the Dialer unmounts.
+  unsubDialer()
+  assert.equal(made[0].call.disconnects, 0, 'unmounting a page never hangs up')
+  assert.equal(store.getSnapshot().stage, 'connected')
+  // Another page mounts and sees the same live call.
+  let seen = null
+  const unsubOther = store.subscribe(() => { seen = store.getSnapshot() })
+  assert.equal(store.getSnapshot().session, res.session)
+  assert.equal(store.getSnapshot().target.contactId, 'A')
+  // End from the new page.
+  store.hangUp()
+  assert.equal(made[0].call.disconnects, 1)
+  assert.equal(seen.stage, 'idle')
+  assert.equal(seen.ended.session, res.session)
+  assert.equal(seen.ended.wasConnected, true)
+  unsubOther()
+})
+
+test('store: only one live call at a time', async () => {
+  const { store, made } = storeHarness()
+  const first = store.place(target('A'))
+  assert.equal(first.ok, true)
+  const second = store.place(target('B'))
+  assert.deepEqual(second, { ok: false, reason: 'busy' })
+  assert.equal(made.length, 1, 'the second call was never set up')
+  await flush(); await flush()
+  made[0].call.emit('accept')
+  assert.deepEqual(store.place(target('B')), { ok: false, reason: 'busy' })
+  // Once the first call is gone, a new one can be placed.
+  made[0].call.emit('disconnect')
+  const third = store.place(target('B'))
+  assert.equal(third.ok, true)
+  assert.equal(third.session, first.session + 1)
+})
+
+test('store: End while dialing never places the call', async () => {
+  const { store, made } = storeHarness({ gateMic: true })
+  store.place(target('A'))
+  assert.equal(store.getSnapshot().stage, 'dialing')
+  store.hangUp()
+  assert.equal(store.getSnapshot().stage, 'idle')
+  made[0].grant()
+  await flush(); await flush()
+  assert.equal(made[0].call.disconnects, 0)
+  assert.equal(store.getSnapshot().stage, 'idle')
+})
+
+test('store: End while ringing and while connected hangs up with the server backstop', async () => {
+  for (const answered of [false, true]) {
+    const { store, made } = storeHarness()
+    store.place(target('A'))
+    await flush(); await flush()
+    assert.equal(store.getSnapshot().stage, 'ringing')
+    if (answered) made[0].call.emit('accept')
+    store.hangUp()
+    assert.equal(made[0].call.disconnects, 1)
+    assert.deepEqual(made[0].server, ['log-1'])
+    assert.equal(store.getSnapshot().stage, 'idle')
+    assert.equal(store.getSnapshot().ended.wasConnected, answered)
+  }
+})
+
+test('store: connect time, mute and a failed call are reported in the snapshot', async () => {
+  const { store, made, tick } = storeHarness()
+  store.place(target('A'))
+  await flush(); await flush()
+  tick(5000)
+  made[0].call.emit('accept')
+  assert.equal(store.getSnapshot().connectedAt, 6000)
+  store.setMuted(true)
+  assert.equal(store.getSnapshot().muted, true)
+  assert.equal(made[0].call.muted, true)
+  made[0].call.emit('error', { message: 'Network lost' })
+  const snap = store.getSnapshot()
+  assert.equal(snap.stage, 'idle')
+  assert.equal(snap.muted, false)
+  assert.equal(snap.ended.error, 'Network lost')
+})
+
+test('store: a late event from an ended call cannot touch the next call', async () => {
+  const { store, made } = storeHarness()
+  store.place(target('A'))
+  await flush(); await flush()
+  store.hangUp()
+  store.place(target('B'))
+  await flush(); await flush()
+  made[0].call.emit('accept')
+  made[0].call.emit('disconnect')
+  assert.equal(store.getSnapshot().stage, 'ringing')
+  assert.equal(store.getSnapshot().target.contactId, 'B')
 })

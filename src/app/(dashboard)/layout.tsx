@@ -5,6 +5,7 @@ import { WorkspaceProvider } from '@/lib/workspace-context'
 import { PermissionsProvider } from '@/lib/hooks/use-permissions'
 import { SidebarProvider, useSidebar } from '@/lib/sidebar-context'
 import { VoiceReceiverProvider } from '@/lib/voice-receiver-context'
+import { OutboundCallProvider } from '@/lib/voice-outbound-context'
 import { IncomingCallBanner, useCallBannerVisible, CALL_BANNER_HEIGHT_PX } from '@/components/incoming-call-banner'
 import { Sidebar } from '@/components/sidebar'
 import { TrackerInit } from '@/components/tracker-init'
@@ -68,6 +69,11 @@ export default function DashboardLayout({
   return (
     <WorkspaceProvider>
       <PermissionsProvider>
+        {/* The one outbound browser call: above the page tree, so navigating
+            between Hub pages never ends it. Outside the receiver, which reads
+            it (an incoming call over a live outbound call asks before
+            answering, and answering ends the outbound call). */}
+        <OutboundCallProvider>
         {/* Inside WorkspaceProvider (needs user + currentOrg), outside the page
             content so the Device registration survives route changes. */}
         <VoiceReceiverProvider>
@@ -81,12 +87,14 @@ export default function DashboardLayout({
             <DashboardContent>{children}</DashboardContent>
             {/* Calls can arrive on any page — the banner is pinned above
                 everything and lives outside the page tree, so navigating
-                between CRM and non-CRM routes never unmounts it. */}
+                between CRM and non-CRM routes never unmounts it. It also
+                renders the top-right Call button and in-call indicator. */}
             <IncomingCallBanner />
             </AgentShellProvider>
            </ToastProvider>
           </SidebarProvider>
         </VoiceReceiverProvider>
+        </OutboundCallProvider>
       </PermissionsProvider>
     </WorkspaceProvider>
   )
