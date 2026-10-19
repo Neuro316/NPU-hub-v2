@@ -8,6 +8,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   applyCallEvent, shouldRing, createRinger, isMicrophoneError,
+  createOutboundCall, MIC_BLOCKED_MESSAGE,
 } from '../../src/lib/voice-call-state.ts'
 
 const call = (id, phase = 'ringing') => ({ id, phase, connectedAt: null, muted: false })
@@ -177,4 +178,216 @@ test('microphone errors are recognized', () => {
   assert.equal(isMicrophoneError({ originalError: { name: 'NotAllowedError' } }), true)
   assert.equal(isMicrophoneError({ code: 31005 }), false)
   assert.equal(isMicrophoneError(null), false)
+})
+
+// ── Outbound calls: End at every stage, ringback ─────────────────────────────
+
+function fakeCall() {
+  const handlers = {}
+  const c = {
+    disconnects: 0, status_: 'connecting', muted: null, digits: '',
+    on(ev, fn) { (handlers[ev] ||= []).push(fn) },
+    emit(ev, ...args) { for (const fn of handlers[ev] || []) fn(...args) },
+    status() { return c.status_ },
+    disconnect() { c.disconnects++; c.status_ = 'closed'; c.emit('disconnect') },
+    mute(m) { c.muted = m },
+    sendDigits(d) { c.digits += d },
+  }
+  return c
+}
+
+/** A controller wired to fakes. `quietDisconnect` = the SDK reports nothing on disconnect(). */
+function harness({ mic = { ok: true }, prep, quietDisconnect = false } = {}) {
+  const log = { stages: [], ended: [], server: [], remote: 0, ringback: [], timers: [] }
+  const call = fakeCall()
+  if (quietDisconnect) call.disconnect = () => { call.disconnects++ }
+  let releaseConnect
+  const connectGate = new Promise(r => { releaseConnect = r })
+  const device = {
+    destroyed: 0, disconnectAlls: 0, gated: false,
+    async connect() { if (device.gated) await connectGate; return call },
+    disconnectAll() { device.disconnectAlls++ },
+    destroy() { device.destroyed++ },
+  }
+  let grantMic
+  const micGate = mic === 'gated' ? new Promise(r => { grantMic = r }) : null
+  const ctl = createOutboundCall({
+    ensureMicrophone: () => micGate ?? Promise.resolve(mic),
+    prepare: async () => prep ?? { ok: true, token: 't', params: { To: '+1' }, callLogId: 'log-1' },
+    createDevice: () => device,
+    onStage: s => log.stages.push(s),
+    onEnded: info => log.ended.push(info),
+    onRemoteAudio: () => { log.remote++ },
+    ringback: { start: () => log.ringback.push('start'), stop: () => log.ringback.push('stop') },
+    hangupOnServer: id => log.server.push(id),
+    later: (fn, ms) => { log.timers.push({ fn, ms }) },
+  })
+  const runTimers = () => { for (const t of log.timers.splice(0)) t.fn() }
+  return { ctl, call, device, log, runTimers, releaseConnect: () => releaseConnect(), grantMic: () => grantMic({ ok: true }) }
+}
+
+test('End while connected hangs up, backs up on the server, then goes idle', async () => {
+  const h = harness()
+  await h.ctl.start()
+  h.call.emit('accept')
+  assert.equal(h.ctl.stage, 'connected')
+  h.ctl.hangUp()
+  assert.equal(h.call.disconnects, 1)
+  assert.ok(h.device.disconnectAlls >= 1)
+  assert.deepEqual(h.log.server, ['log-1'])
+  assert.equal(h.ctl.stage, 'idle')
+  assert.deepEqual(h.log.ended, [{ error: null, wasConnected: true }])
+  // The device is destroyed later, not in the same tick as the hangup.
+  assert.equal(h.device.destroyed, 0)
+  h.runTimers()
+  assert.equal(h.device.destroyed, 1)
+})
+
+test('End while ringing hangs up a call that never connected', async () => {
+  const h = harness()
+  await h.ctl.start()
+  h.call.emit('ringing', true)
+  assert.equal(h.ctl.stage, 'ringing')
+  h.ctl.hangUp()
+  assert.equal(h.call.disconnects, 1)
+  assert.deepEqual(h.log.server, ['log-1'])
+  assert.deepEqual(h.log.ended, [{ error: null, wasConnected: false }])
+})
+
+test('End stays on "ending" until the SDK reports the call closed', async () => {
+  const h = harness({ quietDisconnect: true })
+  await h.ctl.start()
+  h.call.emit('accept')
+  h.ctl.hangUp()
+  assert.equal(h.ctl.stage, 'ending')
+  assert.equal(h.log.ended.length, 0)
+  h.call.emit('disconnect')
+  assert.equal(h.ctl.stage, 'idle')
+  assert.equal(h.log.ended.length, 1)
+})
+
+test('End with no disconnect event still finishes after the timeout', async () => {
+  const h = harness({ quietDisconnect: true })
+  await h.ctl.start()
+  h.ctl.hangUp()
+  assert.equal(h.ctl.stage, 'ending')
+  h.runTimers()
+  assert.equal(h.ctl.stage, 'idle')
+  assert.equal(h.log.ended.length, 1)
+})
+
+test('pressing End again while ending finishes at once', async () => {
+  const h = harness({ quietDisconnect: true })
+  await h.ctl.start()
+  h.ctl.hangUp()
+  h.ctl.hangUp()
+  assert.equal(h.ctl.stage, 'idle')
+  assert.equal(h.log.ended.length, 1)
+})
+
+test('End while dialing (waiting on the mic) never places the call', async () => {
+  const h = harness({ mic: 'gated' })
+  const started = h.ctl.start()
+  assert.equal(h.ctl.stage, 'dialing')
+  h.ctl.hangUp()
+  assert.equal(h.ctl.stage, 'idle')
+  h.grantMic()
+  await started
+  assert.equal(h.ctl.stage, 'idle')
+  assert.equal(h.call.disconnects, 0)
+  assert.equal(h.log.ended.length, 1)
+})
+
+test('End while connect() is in flight hangs up the call when it arrives', async () => {
+  const h = harness()
+  h.device.gated = true
+  const started = h.ctl.start()
+  await flush(); await flush()
+  assert.equal(h.ctl.stage, 'dialing')
+  h.ctl.hangUp()
+  assert.equal(h.ctl.stage, 'idle')
+  h.releaseConnect()
+  await started
+  assert.equal(h.call.disconnects, 1, 'the late call is hung up')
+  assert.deepEqual(h.log.server, ['log-1'])
+  assert.equal(h.ctl.call, null)
+  // A late event from that call cannot bring the screen back.
+  h.call.emit('accept')
+  assert.equal(h.ctl.stage, 'idle')
+})
+
+test('the far side hanging up ends the call', async () => {
+  const h = harness()
+  await h.ctl.start()
+  h.call.emit('accept')
+  h.call.emit('disconnect')
+  assert.equal(h.ctl.stage, 'idle')
+  assert.equal(h.log.server.length, 0, 'no server hangup when nobody pressed End')
+})
+
+test('a call error ends the call with a message', async () => {
+  const h = harness()
+  await h.ctl.start()
+  h.call.emit('error', { code: 31401 })
+  assert.equal(h.ctl.stage, 'idle')
+  assert.equal(h.log.ended[0].error, MIC_BLOCKED_MESSAGE)
+})
+
+test('a blocked mic or a failed token ends before dialing', async () => {
+  const a = harness({ mic: { ok: false, message: 'mic' } })
+  await a.ctl.start()
+  assert.equal(a.log.ended[0].error, 'mic')
+  const b = harness({ prep: { ok: false, message: 'no token' } })
+  await b.ctl.start()
+  assert.equal(b.log.ended[0].error, 'no token')
+  assert.equal(b.device.destroyed + b.device.disconnectAlls, 0)
+})
+
+test('local ringback plays from the Call tap until the network sends early media', async () => {
+  const h = harness()
+  await h.ctl.start()
+  assert.deepEqual(h.log.ringback, ['start'])
+  h.call.emit('ringing', true)
+  assert.deepEqual(h.log.ringback, ['start', 'stop'])
+  assert.equal(h.log.remote, 1, 'remote audio starts at ringing, for early media')
+})
+
+test('with no early media, local ringback plays until answer', async () => {
+  const h = harness()
+  await h.ctl.start()
+  h.call.emit('ringing', false)
+  assert.deepEqual(h.log.ringback, ['start'])
+  h.call.emit('accept')
+  assert.deepEqual(h.log.ringback, ['start', 'stop'])
+  assert.equal(h.log.remote, 1)
+})
+
+test('ringback stops on End and on a failed call', async () => {
+  const h = harness()
+  await h.ctl.start()
+  h.ctl.hangUp()
+  assert.equal(h.log.ringback.at(-1), 'stop')
+  const e = harness()
+  await e.ctl.start()
+  e.call.emit('error', { message: 'x' })
+  assert.equal(e.log.ringback.at(-1), 'stop')
+})
+
+test('mute and keypad act on the live call only while connected', async () => {
+  const h = harness()
+  await h.ctl.start()
+  assert.equal(h.ctl.mute(true), false)
+  h.call.emit('accept')
+  assert.equal(h.ctl.mute(true), true)
+  assert.equal(h.call.muted, true)
+  h.ctl.sendDigits('5')
+  assert.equal(h.call.digits, '5')
+})
+
+test('dispose ends a live call', async () => {
+  const h = harness({ quietDisconnect: true })
+  await h.ctl.start()
+  h.ctl.dispose()
+  assert.equal(h.ctl.stage, 'idle')
+  assert.equal(h.call.disconnects, 1)
 })

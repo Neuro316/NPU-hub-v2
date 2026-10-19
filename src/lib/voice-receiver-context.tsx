@@ -11,7 +11,7 @@ import {
 } from '@/lib/voice-call-state'
 import {
   keepRemoteAudioPlaying, listOutputDevices, loadVoiceSdk, setOutputDevice as routeOutput,
-  unlockCallAudio, type OutputDevice,
+  primeCallTones, unlockCallAudio, type OutputDevice,
 } from '@/lib/voice-audio'
 
 // Persistent inbound Device — the browser softphone's registration layer.
@@ -191,6 +191,9 @@ export function VoiceReceiverProvider({ children }: { children: React.ReactNode 
     const opts = { capture: true, passive: true } as const
     const onGesture = () => {
       unlockCallAudio()
+      // Outbound ringback (voice-audio.ts) starts after a token fetch, outside
+      // the Call tap; waking its context on every tap is what lets it play.
+      primeCallTones()
       const r = ringer()
       if (!r) return
       r.onUserGesture()

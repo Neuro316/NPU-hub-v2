@@ -176,3 +176,192 @@ export function isMicrophoneError(err: any): boolean {
 
 export const MIC_BLOCKED_MESSAGE =
   'Microphone access is blocked, so calls cannot connect. Allow the microphone for this site in your browser settings (on iPhone: Settings > Apps > Safari > Microphone), then try again.'
+
+// ── Outbound calls ──────────────────────────────────────────────────────────
+//
+// One controller for every browser-placed call (the /crm/dialer page and
+// VoipCall), so End behaves the same on both paths and can be tested here.
+//
+// THE RULE: End ends the call at every stage.
+//   dialing    nothing is placed yet, or device.connect() is still in flight.
+//              The setup is abandoned at its next step, and a call that comes
+//              back from connect() after End is hung up on arrival.
+//   ringing /  call.disconnect() and device.disconnectAll() send the hangup,
+//   connected  and the server ends the call by its log row as a backstop. The
+//              UI stays on 'ending' until the SDK reports the call closed (or
+//              ENDING_TIMEOUT_MS passes), then returns to idle.
+// The Device is destroyed DEVICE_RELEASE_MS later, not at once. Destroying it
+// in the same tick closes the signaling socket; on a phone, where that socket
+// is often mid-reconnect, a hangup still queued in it was then never sent and
+// Twilio kept the call up waiting for the browser to come back.
+
+export type OutboundStage = 'idle' | 'dialing' | 'ringing' | 'connected' | 'ending'
+
+export type OutboundPrep =
+  | { ok: true; token: string; params: Record<string, string>; callLogId: string | null }
+  | { ok: false; message: string }
+
+export interface OutboundCallDeps {
+  ensureMicrophone(): Promise<{ ok: true } | { ok: false; message: string }>
+  /** Mint the token and the call_logs row; returns what device.connect needs. */
+  prepare(): Promise<OutboundPrep>
+  createDevice(token: string): any
+  onStage(stage: OutboundStage): void
+  /** The call is gone. `error` is set when it ended because something failed. */
+  onEnded(info: { error: string | null; wasConnected: boolean }): void
+  /** The far side's audio should be playing now (early media, or answer). */
+  onRemoteAudio(call: any): void
+  /** Local ringback for when the network sends none. Primed in the Call tap. */
+  ringback: { start(): void; stop(): void }
+  /** Ask the server to end the call by its call_logs row. Fire and forget. */
+  hangupOnServer(callLogId: string): void
+  later(fn: () => void, ms: number): unknown
+}
+
+export const DEVICE_RELEASE_MS = 5000
+export const ENDING_TIMEOUT_MS = 3000
+
+export function callErrorMessage(err: any, fallback = 'The call failed.'): string {
+  if (isMicrophoneError(err)) return MIC_BLOCKED_MESSAGE
+  return String(err?.message || err?.twilioError?.message || '') || fallback
+}
+
+export function createOutboundCall(deps: OutboundCallDeps) {
+  let stage: OutboundStage = 'idle'
+  let attempt = 0
+  let call: any = null
+  let device: any = null
+  let callLogId: string | null = null
+  let wasConnected = false
+
+  const set = (s: OutboundStage) => {
+    if (stage === s) return
+    stage = s
+    deps.onStage(s)
+  }
+
+  const releaseDevice = (d: any) => {
+    if (!d) return
+    try { d.disconnectAll() } catch { /* already gone */ }
+    deps.later(() => { try { d.destroy() } catch { /* already gone */ } }, DEVICE_RELEASE_MS)
+  }
+
+  /** The current call (or setup) is over: tear down and report once. */
+  const finish = (error: string | null) => {
+    if (stage === 'idle') return
+    deps.ringback.stop()
+    const d = device
+    call = null
+    device = null
+    callLogId = null
+    releaseDevice(d)
+    const connected = wasConnected
+    wasConnected = false
+    set('idle')
+    deps.onEnded({ error, wasConnected: connected })
+  }
+
+  const wire = (c: any) => {
+    const mine = () => call === c
+    c.on('ringing', (hasEarlyMedia: boolean) => {
+      if (!mine() || stage === 'ending') return
+      set('ringing')
+      // The network is playing its own ringback down the line: hand over to it.
+      if (hasEarlyMedia) {
+        deps.ringback.stop()
+        deps.onRemoteAudio(c)
+      }
+    })
+    c.on('accept', () => {
+      if (!mine() || stage === 'ending') return
+      wasConnected = true
+      deps.ringback.stop()
+      set('connected')
+      deps.onRemoteAudio(c)
+    })
+    const gone = () => { if (mine()) finish(null) }
+    c.on('disconnect', gone)
+    c.on('cancel', gone)
+    c.on('reject', gone)
+    c.on('error', (err: any) => { if (mine()) finish(callErrorMessage(err)) })
+  }
+
+  return {
+    get stage() { return stage },
+    get call() { return call },
+    get device() { return device },
+
+    /** Place a call. Call it from the Call tap, after priming audio. */
+    async start(): Promise<void> {
+      if (stage !== 'idle') return
+      const my = ++attempt
+      const live = () => my === attempt
+      wasConnected = false
+      set('dialing')
+      deps.ringback.start()
+      try {
+        const mic = await deps.ensureMicrophone()
+        if (!live()) return
+        if (!mic.ok) return finish(mic.message)
+        const prep = await deps.prepare()
+        if (!live()) return
+        if (!prep.ok) return finish(prep.message)
+        callLogId = prep.callLogId
+        const d = deps.createDevice(prep.token)
+        device = d
+        const c = await d.connect({ params: prep.params })
+        if (!live()) {
+          // End was pressed while this call was being placed.
+          try { c?.disconnect() } catch { /* */ }
+          releaseDevice(d)
+          if (prep.callLogId) deps.hangupOnServer(prep.callLogId)
+          return
+        }
+        call = c
+        wire(c)
+        set('ringing')
+      } catch (e: any) {
+        if (!live()) return
+        finish(callErrorMessage(e, 'Could not start the call.'))
+      }
+    },
+
+    /** End, at any stage. Pressing it again while ending finishes at once. */
+    hangUp(): void {
+      if (stage === 'idle') return
+      if (stage === 'ending') { finish(null); return }
+      attempt++ // any setup still awaiting stops at its next step
+      deps.ringback.stop()
+      const c = call
+      const logId = callLogId // disconnect() can finish() synchronously
+      if (!c) { finish(null); return }
+      set('ending')
+      if (logId) deps.hangupOnServer(logId)
+      try { device?.disconnectAll() } catch { /* */ }
+      try { c.disconnect() } catch { /* */ }
+      let closed = false
+      try { closed = c.status?.() === 'closed' } catch { /* */ }
+      if (closed) finish(null)
+      else deps.later(() => { if (call === c) finish(null) }, ENDING_TIMEOUT_MS)
+    },
+
+    mute(muted: boolean): boolean {
+      if (!call || stage !== 'connected') return false
+      try { call.mute(muted); return true } catch { return false }
+    },
+
+    sendDigits(digits: string): void {
+      if (!call || stage !== 'connected') return
+      try { call.sendDigits(digits) } catch { /* */ }
+    },
+
+    /** Unmount: end anything live. */
+    dispose(): void {
+      if (stage === 'idle') return
+      this.hangUp()
+      finish(null) // no-op if hangUp already finished
+    },
+  }
+}
+
+export type OutboundCall = ReturnType<typeof createOutboundCall>

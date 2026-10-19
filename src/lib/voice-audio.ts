@@ -34,6 +34,12 @@ export async function loadVoiceSdk(): Promise<any> {
   return sdk
 }
 
+/** The SDK if loadVoiceSdk() has finished, for use inside a tap handler. */
+export function loadedVoiceSdk(): any {
+  if (!sdk) throw new Error('Voice SDK not loaded yet.')
+  return sdk
+}
+
 function sdkAudioContext(): AudioContext | null {
   try {
     const Device = sdk?.Device
@@ -71,11 +77,17 @@ function sdkRemoteAudioElements(call: any): HTMLAudioElement[] {
   return out
 }
 
+const keeping = new WeakMap<object, () => void>()
+
 /**
  * Make sure the far side is audible once a call connects, on any browser.
  * Returns a cleanup function; it also cleans up when the call ends.
  */
 export function keepRemoteAudioPlaying(call: any): () => void {
+  // Runs from 'ringing' (early media: the network's ringback) and again from
+  // 'accept'. One keeper per call, so the second call only nudges playback.
+  const existing = call && typeof call === 'object' ? keeping.get(call) : undefined
+  if (existing) { tryPlayFor(call); return existing }
   let fallback: HTMLAudioElement | null = null
   let stopped = false
 
@@ -113,6 +125,8 @@ export function keepRemoteAudioPlaying(call: any): () => void {
   const cleanup = () => {
     if (stopped) return
     stopped = true
+    if (call && typeof call === 'object') keeping.delete(call)
+    players.delete(call)
     document.removeEventListener('pointerdown', onGesture, true)
     document.removeEventListener('touchend', onGesture, true)
     if (fallback) {
@@ -121,6 +135,7 @@ export function keepRemoteAudioPlaying(call: any): () => void {
     }
   }
 
+  if (call && typeof call === 'object') { keeping.set(call, cleanup); players.set(call, tryPlay) }
   document.addEventListener('pointerdown', onGesture, true)
   document.addEventListener('touchend', onGesture, true)
   // The SDK attaches its element as the track arrives, just around 'accept'.
@@ -133,6 +148,105 @@ export function keepRemoteAudioPlaying(call: any): () => void {
     call?.once?.('reject', cleanup)
   } catch { /* */ }
   return cleanup
+}
+
+const players = new WeakMap<object, () => void>()
+function tryPlayFor(call: any) {
+  const p = players.get(call)
+  if (!p) return
+  p()
+  setTimeout(p, 300)
+  setTimeout(p, 1500)
+}
+
+// ── Ringback ────────────────────────────────────────────────────────────────
+//
+// What the caller hears while the far phone rings. The network's own ringback
+// arrives as early media once the outbound <Dial> has answerOnBridge; this
+// local tone covers the gap before that, and any path that sends none.
+// Web Audio, because a phone only lets a page start sound inside a tap and the
+// tone has to start after the token fetch: the context is created or resumed
+// in the tap (primeCallTones) and is still running when the tone starts.
+
+let toneCtx: AudioContext | null = null
+
+/** Create or wake the tone context. Call synchronously inside a user gesture. */
+export function primeCallTones(): void {
+  try {
+    if (!toneCtx) {
+      const AC: typeof AudioContext | undefined =
+        typeof window === 'undefined' ? undefined : (window.AudioContext || (window as any).webkitAudioContext)
+      if (!AC) return
+      toneCtx = new AC()
+    }
+    if (toneCtx.state !== 'running') toneCtx.resume().catch(() => { /* next tap tries again */ })
+  } catch { /* no Web Audio: silent ringback */ }
+}
+
+/** US ringback: 440 Hz + 480 Hz, 2 seconds on, 4 seconds off. */
+export function createRingback(): { start(): void; stop(): void } {
+  let nodes: { oscs: OscillatorNode[]; gain: GainNode } | null = null
+  let timer: ReturnType<typeof setInterval> | null = null
+
+  const burst = () => {
+    if (!toneCtx || !nodes) return
+    const t = toneCtx.currentTime
+    const g = nodes.gain.gain
+    try {
+      g.cancelScheduledValues(t)
+      g.setValueAtTime(0, t)
+      g.linearRampToValueAtTime(0.08, t + 0.02)
+      g.setValueAtTime(0.08, t + 2)
+      g.linearRampToValueAtTime(0, t + 2.02)
+    } catch { /* */ }
+  }
+
+  const stop = () => {
+    if (timer) { clearInterval(timer); timer = null }
+    if (!nodes) return
+    const n = nodes
+    nodes = null
+    try { n.gain.gain.cancelScheduledValues(0); n.gain.gain.value = 0 } catch { /* */ }
+    for (const o of n.oscs) { try { o.stop(); o.disconnect() } catch { /* */ } }
+    try { n.gain.disconnect() } catch { /* */ }
+  }
+
+  return {
+    start() {
+      if (nodes) return
+      primeCallTones()
+      const ctx = toneCtx
+      if (!ctx) return
+      try {
+        const gain = ctx.createGain()
+        gain.gain.value = 0
+        gain.connect(ctx.destination)
+        const oscs = [440, 480].map(f => {
+          const o = ctx.createOscillator()
+          o.frequency.value = f
+          o.connect(gain)
+          o.start()
+          return o
+        })
+        nodes = { oscs, gain }
+        burst()
+        timer = setInterval(burst, 6000)
+      } catch { stop() }
+    },
+    stop,
+  }
+}
+
+/** Server backstop for End: ends the call by its call_logs row. */
+export function hangupOnServer(callLogId: string): void {
+  try {
+    fetch('/api/voice/hangup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ call_log_id: callLogId }),
+      keepalive: true,
+    }).catch(() => { /* the client hangup already went out */ })
+  } catch { /* */ }
 }
 
 export type MicResult = { ok: true } | { ok: false; message: string }
