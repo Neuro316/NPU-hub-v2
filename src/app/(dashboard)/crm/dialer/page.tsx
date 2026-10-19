@@ -14,11 +14,8 @@ import {
 import { createClient } from '@/lib/supabase-browser'
 import { fetchCallLogs, lookupContactByPhone } from '@/lib/crm-client'
 import type { CrmContact, CallLog, Sentiment } from '@/types/crm'
-import {
-  createRingback, ensureMicrophone, hangupOnServer, keepRemoteAudioPlaying, loadVoiceSdk,
-  loadedVoiceSdk, primeCallTones, unlockCallAudio,
-} from '@/lib/voice-audio'
-import { createOutboundCall, type OutboundCall, type OutboundStage } from '@/lib/voice-call-state'
+import { primeCallTones, unlockCallAudio } from '@/lib/voice-audio'
+import { useOutboundCall, ALREADY_ON_CALL_MESSAGE } from '@/lib/voice-outbound-context'
 
 const SENTIMENT_BADGE: Record<Sentiment, { label: string; color: string; bg: string }> = {
   positive: { label: '😊 Positive', color: '#059669', bg: '#ecfdf5' },
@@ -60,9 +57,21 @@ function timeAgo(d: string) {
 export default function DialerPage() {
   const supabase = createClient()
   const [dialString, setDialString] = useState('')
-  const [callState, setCallState] = useState<'idle' | 'dialing' | 'ringing' | 'connected' | 'on_hold' | 'ending' | 'ended'>('idle')
-  const [callDuration, setCallDuration] = useState(0)
-  const [isMuted, setIsMuted] = useState(false)
+  // The live call is the app-level one (voice-outbound-context.tsx): it
+  // outlives this page, and a call placed anywhere in the Hub shows here.
+  const outbound = useOutboundCall()
+  const { snapshot } = outbound
+  // Looking up the typed number before the call is placed.
+  const [lookingUp, setLookingUp] = useState(false)
+  // Hold is screen-only, as it always was.
+  const [onHold, setOnHold] = useState(false)
+  // "Call ended" for 1.5s after a call this page placed ends.
+  const [endedFlash, setEndedFlash] = useState(false)
+  const callState: 'idle' | 'dialing' | 'ringing' | 'connected' | 'on_hold' | 'ending' | 'ended' =
+    outbound.live
+      ? (snapshot.stage === 'connected' && onHold ? 'on_hold' : snapshot.stage as 'dialing' | 'ringing' | 'connected' | 'ending')
+      : lookingUp ? 'dialing' : endedFlash ? 'ended' : 'idle'
+  const isMuted = snapshot.muted
   const [showKeypadInCall, setShowKeypadInCall] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [contacts, setContacts] = useState<CrmContact[]>([])
@@ -74,21 +83,15 @@ export default function DialerPage() {
   const [callNotes, setCallNotes] = useState('')
   const [callError, setCallError] = useState('')
 
-  const timerRef = useRef<NodeJS.Timeout | null>(null)
   const audioCtxRef = useRef<AudioContext | null>(null)
-  // The live call. Hang up, Mute and the keypad act on it through the shared
-  // controller (voice-call-state.ts), which also owns End at every stage.
-  const outboundRef = useRef<OutboundCall | null>(null)
-  // The contact the next call is placed to; read by the controller's prepare().
-  const dialContactIdRef = useRef<string | null>(null)
+  // The session this page placed, so its end (or failure) is reported here.
+  const placedRef = useRef(0)
   // Bumped by End, so a contact lookup that finishes after End does not dial.
   const lookupRef = useRef(0)
 
   useEffect(() => {
     fetchCallLogs(undefined, 100).then(setRecentCalls).catch(console.error)
-    // Load the SDK now so the Call tap can wake its audio synchronously.
-    loadVoiceSdk().catch(() => { /* retried when a call starts */ })
-    return () => { outboundRef.current?.dispose() }
+    // Leaving this page does NOT end a call: OutboundCallProvider owns it.
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Search contacts
@@ -108,16 +111,30 @@ export default function DialerPage() {
     return () => clearTimeout(t)
   }, [searchQuery])
 
-  // Timer
+  // Timer: from the provider's connect time, so it is right after navigating back.
+  const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
-    if (callState === 'connected') {
-      timerRef.current = setInterval(() => setCallDuration(d => d + 1), 1000)
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current)
-      if (callState === 'idle') setCallDuration(0)
-    }
-    return () => { if (timerRef.current) clearInterval(timerRef.current) }
-  }, [callState])
+    if (snapshot.stage !== 'connected') return
+    setNow(Date.now())
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [snapshot.stage])
+  const callDuration = snapshot.stage === 'connected' && snapshot.connectedAt
+    ? Math.max(0, Math.floor((now - snapshot.connectedAt) / 1000)) : 0
+
+  // A call ended: reset the in-call controls; for a call placed here, flash
+  // "ended" (or show why it failed), then refresh Recent.
+  const endedSession = snapshot.ended?.session ?? 0
+  useEffect(() => {
+    if (!endedSession) return
+    setOnHold(false)
+    setShowKeypadInCall(false)
+    if (endedSession !== placedRef.current) { reloadCalls(); return }
+    if (snapshot.ended?.error) { setCallError(snapshot.ended.error); return }
+    setEndedFlash(true)
+    const t = setTimeout(() => { setEndedFlash(false); reloadCalls() }, 1500)
+    return () => clearTimeout(t)
+  }, [endedSession])  // eslint-disable-line react-hooks/exhaustive-deps
 
   function playTone(digit: string) {
     const t = DTMF_TONES[digit]
@@ -135,59 +152,11 @@ export default function DialerPage() {
 
   function pressKey(d: string) {
     // In a connected call the keypad sends tones down the line (menus, extensions).
-    if (callState === 'connected' && outboundRef.current) {
-      outboundRef.current.sendDigits(d)
+    if (callState === 'connected') {
+      outbound.sendDigits(d)
       return
     }
     playTone(d); setDialString(p => p + d)
-  }
-
-  function outbound(): OutboundCall {
-    if (outboundRef.current) return outboundRef.current
-    const ringback = createRingback()
-    outboundRef.current = createOutboundCall({
-      ensureMicrophone,
-      async prepare() {
-        const res = await fetch('/api/voice/token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contact_id: dialContactIdRef.current }),
-        })
-        const data = await res.json().catch(() => ({}))
-        if (!res.ok) return { ok: false, message: data?.error || 'Could not start the call.' }
-        await loadVoiceSdk()
-        return {
-          ok: true,
-          token: data.token,
-          params: {
-            To: data.contact_phone, CallerId: data.caller_id ?? '', OrgId: data.org_id ?? '',
-            // Lets inbound-call stamp external_call_sid on THIS row from the
-            // parent CallSid, which is what recording-ready matches on.
-            CallLogId: data.call_log_id ?? '',
-          },
-          callLogId: data.call_log_id ?? null,
-        }
-      },
-      // prepare() loaded the SDK, so this is synchronous.
-      createDevice: (token) => new (loadedVoiceSdk().Device)(token, { logLevel: 1, codecPreferences: ['opus', 'pcmu'] as any }),
-      onStage: (stage: OutboundStage) => {
-        if (stage === 'idle') return // onEnded decides what idle looks like
-        if (stage === 'connected') setCallDuration(0)
-        setCallState(stage)
-      },
-      onEnded: ({ error }) => {
-        setIsMuted(false)
-        setShowKeypadInCall(false)
-        if (error) { setCallError(error); setCallState('idle'); return }
-        setCallState('ended')
-        setTimeout(() => { setCallState(p => (p === 'ended' ? 'idle' : p)); setCallDuration(0); reloadCalls() }, 1500)
-      },
-      onRemoteAudio: keepRemoteAudioPlaying,
-      ringback,
-      hangupOnServer,
-      later: (fn, ms) => setTimeout(fn, ms),
-    })
-    return outboundRef.current
   }
 
   function selectContact(c: CrmContact) {
@@ -205,45 +174,47 @@ export default function DialerPage() {
 
   async function startCall() {
     if (!dialString.trim()) return
-    const ctl = outbound()
-    if (ctl.stage !== 'idle') return
+    if (outbound.live || lookingUp) return
     // First thing in the tap, before any await: phones only allow audio to
     // start inside a gesture. Wake call audio and the ringback tone now.
     unlockCallAudio()
     primeCallTones()
     setCallError('')
+    setEndedFlash(false)
     // Use the picked contact, else match the typed number to one so the call
-    // is logged against it. The controller asks for the microphone first.
+    // is logged against it. The provider asks for the microphone first.
     let contact = selectedContact
     if (!contact) {
       const lookup = ++lookupRef.current
-      setCallState('dialing')
+      setLookingUp(true)
       try { contact = await lookupContactByPhone(dialString) } catch { contact = null }
       if (lookup !== lookupRef.current) return
+      setLookingUp(false)
       if (!contact) {
         // This used to pretend to connect after two seconds without dialing.
         setCallError('This number is not in your contacts yet. Add it as a contact to call it from the Hub.')
-        setCallState('idle')
         return
       }
       setSelectedContact(contact)
     }
-    dialContactIdRef.current = contact.id
-    await ctl.start()
+    const res = outbound.placeCall({
+      contactId: contact.id,
+      name: `${contact.first_name || ''} ${contact.last_name || ''}`.trim(),
+      phone: contact.phone || dialString,
+    })
+    if (!res.ok) { setCallError(ALREADY_ON_CALL_MESSAGE); return }
+    placedRef.current = res.session
   }
 
   function endCall() {
     lookupRef.current++
-    const ctl = outboundRef.current
-    if (ctl && ctl.stage !== 'idle') { ctl.hangUp(); return }
-    // No live call (e.g. still looking up the contact): just reset the screen.
-    setCallState('idle')
-    setCallDuration(0)
+    setLookingUp(false)
+    // End at any stage; the provider reports back once the call is gone.
+    if (outbound.live) outbound.hangUp()
   }
 
   function toggleMute() {
-    const next = !isMuted
-    if (outboundRef.current?.mute(next)) setIsMuted(next)
+    outbound.setMuted(!isMuted)
   }
 
   function reloadCalls() {
@@ -251,7 +222,11 @@ export default function DialerPage() {
   }
 
   const isInCall = ['dialing', 'ringing', 'connected', 'on_hold', 'ending'].includes(callState)
-  const displayName = selectedContact ? `${selectedContact.first_name} ${selectedContact.last_name}` : dialString ? fmtPhone(dialString) : ''
+  // A call placed elsewhere in the Hub shows under its own name here.
+  const liveElsewhere = outbound.live && snapshot.session !== placedRef.current
+  const displayName = liveElsewhere
+    ? (snapshot.target?.name || fmtPhone(snapshot.target?.phone || ''))
+    : selectedContact ? `${selectedContact.first_name} ${selectedContact.last_name}` : dialString ? fmtPhone(dialString) : ''
 
   return (
     <div className="flex flex-col lg:flex-row gap-4 lg:h-[calc(100vh-200px)] animate-in fade-in duration-300">
@@ -343,7 +318,7 @@ export default function DialerPage() {
                   <span className="text-sm font-light">#</span>
                   <span className="text-[8px] font-medium">Keypad</span>
                 </button>
-                <button onClick={() => setCallState(p => p === 'on_hold' ? 'connected' : 'on_hold')}
+                <button onClick={() => setOnHold(h => !h)}
                   className={`flex flex-col items-center gap-1 p-3 rounded-xl transition-all ${callState === 'on_hold' ? 'bg-amber-50 text-amber-500' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>
                   {callState === 'on_hold' ? <Play size={16} /> : <Pause size={16} />}
                   <span className="text-[8px] font-medium">{callState === 'on_hold' ? 'Resume' : 'Hold'}</span>
