@@ -14,6 +14,7 @@ import { PIPELINE_STAGES, STAGE_COLORS } from '@/types/crm'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
 import { ContactCommsButtons } from '@/components/crm/twilio-comms'
+import { LeadValueEditor, formatUsdFull, formatUsdCompact } from '@/components/crm/lead-value'
 
 interface StageEmail {
   id: string
@@ -27,6 +28,19 @@ interface PipelineStageConfig {
   id: string; name: string; color: string; is_closed_won?: boolean; is_closed_lost?: boolean; position: number
   stage_emails?: StageEmail[]
 }
+
+// One card's deal in one pipeline (hub_pipeline_deals, via /api/crm/pipeline-deals).
+interface PipelineDeal {
+  contact_id: string
+  pipeline_key: string
+  value: number | null
+  entered_at: string
+  stage_changed_at: string
+  won_at: string | null
+  lost_at: string | null
+}
+
+const toDeal = (d: any): PipelineDeal => ({ ...d, value: d.value === null || d.value === undefined ? null : Number(d.value) })
 
 interface PipelineCustomField {
   id: string
@@ -113,8 +127,10 @@ const TEMPLATES: Record<string, PipelineStageConfig[]> = {
   ],
 }
 
-function ContactCard({ contact, stages, pipelines, activePipelineId, customFields, onMove, onMovePipeline, onRemovePipeline, onOpenContact }: { 
+function ContactCard({ contact, stages, pipelines, activePipelineId, customFields, dealValue, onSaveValue, onMove, onMovePipeline, onRemovePipeline, onOpenContact }: { 
   contact: CrmContact
+  dealValue: number | null
+  onSaveValue: (value: number | null) => Promise<void>
   stages: PipelineStageConfig[]
   pipelines: PipelineConfig[]
   activePipelineId: string
@@ -131,7 +147,7 @@ function ContactCard({ contact, stages, pipelines, activePipelineId, customField
   // and its stage buttons become unclickable.
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null)
   const initials = `${contact.first_name?.[0] || ''}${contact.last_name?.[0] || ''}`.toUpperCase()
-  const value = contact.custom_fields?.value as number | undefined
+  const [editingValue, setEditingValue] = useState(false)
   const daysSince = contact.last_contacted_at ? Math.floor((Date.now() - new Date(contact.last_contacted_at).getTime()) / 86400000) : null
   const menuRef = useRef<HTMLDivElement>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
@@ -173,7 +189,7 @@ function ContactCard({ contact, stages, pipelines, activePipelineId, customField
 
   return (
     <div
-      draggable
+      draggable={!editingValue}
       onDragStart={e => { e.dataTransfer.setData('contactId', contact.id); e.dataTransfer.effectAllowed = 'move' }}
       className="group relative bg-white rounded-lg border border-gray-100/60 p-3 hover:shadow-md hover:border-np-blue/30 transition-all cursor-grab active:cursor-grabbing active:opacity-70"
     >
@@ -210,7 +226,7 @@ function ContactCard({ contact, stages, pipelines, activePipelineId, customField
         
         <div className="flex-1" />
         {daysSince !== null && daysSince > 7 && <span className="text-[9px] text-orange-400">{daysSince}d</span>}
-        {value && <span className="text-[10px] font-semibold text-green-600 flex items-center gap-0.5"><DollarSign size={9} />{(value/1000).toFixed(0)}k</span>}
+        <LeadValueEditor value={dealValue} onSave={onSaveValue} onEditingChange={setEditingValue} />
       </div>
       <div className="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-all" onClick={e => e.stopPropagation()}>
         <ContactCommsButtons contact={contact} size="sm" />
@@ -259,44 +275,72 @@ function ContactCard({ contact, stages, pipelines, activePipelineId, customField
   )
 }
 
-function PipelineMetrics({ contacts, stages }: { contacts: CrmContact[]; stages: PipelineStageConfig[] }) {
-  const wonStage = stages.find(s => s.is_closed_won)
-  const lostStage = stages.find(s => s.is_closed_lost)
-  const wonContacts = wonStage ? contacts.filter(c => c.pipeline_stage === wonStage.name) : []
-  const lostContacts = lostStage ? contacts.filter(c => c.pipeline_stage === lostStage.name) : []
-  const closedTotal = wonContacts.length + lostContacts.length
-  const winRate = closedTotal > 0 ? ((wonContacts.length / closedTotal) * 100).toFixed(1) : '--'
-  const closeTimes = wonContacts.map(c => { if (!c.created_at || !c.updated_at) return null; return (new Date(c.updated_at).getTime() - new Date(c.created_at).getTime()) / 86400000 }).filter((d): d is number => d !== null && d > 0)
-  const avgCloseTime = closeTimes.length > 0 ? Math.round(closeTimes.reduce((a,b)=>a+b,0)/closeTimes.length) : null
-  const totalValue = contacts.reduce((s,c) => s + ((c.custom_fields?.value as number)||0), 0)
-  const wonValue = wonContacts.reduce((s,c) => s + ((c.custom_fields?.value as number)||0), 0)
-  const staleCount = contacts.filter(c => c.pipeline_stage !== wonStage?.name && c.pipeline_stage !== lostStage?.name && c.last_contacted_at && (Date.now() - new Date(c.last_contacted_at).getTime()) > 14*86400000).length
+// Stage type comes from the existing Won / Lost flags on each stage. A pipeline can
+// flag more than one stage as won or lost, so every flagged stage counts.
+type StageType = 'open' | 'won' | 'lost'
+function stageTypeOf(stages: PipelineStageConfig[], stageName: string | null | undefined): StageType {
+  const n = (stageName || '').trim().toLowerCase()
+  const st = stages.find(s => s.name.trim().toLowerCase() === n)
+  if (st?.is_closed_won) return 'won'
+  if (st?.is_closed_lost) return 'lost'
+  return 'open'
+}
+
+const DAY = 86400000
+
+function PipelineMetrics({ contacts, stages, deals }: { contacts: CrmContact[]; stages: PipelineStageConfig[]; deals: Record<string, PipelineDeal> }) {
+  const typed = contacts.map(c => ({ c, d: deals[c.id] as PipelineDeal | undefined, t: stageTypeOf(stages, c.pipeline_stage) }))
+  const open = typed.filter(x => x.t === 'open')
+  const won = typed.filter(x => x.t === 'won')
+  const lost = typed.filter(x => x.t === 'lost')
+  const closedTotal = won.length + lost.length
+  const winRate = closedTotal > 0 ? `${((won.length / closedTotal) * 100).toFixed(1).replace(/\.0$/, '')}%` : '--'
+
+  const closeDays = won
+    .map(x => x.d?.won_at && x.d?.entered_at ? (new Date(x.d.won_at).getTime() - new Date(x.d.entered_at).getTime()) / DAY : null)
+    .filter((d): d is number => d !== null && d >= 0)
+  const avgClose = closeDays.length > 0 ? Math.round(closeDays.reduce((a, b) => a + b, 0) / closeDays.length) : null
+
+  const valueOf = (x: { d?: PipelineDeal }) => x.d?.value ?? null
+  const openValue = open.reduce((s, x) => s + (valueOf(x) ?? 0), 0)
+  const wonValues = won.map(valueOf).filter((v): v is number => v !== null)
+  const wonValue = wonValues.reduce((s, v) => s + v, 0)
+  const avgDeal = wonValues.length > 0 ? wonValue / wonValues.length : null
+
+  // Stale: open, and neither a stage change nor any contact activity in 14+ days.
+  const now = Date.now()
+  const staleCount = open.filter(x => {
+    const times = [x.d?.stage_changed_at, x.c.last_contacted_at, x.d ? null : x.c.created_at]
+      .filter(Boolean).map(t => new Date(t as string).getTime())
+    const last = times.length ? Math.max(...times) : 0
+    return now - last > 14 * DAY
+  }).length
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
       <div className="rounded-xl border border-gray-100 bg-white p-3">
+        <div className="flex items-center gap-1.5 mb-1"><DollarSign size={12} className="text-green-500" /><span className="text-[9px] font-semibold uppercase text-gray-400">Pipeline Value</span></div>
+        <p className="text-lg font-bold text-np-dark">{formatUsdCompact(openValue)}</p>
+        <p className="text-[9px] text-gray-400">{formatUsdCompact(wonValue)} closed</p>
+      </div>
+      <div className="rounded-xl border border-gray-100 bg-white p-3">
         <div className="flex items-center gap-1.5 mb-1"><Percent size={12} className="text-green-500" /><span className="text-[9px] font-semibold uppercase text-gray-400">Win Rate</span></div>
-        <p className="text-lg font-bold text-np-dark">{winRate}%</p>
-        <p className="text-[9px] text-gray-400">{wonContacts.length}W / {lostContacts.length}L</p>
+        <p className="text-lg font-bold text-np-dark">{winRate}</p>
+        <p className="text-[9px] text-gray-400">{won.length}W / {lost.length}L</p>
       </div>
       <div className="rounded-xl border border-gray-100 bg-white p-3">
         <div className="flex items-center gap-1.5 mb-1"><Clock size={12} className="text-blue-500" /><span className="text-[9px] font-semibold uppercase text-gray-400">Avg Close</span></div>
-        <p className="text-lg font-bold text-np-dark">{avgCloseTime !== null ? `${avgCloseTime}d` : '--'}</p>
-        <p className="text-[9px] text-gray-400">{closeTimes.length} closed deals</p>
-      </div>
-      <div className="rounded-xl border border-gray-100 bg-white p-3">
-        <div className="flex items-center gap-1.5 mb-1"><DollarSign size={12} className="text-green-500" /><span className="text-[9px] font-semibold uppercase text-gray-400">Pipeline Value</span></div>
-        <p className="text-lg font-bold text-np-dark">${(totalValue/1000).toFixed(0)}k</p>
-        <p className="text-[9px] text-gray-400">${(wonValue/1000).toFixed(0)}k closed</p>
+        <p className="text-lg font-bold text-np-dark">{avgClose !== null ? `${avgClose}d` : '--'}</p>
+        <p className="text-[9px] text-gray-400">{closeDays.length} closed {closeDays.length === 1 ? 'deal' : 'deals'}</p>
       </div>
       <div className="rounded-xl border border-gray-100 bg-white p-3">
         <div className="flex items-center gap-1.5 mb-1"><Target size={12} className="text-purple-500" /><span className="text-[9px] font-semibold uppercase text-gray-400">Avg Deal Size</span></div>
-        <p className="text-lg font-bold text-np-dark">{wonContacts.length > 0 ? `$${(wonValue/wonContacts.length/1000).toFixed(1)}k` : '--'}</p>
-        <p className="text-[9px] text-gray-400">per closed deal</p>
+        <p className="text-lg font-bold text-np-dark">{avgDeal !== null ? formatUsdCompact(avgDeal) : '--'}</p>
+        <p className="text-[9px] text-gray-400">{wonValues.length} won with a value</p>
       </div>
       <div className="rounded-xl border border-gray-100 bg-white p-3">
         <div className="flex items-center gap-1.5 mb-1"><TrendingUp size={12} className="text-np-blue" /><span className="text-[9px] font-semibold uppercase text-gray-400">Active</span></div>
-        <p className="text-lg font-bold text-np-dark">{contacts.length - wonContacts.length - lostContacts.length}</p>
+        <p className="text-lg font-bold text-np-dark">{open.length}</p>
         <p className="text-[9px] text-gray-400">{contacts.length} total</p>
       </div>
       <div className="rounded-xl border border-gray-100 bg-white p-3">
@@ -808,6 +852,8 @@ export default function PipelinesPage() {
   const [showCustomFieldEditor, setShowCustomFieldEditor] = useState(false)
   const [showNewContact, setShowNewContact] = useState(false)
   const [showMetrics, setShowMetrics] = useState(true)
+  // Deals for the active pipeline, keyed by contact id.
+  const [deals, setDeals] = useState<Record<string, PipelineDeal>>({})
   const activePipeline = pipelines.find(p => p.id === activePipelineId) || pipelines[0]
 
   useEffect(() => {
@@ -846,6 +892,68 @@ export default function PipelinesPage() {
   }, [currentOrg?.id])
 
   useEffect(() => {
+    if (!currentOrg || !activePipeline?.id) return
+    let cancelled = false
+    setDeals({})
+    fetch(`/api/crm/pipeline-deals?org_id=${currentOrg.id}&pipeline_key=${encodeURIComponent(activePipeline.id)}`)
+      .then(r => r.json())
+      .then(j => {
+        if (cancelled || !Array.isArray(j?.deals)) return
+        const map: Record<string, PipelineDeal> = {}
+        for (const d of j.deals) map[d.contact_id] = toDeal(d)
+        setDeals(map)
+      })
+      .catch(e => console.error('[Pipelines] deals load error:', e))
+    return () => { cancelled = true }
+  }, [currentOrg?.id, activePipeline?.id])
+
+  const postDeal = async (payload: Record<string, unknown>): Promise<PipelineDeal> => {
+    const res = await fetch('/api/crm/pipeline-deals', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    })
+    const j = await res.json().catch(() => ({}))
+    if (!res.ok || !j?.deal) throw new Error(j?.error || `Request failed (${res.status})`)
+    return toDeal(j.deal)
+  }
+
+  const saveDealValue = async (contactId: string, value: number | null) => {
+    const prev = deals[contactId]
+    const nowIso = new Date().toISOString()
+    setDeals(d => ({ ...d, [contactId]: { ...(prev || { contact_id: contactId, pipeline_key: activePipelineId, entered_at: nowIso, stage_changed_at: nowIso, won_at: null, lost_at: null }), value } }))
+    try {
+      const deal = await postDeal({ contact_id: contactId, pipeline_key: activePipelineId, value })
+      setDeals(d => ({ ...d, [contactId]: deal }))
+    } catch (e: any) {
+      console.error('saveDealValue failed', e)
+      setDeals(d => { const n = { ...d }; if (prev) n[contactId] = prev; else delete n[contactId]; return n })
+      alert(`Could not save the lead value: ${e?.message || e}`)
+    }
+  }
+
+  // After a stage move: stamp the stage change and won/lost locally so the summary
+  // updates at once, then take the server's row (it reads the authoritative flags).
+  const touchDeal = (contactId: string, pipelineKey: string, stage: string, enteredPipeline: boolean) => {
+    const pipeline = pipelines.find(p => p.id === pipelineKey)
+    const t = pipeline ? stageTypeOf(pipeline.stages, stage) : 'open'
+    const nowIso = new Date().toISOString()
+    if (pipelineKey === activePipelineId) {
+      setDeals(d => {
+        const cur = d[contactId]
+        return { ...d, [contactId]: {
+          contact_id: contactId, pipeline_key: pipelineKey, value: cur?.value ?? null,
+          entered_at: enteredPipeline || !cur ? nowIso : cur.entered_at,
+          stage_changed_at: nowIso,
+          won_at: t === 'won' ? (cur?.won_at ?? nowIso) : null,
+          lost_at: t === 'lost' ? (cur?.lost_at ?? nowIso) : null,
+        } }
+      })
+    }
+    postDeal({ contact_id: contactId, pipeline_key: pipelineKey, touch: true, entered_pipeline: enteredPipeline })
+      .then(deal => { if (pipelineKey === activePipelineId) setDeals(d => ({ ...d, [contactId]: deal })) })
+      .catch(e => console.error('touchDeal failed', e))
+  }
+
+  useEffect(() => {
     if (!currentOrg) return
     createClient().from('team_profiles').select('id,display_name,email').eq('org_id', currentOrg.id).order('display_name').then(({data})=>setTeam(data||[]))
   }, [currentOrg?.id])
@@ -875,9 +983,13 @@ export default function PipelinesPage() {
     // (RLS reject, bad field) makes a stage move look successful while the DB
     // never changed — the silent-failure class that has bitten repeatedly.
     const prevContacts = contacts
+    const before = contacts.find(c => c.id === id)
+    // A contact with no pipeline_id shown on the default board is already in it.
+    const enteredPipeline = !!before && before.pipeline_id !== activePipelineId && !(!before.pipeline_id && activePipeline.is_default)
     setContacts(prev => prev.map(c => c.id === id ? { ...c, pipeline_stage: stage, pipeline_id: activePipelineId } : c))
     try {
       await updateContact(id, { pipeline_stage: stage, pipeline_id: activePipelineId } as any)
+      if (!before || before.pipeline_stage !== stage || enteredPipeline) touchDeal(id, activePipelineId, stage, enteredPipeline)
       fireStageEmails(id, stage)
     } catch (e: any) {
       console.error('moveContact failed', e)
@@ -890,6 +1002,7 @@ export default function PipelinesPage() {
     try {
       await updateContact(id, { pipeline_id: pipelineId, pipeline_stage: firstStage } as any)
       setContacts(prev => prev.map(c => c.id === id ? { ...c, pipeline_id: pipelineId, pipeline_stage: firstStage } : c))
+      if (pipelineId !== activePipelineId) touchDeal(id, pipelineId, firstStage, true)
     } catch (e) { console.error(e) }
   }
 
@@ -936,7 +1049,11 @@ export default function PipelinesPage() {
       return false
     })
   }
-  const stageValue = (name: string) => stageContacts(name).reduce((s,c) => s + ((c.custom_fields?.value as number)||0), 0)
+  // null when no card in the stage has a value, so the header shows nothing rather than $0
+  const stageValue = (name: string) => {
+    const vals = stageContacts(name).map(c => deals[c.id]?.value ?? null).filter((v): v is number => v !== null)
+    return vals.length ? vals.reduce((s, v) => s + v, 0) : null
+  }
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 rounded-lg bg-np-blue/20 animate-pulse" /></div>
 
@@ -973,7 +1090,7 @@ export default function PipelinesPage() {
         </div>
       </div>
 
-      {showMetrics && <PipelineMetrics contacts={pipelineContacts} stages={activePipeline.stages} />}
+      {showMetrics && <PipelineMetrics contacts={pipelineContacts} stages={activePipeline.stages} deals={deals} />}
 
       <div data-help-id="pipelines.board" className="flex gap-3 overflow-x-auto overflow-y-hidden pb-2" style={{ height: 'calc(100vh - 300px)' }}>
         {activePipeline.stages.map(stage => {
@@ -984,8 +1101,7 @@ export default function PipelinesPage() {
                 <div className="w-2.5 h-2.5 rounded-full" style={{ background: stage.color }} />
                 <span className="text-xs font-semibold text-np-dark">{stage.name}</span>
                 <span className="text-[10px] font-medium text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded-full">{sc.length}</span>
-                <div className="flex-1" />
-                {sv > 0 && <span className="text-[10px] font-medium text-green-600">${(sv/1000).toFixed(0)}k</span>}
+                {sv !== null && <span className="text-[10px] font-medium text-green-600">· {formatUsdFull(sv)}</span>}
               </div>
               <div
                 className="space-y-2 flex-1 overflow-y-auto rounded-xl bg-gray-50/50 p-2 border-2 border-dashed border-gray-100/50 transition-all duration-200"
@@ -993,7 +1109,7 @@ export default function PipelinesPage() {
                 onDragLeave={e => { e.currentTarget.classList.remove('bg-np-blue/10', 'border-np-blue/40', 'scale-[1.01]'); e.currentTarget.classList.add('bg-gray-50/50', 'border-gray-100/50') }}
                 onDrop={e => { e.preventDefault(); e.currentTarget.classList.remove('bg-np-blue/10', 'border-np-blue/40', 'scale-[1.01]'); e.currentTarget.classList.add('bg-gray-50/50', 'border-gray-100/50'); const cid = e.dataTransfer.getData('contactId'); if (cid) moveContact(cid, stage.name) }}
               >
-                {sc.map(c => <ContactCard key={c.id} contact={c} stages={activePipeline.stages} pipelines={pipelines} activePipelineId={activePipelineId} customFields={activePipeline.custom_fields || []} onMove={s => moveContact(c.id, s)} onMovePipeline={(pid, fs) => moveToPipeline(c.id, pid, fs)} onRemovePipeline={() => removeFromPipeline(c.id)} onOpenContact={setSelectedContactId} />)}
+                {sc.map(c => <ContactCard key={c.id} contact={c} stages={activePipeline.stages} pipelines={pipelines} activePipelineId={activePipelineId} customFields={activePipeline.custom_fields || []} dealValue={deals[c.id]?.value ?? null} onSaveValue={v => saveDealValue(c.id, v)} onMove={s => moveContact(c.id, s)} onMovePipeline={(pid, fs) => moveToPipeline(c.id, pid, fs)} onRemovePipeline={() => removeFromPipeline(c.id)} onOpenContact={setSelectedContactId} />)}
                 {sc.length === 0 && <div className="text-center py-8 text-[10px] text-gray-400">No contacts</div>}
               </div>
             </div>
@@ -1006,8 +1122,20 @@ export default function PipelinesPage() {
       {showCardConfig && <CardConfigEditor pipeline={activePipeline} onSave={cfg => { savePipelines(pipelines.map(p => p.id===activePipelineId ? { ...p, card_config:cfg } : p)); setShowCardConfig(false) }} onClose={() => setShowCardConfig(false)} />}
       {showCustomFieldEditor && <CustomFieldEditor pipeline={activePipeline} onSave={fields => { savePipelines(pipelines.map(p => p.id===activePipelineId ? { ...p, custom_fields:fields } : p)); setShowCustomFieldEditor(false) }} onClose={() => setShowCustomFieldEditor(false)} />}
       {showNewContact && <NewContactModal pipeline={activePipeline} firstStage={activePipeline.stages[0]?.name || 'New Lead'} onSave={handleNewContact} onClose={() => setShowNewContact(false)} />}
-      {selectedContactId && <ContactDetail contactId={selectedContactId} cardConfig={activePipeline.card_config} pipelineCustomFields={activePipeline.custom_fields} onClose={() => setSelectedContactId(null)} onUpdate={() => {
-        if (currentOrg) fetchContacts({ org_id: currentOrg.id, limit: 500 }).then(r => setContacts(r.contacts)).catch(console.error)
+      {selectedContactId && <ContactDetail contactId={selectedContactId} cardConfig={activePipeline.card_config} pipelineCustomFields={activePipeline.custom_fields}
+        leadValue={{ pipelineName: activePipeline.name, value: deals[selectedContactId]?.value ?? null, onSave: v => saveDealValue(selectedContactId, v) }}
+        onClose={() => setSelectedContactId(null)} onUpdate={() => {
+        if (!currentOrg) return
+        const before = contacts.find(c => c.id === selectedContactId)
+        fetchContacts({ org_id: currentOrg.id, limit: 500 }).then(r => {
+          setContacts(r.contacts)
+          // A stage or pipeline change made in the detail view counts as a move too.
+          const after = r.contacts.find(c => c.id === selectedContactId)
+          if (before && after && after.pipeline_id && (before.pipeline_id !== after.pipeline_id || before.pipeline_stage !== after.pipeline_stage)) {
+            const entered = before.pipeline_id !== after.pipeline_id && !(!before.pipeline_id && pipelines.find(p => p.id === after.pipeline_id)?.is_default)
+            touchDeal(after.id, after.pipeline_id, after.pipeline_stage || '', entered)
+          }
+        }).catch(console.error)
       }} />}
     </div>
   )

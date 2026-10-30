@@ -26,6 +26,7 @@ import { ContactMarketingTab } from '@/components/marketing/contact-marketing-ta
 import EmailComposer from '@/components/crm/email-composer'
 import { createClient } from '@/lib/supabase-browser'
 import { helpId } from '@/lib/agent/help/help-id'
+import { LeadValueEditor } from '@/components/crm/lead-value'
 
 interface PipelineCustomField {
   id: string
@@ -343,6 +344,8 @@ interface ContactDetailProps {
   onUpdate?: () => void
   cardConfig?: CardConfig
   pipelineCustomFields?: PipelineCustomField[]
+  /** Passed by the pipelines board: the lead value of this card in the pipeline being viewed. */
+  leadValue?: { pipelineName: string; value: number | null; onSave: (value: number | null) => Promise<void> }
 }
 
 /**
@@ -362,7 +365,7 @@ function writeErrorMessage(e: any, label: string): string {
     : `${label} failed: ${e?.message || 'unknown error'}. Nothing was saved.`
 }
 
-export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig, pipelineCustomFields }: ContactDetailProps) {
+export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig, pipelineCustomFields, leadValue }: ContactDetailProps) {
   const show = (key: keyof NonNullable<CardConfig>['sections']) =>
     !cardConfig || cardConfig.sections[key] !== false
   const supabase = createClient()
@@ -1709,6 +1712,14 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                         })()}
                       </select>
                     </div>
+                    {leadValue && (
+                      <div>
+                        <label className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Lead value in {leadValue.pipelineName}</label>
+                        <div className="mt-1">
+                          <LeadValueEditor value={leadValue.value} onSave={leadValue.onSave} size="detail" />
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <ContactDriveSection contact={contact} updateContact={updateContact} load={load} />
