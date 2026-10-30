@@ -46,11 +46,14 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         <span className="text-sm font-semibold text-np-dark">NPU Hub</span>
       </div>
 
-      {/* Main content */}
+      {/* Main content. On desktop the top 48px is kept clear for the fixed
+          top-right Call button and receiver pill (incoming-call-banner.tsx
+          TopCallCluster), so they never sit on a page's own header buttons.
+          Below lg they live inside the mobile top bar instead. */}
       <main
         className={`
           p-6 transition-all duration-200
-          pt-20 lg:pt-6
+          pt-20 lg:pt-12
           ${isCollapsed ? 'lg:ml-16' : 'lg:ml-64'}
         `}
         style={bannerVisible ? { marginTop: bannerOffset } : undefined}

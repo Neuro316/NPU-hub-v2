@@ -187,7 +187,12 @@ function QuickDialSheet({ narrow, onClose, onPlaced }: {
 }) {
   const { currentOrg } = useWorkspace()
   const { placeCall } = useOutboundCall()
-  const { lines } = useOrgLines(currentOrg?.id)
+  const { lines, defaultLine } = useOrgLines(currentOrg?.id)
+  // Name the line "Default line" resolves to, so the caller knows which number shows.
+  const defaultLineObj = lines.find(l => l.phone === defaultLine)
+  const defaultLineLabel = defaultLineObj
+    ? `Default (${defaultLineObj.nickname || formatUsPhone(defaultLineObj.phone)})`
+    : 'Default line'
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<FoundContact[]>([])
   const [numberMatch, setNumberMatch] = useState<FoundContact | null>(null)
@@ -228,14 +233,18 @@ function QuickDialSheet({ narrow, onClose, onPlaced }: {
       const found: FoundContact[] = []
       try {
         if (/[a-z]/i.test(safe)) {
-          const { data } = await sb.from('contacts')
+          // Every word must match the first or the last name, so a full name
+          // ("Jane Doe") finds the contact. Chained .or() filters are ANDed.
+          let nameQuery = sb.from('contacts')
             .select('id, first_name, last_name, phone')
             .eq('org_id', currentOrg.id)
             .is('merged_into_id', null)
             .is('do_not_contact', false)
             .not('phone', 'is', null)
-            .or(`first_name.ilike.%${safe}%,last_name.ilike.%${safe}%`)
-            .limit(15)
+          for (const word of safe.split(/\s+/).filter(w => /[a-z]/i.test(w))) {
+            nameQuery = nameQuery.or(`first_name.ilike.%${word}%,last_name.ilike.%${word}%`)
+          }
+          const { data } = await nameQuery.limit(15)
           found.push(...((data || []) as FoundContact[]))
         }
         if (digits.length >= 7) {
@@ -334,7 +343,7 @@ function QuickDialSheet({ narrow, onClose, onPlaced }: {
 
       <div className="flex items-center gap-2">
         <button type="button" onClick={() => setShowPad(p => !p)} aria-pressed={showPad}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium ${showPad ? 'bg-np-blue text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap ${showPad ? 'bg-np-blue text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
           <Grid3x3 size={13} /> {showPad ? 'Hide number pad' : 'Number pad'}
         </button>
         {lines.length >= 2 && (
@@ -342,7 +351,7 @@ function QuickDialSheet({ narrow, onClose, onPlaced }: {
             From
             <select value={line} onChange={e => setLine(e.target.value)}
               className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-np-dark focus:outline-none focus:ring-2 focus:ring-np-blue/30">
-              <option value="">Default line</option>
+              <option value="">{defaultLineLabel}</option>
               {lines.map(l => <option key={l.phone} value={l.phone}>{l.nickname || formatUsPhone(l.phone)}</option>)}
             </select>
           </label>
