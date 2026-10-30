@@ -1,14 +1,11 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Phone, PhoneOff, MessageCircle, Send, X, Mic, MicOff, Volume2, Plus } from 'lucide-react'
 import type { CrmContact } from '@/types/crm'
 import { updateContact } from '@/lib/crm-client'
-import {
-  createRingback, ensureMicrophone, hangupOnServer, keepRemoteAudioPlaying, loadVoiceSdk,
-  loadedVoiceSdk, primeCallTones, unlockCallAudio,
-} from '@/lib/voice-audio'
-import { createOutboundCall, type OutboundCall } from '@/lib/voice-call-state'
+import { primeCallTones, unlockCallAudio } from '@/lib/voice-audio'
+import { useOutboundCall, ALREADY_ON_CALL_MESSAGE } from '@/lib/voice-outbound-context'
 
 // ── SMS Compose Modal ──
 
@@ -150,18 +147,18 @@ export function VoipCall({ contact, onClose, onEnded, lineE164 }: {
   /** Org line to call FROM (Conversations line dropdown). Omit for the org default. */
   lineE164?: string | null
 }) {
-  const [callState, setCallState] = useState<CallState>('idle')
-  const [duration, setDuration] = useState(0)
-  const [muted, setMuted] = useState(false)
-  const [error, setError] = useState('')
-  // The live call, through the shared controller (voice-call-state.ts), which
-  // owns End at every stage: while connecting, ringing, and connected.
-  const outboundRef = useRef<OutboundCall | null>(null)
-  const timerRef = useRef<NodeJS.Timeout | null>(null)
+  // The call is the app-level one (voice-outbound-context.tsx): this panel
+  // places it and shows it, but does not own it. Closing the panel or leaving
+  // the page leaves the call up; the top indicator shows it and End there (or
+  // here) hangs up, at any stage.
+  const outbound = useOutboundCall()
+  const { snapshot } = outbound
+  const [mySession, setMySession] = useState(0)
+  const [busy, setBusy] = useState(false)
 
   // ── REDIAL-LOOP GUARD ──────────────────────────────────────────────────────
-  // onEnded is held in a ref, NOT in startCall's dependency array, and the start
-  // effect fires at most once per mount.
+  // onEnded is held in a ref, NOT in a dependency array, and the start effect
+  // fires at most once per mount.
   //
   // The bug this fixes: startCall used to depend on `onEnded`, and the mount
   // effect depended on `startCall`. A caller passing an INLINE onEnded (a new
@@ -176,97 +173,66 @@ export function VoipCall({ contact, onClose, onEnded, lineE164 }: {
   onEndedRef.current = onEnded
   const startedRef = useRef(false)
 
-  const startCall = useCallback(async () => {
-    setError('')
-    const stopTimer = () => { if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null } }
-    const ctl = createOutboundCall({
-      // Asked before minting a token and a call row, so a blocked mic gets a
-      // clear message instead of a silent failed call.
-      ensureMicrophone,
-      async prepare() {
-        const res = await fetch('/api/voice/token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contact_id: contact.id, ...(lineE164 ? { line_e164: lineE164 } : {}) }),
-        })
-        const data = await res.json().catch(() => ({}))
-        if (!res.ok) return { ok: false, message: data.error || 'Failed to connect' }
-        // Log any warnings from the server (e.g. call log failed)
-        if (data.log_warning) console.warn('Voice log warning:', data.log_warning)
-        await loadVoiceSdk()
-        return {
-          ok: true,
-          token: data.token,
-          params: {
-            To: data.contact_phone, CallerId: data.caller_id ?? '', OrgId: data.org_id ?? '',
-            // Lets inbound-call stamp external_call_sid on THIS row from the
-            // parent CallSid, which is what recording-ready matches on.
-            CallLogId: data.call_log_id ?? '',
-          },
-          callLogId: data.call_log_id ?? null,
-        }
-      },
-      // prepare() loaded the SDK, so this is synchronous.
-      createDevice: (token) => new (loadedVoiceSdk().Device)(token, { logLevel: 1, codecPreferences: ['opus', 'pcmu'] as any }),
-      onStage: (stage) => {
-        if (stage === 'dialing') setCallState('connecting')
-        else if (stage === 'ringing' || stage === 'ending') setCallState(stage)
-        else if (stage === 'connected') {
-          setCallState('connected')
-          setDuration(0)
-          stopTimer()
-          timerRef.current = setInterval(() => setDuration(d => d + 1), 1000)
-        }
-      },
-      onEnded: ({ error: err }) => {
-        stopTimer()
-        setMuted(false)
-        if (err) { console.error('Call error:', err); setError(err); setCallState('error'); return }
-        setCallState('ended')
-        // Via the ref: calling onEnded directly would put it in this callback's
-        // dependency chain and re-arm the redial loop.
-        onEndedRef.current?.()
-      },
-      // Phones can leave the far side's audio element paused; see voice-audio.ts.
-      onRemoteAudio: keepRemoteAudioPlaying,
-      ringback: createRingback(),
-      hangupOnServer,
-      later: (fn, ms) => setTimeout(fn, ms),
-    })
-    outboundRef.current = ctl
-    // The Call tap primed audio (ContactCommsButtons, and the app-wide tap
-    // listener in voice-receiver-context); this covers a still-sticky gesture.
-    unlockCallAudio()
-    primeCallTones()
-    await ctl.start()
-    // lineE164 is read once at dial time; the mount effect below still runs
-    // exactly once (startedRef), so a changing prop can never redial.
-  }, [contact.id, lineE164])
-
   useEffect(() => {
     // Exactly one dial per mount. Even if this effect were somehow re-run, the
     // guard prevents a second call from being placed — a redial must require a
     // deliberate remount (closing the panel and clicking Call again).
     if (startedRef.current) return
     startedRef.current = true
-    startCall()
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current)
-      outboundRef.current?.dispose()
-    }
+    // The Call tap primed audio (ContactCommsButtons, and the app-wide tap
+    // listener in voice-receiver-context); this covers a still-sticky gesture.
+    unlockCallAudio()
+    primeCallTones()
+    // lineE164 is read once at dial time, so a changing prop can never redial.
+    const res = outbound.placeCall({
+      contactId: contact.id,
+      name: `${contact.first_name || ''} ${contact.last_name || ''}`.trim(),
+      phone: contact.phone || '',
+      lineE164: lineE164 ?? null,
+    })
+    if (res.ok) setMySession(res.session)
+    else setBusy(true)
+    // Unmount does not end the call (see above).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // End at any stage. The controller hangs up and reports back through
-  // onEnded once the call is actually gone; the panel follows that.
+  const mine = mySession > 0 && snapshot.session === mySession
+  const endedMine = mySession > 0 && snapshot.ended?.session === mySession ? snapshot.ended : null
+  const callState: CallState = busy ? 'error'
+    : mine && outbound.live
+      ? (snapshot.stage === 'dialing' ? 'connecting' : snapshot.stage as CallState)
+      : endedMine ? (endedMine.error ? 'error' : 'ended')
+        : 'idle'
+  const error = busy ? ALREADY_ON_CALL_MESSAGE : (endedMine?.error || '')
+  const muted = mine && snapshot.muted
+
+  // Duration from the provider's connect time.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (callState !== 'connected') return
+    setNow(Date.now())
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [callState])
+  const duration = callState === 'connected' && snapshot.connectedAt
+    ? Math.max(0, Math.floor((now - snapshot.connectedAt) / 1000)) : 0
+
+  // Our call ended cleanly: tell the caller, once. Via the ref: calling
+  // onEnded directly would put it in a dependency chain and re-arm the loop.
+  const endedSession = endedMine && !endedMine.error ? endedMine.session : 0
+  useEffect(() => {
+    if (endedSession) onEndedRef.current?.()
+  }, [endedSession])
+
+  // End at any stage. The provider hangs up and reports back once the call is
+  // actually gone; the panel follows that.
   const handleHangup = () => {
-    const ctl = outboundRef.current
-    if (ctl && ctl.stage !== 'idle') ctl.hangUp()
-    else { setCallState('ended'); onEndedRef.current?.() }
+    if (mine && outbound.live) outbound.hangUp()
+    else onEndedRef.current?.()
   }
 
   const toggleMute = () => {
-    if (outboundRef.current?.mute(!muted)) setMuted(!muted)
+    if (mine) outbound.setMuted(!muted)
   }
 
   const formatDuration = (s: number) => {

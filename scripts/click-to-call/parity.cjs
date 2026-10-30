@@ -19,8 +19,9 @@
 // SINCE_AGENT byte-for-byte equal to the Campaign Builder's last commit (ba4ed21): the marketing
 //            flags and the middleware, which that build changed and click-to-call must not.
 //
-// SINCE_DIALER byte-for-byte equal to the mobile dialer fix (02a83d9): VoipCall in twilio-comms,
-//            and inbound-call, whose outbound browser <Dial> gained answerOnBridge.
+// SINCE_DIALER byte-for-byte equal to DIALER_BASE: VoipCall in twilio-comms (re-pinned at the
+//            global Call button, 3fab3b6), and inbound-call, whose outbound browser <Dial>
+//            gained answerOnBridge (02a83d9).
 //
 // SINCE_C2C  byte-for-byte equal to the click-to-call merge (d3be328): the line picker
 //            touches only the button, the route and the click-to-call libraries, so the
@@ -71,11 +72,14 @@ const SINCE_C2C = {
 // remote audio kept playing on phones. Its follow-up (02a83d9) moved VoipCall onto the shared
 // outbound controller (End at every stage) and added answerOnBridge to the outbound browser
 // <Dial> in inbound-call, for ringback. Both are compared with that commit instead of d49d00e,
-// so click-to-call still cannot move them.
+// so click-to-call still cannot move them. The global Call button (feat/global-call-button,
+// 3fab3b6) moved VoipCall onto the app-level OutboundCallProvider on purpose, so twilio-comms is
+// compared with that commit; inbound-call is unchanged since 02a83d9 and still compared with it.
 const DIALER_BASE = process.env.DIALER_BASE || '02a83d9'
+const CALL_BUTTON_BASE = process.env.CALL_BUTTON_BASE || '3fab3b6'
 const SINCE_DIALER = {
-  'twilio-comms': 'src/components/crm/twilio-comms.tsx',
-  'inbound-call': 'src/app/api/twilio/inbound-call/route.ts',
+  'twilio-comms': ['src/components/crm/twilio-comms.tsx', CALL_BUTTON_BASE],
+  'inbound-call': ['src/app/api/twilio/inbound-call/route.ts', DIALER_BASE],
 }
 const AGENT_BASE = process.env.AGENT_BASE || 'ba4ed21'
 const SINCE_AGENT = {
@@ -128,9 +132,9 @@ for (const [k, f] of Object.entries(SINCE_C2C)) {
   const same = now === base(f, C2C_BASE)
   rows.push({ id: `C_${k}`, ok: same, got: same ? `identical to ${C2C_BASE}` : `differs from ${C2C_BASE}` })
 }
-for (const [k, f] of Object.entries(SINCE_DIALER)) {
-  const same = work(f) === base(f, DIALER_BASE)
-  rows.push({ id: `D_${k}`, ok: same, got: same ? `identical to ${DIALER_BASE}` : `differs from ${DIALER_BASE}` })
+for (const [k, [f, ref]] of Object.entries(SINCE_DIALER)) {
+  const same = work(f) === base(f, ref)
+  rows.push({ id: `D_${k}`, ok: same, got: same ? `identical to ${ref}` : `differs from ${ref}` })
 }
 for (const [k, f] of Object.entries(SINCE_AGENT)) {
   const same = work(f) === base(f, AGENT_BASE)

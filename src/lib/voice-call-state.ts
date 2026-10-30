@@ -49,9 +49,10 @@ export function applyCallEvent<T extends CallEntryBase>(calls: T[], ev: CallEven
  * Should the ringtone be audible? Yes while any call is ringing, unless a call
  * is already connected: like the Twilio SDK's own ringer, a second call during
  * a live one shows and queues silently instead of ringing into your ear.
+ * `otherCallLive` is a call outside this list (the outbound call): same rule.
  */
-export function shouldRing(calls: ReadonlyArray<Pick<CallEntryBase, 'phase'>>): boolean {
-  return calls.some(c => c.phase === 'ringing') && !calls.some(c => c.phase === 'connected')
+export function shouldRing(calls: ReadonlyArray<Pick<CallEntryBase, 'phase'>>, otherCallLive = false): boolean {
+  return calls.some(c => c.phase === 'ringing') && !calls.some(c => c.phase === 'connected') && !otherCallLive
 }
 
 // ── Ringer ──────────────────────────────────────────────────────────────────
@@ -365,3 +366,93 @@ export function createOutboundCall(deps: OutboundCallDeps) {
 }
 
 export type OutboundCall = ReturnType<typeof createOutboundCall>
+
+// ── The app's one outbound call ─────────────────────────────────────────────
+//
+// The store behind OutboundCallProvider (voice-outbound-context.tsx), mounted
+// in the dashboard layout. It owns the single live outbound call for the whole
+// Hub, so the call belongs to no page: the Dialer, VoipCall and the top Call
+// button only subscribe to it. A page unmounting (navigation) unsubscribes and
+// nothing else; only End, the far side, or an error ends the call.
+//
+// One live call at a time: place() refuses while a call is live.
+
+export interface OutboundEnded {
+  /** The session that ended. */
+  session: number
+  error: string | null
+  wasConnected: boolean
+  at: number
+}
+
+export interface OutboundSnapshot<T> {
+  /** Increments with every place(); 0 before the first call. */
+  session: number
+  stage: OutboundStage
+  target: T | null
+  connectedAt: number | null
+  muted: boolean
+  /** The last call that ended, for the UI that placed it. */
+  ended: OutboundEnded | null
+}
+
+export type OutboundCallSetup = Omit<OutboundCallDeps, 'onStage' | 'onEnded'>
+
+export type PlaceResult = { ok: true; session: number } | { ok: false; reason: 'busy' }
+
+export function createOutboundStore<T>(setupFor: (target: T) => OutboundCallSetup, now: () => number = Date.now) {
+  let snap: OutboundSnapshot<T> = {
+    session: 0, stage: 'idle', target: null, connectedAt: null, muted: false, ended: null,
+  }
+  let ctl: OutboundCall | null = null
+  const subs = new Set<() => void>()
+  const emit = (patch: Partial<OutboundSnapshot<T>>) => {
+    snap = { ...snap, ...patch }
+    for (const fn of Array.from(subs)) fn()
+  }
+
+  return {
+    getSnapshot: (): OutboundSnapshot<T> => snap,
+    subscribe(fn: () => void): () => void {
+      subs.add(fn)
+      return () => { subs.delete(fn) }
+    },
+    /** The live call's controller (Device for output selection), or null. */
+    get controller(): OutboundCall | null { return ctl },
+
+    /** Place a call. Synchronous up to the first await, so call it in the tap. */
+    place(target: T): PlaceResult {
+      if (ctl || snap.stage !== 'idle') return { ok: false, reason: 'busy' }
+      const session = snap.session + 1
+      const c: OutboundCall = createOutboundCall({
+        ...setupFor(target),
+        onStage: (stage) => {
+          if (ctl !== c || stage === 'idle') return // idle is reported by onEnded
+          emit({ stage, connectedAt: stage === 'connected' ? now() : snap.connectedAt })
+        },
+        onEnded: (info) => {
+          if (ctl !== c) return
+          ctl = null
+          emit({ stage: 'idle', connectedAt: null, muted: false, ended: { session, ...info, at: now() } })
+        },
+      })
+      ctl = c
+      emit({ session, target, stage: 'dialing', connectedAt: null, muted: false })
+      void c.start()
+      return { ok: true, session }
+    },
+
+    hangUp(): void { ctl?.hangUp() },
+
+    setMuted(muted: boolean): void {
+      if (ctl?.mute(muted)) emit({ muted })
+    },
+
+    sendDigits(digits: string): void { ctl?.sendDigits(digits) },
+
+    /** Layout unmount (sign-out): end anything live. */
+    dispose(): void { ctl?.dispose() },
+  }
+}
+
+export type OutboundStore<T> = ReturnType<typeof createOutboundStore<T>>

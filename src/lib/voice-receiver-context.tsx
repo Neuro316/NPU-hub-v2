@@ -13,6 +13,7 @@ import {
   keepRemoteAudioPlaying, listOutputDevices, loadVoiceSdk, setOutputDevice as routeOutput,
   primeCallTones, unlockCallAudio, type OutputDevice,
 } from '@/lib/voice-audio'
+import { useOutboundCall } from '@/lib/voice-outbound-context'
 
 // Persistent inbound Device — the browser softphone's registration layer.
 // Mounted once in the dashboard layout so it survives route changes; the UI that
@@ -179,10 +180,19 @@ export function VoiceReceiverProvider({ children }: { children: React.ReactNode 
     return ringerRef.current
   }
 
-  // The call list is the only input that can start or stop ringing.
+  // A live outbound call (voice-outbound-context.tsx) counts as "on a call":
+  // a call ringing over it shows with the "answering ends the current call"
+  // confirmation and rings silently, exactly like one ringing over an answered
+  // inbound call. Answering it ends the outbound call first.
+  const outbound = useOutboundCall()
+  const outboundRef = useRef(outbound)
+  outboundRef.current = outbound
+
+  // The call list (and whether another call is live) is the only input that
+  // can start or stop ringing.
   useEffect(() => {
-    ringer()?.sync(shouldRing(calls))
-  }, [calls])  // eslint-disable-line react-hooks/exhaustive-deps
+    ringer()?.sync(shouldRing(calls, outbound.live))
+  }, [calls, outbound.live])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Every tap anywhere in the Hub: unlock audio for this page load, and restart
   // a ringtone the browser paused. Capture phase and passive, so it runs before
@@ -366,6 +376,7 @@ export function VoiceReceiverProvider({ children }: { children: React.ReactNode 
         try { other.call.disconnect() } catch { /* already gone */ }
       }
     }
+    if (outboundRef.current.live) outboundRef.current.hangUp()
     // Synchronously, inside the Answer tap: stop the ringtone so it does not
     // hold the audio session, wake call audio, then accept in the same tick so
     // the SDK's microphone request and audio playback count as this tap.

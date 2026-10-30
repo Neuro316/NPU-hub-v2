@@ -9,6 +9,8 @@ import { useVoiceReceiver, type IncomingCall } from '@/lib/voice-receiver-contex
 import { useWorkspace } from '@/lib/workspace-context'
 import { useOrgLines } from '@/lib/hooks/use-org-lines'
 import { formatUsPhone } from '@/lib/phone'
+import { useOutboundCall } from '@/lib/voice-outbound-context'
+import { GlobalCallButton } from '@/components/global-call-button'
 
 // Inbound-call UI for the browser softphone: a banner PINNED to the top of the
 // viewport, above everything else, on every Hub page.
@@ -218,34 +220,48 @@ function CallRow({ entry, lineLabel, now, otherCallConnected }: {
 }
 
 /**
- * Receiver registration state, always visible so it is obvious when this tab
- * is NOT going to ring. Sits top-right (below the banner while one is up).
+ * Top-right cluster on every Hub page: the Call button (or the live outbound
+ * call's indicator) and the receiver status pill. Sits below the banner while
+ * one is up. On a phone it lands inside the mobile top bar, on the right.
  */
-function ReceiverStatusPill({ offset }: { offset: boolean }) {
+function TopCallCluster({ offset, showPill }: { offset: boolean; showPill: boolean }) {
+  const top = offset ? CALL_BANNER_HEIGHT_PX + 8 : 8
+  return (
+    <div style={{ top }} className="fixed right-3 z-[999] flex items-center gap-2">
+      {showPill && <ReceiverStatusPill />}
+      <GlobalCallButton />
+    </div>
+  )
+}
+
+/**
+ * Receiver registration state, always visible so it is obvious when this tab
+ * is NOT going to ring.
+ */
+function ReceiverStatusPill() {
   const { status, error, enable, ringHere } = useVoiceReceiver()
   const { currentOrg } = useWorkspace()
   if (!currentOrg || status === 'unsupported') return null
 
-  const top = offset ? { top: CALL_BANNER_HEIGHT_PX + 8 } : { top: 8 }
-  const base = 'fixed right-3 z-[999] flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-medium shadow-sm'
+  const base = 'flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-medium shadow-sm'
 
   if (status === 'ready') {
     return (
-      <div style={top} className={`${base} bg-white border-green-200 text-green-700`} title="Incoming calls ring on this tab">
+      <div className={`${base} bg-white border-green-200 text-green-700`} title="Incoming calls ring on this tab">
         <span className="h-1.5 w-1.5 rounded-full bg-green-500" /> Calls ring here
       </div>
     )
   }
   if (status === 'starting') {
     return (
-      <div style={top} className={`${base} bg-white border-amber-200 text-amber-700`}>
+      <div className={`${base} bg-white border-amber-200 text-amber-700`}>
         <Loader2 size={11} className="animate-spin" /> Connecting calls…
       </div>
     )
   }
   if (status === 'error') {
     return (
-      <div style={top} className={`${base} bg-red-50 border-red-200 text-red-700`} title={error}>
+      <div className={`${base} bg-red-50 border-red-200 text-red-700`} title={error}>
         <AlertTriangle size={11} /> Not receiving calls
         <button type="button" onClick={ringHere} className="ml-1 underline font-semibold">Reconnect</button>
       </div>
@@ -253,7 +269,7 @@ function ReceiverStatusPill({ offset }: { offset: boolean }) {
   }
   // 'off': enabled nowhere on this browser.
   return (
-    <div style={top} className={`${base} bg-white border-gray-200 text-gray-500`} title="Browser calling is off on this tab">
+    <div className={`${base} bg-white border-gray-200 text-gray-500`} title="Browser calling is off on this tab">
       <PhoneOff size={11} /> Browser calling off
       <button type="button" onClick={enable} className="ml-1 underline font-semibold text-np-blue">Enable</button>
     </div>
@@ -269,12 +285,13 @@ const DTMF_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#']
  * Decline; connected shows Mute, Keypad, Speaker (only where the browser can
  * choose an output) and Hang up, all in the bottom half for a thumb.
  */
-function MobileCallOverlay({ entry, lineLabel, now, otherCall, queued }: {
+function MobileCallOverlay({ entry, lineLabel, now, onAnotherCall, queued }: {
   entry: IncomingCall
   lineLabel: string | null
   now: number
-  /** The connected call, when `entry` is a second call ringing over it. */
-  otherCall: IncomingCall | null
+  /** Another call is live (an answered inbound call, or the outbound call)
+   *  while `entry` rings. Answering ends it, so Answer asks first. */
+  onAnotherCall: boolean
   queued: number
 }) {
   const { currentOrg } = useWorkspace()
@@ -291,11 +308,11 @@ function MobileCallOverlay({ entry, lineLabel, now, otherCall, queued }: {
   const [confirming, setConfirming] = useState(false)
   const [keypad, setKeypad] = useState(false)
   const [digits, setDigits] = useState('')
-  useEffect(() => { if (!otherCall) setConfirming(false) }, [otherCall])
+  useEffect(() => { if (!onAnotherCall) setConfirming(false) }, [onAnotherCall])
   useEffect(() => { setKeypad(false); setDigits('') }, [entry.id, entry.phase])
 
   const onAnswer = () => {
-    if (otherCall) setConfirming(true)
+    if (onAnotherCall) setConfirming(true)
     else answer(entry.id)
   }
 
@@ -342,7 +359,7 @@ function MobileCallOverlay({ entry, lineLabel, now, otherCall, queued }: {
         </span>
         <p className="mt-5 text-3xl font-bold leading-tight break-words max-w-full">{display}</p>
         {callerName && number && <p className="mt-1 text-base font-mono text-white/70">{number}</p>}
-        {ringing && otherCall && (
+        {ringing && onAnotherCall && (
           <p className="mt-4 text-sm text-white/80">You are on another call. Answering ends it.</p>
         )}
         {ringing && ringerLocked && (
@@ -456,6 +473,8 @@ export function IncomingCallBanner() {
   const { currentOrg } = useWorkspace()
   const { labelFor } = useOrgLines(currentOrg?.id)
   const narrow = useIsNarrowCallScreen()
+  // The outbound call counts as "another call" for Answer's confirmation.
+  const outboundLive = useOutboundCall().live
 
   // Newest ringing call on top, the connected call (if any) beneath it. Everything
   // else is queued and counted; it stays in `calls` untouched, still ringing.
@@ -476,12 +495,14 @@ export function IncomingCallBanner() {
             entry={shown}
             lineLabel={labelFor(shown.line)}
             now={now}
-            otherCall={connected && connected.id !== shown.id ? connected : null}
+            onAnotherCall={(!!connected && connected.id !== shown.id) || (shown.phase === 'ringing' && outboundLive)}
             queued={calls.length - 1 - (connected && connected.id !== shown.id ? 1 : 0)}
           />
         )}
         <CallErrorNotice />
-        {!shown && <ReceiverStatusPill offset={false} />}
+        {/* On a phone the in-call indicator needs the room: the pill steps
+            aside while an outbound call is live. */}
+        {!shown && <TopCallCluster offset={false} showPill={!outboundLive} />}
       </>
     )
   }
@@ -497,7 +518,7 @@ export function IncomingCallBanner() {
               entry={entry}
               lineLabel={labelFor(entry.line)}
               now={now}
-              otherCallConnected={!!connected && connected.id !== entry.id}
+              otherCallConnected={(!!connected && connected.id !== entry.id) || outboundLive}
             />
           ))}
           {queued > 0 && (
@@ -507,7 +528,7 @@ export function IncomingCallBanner() {
           )}
         </div>
       )}
-      <ReceiverStatusPill offset={rows.length > 0} />
+      <TopCallCluster offset={rows.length > 0} showPill />
     </>
   )
 }

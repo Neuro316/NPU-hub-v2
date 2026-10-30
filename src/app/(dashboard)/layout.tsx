@@ -5,6 +5,7 @@ import { WorkspaceProvider } from '@/lib/workspace-context'
 import { PermissionsProvider } from '@/lib/hooks/use-permissions'
 import { SidebarProvider, useSidebar } from '@/lib/sidebar-context'
 import { VoiceReceiverProvider } from '@/lib/voice-receiver-context'
+import { OutboundCallProvider } from '@/lib/voice-outbound-context'
 import { IncomingCallBanner, useCallBannerVisible, CALL_BANNER_HEIGHT_PX } from '@/components/incoming-call-banner'
 import { Sidebar } from '@/components/sidebar'
 import { TrackerInit } from '@/components/tracker-init'
@@ -42,14 +43,18 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         <div className="w-7 h-7 bg-np-blue rounded-lg flex items-center justify-center">
           <span className="text-white text-xs font-bold">NP</span>
         </div>
-        <span className="text-sm font-semibold text-np-dark">NPU Hub</span>
+        {/* Hidden on a phone: the top-right Call button and receiver pill need the width. */}
+        <span className="hidden sm:inline text-sm font-semibold text-np-dark">NPU Hub</span>
       </div>
 
-      {/* Main content */}
+      {/* Main content. On desktop the top 48px is kept clear for the fixed
+          top-right Call button and receiver pill (incoming-call-banner.tsx
+          TopCallCluster), so they never sit on a page's own header buttons.
+          Below lg they live inside the mobile top bar instead. */}
       <main
         className={`
           p-6 transition-all duration-200
-          pt-20 lg:pt-6
+          pt-20 lg:pt-12
           ${isCollapsed ? 'lg:ml-16' : 'lg:ml-64'}
         `}
         style={bannerVisible ? { marginTop: bannerOffset } : undefined}
@@ -68,6 +73,11 @@ export default function DashboardLayout({
   return (
     <WorkspaceProvider>
       <PermissionsProvider>
+        {/* The one outbound browser call: above the page tree, so navigating
+            between Hub pages never ends it. Outside the receiver, which reads
+            it (an incoming call over a live outbound call asks before
+            answering, and answering ends the outbound call). */}
+        <OutboundCallProvider>
         {/* Inside WorkspaceProvider (needs user + currentOrg), outside the page
             content so the Device registration survives route changes. */}
         <VoiceReceiverProvider>
@@ -81,12 +91,14 @@ export default function DashboardLayout({
             <DashboardContent>{children}</DashboardContent>
             {/* Calls can arrive on any page — the banner is pinned above
                 everything and lives outside the page tree, so navigating
-                between CRM and non-CRM routes never unmounts it. */}
+                between CRM and non-CRM routes never unmounts it. It also
+                renders the top-right Call button and in-call indicator. */}
             <IncomingCallBanner />
             </AgentShellProvider>
            </ToastProvider>
           </SidebarProvider>
         </VoiceReceiverProvider>
+        </OutboundCallProvider>
       </PermissionsProvider>
     </WorkspaceProvider>
   )
