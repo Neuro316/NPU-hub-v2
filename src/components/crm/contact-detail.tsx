@@ -15,7 +15,8 @@ import {
   fetchCallLogs, fetchConversations, fetchMessages,
   fetchContactRelationships, createRelationship, deleteRelationship,
   fetchRelationshipTypes, fetchContacts,
-  fetchTagCategories, addContactTag, removeContactTag, fetchContactStructuredTags
+  fetchTagCategories, addContactTag, removeContactTag, fetchContactStructuredTags,
+  removeFromPipeline
 } from '@/lib/crm-client'
 import type { CrmContact, ContactNote, CrmTask, CallLog, ActivityLogEntry, TeamMember, ContactRelationship, RelationshipType, ContactTagCategory } from '@/types/crm'
 import { ContactCommsButtons } from '@/components/crm/twilio-comms'
@@ -1677,11 +1678,24 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                     </h4>
                     <div className="grid grid-cols-2 gap-2">
                       <select
-                        value={contact.pipeline_id || pipelineConfigs.find(p => p.is_default)?.id || ''}
+                        value={contact.pipeline_id || ''}
                         onChange={async (e) => {
                           const pid = e.target.value
                           if (!pid) {
-                            await applyUpdate({ pipeline_id: null, pipeline_stage: null } as any, 'Pipeline change')
+                            // Server side, so the pipeline's deal row goes with the placement.
+                            if (!contact.pipeline_id) return
+                            setWriteError('')
+                            setSaving(true)
+                            try {
+                              await removeFromPipeline(contact.id, contact.pipeline_id)
+                              await load()
+                              onUpdate?.()
+                            } catch (err: any) {
+                              console.error('[contact-detail] Pipeline change failed:', err)
+                              setWriteError(writeErrorMessage(err, 'Pipeline change'))
+                            } finally {
+                              setSaving(false)
+                            }
                           } else {
                             const pipeline = pipelineConfigs.find(p => p.id === pid)
                             const firstStage = pipeline?.stages?.[0]?.name || 'New Lead'
@@ -1697,6 +1711,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                       </select>
                       <select
                         value={contact.pipeline_stage || ''}
+                        disabled={!contact.pipeline_id}
                         onChange={async (e) => {
                           await applyUpdate({ pipeline_stage: e.target.value } as any, 'Pipeline stage change')
                         }}
@@ -1705,7 +1720,6 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                         <option value="">No stage</option>
                         {(() => {
                           const contactPipeline = pipelineConfigs.find(p => p.id === contact.pipeline_id)
-                            || pipelineConfigs.find(p => p.is_default)
                           return (contactPipeline?.stages || []).map(s => (
                             <option key={s.name} value={s.name}>{s.name}</option>
                           ))

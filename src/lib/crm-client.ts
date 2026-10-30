@@ -83,6 +83,16 @@ export async function updateContact(id: string, updates: Partial<CrmContact>) {
   return data as CrmContact
 }
 
+// Clears the placement and deletes the deal row server side; the contact is kept.
+export async function removeFromPipeline(contactId: string, pipelineKey: string) {
+  const res = await fetch('/api/crm/pipeline-deals/remove', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ contact_id: contactId, pipeline_key: pipelineKey }),
+  })
+  const j = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(j?.error || `Request failed (${res.status})`)
+}
+
 export async function deleteContact(id: string) {
   const { error } = await supabase()
     .from('contacts')

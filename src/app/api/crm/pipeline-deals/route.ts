@@ -81,9 +81,8 @@ export const POST = withStaff(async (req: NextRequest, ctx) => {
   else if (!existing) row.entered_at = contact.created_at || now
 
   if (touch || !existing) {
-    // Only the contact's current placement has a stage to read. A card shown in the
-    // default pipeline with no pipeline_id is in that pipeline too.
-    const inThisPipeline = contact.pipeline_id === pipelineKey || (!contact.pipeline_id && pipeline.is_default)
+    // Only the contact's current placement has a stage to read.
+    const inThisPipeline = contact.pipeline_id === pipelineKey
     const stage = inThisPipeline
       ? (pipeline.stages || []).find((s: any) => norm(s?.name) === norm(contact.pipeline_stage))
       : null
