@@ -20,7 +20,7 @@
 //            flags and the middleware, which that build changed and click-to-call must not.
 //
 // SINCE_DIALER byte-for-byte equal to DIALER_BASE: VoipCall in twilio-comms (re-pinned at the
-//            global Call button, 43b62db), and inbound-call, whose outbound browser <Dial>
+//            global Call button, 3fab3b6), and inbound-call, whose outbound browser <Dial>
 //            gained answerOnBridge (02a83d9).
 //
 // SINCE_C2C  byte-for-byte equal to the click-to-call merge (d3be328): the line picker
@@ -73,10 +73,10 @@ const SINCE_C2C = {
 // outbound controller (End at every stage) and added answerOnBridge to the outbound browser
 // <Dial> in inbound-call, for ringback. Both are compared with that commit instead of d49d00e,
 // so click-to-call still cannot move them. The global Call button (feat/global-call-button,
-// 43b62db) moved VoipCall onto the app-level OutboundCallProvider on purpose, so twilio-comms is
+// 3fab3b6) moved VoipCall onto the app-level OutboundCallProvider on purpose, so twilio-comms is
 // compared with that commit; inbound-call is unchanged since 02a83d9 and still compared with it.
 const DIALER_BASE = process.env.DIALER_BASE || '02a83d9'
-const CALL_BUTTON_BASE = process.env.CALL_BUTTON_BASE || '43b62db'
+const CALL_BUTTON_BASE = process.env.CALL_BUTTON_BASE || '3fab3b6'
 const SINCE_DIALER = {
   'twilio-comms': ['src/components/crm/twilio-comms.tsx', CALL_BUTTON_BASE],
   'inbound-call': ['src/app/api/twilio/inbound-call/route.ts', DIALER_BASE],

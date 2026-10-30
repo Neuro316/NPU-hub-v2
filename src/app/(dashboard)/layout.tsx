@@ -43,7 +43,8 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         <div className="w-7 h-7 bg-np-blue rounded-lg flex items-center justify-center">
           <span className="text-white text-xs font-bold">NP</span>
         </div>
-        <span className="text-sm font-semibold text-np-dark">NPU Hub</span>
+        {/* Hidden on a phone: the top-right Call button and receiver pill need the width. */}
+        <span className="hidden sm:inline text-sm font-semibold text-np-dark">NPU Hub</span>
       </div>
 
       {/* Main content. On desktop the top 48px is kept clear for the fixed
