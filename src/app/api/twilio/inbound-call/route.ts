@@ -202,7 +202,17 @@ export async function POST(request: NextRequest) {
           recordingStatusCallbackMethod: 'POST',
         } : {}),
       });
-      dial.number(dialTo);
+      // The contact leg reports 'answered' and 'completed' to call-status, which
+      // sets the row's status, duration and end time. Sent whoever hangs up, so
+      // the row closes even when the <Dial action> above does not arrive.
+      dial.number(
+        appUrl ? {
+          statusCallback: `${appUrl}/api/twilio/call-status`,
+          statusCallbackEvent: ['answered', 'completed'],
+          statusCallbackMethod: 'POST',
+        } : {},
+        dialTo
+      );
 
       return new NextResponse(response.toString(), {
         headers: { 'Content-Type': 'text/xml' },

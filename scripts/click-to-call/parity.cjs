@@ -21,7 +21,12 @@
 //
 // SINCE_DIALER byte-for-byte equal to DIALER_BASE: VoipCall in twilio-comms (re-pinned at the
 //            global Call button, 3fab3b6), and inbound-call, whose outbound browser <Dial>
-//            gained answerOnBridge (02a83d9).
+//            gained answerOnBridge (02a83d9) and then a <Number statusCallback> for the
+//            outbound call status fix (re-pinned at 2befa8f, STATUS_BASE).
+//
+// SINCE_STATUS byte-for-byte equal to STATUS_BASE (2befa8f), the outbound call status fix,
+//            which rewrote call-status on purpose (row by SID, signature checked, allowed
+//            statuses). It was UNTOUCHED against d49d00e until then.
 //
 // SINCE_C2C  byte-for-byte equal to the click-to-call merge (d3be328): the line picker
 //            touches only the button, the route and the click-to-call libraries, so the
@@ -45,7 +50,6 @@ const ROOT = path.resolve(__dirname, '..', '..')
 const BASE = process.env.PARITY_BASE || 'd49d00e'
 const UNTOUCHED = {
   'ring-complete': 'src/app/api/twilio/ring-complete/route.ts',
-  'call-status': 'src/app/api/twilio/call-status/route.ts',
   'transcription': 'src/app/api/twilio/transcription/route.ts',
   'inbound-sms': 'src/app/api/twilio/inbound-sms/route.ts',
   'voice-token': 'src/app/api/voice/token/route.ts',
@@ -80,9 +84,14 @@ const SINCE_C2C = {
 // compared with that commit; inbound-call is unchanged since 02a83d9 and still compared with it.
 const DIALER_BASE = process.env.DIALER_BASE || '02a83d9'
 const CALL_BUTTON_BASE = process.env.CALL_BUTTON_BASE || '3fab3b6'
+const STATUS_BASE = process.env.STATUS_BASE || '2befa8f'
 const SINCE_DIALER = {
   'twilio-comms': ['src/components/crm/twilio-comms.tsx', CALL_BUTTON_BASE],
-  'inbound-call': ['src/app/api/twilio/inbound-call/route.ts', DIALER_BASE],
+  'inbound-call': ['src/app/api/twilio/inbound-call/route.ts', STATUS_BASE],
+}
+const SINCE_STATUS = {
+  'call-status': 'src/app/api/twilio/call-status/route.ts',
+  'outbound-call-status': 'src/lib/outbound-call-status.ts',
 }
 const AGENT_BASE = process.env.AGENT_BASE || 'ba4ed21'
 const SINCE_AGENT = {
@@ -153,6 +162,10 @@ for (const [k, f] of Object.entries(SINCE_AGENT)) {
 for (const [k, f] of Object.entries(SINCE_TRANSCRIPTS)) {
   const same = work(f) === base(f, TRANSCRIPTS_BASE)
   rows.push({ id: `T_${k}`, ok: same, got: same ? `identical to ${TRANSCRIPTS_BASE}` : `differs from ${TRANSCRIPTS_BASE}` })
+}
+for (const [k, f] of Object.entries(SINCE_STATUS)) {
+  const same = work(f) === base(f, STATUS_BASE)
+  rows.push({ id: `S_${k}`, ok: same, got: same ? `identical to ${STATUS_BASE}` : `differs from ${STATUS_BASE}` })
 }
 
 const red = rows.filter((r) => !r.ok).map((r) => r.id).sort()
