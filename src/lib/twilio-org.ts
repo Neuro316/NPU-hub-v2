@@ -59,6 +59,13 @@ export interface OrgTwilioConfig {
    * getVoiceCallerId. Empty means "fall back to the chain".
    */
   voice_caller_id?: string
+  /**
+   * Twilio Voice Intelligence Service (GA...) that transcribes answered-call
+   * recordings (src/lib/voice-intelligence.ts). Created by
+   * scripts/voice/create-intelligence-service.cjs. Empty means no transcripts
+   * for answered calls; voicemail transcription does not use it.
+   */
+  intelligence_service_sid?: string
 }
 
 /**
@@ -119,6 +126,7 @@ export async function getOrgTwilioConfig(
       twiml_app_sid: v.twiml_app_sid || '',
       numbers: v.numbers || [],
       voice_caller_id: v.voice_caller_id || '',
+      intelligence_service_sid: v.intelligence_service_sid || '',
     }
   }
 

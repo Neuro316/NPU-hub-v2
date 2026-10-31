@@ -11,7 +11,7 @@
 //              notify path, the entry event raiser, the auth wrapper and middleware.ts.
 //   MARKED     equal to the base once the lines between CLICK-TO-CALL-BEGIN and
 //              CLICK-TO-CALL-END are removed: the Conversations page (the button beside
-//              the name) and the timeline ("Not connected" on a failed call).
+//              the name). The timeline was here too until answered-call transcripts.
 //
 // With the flag off the only visible change is a disabled phone icon whose tooltip
 // says click-to-call is turned off; nothing else on the page or in any call path moves.
@@ -25,7 +25,13 @@
 //
 // SINCE_C2C  byte-for-byte equal to the click-to-call merge (d3be328): the line picker
 //            touches only the button, the route and the click-to-call libraries, so the
-//            Conversations page, the timeline and both Twilio webhooks must not move.
+//            Conversations page and both Twilio webhooks must not move.
+//
+// SINCE_TRANSCRIPTS byte-for-byte equal to TRANSCRIPTS_BASE (cbc2664), the answered-call
+//            transcripts build, which changed recording-ready (requests the transcript),
+//            twilio-org (intelligence_service_sid) and the timeline (player and transcript
+//            on answered calls) on purpose. The timeline at cbc2664 still carries its
+//            CLICK-TO-CALL block, so byte equality keeps that block in place too.
 //
 // TAMPER=outside   change one character outside a marked block      {M_conversations}
 // TAMPER=untouched change one character of ring-complete             {U_ring-complete}
@@ -40,13 +46,11 @@ const BASE = process.env.PARITY_BASE || 'd49d00e'
 const UNTOUCHED = {
   'ring-complete': 'src/app/api/twilio/ring-complete/route.ts',
   'call-status': 'src/app/api/twilio/call-status/route.ts',
-  'recording-ready': 'src/app/api/twilio/recording-ready/route.ts',
   'transcription': 'src/app/api/twilio/transcription/route.ts',
   'inbound-sms': 'src/app/api/twilio/inbound-sms/route.ts',
   'voice-token': 'src/app/api/voice/token/route.ts',
   'sms-send': 'src/app/api/sms/send/route.ts',
   'twilio': 'src/lib/twilio.ts',
-  'twilio-org': 'src/lib/twilio-org.ts',
   'voice-signature': 'src/lib/twilio-voice-signature.ts',
   'inbound-voice': 'src/lib/inbound-voice.ts',
   'notify-sms': 'src/lib/notify-sms.ts',
@@ -58,7 +62,6 @@ const UNTOUCHED = {
 const C2C_BASE = process.env.C2C_BASE || 'd3be328'
 const SINCE_C2C = {
   'conversations': 'src/app/(dashboard)/crm/conversations/page.tsx',
-  'timeline': 'src/components/crm/comms-timeline.tsx',
   'bridge': 'src/app/api/twilio/click-to-call/bridge/route.ts',
   'status': 'src/app/api/twilio/click-to-call/status/route.ts',
   'webhook': 'src/lib/click-to-call/webhook.ts',
@@ -88,7 +91,14 @@ const SINCE_AGENT = {
 }
 const MARKED = {
   'conversations': 'src/app/(dashboard)/crm/conversations/page.tsx',
+}
+const TRANSCRIPTS_BASE = process.env.TRANSCRIPTS_BASE || 'cbc2664'
+const SINCE_TRANSCRIPTS = {
+  'recording-ready': 'src/app/api/twilio/recording-ready/route.ts',
+  'twilio-org': 'src/lib/twilio-org.ts',
   'timeline': 'src/components/crm/comms-timeline.tsx',
+  'intelligence': 'src/app/api/twilio/intelligence/route.ts',
+  'voice-intelligence': 'src/lib/voice-intelligence.ts',
 }
 const RED_OF = { outside: ['M_conversations'], untouched: ['U_ring-complete'], webhook: ['C_bridge'] }
 const sel = process.env.TAMPER || ''
@@ -139,6 +149,10 @@ for (const [k, [f, ref]] of Object.entries(SINCE_DIALER)) {
 for (const [k, f] of Object.entries(SINCE_AGENT)) {
   const same = work(f) === base(f, AGENT_BASE)
   rows.push({ id: `A_${k}`, ok: same, got: same ? `identical to ${AGENT_BASE}` : `differs from ${AGENT_BASE}` })
+}
+for (const [k, f] of Object.entries(SINCE_TRANSCRIPTS)) {
+  const same = work(f) === base(f, TRANSCRIPTS_BASE)
+  rows.push({ id: `T_${k}`, ok: same, got: same ? `identical to ${TRANSCRIPTS_BASE}` : `differs from ${TRANSCRIPTS_BASE}` })
 }
 
 const red = rows.filter((r) => !r.ok).map((r) => r.id).sort()
