@@ -134,6 +134,17 @@ export function Sidebar() {
               <X className="w-4 h-4" />
             </button>
           </div>
+          {/* Phone menu: who is signed in, in full, so a wrong account is obvious
+              at a glance (the footer truncates the email). */}
+          {isMobileOpen && user && (
+            <div className="lg:hidden mt-3 rounded-lg bg-gray-50 px-3 py-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Signed in as</p>
+              <p className="text-sm font-medium text-np-dark truncate">
+                {user.user_metadata?.full_name || user.email?.split('@')[0] || 'User'}
+              </p>
+              <p className="text-xs text-gray-500 break-all" data-testid="mobile-menu-email">{user.email}</p>
+            </div>
+          )}
         </div>
 
         {/* Workspace Switcher */}

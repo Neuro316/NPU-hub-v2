@@ -6,7 +6,7 @@ import {
 import { useWorkspace } from '@/lib/workspace-context'
 import { receiverIdentity } from '@/lib/voice-identity'
 import {
-  applyCallEvent, createRinger, isMicrophoneError, shouldRing, MIC_BLOCKED_MESSAGE,
+  applyCallEvent, createRinger, isMicrophoneError, reviveAction, shouldRing, MIC_BLOCKED_MESSAGE,
   type CallEvent, type Ringer,
 } from '@/lib/voice-call-state'
 import {
@@ -302,7 +302,7 @@ export function VoiceReceiverProvider({ children }: { children: React.ReactNode 
           // while the browser has quietly stopped being reachable.
           console.error('[voice-receiver] token refresh failed:', e)
           setStatus('error')
-          setError('Your session expired — not receiving calls. Reload the page to reconnect.')
+          setError('Your session expired, so this tab is not receiving calls. It reconnects when you come back to it, or tap Reconnect.')
         }
       })
 
@@ -502,23 +502,52 @@ export function VoiceReceiverProvider({ children }: { children: React.ReactNode 
   }, [userId, currentOrg?.id, enabled])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Recovery: sleep, network changes, tab restore ─────────────────────────
-  // The signalling WebSocket drops on sleep/Wi-Fi switches; the SDK reconnects in
-  // many cases but not all, so nudge it whenever the tab comes back to life.
+  // The signalling WebSocket drops on sleep/Wi-Fi switches, and on a phone the
+  // registration is often gone by the time the tab is back in front. Recover
+  // whenever the tab returns to the foreground or the network comes back:
+  // register() when the Device is still valid, else a full re-registration with
+  // a fresh token (reviveAction, voice-call-state.ts). Reconnect stays as the
+  // manual fallback.
+  const statusRef = useRef<ReceiverStatus>(status)
+  statusRef.current = status
+  const lastReconnectRef = useRef(0)
   useEffect(() => {
     if (!enabled) return
     const revive = () => {
       const device = deviceRef.current
-      if (!device || device.state === 'registered' || device.state === 'destroyed') return
-      device.register().catch((e: any) => console.warn('[voice-receiver] re-register failed:', e))
+      const action = reviveAction({
+        enabled: true,
+        hasOrg: !!currentOrg,
+        status: statusRef.current,
+        deviceState: device ? String(device.state ?? '') || null : null,
+        activeCalls: callsRef.current.length,
+        visible: document.visibilityState === 'visible',
+        online: navigator.onLine !== false,
+        lastReconnectAt: lastReconnectRef.current,
+        now: Date.now(),
+      })
+      if (action === 'none' || !currentOrg) return
+      if (action === 'register' && device) {
+        device.register().catch((e: any) => {
+          console.warn('[voice-receiver] re-register failed, reconnecting:', e)
+          lastReconnectRef.current = Date.now()
+          register(currentOrg.id, false)
+        })
+        return
+      }
+      lastReconnectRef.current = Date.now()
+      register(currentOrg.id, false)
     }
     const onVisible = () => { if (document.visibilityState === 'visible') revive() }
     window.addEventListener('online', revive)
+    window.addEventListener('pageshow', revive)
     document.addEventListener('visibilitychange', onVisible)
     return () => {
       window.removeEventListener('online', revive)
+      window.removeEventListener('pageshow', revive)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [enabled])
+  }, [enabled, currentOrg?.id, register])  // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <VoiceReceiverContext.Provider

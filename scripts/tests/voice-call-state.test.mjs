@@ -9,6 +9,7 @@ import assert from 'node:assert/strict'
 import {
   applyCallEvent, shouldRing, createRinger, isMicrophoneError,
   createOutboundCall, createOutboundStore, MIC_BLOCKED_MESSAGE,
+  reviveAction, AUTO_RECONNECT_MIN_GAP_MS,
 } from '../../src/lib/voice-call-state.ts'
 
 const call = (id, phase = 'ringing') => ({ id, phase, connectedAt: null, muted: false })
@@ -531,4 +532,42 @@ test('store: a late event from an ended call cannot touch the next call', async 
   made[0].call.emit('disconnect')
   assert.equal(store.getSnapshot().stage, 'ringing')
   assert.equal(store.getSnapshot().target.contactId, 'B')
+})
+
+// ── Receiver recovery (reviveAction) ─────────────────────────────────────────
+
+const base = {
+  enabled: true, hasOrg: true, status: 'ready', deviceState: 'registered',
+  activeCalls: 0, visible: true, online: true, lastReconnectAt: 0, now: 100_000,
+}
+
+test('revive: a healthy registration is left alone', () => {
+  assert.equal(reviveAction(base), 'none')
+})
+
+test('revive: "Not receiving calls" reconnects in full when the tab is back', () => {
+  // Errored Device, torn-down Device (failed register), destroyed Device.
+  assert.equal(reviveAction({ ...base, status: 'error', deviceState: 'unregistered' }), 'reconnect')
+  assert.equal(reviveAction({ ...base, status: 'error', deviceState: null }), 'reconnect')
+  assert.equal(reviveAction({ ...base, status: 'starting', deviceState: 'destroyed' }), 'reconnect')
+})
+
+test('revive: a dropped but valid registration only re-registers', () => {
+  assert.equal(reviveAction({ ...base, status: 'starting', deviceState: 'unregistered' }), 'register')
+})
+
+test('revive: never while hidden, offline, off, or under a ringing or live call', () => {
+  const err = { ...base, status: 'error', deviceState: null }
+  assert.equal(reviveAction({ ...err, visible: false }), 'none')
+  assert.equal(reviveAction({ ...err, online: false }), 'none')
+  assert.equal(reviveAction({ ...err, enabled: false }), 'none')
+  assert.equal(reviveAction({ ...err, status: 'off' }), 'none')
+  assert.equal(reviveAction({ ...err, activeCalls: 1 }), 'none')
+  assert.equal(reviveAction({ ...err, hasOrg: false }), 'none')
+})
+
+test('revive: full reconnects are spaced out, so a failing one cannot loop', () => {
+  const err = { ...base, status: 'error', deviceState: null }
+  assert.equal(reviveAction({ ...err, lastReconnectAt: err.now - 1000 }), 'none')
+  assert.equal(reviveAction({ ...err, lastReconnectAt: err.now - AUTO_RECONNECT_MIN_GAP_MS }), 'reconnect')
 })

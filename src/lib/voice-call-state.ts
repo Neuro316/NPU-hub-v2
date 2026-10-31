@@ -456,3 +456,43 @@ export function createOutboundStore<T>(setupFor: (target: T) => OutboundCallSetu
 }
 
 export type OutboundStore<T> = ReturnType<typeof createOutboundStore<T>>
+
+// ── Receiver recovery ───────────────────────────────────────────────────────
+//
+// On a phone the receiver often drops while the browser is in the background
+// ("Not receiving calls · Reconnect"). When the tab comes back to the
+// foreground or the network returns, the Hub now recovers on its own; the
+// Reconnect button stays as the fallback. A device that is still valid only
+// needs register(); one that errored, was torn down, or whose token expired
+// needs a full re-registration with a fresh token.
+
+export const AUTO_RECONNECT_MIN_GAP_MS = 10_000
+
+export type ReviveAction = 'none' | 'register' | 'reconnect'
+
+export function reviveAction(s: {
+  enabled: boolean
+  hasOrg: boolean
+  /** The receiver's status: 'ready', 'starting', 'error', 'off', 'unsupported'. */
+  status: string
+  /** The Device's state, or null when there is none. */
+  deviceState: string | null
+  /** Calls ringing or connected on this tab. */
+  activeCalls: number
+  visible: boolean
+  online: boolean
+  /** When the last automatic full reconnect started, 0 if never. */
+  lastReconnectAt: number
+  now: number
+}): ReviveAction {
+  if (!s.enabled || !s.hasOrg || !s.visible || !s.online) return 'none'
+  if (s.status === 'off' || s.status === 'unsupported') return 'none'
+  // Never touch the Device under a ringing or live call.
+  if (s.activeCalls > 0) return 'none'
+  if (s.status === 'ready' && s.deviceState === 'registered') return 'none'
+  const deviceUsable = s.deviceState !== null && s.deviceState !== 'destroyed'
+  if (s.status !== 'error' && deviceUsable) return s.deviceState === 'registered' ? 'none' : 'register'
+  // Errored, torn down or destroyed: a fresh token and Device, at most every few seconds.
+  if (s.now - s.lastReconnectAt < AUTO_RECONNECT_MIN_GAP_MS) return 'none'
+  return 'reconnect'
+}
