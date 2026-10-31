@@ -210,7 +210,7 @@ export default function DialerPage() {
     lookupRef.current++
     setLookingUp(false)
     // End at any stage; the provider reports back once the call is gone.
-    if (outbound.live) outbound.hangUp()
+    if (outbound.live) outbound.hangUp('dialer_end')
   }
 
   function toggleMute() {

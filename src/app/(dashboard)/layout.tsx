@@ -13,6 +13,7 @@ import { AgentShellProvider } from '@/components/marketing/agent/agent-shell'
 import { DynamicFavicon } from '@/components/dynamic-favicon'
 import { ToastProvider } from '@/components/ui/toast'
 import { CallNavigationGuard } from '@/components/call-navigation-guard'
+import { CallUiBoundary, ContentBoundary } from '@/components/call-safe-boundary'
 import { Menu } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 
@@ -84,6 +85,11 @@ export default function DashboardLayout({
         <VoiceReceiverProvider>
           <SidebarProvider>
            <ToastProvider>
+            {/* Everything below the call providers sits inside error boundaries,
+                so a crash in a page, the sidebar, the Guide panel or the call
+                UI never unmounts the providers, which would end a live call
+                (call-safe-boundary.tsx). Pages also have (dashboard)/error.tsx. */}
+            <CallUiBoundary area="shell">
             <TrackerInit />
             <DynamicFavicon />
             {/* Inside both call providers: while a call is live, Hub links stay
@@ -92,13 +98,18 @@ export default function DashboardLayout({
             {/* The Hub Guide and Campaign Builder panel, and the old HelpBot behind it (ruling 26):
                 one instance above the page tree, so it survives navigation. */}
             <AgentShellProvider>
-            <DashboardContent>{children}</DashboardContent>
+            <ContentBoundary>
+              <DashboardContent>{children}</DashboardContent>
+            </ContentBoundary>
             {/* Calls can arrive on any page — the banner is pinned above
                 everything and lives outside the page tree, so navigating
                 between CRM and non-CRM routes never unmounts it. It also
                 renders the top-right Call button and in-call indicator. */}
-            <IncomingCallBanner />
+            <CallUiBoundary area="call-ui">
+              <IncomingCallBanner />
+            </CallUiBoundary>
             </AgentShellProvider>
+            </CallUiBoundary>
            </ToastProvider>
           </SidebarProvider>
         </VoiceReceiverProvider>

@@ -92,3 +92,53 @@ test('leaving asks only during a call', () => {
   assert.equal(asked, 1)
   setCallLive(false)
 })
+
+// ── Structure: what keeps a Dialer call alive across CRM navigation ─────────
+const read = (...p) => fs.readFileSync(path.join(root, ...p), 'utf8')
+
+test('every CRM tab and sidebar page link is a client-side next/link', () => {
+  const crm = read('src', 'app', '(dashboard)', 'crm', 'layout.tsx')
+  assert.match(crm, /import Link from 'next\/link'/)
+  const tabs = [...crm.matchAll(/\{ href: '([^']+)', label: '([^']+)'/g)].map(m => m[2])
+  assert.deepEqual(tabs, ['Dashboard', 'Contacts', 'Duplicates', 'Pipelines', 'Network', 'Conversations',
+    'Dialer', 'Campaigns', 'Sequences', 'Tasks', 'Import', 'Analytics', 'Settings'])
+  assert.match(crm, /<Link\s+key=\{item\.href\}\s+href=\{item\.href\}/, 'tabs render as <Link>')
+  assert.doesNotMatch(crm, /<a\s|window\.location|location\.href/, 'no full-page navigation in the tab bar')
+  const sidebar = read('src', 'components', 'sidebar.tsx')
+  // Internal sidebar items are <Link>; the only plain <a> items are external links (new tab).
+  for (const m of sidebar.matchAll(/<a\b[^>]*>/g)) assert.match(m[0], /target="_blank"/, `plain sidebar link: ${m[0]}`)
+})
+
+test('the call providers sit above the page and call UI error boundaries', () => {
+  const layout = read('src', 'app', '(dashboard)', 'layout.tsx')
+  const at = (s) => { const i = layout.indexOf(s); assert.ok(i >= 0, `missing ${s}`); return i }
+  const provider = at('<OutboundCallProvider>')
+  assert.ok(provider < at('<VoiceReceiverProvider>'))
+  assert.ok(at('<VoiceReceiverProvider>') < at('<CallUiBoundary area="shell">'))
+  assert.ok(at('<CallUiBoundary area="shell">') < at('<ContentBoundary>'))
+  assert.ok(at('<ContentBoundary>') < at('<DashboardContent>'))
+  assert.ok(at('<CallUiBoundary area="call-ui">') < at('<IncomingCallBanner />'))
+  // A page crash is caught inside the layout, so the providers stay mounted.
+  assert.ok(fs.existsSync(path.join(root, 'src', 'app', '(dashboard)', 'error.tsx')))
+})
+
+test('Dialer, Conversations, contacts and Pipelines never hang up on unmount', () => {
+  const files = [
+    ['src', 'app', '(dashboard)', 'crm', 'dialer', 'page.tsx'],
+    ['src', 'app', '(dashboard)', 'crm', 'conversations', 'page.tsx'],
+    ['src', 'app', '(dashboard)', 'crm', 'contacts', 'page.tsx'],
+    ['src', 'app', '(dashboard)', 'crm', 'pipelines', 'page.tsx'],
+    ['src', 'components', 'crm', 'contact-detail.tsx'],
+    ['src', 'components', 'crm', 'twilio-comms.tsx'],
+  ]
+  for (const f of files) {
+    const src = read(...f)
+    // No Twilio Device of their own: the call belongs to OutboundCallProvider.
+    assert.doesNotMatch(src, /new Device\(|\.destroy\(\)|disconnectAll/, f.join('/'))
+    // Every hangUp is a named End control, never an effect cleanup.
+    for (const m of src.matchAll(/hangUp\(([^)]*)\)/g)) {
+      assert.match(m[1], /^'(dialer_end|call_panel)'$/, `${f.join('/')}: hangUp(${m[1]})`)
+    }
+    assert.doesNotMatch(src, /return \(\) => \{?[^\n]*hangUp/, `${f.join('/')}: hangUp in a cleanup`)
+  }
+})

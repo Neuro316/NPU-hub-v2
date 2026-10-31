@@ -376,7 +376,7 @@ export function VoiceReceiverProvider({ children }: { children: React.ReactNode 
         try { other.call.disconnect() } catch { /* already gone */ }
       }
     }
-    if (outboundRef.current.live) outboundRef.current.hangUp()
+    if (outboundRef.current.live) outboundRef.current.hangUp('answered_incoming')
     // Synchronously, inside the Answer tap: stop the ringtone so it does not
     // hold the audio session, wake call audio, then accept in the same tick so
     // the SDK's microphone request and audio playback count as this tap.

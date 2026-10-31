@@ -414,7 +414,7 @@ function storeHarness({ gateMic = false } = {}) {
     }
     let grant
     const mic = gateMic ? new Promise(r => { grant = r }) : Promise.resolve({ ok: true })
-    const rec = { target, call, device, server: [], timers: [], grant: () => grant({ ok: true }) }
+    const rec = { target, call, device, server: [], reasons: [], timers: [], grant: () => grant({ ok: true }) }
     made.push(rec)
     return {
       ensureMicrophone: () => mic,
@@ -422,7 +422,7 @@ function storeHarness({ gateMic = false } = {}) {
       createDevice: () => device,
       onRemoteAudio: () => {},
       ringback: { start() {}, stop() {} },
-      hangupOnServer: id => rec.server.push(id),
+      hangupOnServer: (id, reason) => { rec.server.push(id); rec.reasons.push(reason) },
       later: (fn) => { rec.timers.push(fn) },
     }
   }, () => clock)
@@ -481,6 +481,54 @@ test('store: a call survives navigating to a contact card and back (call navigat
   assert.equal(made[0].device.destroyed, 0, 'the device (and its audio) was not torn down')
   unsubBack()
   store.hangUp()
+})
+
+test('store: a call placed from the Dialer survives Conversations, a contact and Pipelines', async () => {
+  const { store, made } = storeHarness()
+  // Each page that shows the call subscribes while mounted, like useSyncExternalStore.
+  const page = () => store.subscribe(() => {})
+  const unsubDialer = page()
+  const res = store.place(target('A'))
+  await flush(); await flush()
+  made[0].call.emit('accept')
+  const connectedAt = store.getSnapshot().connectedAt
+  // Dialer -> Conversations -> a contact card -> Pipelines, one page at a time.
+  unsubDialer()
+  for (const name of ['conversations', 'contact', 'pipelines']) {
+    const unsub = page()
+    const snap = store.getSnapshot()
+    assert.equal(snap.stage, 'connected', `still connected on ${name}`)
+    assert.equal(snap.session, res.session, `same call on ${name}`)
+    assert.equal(snap.connectedAt, connectedAt, `timer kept on ${name}`)
+    unsub()
+  }
+  assert.equal(made[0].call.disconnects, 0, 'no navigation hung up')
+  assert.equal(made[0].device.disconnectAlls, 0)
+  assert.equal(made[0].device.destroyed, 0, 'the device (and its audio) was not torn down')
+  assert.deepEqual(made[0].server, [], 'no server hangup')
+  store.hangUp('dialer_end')
+  assert.deepEqual(made[0].reasons, ['dialer_end'])
+})
+
+test('store: every hangup tells the server why; unmounting the layout says so', async () => {
+  const { store, made } = storeHarness()
+  store.place(target('A'))
+  await flush(); await flush()
+  made[0].call.emit('accept')
+  store.hangUp('call_controls')
+  assert.deepEqual(made[0].reasons, ['call_controls'])
+
+  store.place(target('B'))
+  await flush(); await flush()
+  made[1].call.emit('accept')
+  store.dispose()
+  assert.deepEqual(made[1].reasons, ['layout_unmount'], 'a provider unmount is named in the log')
+
+  store.place(target('C'))
+  await flush(); await flush()
+  made[2].call.emit('accept')
+  store.hangUp()
+  assert.deepEqual(made[2].reasons, ['unspecified'])
 })
 
 test('store: only one live call at a time', async () => {
