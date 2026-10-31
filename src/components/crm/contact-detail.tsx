@@ -347,6 +347,8 @@ interface ContactDetailProps {
   pipelineCustomFields?: PipelineCustomField[]
   /** Passed by the pipelines board: the lead value of this card in the pipeline being viewed. */
   leadValue?: { pipelineName: string; value: number | null; onSave: (value: number | null) => Promise<void> }
+  /** A note or task of this contact was added, completed or edited (the board refreshes the card). */
+  onActivityChange?: () => void
 }
 
 /**
@@ -366,7 +368,7 @@ function writeErrorMessage(e: any, label: string): string {
     : `${label} failed: ${e?.message || 'unknown error'}. Nothing was saved.`
 }
 
-export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig, pipelineCustomFields, leadValue }: ContactDetailProps) {
+export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig, pipelineCustomFields, leadValue, onActivityChange }: ContactDetailProps) {
   const show = (key: keyof NonNullable<CardConfig>['sections']) =>
     !cardConfig || cardConfig.sections[key] !== false
   const supabase = createClient()
@@ -581,6 +583,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
     await createNote({ contact_id: contact.id, org_id: contact.org_id, body: newNote, type: 'manual' })
     setNewNote('')
     load()
+    onActivityChange?.()
   }
 
   const handleAddTag = async () => {
@@ -602,6 +605,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
     try {
       await updateTask(task.id, { status: newStatus })
       setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t))
+      onActivityChange?.()
     } catch (e) { console.error(e) }
   }
 
@@ -609,12 +613,14 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
     try {
       await updateTask(taskId, { status: status as any })
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: status as any } : t))
+      onActivityChange?.()
     } catch (e) { console.error(e) }
   }
 
   const handleTaskUpdate = (id: string, updates: Partial<CrmTask>) => {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t))
     setSelectedTask(prev => prev?.id === id ? { ...prev, ...updates } : prev)
+    onActivityChange?.()
   }
 
   const handleConnSearch = async (q: string) => {
@@ -2186,7 +2192,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
           contactId={contact.id}
           orgId={contact.org_id}
           createdBy={contact.org_id}
-          onCreate={(newTask) => { setTasks(prev => [newTask, ...prev]); setShowTaskCreate(false) }}
+          onCreate={(newTask) => { setTasks(prev => [newTask, ...prev]); setShowTaskCreate(false); onActivityChange?.() }}
           onClose={() => setShowTaskCreate(false)}
         />
       )}
