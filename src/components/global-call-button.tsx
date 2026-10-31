@@ -6,7 +6,9 @@ import {
   UserPlus, ChevronDown, Loader2, AlertTriangle, Delete,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase-browser'
-import { createContact } from '@/lib/crm-client'
+import { resolveCallContact, updateContact } from '@/lib/crm-client'
+import { splitName } from '@/lib/call-new-number'
+import { AddNamePrompt } from '@/components/crm/add-name-prompt'
 import { useWorkspace } from '@/lib/workspace-context'
 import { usePermissions } from '@/lib/hooks/use-permissions'
 import { useOrgLines } from '@/lib/hooks/use-org-lines'
@@ -22,8 +24,10 @@ import { useIsNarrowCallScreen } from '@/components/incoming-call-banner'
 //   idle       Call opens the quick-dial sheet (bottom sheet on a phone, a
 //              popover on desktop): search contacts by name or number, type a
 //              number on the pad, pick the line, call. A typed number that is
-//              no contact gets "Add contact and call": the contact is created
-//              first, so every call is logged against a contact.
+//              no contact is called at once: its contact (the org's existing
+//              one, or a new "Unknown" one) is resolved while it dials, so every
+//              call is logged against a contact, and the call screen offers
+//              "Add name". "Save as contact" (no call) stays available.
 //   live call  The button becomes the in-call indicator (name or number and a
 //              timer). Tapping it opens the controls: Mute, Keypad, Speaker
 //              where supported, Hang up. On a phone that is the same
@@ -200,7 +204,9 @@ function QuickDialSheet({ narrow, onClose, onPlaced }: {
   const [showPad, setShowPad] = useState(false)
   const [line, setLine] = useState('')
   const [newName, setNewName] = useState('')
+  const [saveOpen, setSaveOpen] = useState(false)
   const [adding, setAdding] = useState(false)
+  const [saved, setSaved] = useState('')
   const [error, setError] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -275,37 +281,34 @@ function QuickDialSheet({ narrow, onClose, onPlaced }: {
     onPlaced(res.session)
   }
 
-  const addAndCall = async () => {
+  // A typed number with no contact: call now, in this tap. The provider
+  // resolves the contact while it dials (no form, no wait).
+  const callNumber = () => {
+    if (!currentOrg || !typedE164) return
+    setError('')
+    const orgId = currentOrg.id
+    const phone = typedE164
+    const res = placeCall({
+      contactId: '', name: '', phone, lineE164: line || null,
+      resolveContact: () => resolveCallContact(orgId, phone),
+    })
+    if (!res.ok) { setError(ALREADY_ON_CALL_MESSAGE); return }
+    onPlaced(res.session)
+  }
+
+  // Optional, off the call path: save the number as a contact without calling.
+  const saveContact = async () => {
     if (!currentOrg || !typedE164 || adding) return
-    // Inside the tap, before the contact insert awaits: phones only allow
-    // call audio and the ringback tone to start in a gesture.
-    unlockCallAudio()
-    primeCallTones()
     setAdding(true)
     setError('')
     try {
-      const parts = newName.trim().split(/\s+/).filter(Boolean)
-      // Same minimal payload as the Contacts page's create. No name: the
-      // "Unknown" placeholder an unknown inbound caller gets, mergeable later.
-      const contact = await createContact({
-        org_id: currentOrg.id,
-        first_name: parts[0] || 'Unknown',
-        last_name: parts.slice(1).join(' '),
-        phone: typedE164,
-        tags: [],
-        sms_consent: false,
-        do_not_contact: false,
-      } as any)
-      const res = placeCall({
-        contactId: contact.id,
-        name: parts.length ? contactName(contact as any) : '',
-        phone: typedE164,
-        lineE164: line || null,
-      })
-      if (!res.ok) { setError(ALREADY_ON_CALL_MESSAGE); return }
-      onPlaced(res.session)
+      const c = await resolveCallContact(currentOrg.id, typedE164)
+      if (newName.trim()) await updateContact(c.id, splitName(newName))
+      setSaved(c.created ? 'Saved as a contact.' : 'This number is already a contact.')
+      setSaveOpen(false)
+      setNewName('')
     } catch (e: any) {
-      setError(`Could not add the contact: ${e?.message || 'unknown error'}`)
+      setError(`Could not save the contact: ${e?.message || 'unknown error'}`)
     } finally {
       setAdding(false)
     }
@@ -388,22 +391,33 @@ function QuickDialSheet({ narrow, onClose, onPlaced }: {
           </div>
         ))}
         {!searching && query.trim().length >= 2 && results.length === 0 && !typedE164 && (
-          <p className="px-1 py-2 text-xs text-gray-400">No contacts match. Type a full number to add one and call.</p>
+          <p className="px-1 py-2 text-xs text-gray-400">No contacts match. Type a full number to call it.</p>
         )}
       </div>
 
       {typedE164 && !numberMatch && !searching && (
         <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 flex flex-col gap-2">
-          <p className="text-xs text-gray-600">
-            <span className="font-mono font-semibold text-np-dark">{formatUsPhone(typedE164)}</span> is not in your contacts.
-          </p>
-          <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Name (optional)" autoComplete="off"
-            className={`w-full rounded-lg border border-gray-200 bg-white px-3 text-np-dark placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-np-blue/30 ${narrow ? 'h-11 text-base' : 'h-8 text-sm'}`} />
-          <button type="button" onClick={addAndCall} disabled={adding}
-            className={`flex items-center justify-center gap-2 rounded-xl bg-green-500 hover:bg-green-600 disabled:bg-gray-300 text-white font-semibold active:scale-[0.98] ${narrow ? 'h-12 text-base' : 'h-9 text-sm'}`}>
-            {adding ? <Loader2 size={15} className="animate-spin" /> : <UserPlus size={15} />}
-            Add contact and call
+          <button type="button" onClick={callNumber}
+            className={`flex items-center justify-center gap-2 rounded-xl bg-green-500 hover:bg-green-600 text-white font-semibold active:scale-[0.98] ${narrow ? 'h-12 text-base' : 'h-9 text-sm'}`}>
+            <Phone size={15} /> Call {formatUsPhone(typedE164)}
           </button>
+          <p className="text-[11px] text-gray-500 text-center">Not in your contacts yet. It is saved as a contact when you call, and you can add a name on the call screen.</p>
+          {saved && <p role="status" className="text-[11px] text-green-700 text-center">{saved}</p>}
+          {!saveOpen ? (
+            <button type="button" onClick={() => { setSaveOpen(true); setSaved('') }}
+              className="self-center flex items-center gap-1 text-[11px] font-semibold text-np-blue hover:underline">
+              <UserPlus size={12} /> Save as contact without calling
+            </button>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Name (optional)" autoComplete="off"
+                className={`min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 text-np-dark placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-np-blue/30 ${narrow ? 'h-11 text-base' : 'h-8 text-sm'}`} />
+              <button type="button" onClick={saveContact} disabled={adding}
+                className={`flex items-center gap-1 rounded-lg bg-np-blue px-3 text-xs font-semibold text-white disabled:bg-gray-300 ${narrow ? 'h-11' : 'h-8'}`}>
+                {adding ? <Loader2 size={13} className="animate-spin" /> : null} Save
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -461,6 +475,7 @@ function DesktopCallControls({ onClose }: { onClose: () => void }) {
           <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{connected ? 'On call' : 'Outgoing call'}</p>
           <p className="text-sm font-bold text-np-dark truncate">{targetLabel(t)}</p>
           {t?.name && <p className="text-[11px] font-mono text-gray-400">{formatUsPhone(t.phone)}</p>}
+          {t?.newContact && t.contactId && <AddNamePrompt contactId={t.contactId} className="mt-1.5" />}
           <p className={`text-xs font-mono mt-0.5 ${connected ? 'text-green-600' : 'text-gray-500'}`}>{status}</p>
         </div>
         <button type="button" onClick={onClose} aria-label="Hide call controls" className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500">
@@ -554,6 +569,7 @@ function MobileOutboundOverlay({ onMinimize }: { onMinimize: () => void }) {
         </span>
         <p className="mt-5 text-3xl font-bold leading-tight break-words max-w-full">{targetLabel(t)}</p>
         {t?.name && number && <p className="mt-1 text-base font-mono text-white/70">{number}</p>}
+        {t?.newContact && t.contactId && <AddNamePrompt contactId={t.contactId} tone="dark" className="mt-3 w-full max-w-xs" />}
         {connected && keypad && <p className="mt-4 min-h-[2rem] text-2xl font-mono tracking-widest">{sent}</p>}
       </div>
 

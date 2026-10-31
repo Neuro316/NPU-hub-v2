@@ -400,7 +400,7 @@ export type OutboundCallSetup = Omit<OutboundCallDeps, 'onStage' | 'onEnded'>
 
 export type PlaceResult = { ok: true; session: number } | { ok: false; reason: 'busy' }
 
-export function createOutboundStore<T>(setupFor: (target: T) => OutboundCallSetup, now: () => number = Date.now) {
+export function createOutboundStore<T>(setupFor: (target: T, session: number) => OutboundCallSetup, now: () => number = Date.now) {
   let snap: OutboundSnapshot<T> = {
     session: 0, stage: 'idle', target: null, connectedAt: null, muted: false, ended: null,
   }
@@ -425,7 +425,7 @@ export function createOutboundStore<T>(setupFor: (target: T) => OutboundCallSetu
       if (ctl || snap.stage !== 'idle') return { ok: false, reason: 'busy' }
       const session = snap.session + 1
       const c: OutboundCall = createOutboundCall({
-        ...setupFor(target),
+        ...setupFor(target, session),
         onStage: (stage) => {
           if (ctl !== c || stage === 'idle') return // idle is reported by onEnded
           emit({ stage, connectedAt: stage === 'connected' ? now() : snap.connectedAt })
@@ -443,6 +443,15 @@ export function createOutboundStore<T>(setupFor: (target: T) => OutboundCallSetu
     },
 
     hangUp(): void { ctl?.hangUp() },
+
+    /**
+     * Update the shown target of a call that is still the current one, e.g. the
+     * contact a typed number resolved to while dialing, or a name added mid-call.
+     */
+    updateTarget(session: number, patch: Partial<T>): void {
+      if (snap.session !== session || !snap.target) return
+      emit({ target: { ...snap.target, ...patch } })
+    },
 
     setMuted(muted: boolean): void {
       if (ctl?.mute(muted)) emit({ muted })
