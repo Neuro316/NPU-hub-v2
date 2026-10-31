@@ -1,1 +1,1 @@
-"test:voice": "node --test scripts/tests/voice-call-state.test.mjs scripts/tests/voice-intelligence.test.mjs scripts/tests/outbound-call-status.test.mjs scripts/tests/call-navigation-guard.test.mjs scripts/tests/quick-send.test.mjs",
+"test:voice": "node --test scripts/tests/voice-call-state.test.mjs scripts/tests/voice-intelligence.test.mjs scripts/tests/outbound-call-status.test.mjs scripts/tests/call-navigation-guard.test.mjs scripts/tests/quick-send.test.mjs scripts/tests/recording-media.test.mjs",

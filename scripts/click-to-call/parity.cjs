@@ -41,6 +41,11 @@
 // SINCE_QUICK_SEND byte-for-byte equal to QUICK_SEND_BASE (eecb957): the timeline, which
 //            gained the Quick Send email card. Moved here from SINCE_TRANSCRIPTS.
 //
+// SINCE_PLAYBACK byte-for-byte equal to PLAYBACK_BASE (bd38207), the recording playback fix,
+//            which changed twilio-org (range, no-store and timeout on the recording fetch),
+//            the intelligence route and library (speakers labeled from the recording) on
+//            purpose, so they move here from SINCE_TRANSCRIPTS.
+//
 // TAMPER=outside   change one character outside a marked block      {M_conversations}
 // TAMPER=untouched change one character of ring-complete             {U_ring-complete}
 // TAMPER=webhook   change one character of the bridge webhook        {C_bridge}
@@ -109,6 +114,9 @@ const MARKED = {
 const TRANSCRIPTS_BASE = process.env.TRANSCRIPTS_BASE || 'cbc2664'
 const SINCE_TRANSCRIPTS = {
   'recording-ready': 'src/app/api/twilio/recording-ready/route.ts',
+}
+const PLAYBACK_BASE = process.env.PLAYBACK_BASE || 'bd38207'
+const SINCE_PLAYBACK = {
   'twilio-org': 'src/lib/twilio-org.ts',
   'intelligence': 'src/app/api/twilio/intelligence/route.ts',
   'voice-intelligence': 'src/lib/voice-intelligence.ts',
@@ -180,6 +188,10 @@ for (const [k, f] of Object.entries(SINCE_STATUS)) {
 for (const [k, f] of Object.entries(SINCE_QUICK_SEND)) {
   const same = work(f) === base(f, QUICK_SEND_BASE)
   rows.push({ id: `Q_${k}`, ok: same, got: same ? `identical to ${QUICK_SEND_BASE}` : `differs from ${QUICK_SEND_BASE}` })
+}
+for (const [k, f] of Object.entries(SINCE_PLAYBACK)) {
+  const same = work(f) === base(f, PLAYBACK_BASE)
+  rows.push({ id: `P_${k}`, ok: same, got: same ? `identical to ${PLAYBACK_BASE}` : `differs from ${PLAYBACK_BASE}` })
 }
 
 const red = rows.filter((r) => !r.ok).map((r) => r.id).sort()
