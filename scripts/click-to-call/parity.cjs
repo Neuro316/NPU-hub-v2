@@ -20,7 +20,7 @@
 //            flags and the middleware, which that build changed and click-to-call must not.
 //
 // SINCE_DIALER byte-for-byte equal to DIALER_BASE: VoipCall in twilio-comms (re-pinned at the
-//            global Call button, 3fab3b6), and inbound-call, whose outbound browser <Dial>
+//            call navigation fix, 3101365), and inbound-call, whose outbound browser <Dial>
 //            gained answerOnBridge (02a83d9).
 //
 // SINCE_C2C  byte-for-byte equal to the click-to-call merge (d3be328): the line picker
@@ -78,8 +78,10 @@ const SINCE_C2C = {
 // so click-to-call still cannot move them. The global Call button (feat/global-call-button,
 // 3fab3b6) moved VoipCall onto the app-level OutboundCallProvider on purpose, so twilio-comms is
 // compared with that commit; inbound-call is unchanged since 02a83d9 and still compared with it.
+// The call navigation fix (3101365) gave VoipCall's End a hangup reason ('call_panel') on
+// purpose, so twilio-comms is now compared with that commit.
 const DIALER_BASE = process.env.DIALER_BASE || '02a83d9'
-const CALL_BUTTON_BASE = process.env.CALL_BUTTON_BASE || '3fab3b6'
+const CALL_BUTTON_BASE = process.env.CALL_BUTTON_BASE || '3101365'
 const SINCE_DIALER = {
   'twilio-comms': ['src/components/crm/twilio-comms.tsx', CALL_BUTTON_BASE],
   'inbound-call': ['src/app/api/twilio/inbound-call/route.ts', DIALER_BASE],
