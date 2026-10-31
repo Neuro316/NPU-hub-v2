@@ -4,6 +4,7 @@ import { createContext, useContext, useState, useEffect, useCallback } from 'rea
 import { createClient } from '@/lib/supabase-browser'
 import type { User } from '@supabase/supabase-js'
 import type { SidebarOrder } from '@/lib/nav-config'
+import { confirmLeaveDuringCall } from '@/lib/call-navigation-guard'
 
 interface Organization {
   id: string
@@ -129,6 +130,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const switchOrg = useCallback((orgId: string) => {
     const org = organizations.find(o => o.id === orgId)
     if (org) {
+      // Switching reloads the Hub on the dashboard, which ends a live call.
+      if (window.location.pathname !== '/' && !confirmLeaveDuringCall()) return
       setCurrentOrg(org)
       localStorage.setItem('npu_hub_current_org', orgId)
       // Reset to dashboard to prevent viewing stale data from the previous org

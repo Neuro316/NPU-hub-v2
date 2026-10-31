@@ -198,6 +198,15 @@ export const MIC_BLOCKED_MESSAGE =
 
 export type OutboundStage = 'idle' | 'dialing' | 'ringing' | 'connected' | 'ending'
 
+// Why a call was ended from the browser. Sent with the server backstop and
+// logged by /api/voice/hangup, so a call that ended unexpectedly can be traced
+// to the control (or the unmount) that ended it.
+export const HANGUP_REASONS = [
+  'dialer_end', 'call_controls', 'phone_overlay', 'call_panel',
+  'answered_incoming', 'layout_unmount', 'setup_aborted', 'unspecified',
+] as const
+export type HangupReason = typeof HANGUP_REASONS[number]
+
 export type OutboundPrep =
   | { ok: true; token: string; params: Record<string, string>; callLogId: string | null }
   | { ok: false; message: string }
@@ -215,7 +224,7 @@ export interface OutboundCallDeps {
   /** Local ringback for when the network sends none. Primed in the Call tap. */
   ringback: { start(): void; stop(): void }
   /** Ask the server to end the call by its call_logs row. Fire and forget. */
-  hangupOnServer(callLogId: string): void
+  hangupOnServer(callLogId: string, reason: HangupReason): void
   later(fn: () => void, ms: number): unknown
 }
 
@@ -315,7 +324,7 @@ export function createOutboundCall(deps: OutboundCallDeps) {
           // End was pressed while this call was being placed.
           try { c?.disconnect() } catch { /* */ }
           releaseDevice(d)
-          if (prep.callLogId) deps.hangupOnServer(prep.callLogId)
+          if (prep.callLogId) deps.hangupOnServer(prep.callLogId, 'setup_aborted')
           return
         }
         call = c
@@ -328,7 +337,7 @@ export function createOutboundCall(deps: OutboundCallDeps) {
     },
 
     /** End, at any stage. Pressing it again while ending finishes at once. */
-    hangUp(): void {
+    hangUp(reason: HangupReason = 'unspecified'): void {
       if (stage === 'idle') return
       if (stage === 'ending') { finish(null); return }
       attempt++ // any setup still awaiting stops at its next step
@@ -337,7 +346,7 @@ export function createOutboundCall(deps: OutboundCallDeps) {
       const logId = callLogId // disconnect() can finish() synchronously
       if (!c) { finish(null); return }
       set('ending')
-      if (logId) deps.hangupOnServer(logId)
+      if (logId) deps.hangupOnServer(logId, reason)
       try { device?.disconnectAll() } catch { /* */ }
       try { c.disconnect() } catch { /* */ }
       let closed = false
@@ -359,7 +368,7 @@ export function createOutboundCall(deps: OutboundCallDeps) {
     /** Unmount: end anything live. */
     dispose(): void {
       if (stage === 'idle') return
-      this.hangUp()
+      this.hangUp('layout_unmount')
       finish(null) // no-op if hangUp already finished
     },
   }
@@ -442,7 +451,7 @@ export function createOutboundStore<T>(setupFor: (target: T) => OutboundCallSetu
       return { ok: true, session }
     },
 
-    hangUp(): void { ctl?.hangUp() },
+    hangUp(reason: HangupReason = 'unspecified'): void { ctl?.hangUp(reason) },
 
     setMuted(muted: boolean): void {
       if (ctl?.mute(muted)) emit({ muted })

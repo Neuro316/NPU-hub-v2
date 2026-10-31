@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
-  createOutboundStore, type OutboundSnapshot, type OutboundStore, type PlaceResult,
+  createOutboundStore, type HangupReason, type OutboundSnapshot, type OutboundStore, type PlaceResult,
 } from '@/lib/voice-call-state'
 import {
   createRingback, ensureMicrophone, hangupOnServer, keepRemoteAudioPlaying, listOutputDevices,
@@ -40,7 +40,8 @@ interface OutboundCallValue {
    * gesture), then asks for the microphone and dials.
    */
   placeCall: (target: OutboundTarget) => PlaceResult
-  hangUp: () => void
+  /** End the live call. The reason is logged by the server backstop. */
+  hangUp: (reason?: HangupReason) => void
   setMuted: (muted: boolean) => void
   sendDigits: (digits: string) => void
   /** Selectable audio outputs for the live call. Empty where unsupported (iOS Safari). */
@@ -141,7 +142,7 @@ export function OutboundCallProvider({ children }: { children: React.ReactNode }
 
   const value = useMemo<OutboundCallValue>(() => ({
     snapshot, live, placeCall,
-    hangUp: () => store.hangUp(),
+    hangUp: (reason?: HangupReason) => store.hangUp(reason),
     setMuted: (m: boolean) => store.setMuted(m),
     sendDigits: (d: string) => store.sendDigits(d),
     outputDevices, outputDeviceId, setOutputDevice,

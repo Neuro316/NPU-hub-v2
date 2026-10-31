@@ -496,7 +496,7 @@ function DesktopCallControls({ onClose }: { onClose: () => void }) {
             <Volume2 size={16} /> <span className="truncate max-w-full px-1">{speaker.label}</span>
           </button>
         )}
-        <button type="button" onClick={hangUp} className={`${btn} bg-red-500 hover:bg-red-600 text-white`}>
+        <button type="button" onClick={() => hangUp('call_controls')} className={`${btn} bg-red-500 hover:bg-red-600 text-white`}>
           <PhoneOff size={16} /> Hang up
         </button>
       </div>
@@ -589,7 +589,7 @@ function MobileOutboundOverlay({ onMinimize }: { onMinimize: () => void }) {
               )}
             </div>
           )}
-          <button type="button" onClick={hangUp} className={bigBtn} aria-label="Hang up">
+          <button type="button" onClick={() => hangUp('phone_overlay')} className={bigBtn} aria-label="Hang up">
             <span className="flex h-20 w-20 items-center justify-center rounded-full bg-red-600 active:bg-red-500 shadow-lg">
               <PhoneOff size={32} />
             </span>
