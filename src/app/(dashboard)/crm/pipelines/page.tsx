@@ -8,7 +8,8 @@ import {
   X, DollarSign, Trash2, Settings, BarChart3,
   Clock, TrendingUp, Target, Percent, Save, User, ArrowRightLeft, LayoutGrid, Sliders, Mail
 } from 'lucide-react'
-import { fetchContacts, updateContact, createContact } from '@/lib/crm-client'
+import { fetchContacts, updateContact, createContact, removeFromPipeline as removeFromPipelineApi } from '@/lib/crm-client'
+import { useToast } from '@/components/ui/toast'
 import type { CrmContact } from '@/types/crm'
 import { PIPELINE_STAGES, STAGE_COLORS } from '@/types/crm'
 import { useWorkspace } from '@/lib/workspace-context'
@@ -705,6 +706,22 @@ function CardConfigEditor({ pipeline, onSave, onClose }: { pipeline: PipelineCon
   )
 }
 
+function RemoveFromPipelineModal({ contactName, pipelineName, busy, onConfirm, onClose }: { contactName: string; pipelineName: string; busy: boolean; onConfirm: () => void; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => { if (!busy) onClose() }}>
+      <div className="w-full max-w-sm bg-white rounded-xl shadow-2xl border border-gray-100 p-5 animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3"><h3 className="text-base font-bold text-np-dark">Remove from pipeline?</h3><button onClick={onClose} disabled={busy} className="p-1 rounded hover:bg-gray-50"><X size={14} /></button></div>
+        <p className="text-xs text-gray-600"><span className="font-semibold text-np-dark">{contactName}</span> will be removed from <span className="font-semibold text-np-dark">{pipelineName}</span>, along with its lead value in this pipeline.</p>
+        <p className="text-xs text-gray-500 mt-2">The contact is not deleted. It stays in Contacts with its notes, tasks and history.</p>
+        <div className="flex justify-end gap-2 mt-5">
+          <button onClick={onClose} disabled={busy} className="px-3 py-2 text-xs text-gray-400">Cancel</button>
+          <button onClick={onConfirm} disabled={busy} className="px-4 py-2 bg-red-500 text-white text-xs font-medium rounded-lg hover:bg-red-600 disabled:opacity-40 transition-colors">{busy ? 'Removing...' : 'Remove'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function NewPipelineModal({ onSave, onClose }: { onSave: (p: PipelineConfig) => void; onClose: () => void }) {
   const [name, setName] = useState(''); const [desc, setDesc] = useState(''); const [tpl, setTpl] = useState<string>('sales')
   return (
@@ -852,6 +869,9 @@ export default function PipelinesPage() {
   const [showCustomFieldEditor, setShowCustomFieldEditor] = useState(false)
   const [showNewContact, setShowNewContact] = useState(false)
   const [showMetrics, setShowMetrics] = useState(true)
+  const [removeTarget, setRemoveTarget] = useState<CrmContact | null>(null)
+  const [removing, setRemoving] = useState(false)
+  const toast = useToast()
   // Deals for the active pipeline, keyed by contact id.
   const [deals, setDeals] = useState<Record<string, PipelineDeal>>({})
   const activePipeline = pipelines.find(p => p.id === activePipelineId) || pipelines[0]
@@ -984,8 +1004,7 @@ export default function PipelinesPage() {
     // never changed — the silent-failure class that has bitten repeatedly.
     const prevContacts = contacts
     const before = contacts.find(c => c.id === id)
-    // A contact with no pipeline_id shown on the default board is already in it.
-    const enteredPipeline = !!before && before.pipeline_id !== activePipelineId && !(!before.pipeline_id && activePipeline.is_default)
+    const enteredPipeline = !!before && before.pipeline_id !== activePipelineId
     setContacts(prev => prev.map(c => c.id === id ? { ...c, pipeline_stage: stage, pipeline_id: activePipelineId } : c))
     try {
       await updateContact(id, { pipeline_stage: stage, pipeline_id: activePipelineId } as any)
@@ -1006,13 +1025,26 @@ export default function PipelinesPage() {
     } catch (e) { console.error(e) }
   }
 
-  const removeFromPipeline = async (id: string) => {
+  // Optimistic: the card, stage counts, totals and summary cards drop it at once.
+  // Rolled back with the error shown if the server refuses.
+  const removeFromPipeline = async (contact: CrmContact) => {
+    const id = contact.id, pipelineKey = activePipelineId
+    const prevContacts = contacts, prevDeals = deals
+    setRemoving(true)
+    setContacts(prev => prev.map(c => c.id === id ? { ...c, pipeline_id: null as any, pipeline_stage: null as any } : c))
+    setDeals(d => { const n = { ...d }; delete n[id]; return n })
     try {
-      await updateContact(id, { pipeline_id: null, pipeline_stage: null } as any)
-      setContacts(prev => prev.map(c => c.id === id ? { ...c, pipeline_id: null as any, pipeline_stage: null as any } : c))
+      await removeFromPipelineApi(id, pipelineKey)
+      setRemoveTarget(null)
+      toast.show(`Removed from ${activePipeline.name}`)
     } catch (e: any) {
       console.error('removeFromPipeline failed', e)
-      alert('Could not remove from pipeline: ' + (e?.message || e))
+      setContacts(prevContacts)
+      setDeals(prevDeals)
+      setRemoveTarget(null)
+      toast.show(`Could not remove from ${activePipeline.name}: ${e?.message || e}`, 'error')
+    } finally {
+      setRemoving(false)
     }
   }
 
@@ -1021,24 +1053,14 @@ export default function PipelinesPage() {
   }
 
   const activePipelineStageNames = activePipeline.stages.map(s => s.name.toLowerCase())
-  const pipelineContacts = contacts.filter(c => {
-    // Contacts explicitly assigned to this pipeline
-    if (c.pipeline_id) return c.pipeline_id === activePipelineId
-    // Contacts with no pipeline_id: show in default pipeline OR if their stage name matches this pipeline's stages
-    if (!c.pipeline_id) {
-      if (activePipeline.is_default) return true
-      // Match by stage name — e.g. contact with pipeline_stage='Enrolled' shows in a pipeline that has an 'Enrolled' stage
-      if (c.pipeline_stage && activePipelineStageNames.includes(c.pipeline_stage.toLowerCase())) return true
-    }
-    return false
-  })
+  // Only contacts explicitly placed in this pipeline. A contact with no pipeline is on
+  // no board, the default one included, so "Remove from pipeline" really removes it.
+  const pipelineContacts = contacts.filter(c => c.pipeline_id === activePipelineId)
   const norm = (s: string | null | undefined) => (s || '').trim().toLowerCase()
   const firstStageName = activePipeline.stages[0]?.name || 'New Lead'
   const stageContacts = (name: string) => {
     const isFirst = name === firstStageName
     return pipelineContacts.filter(c => {
-      // a fully-removed contact (no pipeline_id and no stage) should not be parked here unless this is the default pipeline
-      if (!c.pipeline_id && !c.pipeline_stage && !activePipeline.is_default) return false
       const cs = norm(c.pipeline_stage)
       if (!cs) return isFirst  // no stage -> first column
       // exact (normalized) match to THIS column
@@ -1109,7 +1131,7 @@ export default function PipelinesPage() {
                 onDragLeave={e => { e.currentTarget.classList.remove('bg-np-blue/10', 'border-np-blue/40', 'scale-[1.01]'); e.currentTarget.classList.add('bg-gray-50/50', 'border-gray-100/50') }}
                 onDrop={e => { e.preventDefault(); e.currentTarget.classList.remove('bg-np-blue/10', 'border-np-blue/40', 'scale-[1.01]'); e.currentTarget.classList.add('bg-gray-50/50', 'border-gray-100/50'); const cid = e.dataTransfer.getData('contactId'); if (cid) moveContact(cid, stage.name) }}
               >
-                {sc.map(c => <ContactCard key={c.id} contact={c} stages={activePipeline.stages} pipelines={pipelines} activePipelineId={activePipelineId} customFields={activePipeline.custom_fields || []} dealValue={deals[c.id]?.value ?? null} onSaveValue={v => saveDealValue(c.id, v)} onMove={s => moveContact(c.id, s)} onMovePipeline={(pid, fs) => moveToPipeline(c.id, pid, fs)} onRemovePipeline={() => removeFromPipeline(c.id)} onOpenContact={setSelectedContactId} />)}
+                {sc.map(c => <ContactCard key={c.id} contact={c} stages={activePipeline.stages} pipelines={pipelines} activePipelineId={activePipelineId} customFields={activePipeline.custom_fields || []} dealValue={deals[c.id]?.value ?? null} onSaveValue={v => saveDealValue(c.id, v)} onMove={s => moveContact(c.id, s)} onMovePipeline={(pid, fs) => moveToPipeline(c.id, pid, fs)} onRemovePipeline={() => setRemoveTarget(c)} onOpenContact={setSelectedContactId} />)}
                 {sc.length === 0 && <div className="text-center py-8 text-[10px] text-gray-400">No contacts</div>}
               </div>
             </div>
@@ -1118,6 +1140,7 @@ export default function PipelinesPage() {
       </div>
 
       {showStageEditor && <StageEditor stages={activePipeline.stages} team={team} orgId={currentOrg?.id} onSave={s => { savePipelines(pipelines.map(p => p.id===activePipelineId ? { ...p, stages:s } : p)); setShowStageEditor(false) }} onClose={() => setShowStageEditor(false)} />}
+      {removeTarget && <RemoveFromPipelineModal contactName={`${removeTarget.first_name || ''} ${removeTarget.last_name || ''}`.trim() || 'This contact'} pipelineName={activePipeline.name} busy={removing} onConfirm={() => removeFromPipeline(removeTarget)} onClose={() => setRemoveTarget(null)} />}
       {showNewPipeline && <NewPipelineModal onSave={p => { savePipelines([...pipelines, p], p.id); setShowNewPipeline(false) }} onClose={() => setShowNewPipeline(false)} />}
       {showCardConfig && <CardConfigEditor pipeline={activePipeline} onSave={cfg => { savePipelines(pipelines.map(p => p.id===activePipelineId ? { ...p, card_config:cfg } : p)); setShowCardConfig(false) }} onClose={() => setShowCardConfig(false)} />}
       {showCustomFieldEditor && <CustomFieldEditor pipeline={activePipeline} onSave={fields => { savePipelines(pipelines.map(p => p.id===activePipelineId ? { ...p, custom_fields:fields } : p)); setShowCustomFieldEditor(false) }} onClose={() => setShowCustomFieldEditor(false)} />}
@@ -1132,7 +1155,7 @@ export default function PipelinesPage() {
           // A stage or pipeline change made in the detail view counts as a move too.
           const after = r.contacts.find(c => c.id === selectedContactId)
           if (before && after && after.pipeline_id && (before.pipeline_id !== after.pipeline_id || before.pipeline_stage !== after.pipeline_stage)) {
-            const entered = before.pipeline_id !== after.pipeline_id && !(!before.pipeline_id && pipelines.find(p => p.id === after.pipeline_id)?.is_default)
+            const entered = before.pipeline_id !== after.pipeline_id
             touchDeal(after.id, after.pipeline_id, after.pipeline_stage || '', entered)
           }
         }).catch(console.error)
