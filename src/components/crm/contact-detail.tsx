@@ -20,6 +20,7 @@ import {
 } from '@/lib/crm-client'
 import type { CrmContact, ContactNote, CrmTask, CallLog, ActivityLogEntry, TeamMember, ContactRelationship, RelationshipType, ContactTagCategory } from '@/types/crm'
 import { ContactCommsButtons } from '@/components/crm/twilio-comms'
+import { QuickSendButton } from '@/components/crm/quick-send'
 import { CrmTaskCard, CrmTaskDetail } from '@/components/crm/crm-task-card'
 import ContactCommPanel from '@/components/crm/contact-comm-panel'
 import { ContactEquipmentTab } from '@/components/crm/contact-equipment-tab'
@@ -54,14 +55,14 @@ const EVENT_ICONS: Record<string, any> = {
   task_created: CheckCircle2, task_completed: CheckCircle2,
   note_added: FileText, quiz_completed: Brain, mastermind_enrolled: GraduationCap,
   lifecycle_event: Activity, health_score_changed: Heart,
-  tag_added: Tag, tag_removed: Tag,
+  tag_added: Tag, tag_removed: Tag, quick_send: FileText,
 }
 
 const EVENT_COLORS: Record<string, string> = {
   call_completed: '#8b5cf6', sms_sent: '#3b82f6', sms_received: '#10b981',
   email_sent: '#f59e0b', pipeline_changed: '#ec4899', task_created: '#6b7280',
   task_completed: '#22c55e', note_added: '#64748b', quiz_completed: '#386797',
-  mastermind_enrolled: '#059669', health_score_changed: '#ef4444',
+  mastermind_enrolled: '#059669', health_score_changed: '#ef4444', quick_send: '#c4704b',
 }
 
 const HEALTH_CONFIG: Record<string, { color: string; bg: string; label: string }> = {
@@ -518,6 +519,13 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
 
   useEffect(() => { load() }, [load])
 
+  // After a Quick Send: show its timeline entry without reloading the whole contact.
+  const reloadTimeline = useCallback(() => {
+    supabase.from('contact_timeline').select('*').eq('contact_id', contactId)
+      .order('occurred_at', { ascending: false }).limit(50)
+      .then(({ data }) => { if (data) setTimeline(data) })
+  }, [contactId])  // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (!contactId) return
     const ch = supabase.channel(`contact-tasks-${contactId}`)
@@ -923,6 +931,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
 
               <div className="flex gap-2 mt-3 flex-wrap">
                 <ContactCommsButtons contact={contact} size="md" onEmailClick={() => setShowEmailComposer(true)} />
+                <QuickSendButton contactId={contact.id} onSent={reloadTimeline} />
                 <div className="w-px h-6 bg-gray-200 self-center" />
                 <button onClick={() => {
                   setHeaderForm({

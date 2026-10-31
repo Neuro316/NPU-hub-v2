@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import {
   Mail, Phone, Brain, Shield, Bell, Users, Sliders, Mic,
-  Save, Plus, X, Trash2, CheckCircle2, AlertTriangle, ChevronDown, ChevronRight, Send
+  Save, Plus, X, Trash2, CheckCircle2, AlertTriangle, ChevronDown, ChevronRight, Send, FileText
 } from 'lucide-react'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
@@ -12,13 +12,14 @@ import GuestProfileSettings from '@/components/settings/GuestProfileSettings'
 import VoicemailGreeting from '@/components/crm/voicemail-greeting'
 import BrowserCallingToggle from '@/components/crm/browser-calling-toggle'
 import { MarketingSettings } from '@/components/marketing/marketing-settings'
+import QuickSendResourcesSettings from '@/components/settings/quick-send-resources'
 import {
   clampRingTimeout, DEFAULT_RING_TIMEOUT_SECONDS,
   MIN_RING_TIMEOUT_SECONDS, MAX_RING_TIMEOUT_SECONDS,
 } from '@/lib/inbound-voice'
 import { toE164 } from '@/lib/phone'
 
-type Section = 'email' | 'twilio' | 'ai' | 'pipeline' | 'team' | 'notifications' | 'compliance' | 'general' | 'guest_profile' | 'campaign_sending'
+type Section = 'email' | 'twilio' | 'ai' | 'pipeline' | 'team' | 'notifications' | 'compliance' | 'general' | 'guest_profile' | 'campaign_sending' | 'quick_send'
 
 const SECTIONS: { id: Section; label: string; icon: any }[] = [
   { id: 'general', label: 'General', icon: Sliders },
@@ -31,6 +32,7 @@ const SECTIONS: { id: Section; label: string; icon: any }[] = [
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'compliance', label: 'Compliance', icon: Shield },
   { id: 'campaign_sending', label: 'Campaign Sending', icon: Send },
+  { id: 'quick_send', label: 'Quick Send Resources', icon: FileText },
 ]
 
 type NumberPurpose = 'outreach' | 'client_relations' | 'appointments' | 'inbound_main' | 'general'
@@ -691,9 +693,11 @@ export default function SettingsPage() {
           {/* Guest Profile */}
           {active === 'guest_profile' && <GuestProfileSettings />}
           {active === 'campaign_sending' && <MarketingSettings />}
+          {/* Saves as it goes (each switch, upload and edit), so no Save Settings. */}
+          {active === 'quick_send' && <QuickSendResourcesSettings />}
 
           {/* Save Button */}
-          <div className={`flex items-center justify-end gap-2 mt-6 pt-4 border-t border-gray-100${active === 'guest_profile' || active === 'campaign_sending' ? ' hidden' : ''}`}>
+          <div className={`flex items-center justify-end gap-2 mt-6 pt-4 border-t border-gray-100${active === 'guest_profile' || active === 'campaign_sending' || active === 'quick_send' ? ' hidden' : ''}`}>
             {saved && <span className="flex items-center gap-1 text-[10px] text-green-600 font-medium"><CheckCircle2 size={12} /> Saved</span>}
             <button onClick={handleSave} disabled={saving}
               className="flex items-center gap-1.5 px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark disabled:opacity-40 transition-colors">

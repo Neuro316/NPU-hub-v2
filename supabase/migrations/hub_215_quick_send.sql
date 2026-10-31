@@ -1,7 +1,7 @@
 -- hub_215_quick_send.sql
 --
--- STATUS: PROPOSED, NOT APPLIED. Production only (htfrfaxlcuyawtlztxxm), after
--- Cameron's separate go. The Hub has no nonprod.
+-- STATUS: APPLIED to production (htfrfaxlcuyawtlztxxm) on 2026-10-31 after Cameron's
+-- go, ledger version 20261031160805. The Hub has no nonprod.
 --
 -- Hub band (200+). Checked 2026-10-31: files stop at hub_214, no hub_215 or 215.
 --
