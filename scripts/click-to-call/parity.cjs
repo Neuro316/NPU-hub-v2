@@ -20,13 +20,8 @@
 //            flags and the middleware, which that build changed and click-to-call must not.
 //
 // SINCE_DIALER byte-for-byte equal to DIALER_BASE: VoipCall in twilio-comms (re-pinned at the
-//            call navigation fix, 3101365), and inbound-call, whose outbound browser <Dial>
-//            gained answerOnBridge (02a83d9) and then a <Number statusCallback> for the
-//            outbound call status fix (re-pinned at 2befa8f, STATUS_BASE).
-//
-// SINCE_STATUS byte-for-byte equal to STATUS_BASE (2befa8f), the outbound call status fix,
-//            which rewrote call-status on purpose (row by SID, signature checked, allowed
-//            statuses). It was UNTOUCHED against d49d00e until then.
+//            global Call button, 3fab3b6), and inbound-call, whose outbound browser <Dial>
+//            gained answerOnBridge (02a83d9).
 //
 // SINCE_C2C  byte-for-byte equal to the click-to-call merge (d3be328): the line picker
 //            touches only the button, the route and the click-to-call libraries, so the
@@ -37,14 +32,6 @@
 //            twilio-org (intelligence_service_sid) and the timeline (player and transcript
 //            on answered calls) on purpose. The timeline at cbc2664 still carries its
 //            CLICK-TO-CALL block, so byte equality keeps that block in place too.
-//
-// SINCE_QUICK_SEND byte-for-byte equal to QUICK_SEND_BASE (eecb957): the timeline, which
-//            gained the Quick Send email card. Moved here from SINCE_TRANSCRIPTS.
-//
-// SINCE_PLAYBACK byte-for-byte equal to PLAYBACK_BASE (bd38207), the recording playback fix,
-//            which changed twilio-org (range, no-store and timeout on the recording fetch),
-//            the intelligence route and library (speakers labeled from the recording) on
-//            purpose, so they move here from SINCE_TRANSCRIPTS.
 //
 // TAMPER=outside   change one character outside a marked block      {M_conversations}
 // TAMPER=untouched change one character of ring-complete             {U_ring-complete}
@@ -58,6 +45,7 @@ const ROOT = path.resolve(__dirname, '..', '..')
 const BASE = process.env.PARITY_BASE || 'd49d00e'
 const UNTOUCHED = {
   'ring-complete': 'src/app/api/twilio/ring-complete/route.ts',
+  'call-status': 'src/app/api/twilio/call-status/route.ts',
   'transcription': 'src/app/api/twilio/transcription/route.ts',
   'inbound-sms': 'src/app/api/twilio/inbound-sms/route.ts',
   'voice-token': 'src/app/api/voice/token/route.ts',
@@ -90,22 +78,11 @@ const SINCE_C2C = {
 // so click-to-call still cannot move them. The global Call button (feat/global-call-button,
 // 3fab3b6) moved VoipCall onto the app-level OutboundCallProvider on purpose, so twilio-comms is
 // compared with that commit; inbound-call is unchanged since 02a83d9 and still compared with it.
-// The call navigation fix (3101365) gave VoipCall's End a hangup reason ('call_panel') on
-// purpose, so twilio-comms is now compared with that commit.
-// Release 2026-10-31 (1697a16) combined PRs #10 and #12 to #16. The pins those PRs set
-// (STATUS 2befa8f, CALL_BUTTON 3101365, QUICK_SEND eecb957, PLAYBACK bd38207) all move to
-// the release commit, where each of their files is byte-for-byte what its PR pinned.
-const RELEASE_BASE = process.env.RELEASE_BASE || '1697a16'
 const DIALER_BASE = process.env.DIALER_BASE || '02a83d9'
-const CALL_BUTTON_BASE = process.env.CALL_BUTTON_BASE || RELEASE_BASE
-const STATUS_BASE = process.env.STATUS_BASE || RELEASE_BASE
+const CALL_BUTTON_BASE = process.env.CALL_BUTTON_BASE || '3fab3b6'
 const SINCE_DIALER = {
   'twilio-comms': ['src/components/crm/twilio-comms.tsx', CALL_BUTTON_BASE],
-  'inbound-call': ['src/app/api/twilio/inbound-call/route.ts', STATUS_BASE],
-}
-const SINCE_STATUS = {
-  'call-status': 'src/app/api/twilio/call-status/route.ts',
-  'outbound-call-status': 'src/lib/outbound-call-status.ts',
+  'inbound-call': ['src/app/api/twilio/inbound-call/route.ts', DIALER_BASE],
 }
 const AGENT_BASE = process.env.AGENT_BASE || 'ba4ed21'
 const SINCE_AGENT = {
@@ -118,18 +95,10 @@ const MARKED = {
 const TRANSCRIPTS_BASE = process.env.TRANSCRIPTS_BASE || 'cbc2664'
 const SINCE_TRANSCRIPTS = {
   'recording-ready': 'src/app/api/twilio/recording-ready/route.ts',
-}
-const PLAYBACK_BASE = process.env.PLAYBACK_BASE || RELEASE_BASE
-const SINCE_PLAYBACK = {
   'twilio-org': 'src/lib/twilio-org.ts',
+  'timeline': 'src/components/crm/comms-timeline.tsx',
   'intelligence': 'src/app/api/twilio/intelligence/route.ts',
   'voice-intelligence': 'src/lib/voice-intelligence.ts',
-}
-// Quick Send (feat/quick-send, eecb957) added its email card to the timeline on purpose,
-// so the timeline is compared with that commit. Its CLICK-TO-CALL block is still in place.
-const QUICK_SEND_BASE = process.env.QUICK_SEND_BASE || RELEASE_BASE
-const SINCE_QUICK_SEND = {
-  'timeline': 'src/components/crm/comms-timeline.tsx',
 }
 const RED_OF = { outside: ['M_conversations'], untouched: ['U_ring-complete'], webhook: ['C_bridge'] }
 const sel = process.env.TAMPER || ''
@@ -184,18 +153,6 @@ for (const [k, f] of Object.entries(SINCE_AGENT)) {
 for (const [k, f] of Object.entries(SINCE_TRANSCRIPTS)) {
   const same = work(f) === base(f, TRANSCRIPTS_BASE)
   rows.push({ id: `T_${k}`, ok: same, got: same ? `identical to ${TRANSCRIPTS_BASE}` : `differs from ${TRANSCRIPTS_BASE}` })
-}
-for (const [k, f] of Object.entries(SINCE_STATUS)) {
-  const same = work(f) === base(f, STATUS_BASE)
-  rows.push({ id: `S_${k}`, ok: same, got: same ? `identical to ${STATUS_BASE}` : `differs from ${STATUS_BASE}` })
-}
-for (const [k, f] of Object.entries(SINCE_QUICK_SEND)) {
-  const same = work(f) === base(f, QUICK_SEND_BASE)
-  rows.push({ id: `Q_${k}`, ok: same, got: same ? `identical to ${QUICK_SEND_BASE}` : `differs from ${QUICK_SEND_BASE}` })
-}
-for (const [k, f] of Object.entries(SINCE_PLAYBACK)) {
-  const same = work(f) === base(f, PLAYBACK_BASE)
-  rows.push({ id: `P_${k}`, ok: same, got: same ? `identical to ${PLAYBACK_BASE}` : `differs from ${PLAYBACK_BASE}` })
 }
 
 const red = rows.filter((r) => !r.ok).map((r) => r.id).sort()

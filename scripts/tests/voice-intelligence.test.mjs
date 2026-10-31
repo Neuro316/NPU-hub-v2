@@ -10,7 +10,7 @@ import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import {
   handleIntelligenceCallback, formatSpeakerTranscript, channelSpeakers,
-  requestCallTranscript, sha256Hex, INTELLIGENCE_API, wavChannelLevels, loudestChannel,
+  requestCallTranscript, sha256Hex, INTELLIGENCE_API,
 } from '../../src/lib/voice-intelligence.ts'
 
 const twilio = createRequire(import.meta.url)('twilio')
@@ -182,115 +182,6 @@ test('sentences are ordered by start time and blank ones dropped', () => {
     [{ media_channel: 2, transcript: 'Second.', start_time: 2 }, { media_channel: 1, transcript: ' ', start_time: 0 }, { media_channel: 1, transcript: 'First.', start_time: 1 }],
     'outbound', 'Pat')
   assert.equal(out, 'You: First.\n\nPat: Second.')
-})
-
-// ── Speakers from the recording itself ──────────────────────────────────────
-
-/**
- * A 16-bit stereo WAV at 8 kHz. `segments` are [channel (1|2), fromSec, toSec]:
- * a tone on that channel only, silence elsewhere.
- */
-function stereoWav(seconds, segments, { rate = 8000, extensible = false } = {}) {
-  const frames = Math.round(seconds * rate)
-  const fmtSize = extensible ? 40 : 16
-  const buf = new ArrayBuffer(12 + 8 + fmtSize + 8 + frames * 4)
-  const dv = new DataView(buf)
-  const put = (o, str) => { for (let i = 0; i < 4; i++) dv.setUint8(o + i, str.charCodeAt(i)) }
-  put(0, 'RIFF'); dv.setUint32(4, buf.byteLength - 8, true); put(8, 'WAVE')
-  put(12, 'fmt '); dv.setUint32(16, fmtSize, true)
-  dv.setUint16(20, extensible ? 0xfffe : 1, true); dv.setUint16(22, 2, true)
-  dv.setUint32(24, rate, true); dv.setUint32(28, rate * 4, true); dv.setUint16(32, 4, true); dv.setUint16(34, 16, true)
-  const data = 20 + fmtSize
-  put(data, 'data'); dv.setUint32(data + 4, frames * 4, true)
-  for (const [ch, from, to] of segments) {
-    for (let f = Math.round(from * rate); f < Math.min(frames, Math.round(to * rate)); f++) {
-      dv.setInt16(data + 8 + f * 4 + (ch - 1) * 2, Math.round(8000 * Math.sin(f / 3)), true)
-    }
-  }
-  return new Uint8Array(buf)
-}
-
-test('the WAV reader measures each channel separately (PCM and extensible)', () => {
-  for (const extensible of [false, true]) {
-    const lv = wavChannelLevels(stereoWav(2, [[1, 0, 1], [2, 1, 2]], { extensible }))
-    assert.ok(lv, 'parsed')
-    assert.equal(lv.channels.length, 2)
-    assert.equal(lv.channels[0].length, 20)
-    assert.ok(lv.channels[0][5] > 0.1 && lv.channels[1][5] === 0, 'first second is channel 1 only')
-    assert.ok(lv.channels[1][15] > 0.1 && lv.channels[0][15] === 0, 'second second is channel 2 only')
-  }
-})
-
-test('the WAV reader refuses mono and non-WAV input', () => {
-  const mono = stereoWav(1, [])
-  new DataView(mono.buffer).setUint16(22, 1, true)
-  assert.equal(wavChannelLevels(mono), null)
-  assert.equal(wavChannelLevels(new TextEncoder().encode('ID3 not a wav file')), null)
-})
-
-test('the louder channel wins; silence or a close call is undecided', () => {
-  const lv = wavChannelLevels(stereoWav(4, [[1, 0, 1], [2, 1, 2], [1, 3, 4], [2, 3, 4]]))
-  assert.equal(loudestChannel({ start_time: 0.1, end_time: 0.9 }, lv), 1)
-  assert.equal(loudestChannel({ start_time: 1.1, end_time: 1.9 }, lv), 2)
-  assert.equal(loudestChannel({ start_time: 2.1, end_time: 2.9 }, lv), null, 'silence')
-  assert.equal(loudestChannel({ start_time: 3.1, end_time: 3.9 }, lv), null, 'both talking')
-})
-
-test('the contact is labeled even when Twilio reports every sentence on channel 1', () => {
-  // Cameron's 2:48 PM test call: the contact said "Hello?" on channel 2, then the
-  // Hub user spoke on channel 1, and both came back as media_channel 1 ("You:").
-  const lv = wavChannelLevels(stereoWav(4, [[2, 0.8, 1.6], [1, 2.2, 3.6]]))
-  const sentences = [
-    { media_channel: 1, transcript: 'Hello?', start_time: 0.8, end_time: 1.5 },
-    { media_channel: 1, transcript: 'You answered.', start_time: 2.3, end_time: 3.5 },
-  ]
-  assert.equal(formatSpeakerTranscript(sentences, 'outbound', 'Melissa Allen'), 'You: Hello? You answered.', 'old behavior without the recording')
-  assert.equal(formatSpeakerTranscript(sentences, 'outbound', 'Melissa Allen', lv), 'Melissa Allen: Hello?\n\nYou: You answered.')
-  // Inbound: channel 1 is the caller.
-  assert.equal(formatSpeakerTranscript(sentences, 'inbound', 'Caller', lv), 'You: Hello?\n\nCaller: You answered.')
-})
-
-test('0-based media channels are read as channels 1 and 2', () => {
-  const out = formatSpeakerTranscript([
-    { media_channel: 0, transcript: 'Hub here.', start_time: 0 },
-    { media_channel: 1, transcript: 'Contact here.', start_time: 1 },
-  ], 'outbound', 'Pat')
-  assert.equal(out, 'You: Hub here.\n\nPat: Contact here.')
-})
-
-test('the callback labels from the recording named by the transcript, and falls back if it cannot load', async () => {
-  const lv = wavChannelLevels(stereoWav(8, [[1, 0, 2], [2, 3, 5], [1, 6, 7]]))
-  const SID = 'RE' + 'b'.repeat(32)
-  const asked = []
-  const f = fakeDeps()
-  const getJson = f.deps.getJson
-  f.deps.getJson = async (url, creds) => {
-    const j = await getJson(url, creds)
-    if (url === `${INTELLIGENCE_API}/Transcripts/${TRANSCRIPT}`) j.channel = { media_properties: { source_sid: SID } }
-    if (url.includes('/Sentences')) {
-      j.sentences = [
-        { media_channel: 1, transcript: 'Hi Sharon.', start_time: 0.2, end_time: 1.8 },
-        { media_channel: 1, transcript: 'Hello there.', start_time: 3.2, end_time: 4.8 },
-        { media_channel: 1, transcript: 'Bye.', start_time: 6.1, end_time: 6.9 },
-      ]
-    }
-    return j
-  }
-  f.deps.channelLevels = async (sid, creds) => { asked.push({ sid, account: creds.accountSid }); return lv }
-  const res = await handleIntelligenceCallback(signedJson(payload), f.deps)
-  assert.equal(res.status, 200)
-  assert.deepEqual(asked, [{ sid: SID, account: ACCOUNT }])
-  assert.equal(f.updates[0].fields.transcript, 'You: Hi Sharon.\n\nSharon McCoy: Hello there.\n\nYou: Bye.')
-
-  // No source_sid on the transcript: the row's recording_sid is used.
-  const g = fakeDeps({ rows: { [ROW_B]: { id: ROW_B, direction: 'outbound', account_sid: ACCOUNT, contact_label: 'Sharon McCoy', recording_sid: SID } } })
-  let tried = 0
-  g.deps.channelLevels = async () => { tried++; throw new Error('Twilio 404') }
-  const res2 = await handleIntelligenceCallback(signedJson(payload), g.deps)
-  assert.equal(tried, 1)
-  assert.equal(res2.status, 200, 'a recording that cannot load never fails the transcript')
-  assert.equal(g.updates[0].fields.transcription_status, 'completed')
-  assert.match(g.updates[0].fields.transcript, /^You: Hi Sharon/, 'falls back to Twilio channels')
 })
 
 // ── Request ──────────────────────────────────────────────────────────────────

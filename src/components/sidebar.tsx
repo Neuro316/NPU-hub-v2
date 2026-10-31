@@ -24,7 +24,6 @@ import {
   PanelLeftOpen,
 } from 'lucide-react'
 import { NotificationBell } from '@/components/notification-bell'
-import { confirmLeaveDuringCall } from '@/lib/call-navigation-guard'
 import { navCategories, applySidebarOrder } from '@/lib/nav-config'
 import { clearShellStorage } from '@/lib/agent/shell-state'
 
@@ -64,8 +63,6 @@ export function Sidebar() {
   }
 
   const handleSignOut = async () => {
-    // Signing out leaves the Hub and ends a live call, so ask first.
-    if (!confirmLeaveDuringCall()) return
     const supabase = createClient()
     // the Hub Guide's stored panel state goes first: the redirect below may beat any listener (ruling 26)
     try { clearShellStorage(window.sessionStorage) } catch { /* storage blocked: nothing was stored */ }
@@ -137,17 +134,6 @@ export function Sidebar() {
               <X className="w-4 h-4" />
             </button>
           </div>
-          {/* Phone menu: who is signed in, in full, so a wrong account is obvious
-              at a glance (the footer truncates the email). */}
-          {isMobileOpen && user && (
-            <div className="lg:hidden mt-3 rounded-lg bg-gray-50 px-3 py-2">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Signed in as</p>
-              <p className="text-sm font-medium text-np-dark truncate">
-                {user.user_metadata?.full_name || user.email?.split('@')[0] || 'User'}
-              </p>
-              <p className="text-xs text-gray-500 break-all" data-testid="mobile-menu-email">{user.email}</p>
-            </div>
-          )}
         </div>
 
         {/* Workspace Switcher */}

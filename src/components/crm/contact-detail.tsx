@@ -20,7 +20,6 @@ import {
 } from '@/lib/crm-client'
 import type { CrmContact, ContactNote, CrmTask, CallLog, ActivityLogEntry, TeamMember, ContactRelationship, RelationshipType, ContactTagCategory } from '@/types/crm'
 import { ContactCommsButtons } from '@/components/crm/twilio-comms'
-import { QuickSendButton } from '@/components/crm/quick-send'
 import { CrmTaskCard, CrmTaskDetail } from '@/components/crm/crm-task-card'
 import ContactCommPanel from '@/components/crm/contact-comm-panel'
 import { ContactEquipmentTab } from '@/components/crm/contact-equipment-tab'
@@ -29,8 +28,6 @@ import EmailComposer from '@/components/crm/email-composer'
 import { createClient } from '@/lib/supabase-browser'
 import { helpId } from '@/lib/agent/help/help-id'
 import { LeadValueEditor } from '@/components/crm/lead-value'
-import { AddNamePrompt } from '@/components/crm/add-name-prompt'
-import { needsName } from '@/lib/call-new-number'
 
 interface PipelineCustomField {
   id: string
@@ -57,14 +54,14 @@ const EVENT_ICONS: Record<string, any> = {
   task_created: CheckCircle2, task_completed: CheckCircle2,
   note_added: FileText, quiz_completed: Brain, mastermind_enrolled: GraduationCap,
   lifecycle_event: Activity, health_score_changed: Heart,
-  tag_added: Tag, tag_removed: Tag, quick_send: FileText,
+  tag_added: Tag, tag_removed: Tag,
 }
 
 const EVENT_COLORS: Record<string, string> = {
   call_completed: '#8b5cf6', sms_sent: '#3b82f6', sms_received: '#10b981',
   email_sent: '#f59e0b', pipeline_changed: '#ec4899', task_created: '#6b7280',
   task_completed: '#22c55e', note_added: '#64748b', quiz_completed: '#386797',
-  mastermind_enrolled: '#059669', health_score_changed: '#ef4444', quick_send: '#c4704b',
+  mastermind_enrolled: '#059669', health_score_changed: '#ef4444',
 }
 
 const HEALTH_CONFIG: Record<string, { color: string; bg: string; label: string }> = {
@@ -350,8 +347,6 @@ interface ContactDetailProps {
   pipelineCustomFields?: PipelineCustomField[]
   /** Passed by the pipelines board: the lead value of this card in the pipeline being viewed. */
   leadValue?: { pipelineName: string; value: number | null; onSave: (value: number | null) => Promise<void> }
-  /** A note or task of this contact was added, completed or edited (the board refreshes the card). */
-  onActivityChange?: () => void
 }
 
 /**
@@ -371,7 +366,7 @@ function writeErrorMessage(e: any, label: string): string {
     : `${label} failed: ${e?.message || 'unknown error'}. Nothing was saved.`
 }
 
-export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig, pipelineCustomFields, leadValue, onActivityChange }: ContactDetailProps) {
+export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig, pipelineCustomFields, leadValue }: ContactDetailProps) {
   const show = (key: keyof NonNullable<CardConfig>['sections']) =>
     !cardConfig || cardConfig.sections[key] !== false
   const supabase = createClient()
@@ -523,13 +518,6 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
 
   useEffect(() => { load() }, [load])
 
-  // After a Quick Send: show its timeline entry without reloading the whole contact.
-  const reloadTimeline = useCallback(() => {
-    supabase.from('contact_timeline').select('*').eq('contact_id', contactId)
-      .order('occurred_at', { ascending: false }).limit(50)
-      .then(({ data }) => { if (data) setTimeline(data) })
-  }, [contactId])  // eslint-disable-line react-hooks/exhaustive-deps
-
   useEffect(() => {
     if (!contactId) return
     const ch = supabase.channel(`contact-tasks-${contactId}`)
@@ -593,7 +581,6 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
     await createNote({ contact_id: contact.id, org_id: contact.org_id, body: newNote, type: 'manual' })
     setNewNote('')
     load()
-    onActivityChange?.()
   }
 
   const handleAddTag = async () => {
@@ -615,7 +602,6 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
     try {
       await updateTask(task.id, { status: newStatus })
       setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t))
-      onActivityChange?.()
     } catch (e) { console.error(e) }
   }
 
@@ -623,14 +609,12 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
     try {
       await updateTask(taskId, { status: status as any })
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: status as any } : t))
-      onActivityChange?.()
     } catch (e) { console.error(e) }
   }
 
   const handleTaskUpdate = (id: string, updates: Partial<CrmTask>) => {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t))
     setSelectedTask(prev => prev?.id === id ? { ...prev, ...updates } : prev)
-    onActivityChange?.()
   }
 
   const handleConnSearch = async (q: string) => {
@@ -842,10 +826,6 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                   ) : (
                     <div>
                       <h3 className="text-sm font-bold text-np-dark">{contact.first_name} {contact.last_name}</h3>
-                      {/* Created by calling its number, or an unknown caller: name it here. */}
-                      {needsName(contact) && (
-                        <AddNamePrompt contactId={contact.id} className="mt-1" onSaved={async () => { await load(); onUpdate?.() }} />
-                      )}
                       {(contact as any).company && <p className="text-[10px] text-gray-400">{(contact as any).company}</p>}
                       <div className="flex items-center gap-2 mt-0.5">
                         {contact.pipeline_stage && (
@@ -943,7 +923,6 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
 
               <div className="flex gap-2 mt-3 flex-wrap">
                 <ContactCommsButtons contact={contact} size="md" onEmailClick={() => setShowEmailComposer(true)} />
-                <QuickSendButton contactId={contact.id} onSent={reloadTimeline} />
                 <div className="w-px h-6 bg-gray-200 self-center" />
                 <button onClick={() => {
                   setHeaderForm({
@@ -2207,7 +2186,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
           contactId={contact.id}
           orgId={contact.org_id}
           createdBy={contact.org_id}
-          onCreate={(newTask) => { setTasks(prev => [newTask, ...prev]); setShowTaskCreate(false); onActivityChange?.() }}
+          onCreate={(newTask) => { setTasks(prev => [newTask, ...prev]); setShowTaskCreate(false) }}
           onClose={() => setShowTaskCreate(false)}
         />
       )}

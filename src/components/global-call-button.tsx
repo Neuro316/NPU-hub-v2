@@ -3,12 +3,10 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   Phone, PhoneOff, PhoneCall, PhoneOutgoing, Mic, MicOff, Grid3x3, Volume2, X, Search,
-  UserPlus, ChevronDown, Loader2, AlertTriangle, Delete, FileText,
+  UserPlus, ChevronDown, Loader2, AlertTriangle, Delete,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase-browser'
-import { resolveCallContact, updateContact } from '@/lib/crm-client'
-import { splitName } from '@/lib/call-new-number'
-import { AddNamePrompt } from '@/components/crm/add-name-prompt'
+import { createContact } from '@/lib/crm-client'
 import { useWorkspace } from '@/lib/workspace-context'
 import { usePermissions } from '@/lib/hooks/use-permissions'
 import { useOrgLines } from '@/lib/hooks/use-org-lines'
@@ -16,7 +14,6 @@ import { formatUsPhone, toE164 } from '@/lib/phone'
 import { primeCallTones, unlockCallAudio } from '@/lib/voice-audio'
 import { useOutboundCall, ALREADY_ON_CALL_MESSAGE, type OutboundTarget } from '@/lib/voice-outbound-context'
 import { useIsNarrowCallScreen } from '@/components/incoming-call-banner'
-import { QuickSendDialog, QuickSendSheet, QuickSendToast } from '@/components/crm/quick-send'
 
 // The Call button at the top of every Hub page, and the live outbound call's
 // indicator and controls. Rendered once, in the top-right cluster of the
@@ -25,16 +22,12 @@ import { QuickSendDialog, QuickSendSheet, QuickSendToast } from '@/components/cr
 //   idle       Call opens the quick-dial sheet (bottom sheet on a phone, a
 //              popover on desktop): search contacts by name or number, type a
 //              number on the pad, pick the line, call. A typed number that is
-//              no contact is called at once: its contact (the org's existing
-//              one, or a new "Unknown" one) is resolved while it dials, so every
-//              call is logged against a contact, and the call screen offers
-//              "Add name". "Save as contact" (no call) stays available.
+//              no contact gets "Add contact and call": the contact is created
+//              first, so every call is logged against a contact.
 //   live call  The button becomes the in-call indicator (name or number and a
 //              timer). Tapping it opens the controls: Mute, Keypad, Speaker
 //              where supported, Hang up. On a phone that is the same
 //              full-screen layout as the incoming call overlay.
-//              Quick Send (email resources to the contact) opens over the
-//              call without leaving it: a dialog on desktop, a sheet on a phone.
 //
 // The call itself lives in OutboundCallProvider, not here, so pages can change
 // underneath it without ending it.
@@ -207,9 +200,7 @@ function QuickDialSheet({ narrow, onClose, onPlaced }: {
   const [showPad, setShowPad] = useState(false)
   const [line, setLine] = useState('')
   const [newName, setNewName] = useState('')
-  const [saveOpen, setSaveOpen] = useState(false)
   const [adding, setAdding] = useState(false)
-  const [saved, setSaved] = useState('')
   const [error, setError] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -284,34 +275,37 @@ function QuickDialSheet({ narrow, onClose, onPlaced }: {
     onPlaced(res.session)
   }
 
-  // A typed number with no contact: call now, in this tap. The provider
-  // resolves the contact while it dials (no form, no wait).
-  const callNumber = () => {
-    if (!currentOrg || !typedE164) return
-    setError('')
-    const orgId = currentOrg.id
-    const phone = typedE164
-    const res = placeCall({
-      contactId: '', name: '', phone, lineE164: line || null,
-      resolveContact: () => resolveCallContact(orgId, phone),
-    })
-    if (!res.ok) { setError(ALREADY_ON_CALL_MESSAGE); return }
-    onPlaced(res.session)
-  }
-
-  // Optional, off the call path: save the number as a contact without calling.
-  const saveContact = async () => {
+  const addAndCall = async () => {
     if (!currentOrg || !typedE164 || adding) return
+    // Inside the tap, before the contact insert awaits: phones only allow
+    // call audio and the ringback tone to start in a gesture.
+    unlockCallAudio()
+    primeCallTones()
     setAdding(true)
     setError('')
     try {
-      const c = await resolveCallContact(currentOrg.id, typedE164)
-      if (newName.trim()) await updateContact(c.id, splitName(newName))
-      setSaved(c.created ? 'Saved as a contact.' : 'This number is already a contact.')
-      setSaveOpen(false)
-      setNewName('')
+      const parts = newName.trim().split(/\s+/).filter(Boolean)
+      // Same minimal payload as the Contacts page's create. No name: the
+      // "Unknown" placeholder an unknown inbound caller gets, mergeable later.
+      const contact = await createContact({
+        org_id: currentOrg.id,
+        first_name: parts[0] || 'Unknown',
+        last_name: parts.slice(1).join(' '),
+        phone: typedE164,
+        tags: [],
+        sms_consent: false,
+        do_not_contact: false,
+      } as any)
+      const res = placeCall({
+        contactId: contact.id,
+        name: parts.length ? contactName(contact as any) : '',
+        phone: typedE164,
+        lineE164: line || null,
+      })
+      if (!res.ok) { setError(ALREADY_ON_CALL_MESSAGE); return }
+      onPlaced(res.session)
     } catch (e: any) {
-      setError(`Could not save the contact: ${e?.message || 'unknown error'}`)
+      setError(`Could not add the contact: ${e?.message || 'unknown error'}`)
     } finally {
       setAdding(false)
     }
@@ -394,33 +388,22 @@ function QuickDialSheet({ narrow, onClose, onPlaced }: {
           </div>
         ))}
         {!searching && query.trim().length >= 2 && results.length === 0 && !typedE164 && (
-          <p className="px-1 py-2 text-xs text-gray-400">No contacts match. Type a full number to call it.</p>
+          <p className="px-1 py-2 text-xs text-gray-400">No contacts match. Type a full number to add one and call.</p>
         )}
       </div>
 
       {typedE164 && !numberMatch && !searching && (
         <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 flex flex-col gap-2">
-          <button type="button" onClick={callNumber}
-            className={`flex items-center justify-center gap-2 rounded-xl bg-green-500 hover:bg-green-600 text-white font-semibold active:scale-[0.98] ${narrow ? 'h-12 text-base' : 'h-9 text-sm'}`}>
-            <Phone size={15} /> Call {formatUsPhone(typedE164)}
+          <p className="text-xs text-gray-600">
+            <span className="font-mono font-semibold text-np-dark">{formatUsPhone(typedE164)}</span> is not in your contacts.
+          </p>
+          <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Name (optional)" autoComplete="off"
+            className={`w-full rounded-lg border border-gray-200 bg-white px-3 text-np-dark placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-np-blue/30 ${narrow ? 'h-11 text-base' : 'h-8 text-sm'}`} />
+          <button type="button" onClick={addAndCall} disabled={adding}
+            className={`flex items-center justify-center gap-2 rounded-xl bg-green-500 hover:bg-green-600 disabled:bg-gray-300 text-white font-semibold active:scale-[0.98] ${narrow ? 'h-12 text-base' : 'h-9 text-sm'}`}>
+            {adding ? <Loader2 size={15} className="animate-spin" /> : <UserPlus size={15} />}
+            Add contact and call
           </button>
-          <p className="text-[11px] text-gray-500 text-center">Not in your contacts yet. It is saved as a contact when you call, and you can add a name on the call screen.</p>
-          {saved && <p role="status" className="text-[11px] text-green-700 text-center">{saved}</p>}
-          {!saveOpen ? (
-            <button type="button" onClick={() => { setSaveOpen(true); setSaved('') }}
-              className="self-center flex items-center gap-1 text-[11px] font-semibold text-np-blue hover:underline">
-              <UserPlus size={12} /> Save as contact without calling
-            </button>
-          ) : (
-            <div className="flex items-center gap-1.5">
-              <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Name (optional)" autoComplete="off"
-                className={`min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 text-np-dark placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-np-blue/30 ${narrow ? 'h-11 text-base' : 'h-8 text-sm'}`} />
-              <button type="button" onClick={saveContact} disabled={adding}
-                className={`flex items-center gap-1 rounded-lg bg-np-blue px-3 text-xs font-semibold text-white disabled:bg-gray-300 ${narrow ? 'h-11' : 'h-8'}`}>
-                {adding ? <Loader2 size={13} className="animate-spin" /> : null} Save
-              </button>
-            </div>
-          )}
         </div>
       )}
     </div>
@@ -466,22 +449,18 @@ function DesktopCallControls({ onClose }: { onClose: () => void }) {
   const speaker = useSpeaker()
   const [keypad, setKeypad] = useState(false)
   const [sent, setSent] = useState('')
-  const [quickSend, setQuickSend] = useState(false)
-  const [toast, setToast] = useState('')
   const connected = snapshot.stage === 'connected'
   const t = snapshot.target
   const btn = 'flex flex-col items-center justify-center gap-1 h-14 rounded-xl text-[10px] font-semibold'
-  const cols = 3 + (speaker.canSpeaker ? 1 : 0) + (t?.contactId ? 1 : 0)
 
   return (
     <div role="dialog" aria-label="Call controls"
-      className={`absolute right-0 top-full mt-2 ${cols > 4 ? 'w-[22rem]' : 'w-80'} rounded-xl border border-gray-100 bg-white p-4 shadow-xl`}>
+      className="absolute right-0 top-full mt-2 w-72 rounded-xl border border-gray-100 bg-white p-4 shadow-xl">
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{connected ? 'On call' : 'Outgoing call'}</p>
           <p className="text-sm font-bold text-np-dark truncate">{targetLabel(t)}</p>
           {t?.name && <p className="text-[11px] font-mono text-gray-400">{formatUsPhone(t.phone)}</p>}
-          {t?.newContact && t.contactId && <AddNamePrompt contactId={t.contactId} className="mt-1.5" />}
           <p className={`text-xs font-mono mt-0.5 ${connected ? 'text-green-600' : 'text-gray-500'}`}>{status}</p>
         </div>
         <button type="button" onClick={onClose} aria-label="Hide call controls" className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500">
@@ -501,7 +480,7 @@ function DesktopCallControls({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
-      <div className={`mt-3 grid gap-2 ${cols === 5 ? 'grid-cols-5' : cols === 4 ? 'grid-cols-4' : 'grid-cols-3'}`}>
+      <div className={`mt-3 grid gap-2 ${speaker.canSpeaker ? 'grid-cols-4' : 'grid-cols-3'}`}>
         <button type="button" disabled={!connected} onClick={() => setMuted(!snapshot.muted)} aria-pressed={snapshot.muted}
           className={`${btn} disabled:opacity-40 ${snapshot.muted ? 'bg-amber-100 text-amber-700' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
           {snapshot.muted ? <MicOff size={16} /> : <Mic size={16} />}
@@ -511,26 +490,16 @@ function DesktopCallControls({ onClose }: { onClose: () => void }) {
           className={`${btn} disabled:opacity-40 ${keypad ? 'bg-np-blue/10 text-np-blue' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
           <Grid3x3 size={16} /> Keypad
         </button>
-        {t?.contactId && (
-          <button type="button" onClick={() => setQuickSend(true)}
-            className={`${btn} bg-fire hover:bg-fire-warm text-np-dark`}>
-            <FileText size={16} /> Quick Send
-          </button>
-        )}
         {speaker.canSpeaker && (
           <button type="button" disabled={!connected} onClick={speaker.next}
             className={`${btn} disabled:opacity-40 bg-gray-50 text-gray-600 hover:bg-gray-100`}>
             <Volume2 size={16} /> <span className="truncate max-w-full px-1">{speaker.label}</span>
           </button>
         )}
-        <button type="button" onClick={() => hangUp('call_controls')} className={`${btn} bg-red-500 hover:bg-red-600 text-white`}>
+        <button type="button" onClick={hangUp} className={`${btn} bg-red-500 hover:bg-red-600 text-white`}>
           <PhoneOff size={16} /> Hang up
         </button>
       </div>
-      {toast && <div className="mt-3 flex justify-center"><QuickSendToast message={toast} onDone={() => setToast('')} className="border border-gray-100 shadow-none" /></div>}
-      {quickSend && t?.contactId && (
-        <QuickSendDialog contactId={t.contactId} onClose={() => setQuickSend(false)} onSent={setToast} />
-      )}
     </div>
   )
 }
@@ -547,8 +516,6 @@ function MobileOutboundOverlay({ onMinimize }: { onMinimize: () => void }) {
   const speaker = useSpeaker()
   const [keypad, setKeypad] = useState(false)
   const [sent, setSent] = useState('')
-  const [quickSend, setQuickSend] = useState(false)
-  const [toast, setToast] = useState('')
   const connected = snapshot.stage === 'connected'
   const t = snapshot.target
   const number = t ? formatUsPhone(t.phone) : ''
@@ -587,9 +554,7 @@ function MobileOutboundOverlay({ onMinimize }: { onMinimize: () => void }) {
         </span>
         <p className="mt-5 text-3xl font-bold leading-tight break-words max-w-full">{targetLabel(t)}</p>
         {t?.name && number && <p className="mt-1 text-base font-mono text-white/70">{number}</p>}
-        {t?.newContact && t.contactId && <AddNamePrompt contactId={t.contactId} tone="dark" className="mt-3 w-full max-w-xs" />}
         {connected && keypad && <p className="mt-4 min-h-[2rem] text-2xl font-mono tracking-widest">{sent}</p>}
-        {toast && <QuickSendToast message={toast} onDone={() => setToast('')} className="mt-4" />}
       </div>
 
       <div className="px-6">
@@ -605,9 +570,7 @@ function MobileOutboundOverlay({ onMinimize }: { onMinimize: () => void }) {
             </div>
           )}
           {connected && (
-            // Mute, Keypad and Quick Send share the first row at the same size;
-            // Speaker, where the browser can choose an output, takes a second row.
-            <div className="grid w-full max-w-xs grid-cols-3 gap-3">
+            <div className={`grid w-full max-w-xs gap-3 ${speaker.canSpeaker ? 'grid-cols-3' : 'grid-cols-2'}`}>
               <button type="button" onClick={() => setMuted(!snapshot.muted)} aria-pressed={snapshot.muted}
                 className={`${ctlBtn} ${snapshot.muted ? 'bg-amber-400 text-np-dark' : 'bg-white/10 active:bg-white/25'}`}>
                 {snapshot.muted ? <MicOff size={24} /> : <Mic size={24} />}
@@ -618,22 +581,15 @@ function MobileOutboundOverlay({ onMinimize }: { onMinimize: () => void }) {
                 <Grid3x3 size={24} />
                 {keypad ? 'Hide keypad' : 'Keypad'}
               </button>
-              {t?.contactId ? (
-                <button type="button" onClick={() => setQuickSend(true)}
-                  className={`${ctlBtn} bg-fire active:bg-fire-warm text-np-dark`}>
-                  <FileText size={24} />
-                  Quick Send
-                </button>
-              ) : <span />}
               {speaker.canSpeaker && (
-                <button type="button" onClick={speaker.next} className={`${ctlBtn} col-start-2 bg-white/10 active:bg-white/25`}>
+                <button type="button" onClick={speaker.next} className={`${ctlBtn} bg-white/10 active:bg-white/25`}>
                   <Volume2 size={24} />
                   <span className="truncate max-w-full px-1">{speaker.label}</span>
                 </button>
               )}
             </div>
           )}
-          <button type="button" onClick={() => hangUp('phone_overlay')} className={bigBtn} aria-label="Hang up">
+          <button type="button" onClick={hangUp} className={bigBtn} aria-label="Hang up">
             <span className="flex h-20 w-20 items-center justify-center rounded-full bg-red-600 active:bg-red-500 shadow-lg">
               <PhoneOff size={32} />
             </span>
@@ -641,10 +597,6 @@ function MobileOutboundOverlay({ onMinimize }: { onMinimize: () => void }) {
           </button>
         </div>
       </div>
-      {/* Over the call, not instead of it: no navigation, the call keeps running. */}
-      {quickSend && t?.contactId && (
-        <QuickSendSheet contactId={t.contactId} onClose={() => setQuickSend(false)} onSent={setToast} zClass="z-[1995]" />
-      )}
     </div>
   )
 }
