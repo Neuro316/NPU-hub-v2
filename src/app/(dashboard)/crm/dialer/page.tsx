@@ -12,7 +12,11 @@ import {
   Delete, ArrowUpRight, ArrowDownLeft, Voicemail, PhoneMissed, Brain, FileText
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase-browser'
-import { fetchCallLogs, lookupContactByPhone } from '@/lib/crm-client'
+import { fetchCallLogs, resolveCallContact } from '@/lib/crm-client'
+import { isFullNumber } from '@/lib/call-new-number'
+import { toE164 } from '@/lib/phone'
+import { useWorkspace } from '@/lib/workspace-context'
+import { AddNamePrompt } from '@/components/crm/add-name-prompt'
 import type { CrmContact, CallLog, Sentiment } from '@/types/crm'
 import { primeCallTones, unlockCallAudio } from '@/lib/voice-audio'
 import { useOutboundCall, ALREADY_ON_CALL_MESSAGE } from '@/lib/voice-outbound-context'
@@ -56,13 +60,12 @@ function timeAgo(d: string) {
 
 export default function DialerPage() {
   const supabase = createClient()
+  const { currentOrg } = useWorkspace()
   const [dialString, setDialString] = useState('')
   // The live call is the app-level one (voice-outbound-context.tsx): it
   // outlives this page, and a call placed anywhere in the Hub shows here.
   const outbound = useOutboundCall()
   const { snapshot } = outbound
-  // Looking up the typed number before the call is placed.
-  const [lookingUp, setLookingUp] = useState(false)
   // Hold is screen-only, as it always was.
   const [onHold, setOnHold] = useState(false)
   // "Call ended" for 1.5s after a call this page placed ends.
@@ -70,7 +73,7 @@ export default function DialerPage() {
   const callState: 'idle' | 'dialing' | 'ringing' | 'connected' | 'on_hold' | 'ending' | 'ended' =
     outbound.live
       ? (snapshot.stage === 'connected' && onHold ? 'on_hold' : snapshot.stage as 'dialing' | 'ringing' | 'connected' | 'ending')
-      : lookingUp ? 'dialing' : endedFlash ? 'ended' : 'idle'
+      : endedFlash ? 'ended' : 'idle'
   const isMuted = snapshot.muted
   const [showKeypadInCall, setShowKeypadInCall] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -86,8 +89,6 @@ export default function DialerPage() {
   const audioCtxRef = useRef<AudioContext | null>(null)
   // The session this page placed, so its end (or failure) is reported here.
   const placedRef = useRef(0)
-  // Bumped by End, so a contact lookup that finishes after End does not dial.
-  const lookupRef = useRef(0)
 
   useEffect(() => {
     fetchCallLogs(undefined, 100).then(setRecentCalls).catch(console.error)
@@ -172,43 +173,37 @@ export default function DialerPage() {
     setActiveTab('keypad')
   }
 
-  async function startCall() {
+  function startCall() {
     if (!dialString.trim()) return
-    if (outbound.live || lookingUp) return
-    // First thing in the tap, before any await: phones only allow audio to
-    // start inside a gesture. Wake call audio and the ringback tone now.
+    if (outbound.live) return
+    // First thing in the tap: phones only allow audio to start inside a gesture.
+    // Nothing awaits before placeCall, so the call starts in this tap too.
     unlockCallAudio()
     primeCallTones()
     setCallError('')
     setEndedFlash(false)
-    // Use the picked contact, else match the typed number to one so the call
-    // is logged against it. The provider asks for the microphone first.
-    let contact = selectedContact
-    if (!contact) {
-      const lookup = ++lookupRef.current
-      setLookingUp(true)
-      try { contact = await lookupContactByPhone(dialString) } catch { contact = null }
-      if (lookup !== lookupRef.current) return
-      setLookingUp(false)
-      if (!contact) {
-        // This used to pretend to connect after two seconds without dialing.
-        setCallError('This number is not in your contacts yet. Add it as a contact to call it from the Hub.')
-        return
-      }
-      setSelectedContact(contact)
+    const contact = selectedContact
+    if (!contact && !isFullNumber(dialString)) {
+      setCallError('Enter a full 10-digit number to call.')
+      return
     }
-    const res = outbound.placeCall({
-      contactId: contact.id,
-      name: `${contact.first_name || ''} ${contact.last_name || ''}`.trim(),
-      phone: contact.phone || dialString,
-    })
+    const orgId = currentOrg?.id
+    // A typed number with no contact picked: the call is placed now and its
+    // contact (the org's existing one for this number, or a new "Unknown" one)
+    // is resolved while it dials, so it is logged, recorded and transcribed
+    // against that contact. No form first.
+    const phone = contact ? (contact.phone || dialString) : toE164(dialString)
+    const res = outbound.placeCall(contact
+      ? { contactId: contact.id, name: `${contact.first_name || ''} ${contact.last_name || ''}`.trim(), phone }
+      : {
+          contactId: '', name: '', phone,
+          resolveContact: () => orgId ? resolveCallContact(orgId, phone) : Promise.reject(new Error('No workspace selected.')),
+        })
     if (!res.ok) { setCallError(ALREADY_ON_CALL_MESSAGE); return }
     placedRef.current = res.session
   }
 
   function endCall() {
-    lookupRef.current++
-    setLookingUp(false)
     // End at any stage; the provider reports back once the call is gone.
     if (outbound.live) outbound.hangUp('dialer_end')
   }
@@ -224,9 +219,14 @@ export default function DialerPage() {
   const isInCall = ['dialing', 'ringing', 'connected', 'on_hold', 'ending'].includes(callState)
   // A call placed elsewhere in the Hub shows under its own name here.
   const liveElsewhere = outbound.live && snapshot.session !== placedRef.current
+  const placedTarget = snapshot.session === placedRef.current ? snapshot.target : null
   const displayName = liveElsewhere
     ? (snapshot.target?.name || fmtPhone(snapshot.target?.phone || ''))
-    : selectedContact ? `${selectedContact.first_name} ${selectedContact.last_name}` : dialString ? fmtPhone(dialString) : ''
+    : selectedContact ? `${selectedContact.first_name} ${selectedContact.last_name}`
+      : placedTarget?.name ? placedTarget.name : dialString ? fmtPhone(dialString) : ''
+  // The contact a typed number created on this page's last call: offer "Add name"
+  // during the call and after it, until the next call.
+  const newContactId = placedTarget?.newContact ? placedTarget.contactId : ''
 
   return (
     <div className="flex flex-col lg:flex-row gap-4 lg:h-[calc(100vh-200px)] animate-in fade-in duration-300">
@@ -278,6 +278,14 @@ export default function DialerPage() {
                 </button>
               )}
             </div>
+
+            {/* After a call to a new number: name the contact it created. */}
+            {!isInCall && newContactId && (
+              <div className="mb-3 flex flex-col items-center gap-1.5 text-center">
+                <p className="text-[11px] text-gray-500">Saved as a new contact.</p>
+                <AddNamePrompt contactId={newContactId} />
+              </div>
+            )}
 
             {/* Call status */}
             {isInCall && (
@@ -431,6 +439,7 @@ export default function DialerPage() {
                 <div>
                   <p className="text-sm font-semibold">{displayName || 'Calling...'}</p>
                   <p className="text-xs text-white/70 font-mono">{fmtDuration(callDuration)}</p>
+                  {newContactId && <AddNamePrompt contactId={newContactId} tone="dark" className="mt-2" />}
                 </div>
               </div>
             </div>

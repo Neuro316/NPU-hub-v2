@@ -29,6 +29,8 @@ import EmailComposer from '@/components/crm/email-composer'
 import { createClient } from '@/lib/supabase-browser'
 import { helpId } from '@/lib/agent/help/help-id'
 import { LeadValueEditor } from '@/components/crm/lead-value'
+import { AddNamePrompt } from '@/components/crm/add-name-prompt'
+import { needsName } from '@/lib/call-new-number'
 
 interface PipelineCustomField {
   id: string
@@ -840,6 +842,10 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                   ) : (
                     <div>
                       <h3 className="text-sm font-bold text-np-dark">{contact.first_name} {contact.last_name}</h3>
+                      {/* Created by calling its number, or an unknown caller: name it here. */}
+                      {needsName(contact) && (
+                        <AddNamePrompt contactId={contact.id} className="mt-1" onSaved={async () => { await load(); onUpdate?.() }} />
+                      )}
                       {(contact as any).company && <p className="text-[10px] text-gray-400">{(contact as any).company}</p>}
                       <div className="flex items-center gap-2 mt-0.5">
                         {contact.pipeline_stage && (
