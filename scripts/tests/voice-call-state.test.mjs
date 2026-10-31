@@ -459,6 +459,30 @@ test('store: a call survives a route change (every subscriber unmounting)', asyn
   unsubOther()
 })
 
+test('store: a call survives navigating to a contact card and back (call navigation guard)', async () => {
+  const { store, made } = storeHarness()
+  // On the Conversations page, a call is placed and answered.
+  const unsubConversations = store.subscribe(() => {})
+  const res = store.place(target('A'))
+  await flush(); await flush()
+  made[0].call.emit('accept')
+  const connectedAt = store.getSnapshot().connectedAt
+  // Route change to the contact card: the Conversations page unmounts, the
+  // contact page mounts. Then back again.
+  unsubConversations()
+  const unsubContact = store.subscribe(() => {})
+  unsubContact()
+  const unsubBack = store.subscribe(() => {})
+  const snap = store.getSnapshot()
+  assert.equal(snap.stage, 'connected')
+  assert.equal(snap.session, res.session)
+  assert.equal(snap.connectedAt, connectedAt, 'the call timer keeps its start time')
+  assert.equal(made[0].call.disconnects, 0, 'no navigation hung up')
+  assert.equal(made[0].device.destroyed, 0, 'the device (and its audio) was not torn down')
+  unsubBack()
+  store.hangUp()
+})
+
 test('store: only one live call at a time', async () => {
   const { store, made } = storeHarness()
   const first = store.place(target('A'))

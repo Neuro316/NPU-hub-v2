@@ -24,6 +24,7 @@ import {
   PanelLeftOpen,
 } from 'lucide-react'
 import { NotificationBell } from '@/components/notification-bell'
+import { confirmLeaveDuringCall } from '@/lib/call-navigation-guard'
 import { navCategories, applySidebarOrder } from '@/lib/nav-config'
 import { clearShellStorage } from '@/lib/agent/shell-state'
 
@@ -63,6 +64,8 @@ export function Sidebar() {
   }
 
   const handleSignOut = async () => {
+    // Signing out leaves the Hub and ends a live call, so ask first.
+    if (!confirmLeaveDuringCall()) return
     const supabase = createClient()
     // the Hub Guide's stored panel state goes first: the redirect below may beat any listener (ruling 26)
     try { clearShellStorage(window.sessionStorage) } catch { /* storage blocked: nothing was stored */ }

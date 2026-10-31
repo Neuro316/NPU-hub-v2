@@ -12,6 +12,7 @@ import { TrackerInit } from '@/components/tracker-init'
 import { AgentShellProvider } from '@/components/marketing/agent/agent-shell'
 import { DynamicFavicon } from '@/components/dynamic-favicon'
 import { ToastProvider } from '@/components/ui/toast'
+import { CallNavigationGuard } from '@/components/call-navigation-guard'
 import { Menu } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 
@@ -85,6 +86,9 @@ export default function DashboardLayout({
            <ToastProvider>
             <TrackerInit />
             <DynamicFavicon />
+            {/* Inside both call providers: while a call is live, Hub links stay
+                client-side and a refresh or tab close asks first. */}
+            <CallNavigationGuard />
             {/* The Hub Guide and Campaign Builder panel, and the old HelpBot behind it (ruling 26):
                 one instance above the page tree, so it survives navigation. */}
             <AgentShellProvider>

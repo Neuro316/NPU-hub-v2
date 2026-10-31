@@ -17,6 +17,7 @@ import { navCategories, REORDERABLE_IDS } from '@/lib/nav-config'
 import type { SidebarOrder } from '@/lib/nav-config'
 import { createClient } from '@/lib/supabase-browser'
 import { toE164 } from '@/lib/phone'
+import { confirmLeaveDuringCall } from '@/lib/call-navigation-guard'
 
 type Section = 'email' | 'twilio' | 'ai' | 'pipeline' | 'team' | 'notifications' | 'compliance' | 'general' | 'modules' | 'admin_tools' | 'sidebar_layout'
 
@@ -282,7 +283,10 @@ export default function SettingsPage() {
           return
         }
         console.log('[Settings] hidden_modules saved successfully, reloading...')
-        window.location.reload()
+        // The reload ends a live call: on a call, ask, and if declined keep the
+        // save and let the next page load show it.
+        if (confirmLeaveDuringCall()) window.location.reload()
+        else { setSaved(true); setTimeout(() => setSaved(false), 2000) }
         return
       }
       if (active === 'sidebar_layout') {
@@ -300,7 +304,8 @@ export default function SettingsPage() {
           alert('Failed to save sidebar layout: ' + (data.error || res.statusText))
           return
         }
-        window.location.reload()
+        if (confirmLeaveDuringCall()) window.location.reload()
+        else { setSaved(true); setTimeout(() => setSaved(false), 2000) }
         return
       }
       setSaved(true); setTimeout(() => setSaved(false), 2000)
