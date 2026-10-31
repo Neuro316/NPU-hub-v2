@@ -1,1 +1,54 @@
-"test:voice": "node --test scripts/tests/voice-call-state.test.mjs scripts/tests/voice-intelligence.test.mjs scripts/tests/outbound-call-status.test.mjs scripts/tests/call-navigation-guard.test.mjs scripts/tests/quick-send.test.mjs scripts/tests/recording-media.test.mjs scripts/tests/call-new-number.test.mjs",
+{
+  "name": "npu-platform",
+  "version": "2.0.0",
+  "description": "Neuro Progeny Universe \u2014 VR Biofeedback Companion Platform",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit",
+    "check:twiml": "node scripts/np-twiml-snapshot.mjs",
+    "test:voice": "node --test scripts/tests/voice-call-state.test.mjs scripts/tests/voice-intelligence.test.mjs scripts/tests/outbound-call-status.test.mjs scripts/tests/call-navigation-guard.test.mjs scripts/tests/quick-send.test.mjs scripts/tests/recording-media.test.mjs scripts/tests/call-new-number.test.mjs",
+    "check:kj": "node scripts/hrv/kj-hub-writers-tamper.cjs",
+    "verify": "node scripts/verify.cjs",
+    "guards": "node scripts/guards/run-guards.cjs",
+    "guards:refresh": "node scripts/guards/run-guards.cjs --refresh-platform",
+    "check:marketing": "node scripts/marketing/pure-tamper.cjs && node scripts/marketing/flags-off-parity.cjs",
+    "agent:content": "node scripts/agent/gen-content.cjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
+    "@supabase/ssr": "^0.5.2",
+    "@supabase/supabase-js": "^2.47.0",
+    "@twilio/voice-sdk": "^2.18.1",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "docx": "^9.6.1",
+    "googleapis": "^171.4.0",
+    "lucide-react": "^0.460.0",
+    "next": "14.2.18",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "recharts": "^2.13.0",
+    "stripe": "^17.5.0",
+    "twilio": "^5.13.0",
+    "zod": "^3.23.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "14.2.18",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=18.17.0"
+  }
+}
