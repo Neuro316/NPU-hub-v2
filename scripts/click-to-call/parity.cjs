@@ -33,6 +33,11 @@
 //            on answered calls) on purpose. The timeline at cbc2664 still carries its
 //            CLICK-TO-CALL block, so byte equality keeps that block in place too.
 //
+// SINCE_PLAYBACK byte-for-byte equal to PLAYBACK_BASE (bd38207), the recording playback fix,
+//            which changed twilio-org (range, no-store and timeout on the recording fetch),
+//            the intelligence route and library (speakers labeled from the recording) on
+//            purpose, so they move here from SINCE_TRANSCRIPTS.
+//
 // TAMPER=outside   change one character outside a marked block      {M_conversations}
 // TAMPER=untouched change one character of ring-complete             {U_ring-complete}
 // TAMPER=webhook   change one character of the bridge webhook        {C_bridge}
@@ -95,8 +100,11 @@ const MARKED = {
 const TRANSCRIPTS_BASE = process.env.TRANSCRIPTS_BASE || 'cbc2664'
 const SINCE_TRANSCRIPTS = {
   'recording-ready': 'src/app/api/twilio/recording-ready/route.ts',
-  'twilio-org': 'src/lib/twilio-org.ts',
   'timeline': 'src/components/crm/comms-timeline.tsx',
+}
+const PLAYBACK_BASE = process.env.PLAYBACK_BASE || 'bd38207'
+const SINCE_PLAYBACK = {
+  'twilio-org': 'src/lib/twilio-org.ts',
   'intelligence': 'src/app/api/twilio/intelligence/route.ts',
   'voice-intelligence': 'src/lib/voice-intelligence.ts',
 }
@@ -153,6 +161,10 @@ for (const [k, f] of Object.entries(SINCE_AGENT)) {
 for (const [k, f] of Object.entries(SINCE_TRANSCRIPTS)) {
   const same = work(f) === base(f, TRANSCRIPTS_BASE)
   rows.push({ id: `T_${k}`, ok: same, got: same ? `identical to ${TRANSCRIPTS_BASE}` : `differs from ${TRANSCRIPTS_BASE}` })
+}
+for (const [k, f] of Object.entries(SINCE_PLAYBACK)) {
+  const same = work(f) === base(f, PLAYBACK_BASE)
+  rows.push({ id: `P_${k}`, ok: same, got: same ? `identical to ${PLAYBACK_BASE}` : `differs from ${PLAYBACK_BASE}` })
 }
 
 const red = rows.filter((r) => !r.ok).map((r) => r.id).sort()
