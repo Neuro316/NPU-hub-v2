@@ -38,6 +38,9 @@
 //            on answered calls) on purpose. The timeline at cbc2664 still carries its
 //            CLICK-TO-CALL block, so byte equality keeps that block in place too.
 //
+// SINCE_QUICK_SEND byte-for-byte equal to QUICK_SEND_BASE (eecb957): the timeline, which
+//            gained the Quick Send email card. Moved here from SINCE_TRANSCRIPTS.
+//
 // TAMPER=outside   change one character outside a marked block      {M_conversations}
 // TAMPER=untouched change one character of ring-complete             {U_ring-complete}
 // TAMPER=webhook   change one character of the bridge webhook        {C_bridge}
@@ -107,9 +110,14 @@ const TRANSCRIPTS_BASE = process.env.TRANSCRIPTS_BASE || 'cbc2664'
 const SINCE_TRANSCRIPTS = {
   'recording-ready': 'src/app/api/twilio/recording-ready/route.ts',
   'twilio-org': 'src/lib/twilio-org.ts',
-  'timeline': 'src/components/crm/comms-timeline.tsx',
   'intelligence': 'src/app/api/twilio/intelligence/route.ts',
   'voice-intelligence': 'src/lib/voice-intelligence.ts',
+}
+// Quick Send (feat/quick-send, eecb957) added its email card to the timeline on purpose,
+// so the timeline is compared with that commit. Its CLICK-TO-CALL block is still in place.
+const QUICK_SEND_BASE = process.env.QUICK_SEND_BASE || 'eecb957'
+const SINCE_QUICK_SEND = {
+  'timeline': 'src/components/crm/comms-timeline.tsx',
 }
 const RED_OF = { outside: ['M_conversations'], untouched: ['U_ring-complete'], webhook: ['C_bridge'] }
 const sel = process.env.TAMPER || ''
@@ -168,6 +176,10 @@ for (const [k, f] of Object.entries(SINCE_TRANSCRIPTS)) {
 for (const [k, f] of Object.entries(SINCE_STATUS)) {
   const same = work(f) === base(f, STATUS_BASE)
   rows.push({ id: `S_${k}`, ok: same, got: same ? `identical to ${STATUS_BASE}` : `differs from ${STATUS_BASE}` })
+}
+for (const [k, f] of Object.entries(SINCE_QUICK_SEND)) {
+  const same = work(f) === base(f, QUICK_SEND_BASE)
+  rows.push({ id: `Q_${k}`, ok: same, got: same ? `identical to ${QUICK_SEND_BASE}` : `differs from ${QUICK_SEND_BASE}` })
 }
 
 const red = rows.filter((r) => !r.ok).map((r) => r.id).sort()
