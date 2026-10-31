@@ -4,12 +4,17 @@ import { logActivity, getOrCreateConversation, bumpConversation } from '@/lib/cr
 import { toE164 } from '@/lib/phone';
 import { validateTwilioSignatureWithToken } from '@/lib/twilio';
 import { resolveVoiceWebhookAuth, voiceSignatureUrl } from '@/lib/twilio-voice-signature';
+import { getOrgTwilioConfig } from '@/lib/twilio-org';
+import { requestCallTranscript } from '@/lib/voice-intelligence';
 
 // Twilio recording-ready callback (recordingStatusCallback on <Record>).
 // Stores the voicemail recording + duration on the call_logs row keyed by CallSid,
 // flips status -> 'voicemail', and marks transcription pending. The transcript
 // itself arrives SEPARATELY via Twilio's built-in transcription callback
 // (/api/twilio/transcription).
+//
+// An ANSWERED call's recording (<Dial record>) is attached as media and handed to
+// Twilio Voice Intelligence; its transcript arrives at /api/twilio/intelligence.
 //
 // We deliberately do NOT transcribe here anymore. The old code handed Deepgram the
 // auth-protected Twilio recording URL, which Deepgram can't fetch (401) — that was
@@ -79,7 +84,7 @@ export async function POST(request: NextRequest) {
   // (null contact) voicemails still work.
   const { data: callLog } = await supabase
     .from('call_logs')
-    .select('id, org_id, contact_id, to_number, status')
+    .select('id, org_id, contact_id, direction, from_number, to_number, status')
     .eq('external_call_sid', callSid)
     .maybeSingle();
 
@@ -101,9 +106,8 @@ export async function POST(request: NextRequest) {
   //  (answered call)       'StartCallRecordingAPI' for other origins). The call
   //                        was ANSWERED and recorded. Attach the media only.
   //                        Touching status here would relabel a real conversation
-  //                        as a voicemail, and marking a transcript pending would
-  //                        strand it forever, because transcription of answered
-  //                        calls is deliberately not built yet.
+  //                        as a voicemail. Its transcript comes from Voice
+  //                        Intelligence (below), not from the voicemail path.
   //
   // Fail safe when RecordingSource is absent: treat it as a voicemail ONLY if
   // the row still looks like one. A row already closed as 'completed' by
@@ -158,7 +162,8 @@ export async function POST(request: NextRequest) {
   // The thread is already floated by inbound-call or voice/token, and
   // conversations.last_activity_at is maintained by migration 209's triggers.
   if (!isRecordVerb) {
-    return NextResponse.json({ success: true, branch: 'answered_call' });
+    const transcription = await requestAnsweredCallTranscript(supabase, callLog, recordingSid);
+    return NextResponse.json({ success: true, branch: 'answered_call', transcription });
   }
 
   // Surface the voicemail in the Conversations pane. inbound-call already
@@ -208,4 +213,49 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({ success: true });
+}
+
+// Ask Voice Intelligence for the transcript of an answered call and mark the row
+// 'pending' (the thread shows "Transcribing..."), or 'failed' when the request is
+// refused. No Service configured on the org means no transcript and no status
+// change. Never throws: the media is already attached and Twilio must get a 200.
+async function requestAnsweredCallTranscript(
+  supabase: ReturnType<typeof createAdminSupabase>,
+  callLog: { id: string; org_id: string | null; contact_id: string | null; direction: string | null; from_number: string | null; to_number: string | null },
+  recordingSid: string | undefined
+): Promise<string> {
+  try {
+    if (!callLog.org_id || !recordingSid) return 'skipped';
+    const config = await getOrgTwilioConfig(supabase, callLog.org_id);
+    if (!config.intelligence_service_sid || !config.account_sid || !config.auth_token) return 'not_configured';
+
+    const direction = callLog.direction === 'outbound' ? 'outbound' : 'inbound';
+    let contactLabel = (direction === 'outbound' ? callLog.to_number : callLog.from_number) || 'Contact';
+    if (callLog.contact_id) {
+      const { data: c } = await supabase.from('contacts')
+        .select('first_name, last_name').eq('id', callLog.contact_id).maybeSingle();
+      const name = `${c?.first_name || ''} ${c?.last_name || ''}`.trim();
+      if (name) contactLabel = name;
+    }
+
+    const r = await requestCallTranscript({
+      creds: { accountSid: config.account_sid, authToken: config.auth_token },
+      serviceSid: config.intelligence_service_sid,
+      recordingSid,
+      callLogId: callLog.id,
+      direction,
+      contactLabel,
+    });
+    if (!r.ok) console.error('recording-ready: transcript request failed:', r.error);
+    await supabase.from('call_logs')
+      .update({ transcription_status: r.ok ? 'pending' : 'failed' })
+      .eq('id', callLog.id);
+    console.log('recording-ready: transcript', JSON.stringify({
+      call_log_id: callLog.id, requested: r.ok, transcript_sid: r.ok ? r.transcriptSid : null,
+    }));
+    return r.ok ? 'requested' : 'failed';
+  } catch (e: any) {
+    console.error('recording-ready: transcript request errored:', e?.message ?? String(e));
+    return 'failed';
+  }
 }

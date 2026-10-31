@@ -33,6 +33,7 @@ const TAMPER = process.env.TAMPER || ''
 const G1_REVIEWED_PUBLIC = {
   'src/app/api/intake/route.ts': 'published form + intake flag + honeypot + rate limit',
   'src/app/a/[token]/route.ts': 'hashed single-purpose expiring token, redirect to the University only',
+  'src/app/api/twilio/intelligence/route.ts': 'Twilio signature, fail closed, verified in handleIntelligenceCallback before any write (scripts/tests/voice-intelligence.test.mjs)',
 }
 // verifyTwilioWebhook: the click-to-call webhooks (always enforced, fail closed). That it
 // runs before the first database call is proved by scripts/click-to-call/c2c-tamper.cjs.

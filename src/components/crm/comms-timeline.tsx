@@ -7,7 +7,9 @@
 //   - call_logs     (calls / voicemails / missed)
 // Used by BOTH the /crm/conversations comms tab and the contact-card panel so
 // they render identically. Voicemails get an in-browser player pointed at the
-// authenticated proxy (/api/comms/recording/[id]) + inline transcript.
+// authenticated proxy (/api/comms/recording/[id]) + inline transcript. A recorded
+// answered call gets the same player plus its speaker-labeled transcript,
+// collapsed until expanded.
 // ═══════════════════════════════════════════════════════════════
 
 import { useState } from 'react'
@@ -167,6 +169,38 @@ export function VoicemailPlayer({ entry, onCallBack, lineLabel }: {
   )
 }
 
+// ── Answered-call transcript: collapsed to a few lines, Expand for the rest ──
+function CallTranscript({ entry }: { entry: TimelineEntry }) {
+  const [expanded, setExpanded] = useState(false)
+  if (entry.transcript) {
+    return (
+      <div className="mt-1.5">
+        <p className={`text-[10px] text-gray-600 whitespace-pre-wrap leading-snug ${expanded ? '' : 'line-clamp-3'}`}>
+          {entry.transcript}
+        </p>
+        <button
+          onClick={() => setExpanded(e => !e)}
+          aria-expanded={expanded}
+          className="mt-1 text-[9px] font-semibold text-np-blue hover:underline"
+        >
+          {expanded ? 'Collapse' : 'Expand transcript'}
+        </button>
+      </div>
+    )
+  }
+  if (entry.transcription_status === 'pending') {
+    return (
+      <p className="text-[9px] text-gray-400 mt-1.5 flex items-center gap-1">
+        <Loader2 size={9} className="animate-spin" /> Transcribing…
+      </p>
+    )
+  }
+  if (entry.transcription_status === 'failed') {
+    return <p className="text-[9px] text-gray-300 mt-1.5 italic">Transcript unavailable</p>
+  }
+  return null
+}
+
 // ── Text bubble (inbound left / outbound right), with MMS media ──
 function TextBubble({ entry }: { entry: TimelineEntry }) {
   const isOut = entry.direction === 'outbound'
@@ -211,10 +245,10 @@ function CallRow({ entry, onCallBack, lineLabel }: {
   // missed calls, and inbound calls generally.
   const showCallBack = !!onCallBack && (isMissed || entry.direction === 'inbound')
   // A recorded answered call. The pill is a fixed height rounded-full row, so the
-  // player cannot live inside it; it expands underneath instead, and stays closed
-  // until asked for so opening a thread does not create one audio element per call.
-  const [playerOpen, setPlayerOpen] = useState(false)
+  // player and transcript sit in a card underneath it, like a voicemail card.
+  // preload="none": an audio element per call costs nothing until it is played.
   const hasRecording = !!entry.recording_available
+  const hasTranscriptState = !!entry.transcript || entry.transcription_status === 'pending' || entry.transcription_status === 'failed'
   return (
     <div className="flex flex-col items-center gap-1">
     <div className="flex justify-center">
@@ -233,29 +267,27 @@ function CallRow({ entry, onCallBack, lineLabel }: {
           {fmtClock(entry.created_at)}
         </span>
         <LineBadge label={lineLabel} />
-        {hasRecording && (
-          <button
-            onClick={() => setPlayerOpen(o => !o)}
-            aria-expanded={playerOpen}
-            title={playerOpen ? 'Hide recording' : 'Play recording'}
-            className="flex items-center gap-0.5 ml-1 px-1.5 py-0.5 rounded-full bg-np-blue/10 text-np-blue text-[8px] font-semibold hover:bg-np-blue/20 transition-colors"
-          >
-            <Play size={8} /> {playerOpen ? 'Hide' : 'Recording'}
-          </button>
-        )}
         {showCallBack && (
           <span className="ml-1.5"><CallBackButton onCallBack={onCallBack!} /></span>
         )}
       </div>
     </div>
-    {hasRecording && playerOpen && (
-      <div className="w-full max-w-[85%]">
-        {/* Authenticated proxy, never the raw Twilio URL: the media needs account
-            auth and the proxy enforces the staff plus owning org gate. */}
-        <audio controls autoPlay preload="none" className="w-full h-8"
-          src={`/api/comms/recording/${entry.id}`}>
-          Your browser does not support audio playback.
-        </audio>
+    {!isMissed && (hasRecording || hasTranscriptState) && (
+      <div className="w-full max-w-[85%] rounded-xl border border-np-blue/10 bg-np-blue/[0.03] p-2.5">
+        <div className="flex items-center gap-1.5 mb-1.5">
+          <Play size={10} className="text-np-blue" />
+          <span className="text-[10px] font-semibold text-np-dark">Call recording</span>
+        </div>
+        {hasRecording ? (
+          // Authenticated proxy, never the raw Twilio URL: the media needs account
+          // auth and the proxy enforces the staff plus owning org gate.
+          <audio controls preload="none" className="w-full h-8" src={`/api/comms/recording/${entry.id}`}>
+            Your browser does not support audio playback.
+          </audio>
+        ) : (
+          <p className="text-[9px] text-gray-400 italic">Recording not available yet</p>
+        )}
+        <CallTranscript entry={entry} />
       </div>
     )}
     </div>
