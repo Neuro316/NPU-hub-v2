@@ -92,9 +92,13 @@ const SINCE_C2C = {
 // compared with that commit; inbound-call is unchanged since 02a83d9 and still compared with it.
 // The call navigation fix (3101365) gave VoipCall's End a hangup reason ('call_panel') on
 // purpose, so twilio-comms is now compared with that commit.
+// Release 2026-10-31 (1697a16) combined PRs #10 and #12 to #16. The pins those PRs set
+// (STATUS 2befa8f, CALL_BUTTON 3101365, QUICK_SEND eecb957, PLAYBACK bd38207) all move to
+// the release commit, where each of their files is byte-for-byte what its PR pinned.
+const RELEASE_BASE = process.env.RELEASE_BASE || '1697a16'
 const DIALER_BASE = process.env.DIALER_BASE || '02a83d9'
-const CALL_BUTTON_BASE = process.env.CALL_BUTTON_BASE || '3101365'
-const STATUS_BASE = process.env.STATUS_BASE || '2befa8f'
+const CALL_BUTTON_BASE = process.env.CALL_BUTTON_BASE || RELEASE_BASE
+const STATUS_BASE = process.env.STATUS_BASE || RELEASE_BASE
 const SINCE_DIALER = {
   'twilio-comms': ['src/components/crm/twilio-comms.tsx', CALL_BUTTON_BASE],
   'inbound-call': ['src/app/api/twilio/inbound-call/route.ts', STATUS_BASE],
@@ -115,7 +119,7 @@ const TRANSCRIPTS_BASE = process.env.TRANSCRIPTS_BASE || 'cbc2664'
 const SINCE_TRANSCRIPTS = {
   'recording-ready': 'src/app/api/twilio/recording-ready/route.ts',
 }
-const PLAYBACK_BASE = process.env.PLAYBACK_BASE || 'bd38207'
+const PLAYBACK_BASE = process.env.PLAYBACK_BASE || RELEASE_BASE
 const SINCE_PLAYBACK = {
   'twilio-org': 'src/lib/twilio-org.ts',
   'intelligence': 'src/app/api/twilio/intelligence/route.ts',
@@ -123,7 +127,7 @@ const SINCE_PLAYBACK = {
 }
 // Quick Send (feat/quick-send, eecb957) added its email card to the timeline on purpose,
 // so the timeline is compared with that commit. Its CLICK-TO-CALL block is still in place.
-const QUICK_SEND_BASE = process.env.QUICK_SEND_BASE || 'eecb957'
+const QUICK_SEND_BASE = process.env.QUICK_SEND_BASE || RELEASE_BASE
 const SINCE_QUICK_SEND = {
   'timeline': 'src/components/crm/comms-timeline.tsx',
 }
