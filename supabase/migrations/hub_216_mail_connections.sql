@@ -21,9 +21,10 @@
 --                (vault_secret_id NULL); reconnecting the same address reuses the row.
 --   last_error   a short fixed message written by the Hub, never a Google response body.
 --
--- The three functions are SECURITY INVOKER (the nr_calendar_token_* pattern, migration
+-- The three callable functions are SECURITY INVOKER (the nr_calendar_token_* pattern, migration
 -- 176): they work because the caller is service_role, which already holds the vault
--- privileges. EXECUTE is revoked from public, anon and authenticated.
+-- privileges. EXECUTE is revoked from public, anon and authenticated. The delete
+-- trigger function alone is SECURITY DEFINER (see its comment).
 --
 -- ACCESS: RLS on with no policies; anon and authenticated have no privileges.
 -- service_role only, through /api/mail/*, which checks superadmin + ownership.
@@ -169,9 +170,13 @@ end
 $function$;
 
 -- ─── a deleted row (including an auth.users cascade) takes its secret with it ─
+-- SECURITY DEFINER: a user deletion cascades from auth.users and runs as the auth
+-- admin role, which has no vault access; as invoker this trigger would make every
+-- Hub user deletion fail. Owned by the migration role (postgres), which does.
 create function public.hub_mail_connections_drop_secret()
 returns trigger
 language plpgsql
+security definer
 set search_path to ''
 as $function$
 begin
