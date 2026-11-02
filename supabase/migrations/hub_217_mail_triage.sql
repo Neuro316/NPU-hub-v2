@@ -1,8 +1,12 @@
 -- hub_217_mail_triage.sql
 --
--- STATUS: PROPOSED, NOT APPLIED. Apply to production (htfrfaxlcuyawtlztxxm) only,
--- through the Supabase connector as migration name hub_217_mail_triage, after an
--- explicit go. Not for npu-platform-nonprod: the Hub has no nonprod.
+-- STATUS: APPLIED 2026-11-02 to production (htfrfaxlcuyawtlztxxm) only, through the
+-- Supabase connector as migration name hub_217_mail_triage (body without the
+-- begin/commit wrapper). Ledger version: 20261102203515 (UTC).
+-- Read back after apply: hub_mail_messages RLS on, 0 policies; anon/authenticated/PUBLIC
+-- have no grants on hub_mail_messages or hub_mail_connections; service_role reads and
+-- writes; hub_mail_connections has gmail_history_id and last_synced_at; 0 message rows.
+-- Not applied to npu-platform-nonprod: the Hub has no nonprod.
 --
 -- Hub band (200+). Checked 2026-11-01: files and ledger stop at hub_216
 -- (hub_215 is in the ledger only, see hub_216's header). This is 217.

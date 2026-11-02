@@ -1,7 +1,7 @@
 # Hub inbox agent phase 2 (sync and triage, read-only): rulings and build plan
 
-Branch `feat/mail-triage` off `main` at `7df523d`. Migration `hub_217_mail_triage` is
-**proposed, not applied**. It waits for a separate go.
+Branch `feat/mail-triage` off `main` at `7df523d`. Migration `hub_217_mail_triage` was
+**applied to production on 2026-11-02** (ledger version 20261102203515) after a separate go.
 
 Scope: pick up new INBOX mail within about 5 minutes, classify it with Claude, and show it in a
 superadmin Inbox page. No drafting and no sending.
