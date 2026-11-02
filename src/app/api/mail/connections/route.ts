@@ -3,7 +3,7 @@
 // Superadmin only. Private rows are returned to their owner and nobody else.
 import { NextResponse } from 'next/server'
 import { withStaff, forbidden, bad } from '@/lib/api-guard'
-import { canSee, loadVisible, CONNECTION_COLUMNS, type MailConnectionRow } from '@/lib/mail/google'
+import { listVisible, loadVisible, CONNECTION_COLUMNS, type MailConnectionRow } from '@/lib/mail/google'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,13 +22,8 @@ function view(row: MailConnectionRow, userId: string) {
 
 export const GET = withStaff(async (_req, ctx) => {
   if (!ctx.isSuperadmin) return forbidden('Mailboxes are managed by superadmins.')
-  const { data, error } = await ctx.db
-    .from('hub_mail_connections')
-    .select(CONNECTION_COLUMNS)
-    .or(`owner_user_id.eq.${ctx.userId},and(visibility.eq.shared,org_id.in.(${ctx.orgIds.join(',')}))`)
-    .order('email_address')
-  if (error) return NextResponse.json({ error: 'Mailboxes could not be loaded.' }, { status: 500 })
-  const rows = ((data ?? []) as MailConnectionRow[]).filter(r => canSee(ctx, r))
+  const rows = await listVisible(ctx)
+  if (!rows) return NextResponse.json({ error: 'Mailboxes could not be loaded.' }, { status: 500 })
   return NextResponse.json({ connections: rows.map(r => view(r, ctx.userId)) })
 })
 

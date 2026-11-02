@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useWorkspace } from '@/lib/workspace-context'
@@ -52,6 +52,12 @@ export function Sidebar() {
   const { isCollapsed, isMobileOpen, toggleCollapse, closeMobile } = useSidebar()
   const [orgDropdownOpen, setOrgDropdownOpen] = useState(false)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  // superadminOnly items (the mail Inbox): the client does not hold profiles.role, so
+  // the mail API answering 200 is the signal. It answers 403 to everyone else.
+  const [isPlatformSuperadmin, setIsPlatformSuperadmin] = useState(false)
+  useEffect(() => {
+    fetch('/api/mail/connections', { cache: 'no-store' }).then(r => setIsPlatformSuperadmin(r.ok)).catch(() => {})
+  }, [])
 
   const orderedCategories = useMemo(
     () => applySidebarOrder(navCategories, sidebarOrder),
@@ -178,7 +184,7 @@ export function Sidebar() {
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-2 px-3">
           {orderedCategories.map((category) => {
-            const visibleItems = category.items.filter(item => canView(item.moduleKey) && !hiddenModules.includes(item.moduleKey))
+            const visibleItems = category.items.filter(item => canView(item.moduleKey) && !hiddenModules.includes(item.moduleKey) && (!item.superadminOnly || isPlatformSuperadmin))
             if (visibleItems.length === 0) return null
 
             const isCatCollapsed = collapsed[category.id] && category.collapsible

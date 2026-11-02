@@ -12,6 +12,7 @@
     { "path": "/api/cron/sms-outbox", "schedule": "* * * * *" },
     { "path": "/api/cron/campaign-steps", "schedule": "*/5 * * * *" },
     { "path": "/api/cron/watchdog", "schedule": "*/10 * * * *" },
-    { "path": "/api/cron/entry-events", "schedule": "*/5 * * * *" }
+    { "path": "/api/cron/entry-events", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/mail-sync", "schedule": "*/5 * * * *" }
   ]
 }

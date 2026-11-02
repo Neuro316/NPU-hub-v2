@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Route, CheckSquare, Brain, FileText, Lightbulb,
   Users, Target, Megaphone, Radio, Calendar, BarChart3, Settings,
-  BookOpen, TicketCheck, Image, Rocket, Contact2, DollarSign, Package, GitBranch, GraduationCap, FileInput,
+  BookOpen, TicketCheck, Image, Rocket, Contact2, DollarSign, Package, GitBranch, GraduationCap, FileInput, Inbox,
 } from 'lucide-react'
 
 /* ───────────────────────────────────────────────────────────
@@ -13,6 +13,9 @@ export interface NavItem {
   href: string
   icon: any
   moduleKey: string
+  /** Shown only to platform superadmins (profiles.role), which the client learns from the
+   *  mail API answering 200; the page and its API enforce the same rule server-side. */
+  superadminOnly?: boolean
 }
 
 export interface NavCategory {
@@ -63,6 +66,7 @@ export const navCategories: NavCategory[] = [
     label: 'OPERATE',
     collapsible: true,
     items: [
+      { label: 'Inbox', href: '/mail', icon: Inbox, moduleKey: 'mail_inbox', superadminOnly: true },
       { label: 'Meetings', href: '/meetings', icon: Calendar, moduleKey: 'meetings' },
       { label: 'Rocks', href: '/rocks', icon: Target, moduleKey: 'rocks' },
       { label: 'My Tasks', href: '/tasks/my-tasks', icon: CheckSquare, moduleKey: 'tasks' },
