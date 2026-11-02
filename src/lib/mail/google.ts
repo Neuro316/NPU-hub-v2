@@ -218,6 +218,19 @@ export async function loadVisible(ctx: StaffContext, id: unknown): Promise<MailC
   return data && canSee(ctx, data as MailConnectionRow) ? (data as MailConnectionRow) : null
 }
 
+/** Every connection the caller may see (null on a read error). Same rule as canSee,
+ *  applied in the query and again in code. */
+export async function listVisible(ctx: StaffContext): Promise<MailConnectionRow[] | null> {
+  if (!ctx.isSuperadmin) return []
+  const { data, error } = await ctx.db
+    .from('hub_mail_connections')
+    .select(CONNECTION_COLUMNS)
+    .or(`owner_user_id.eq.${ctx.userId},and(visibility.eq.shared,org_id.in.(${ctx.orgIds.join(',')}))`)
+    .order('email_address')
+  if (error) return null
+  return ((data ?? []) as MailConnectionRow[]).filter(r => canSee(ctx, r))
+}
+
 export async function refreshTokenFor(db: SupabaseClient, id: string): Promise<string> {
   const { data, error } = await db.rpc('hub_mail_token_get', { p_connection_id: id })
   if (error || typeof data !== 'string' || !data) throw new MailError('The stored credential for this mailbox is missing. Reconnect it.', 'no_secret')
