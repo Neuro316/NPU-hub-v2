@@ -9,20 +9,21 @@ export const dynamic = 'force-dynamic'
 
 export const GET = withStaff(async (_req, ctx) => {
   const own = (table: string, columns = '*') => ctx.db.from(table).select(columns).eq('owner_user_id', ctx.userId)
-  const [settings, windows, blocked, kidsHome, recurring, overrides, oneOff, senders, replyRules, exceptions, mailboxes] = await Promise.all([
+  const [settings, windows, blocked, kidsHome, recurring, overrides, blockDays, oneOff, senders, replyRules, exceptions, mailboxes] = await Promise.all([
     own('hub_sched_settings').maybeSingle(),
     own('hub_sched_category_windows').order('category').order('day_kind').order('start_time'),
     own('hub_sched_blocked_windows').order('day_kind').order('start_time'),
     own('hub_sched_kids_home_dates').order('date'),
     own('hub_sched_recurring_blocks').order('name'),
     own('hub_sched_recurring_overrides').order('date'),
+    own('hub_sched_recurring_block_days').order('span_offset'),
     own('hub_sched_one_off_blocks').order('starts_at', { ascending: false }).limit(200),
     own('hub_sched_trusted_senders').order('display_name'),
     own('hub_sched_reply_rules'),
     own('hub_sched_exception_requests').order('created_at', { ascending: false }).limit(100),
     own('hub_mail_connections', 'id, email_address, status').order('email_address'),
   ])
-  const failed = [settings, windows, blocked, kidsHome, recurring, overrides, oneOff, senders, replyRules, exceptions, mailboxes].find(r => r.error)
+  const failed = [settings, windows, blocked, kidsHome, recurring, overrides, blockDays, oneOff, senders, replyRules, exceptions, mailboxes].find(r => r.error)
   if (failed) return NextResponse.json({ error: 'Your scheduling rules could not be loaded.' }, { status: 500 })
   return NextResponse.json({
     settings: settings.data,
@@ -31,6 +32,7 @@ export const GET = withStaff(async (_req, ctx) => {
     kids_home_dates: kidsHome.data,
     recurring_blocks: recurring.data,
     recurring_overrides: overrides.data,
+    recurring_block_days: blockDays.data,
     one_off_blocks: oneOff.data,
     trusted_senders: senders.data,
     reply_rules: replyRules.data,
