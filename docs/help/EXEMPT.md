@@ -39,6 +39,7 @@ Exempt routes, one per line, each starting with a slash:
 /integrations
 /journeys
 /library
+/mail
 /media
 /media-affiliates
 /media-appearances
