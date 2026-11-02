@@ -1,7 +1,7 @@
 # Hub Gmail mailboxes (inbox agent phase 1): rulings and build plan
 
 Branch `feat/mail-connections` off `main` at `1d9c316`. Migration `hub_216_mail_connections`
-is **proposed, not applied**. It waits for a separate go.
+was **applied to production on 2026-11-01** (ledger version 20261102014051) after a separate go.
 
 Scope: the connection layer only. No triage, drafting or sending.
 

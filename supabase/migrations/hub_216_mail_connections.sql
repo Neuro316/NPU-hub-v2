@@ -1,8 +1,13 @@
 -- hub_216_mail_connections.sql
 --
--- STATUS: PROPOSED, NOT APPLIED. Apply to production (htfrfaxlcuyawtlztxxm) only,
--- through the Supabase connector as migration name hub_216_mail_connections, after
--- an explicit go. Not for npu-platform-nonprod: the Hub has no nonprod.
+-- STATUS: APPLIED 2026-11-01 to production (htfrfaxlcuyawtlztxxm) only, through the
+-- Supabase connector as migration name hub_216_mail_connections (body without the
+-- begin/commit wrapper; the connector runs it in one transaction).
+-- Ledger version: 20261102014051 (UTC). Read back after apply: RLS on, 0 policies;
+-- anon/authenticated/PUBLIC have no table grants; all four functions are owned by
+-- postgres and not executable by anon or authenticated; service_role can execute
+-- them; only hub_mail_connections_drop_secret is SECURITY DEFINER; trigger present.
+-- Not applied to npu-platform-nonprod: the Hub has no nonprod.
 --
 -- Hub band (200+). Checked 2026-11-01: files stop at hub_214, but the ledger already
 -- holds hub_215_quick_send (version 20261031160805, applied before the 2026-10-31
