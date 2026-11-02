@@ -1,7 +1,7 @@
 # Hub Scheduling Rules: rulings and build plan
 
 Branch `feat/scheduling-rules` off `main` at `7df523d`. Migration `hub_218_scheduling_rules`
-is **proposed, not applied**. It waits for a separate go.
+was **applied to production on 2026-11-02** (ledger version 20261102210252). Tests: 27/27 pass.
 
 The goal is one source of truth for each Hub user's availability. The future inbox scheduling
 agent and the platform booking links both read it, through the same database function.

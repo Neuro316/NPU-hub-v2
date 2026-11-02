@@ -140,7 +140,8 @@ export function SchedulingRulesSection() {
       <TestTime tz={tz} />
       <SettingsCard settings={data.settings} busy={busy} onSave={b => run('/api/scheduling/settings', 'PUT', b)} />
       <WindowsGrid rows={data.category_windows} busy={busy} onAdd={b => create('category-windows', b)} onRemove={id => remove('category-windows', id)} />
-      <BlockedWindows rows={data.blocked_windows} busy={busy} onAdd={b => create('blocked-windows', b)} onRemove={id => remove('blocked-windows', id)} />
+      <BlockedWindows rows={data.blocked_windows} busy={busy}
+        onAdd={b => create('blocked-windows', b)} onSave={b => patch('blocked-windows', b)} onRemove={id => remove('blocked-windows', id)} />
       <KidsHome rows={data.kids_home_dates} busy={busy} onAdd={b => create('kids-home-dates', b)} onRemove={id => remove('kids-home-dates', id)} />
       <RecurringBlocks blocks={data.recurring_blocks} overrides={data.recurring_overrides} busy={busy}
         onCreate={b => create('recurring-blocks', b)} onSave={b => patch('recurring-blocks', b)} onRemove={id => remove('recurring-blocks', id)}
@@ -260,29 +261,59 @@ function WindowsGrid({ rows, busy, onAdd, onRemove }: { rows: Any[]; busy: boole
   )
 }
 
-// ─── Daily blocked windows ───────────────────────────────────────────────────
-function BlockedWindows({ rows, busy, onAdd, onRemove }: { rows: Any[]; busy: boolean; onAdd: (b: Any) => void; onRemove: (id: string) => void }) {
-  const [f, setF] = useState<Any>({ day_kind: 'school', start_time: '11:30', end_time: '13:30', label: '', categories: null })
+// ─── Daily blocked windows (editor) ──────────────────────────────────────────
+// List, add, edit and delete the owner's daily blocks (e.g. Kindergarten pickup). The form
+// below the list adds a new block, or saves the one chosen with the pencil.
+function BlockedWindows({ rows, busy, onAdd, onSave, onRemove }: {
+  rows: Any[]; busy: boolean
+  onAdd: (b: Any) => Promise<boolean>; onSave: (b: Any) => Promise<boolean>; onRemove: (id: string) => void
+}) {
+  const empty: Any = { id: null, day_kind: 'school', start_time: '', end_time: '', label: '', categories: null }
+  const [f, setF] = useState<Any>(empty)
+  const submit = async () => {
+    const body = { day_kind: f.day_kind, start_time: f.start_time, end_time: f.end_time, label: f.label, categories: f.categories }
+    if (await (f.id ? onSave({ id: f.id, ...body }) : onAdd(body))) setF(empty)
+  }
   return (
-    <Card title="Daily blocked windows" hint="Blocked every day of that kind, for the chosen categories.">
+    <Card title="Daily blocked windows" hint="Blocked every day of that kind, for all categories or the ones chosen. Blocks win over category windows.">
+      {rows.length === 0 && <p className="text-xs text-gray-400">No daily blocks.</p>}
       {rows.map(b => (
-        <div key={b.id} className="flex items-center gap-2 text-xs">
+        <div key={b.id} className={`flex flex-wrap items-center gap-2 text-xs rounded-lg px-2 py-1 ${f.id === b.id ? 'bg-np-blue/5' : ''}`}>
           <span className="font-semibold text-np-dark">{b.label}</span>
-          <span className="text-gray-500">{DAY_KIND_LABEL[b.day_kind]} {hhmm(b.start_time)}–{hhmm(b.end_time)}</span>
+          <span className="text-gray-500">{DAY_KIND_LABEL[b.day_kind]}, {hhmm(b.start_time)}–{hhmm(b.end_time)}</span>
           <span className="text-[10px] text-gray-400">{b.categories ? b.categories.map(label).join(', ') : 'all categories'}</span>
-          <Remove onClick={() => onRemove(b.id)} />
+          <button title="Edit" className="text-gray-300 hover:text-np-blue" onClick={() => setF({
+            id: b.id, day_kind: b.day_kind, start_time: hhmm(b.start_time), end_time: hhmm(b.end_time), label: b.label, categories: b.categories,
+          })}><Pencil size={11} /></button>
+          <Remove onClick={() => confirm(`Delete the "${b.label}" block?`) && onRemove(b.id)} />
         </div>
       ))}
-      <div className="flex flex-wrap items-center gap-2">
-        <input className={input} placeholder="Label" value={f.label} onChange={e => setF({ ...f, label: e.target.value })} />
-        <select className={input} value={f.day_kind} onChange={e => setF({ ...f, day_kind: e.target.value })}>
-          {DAY_KINDS.map(k => <option key={k} value={k}>{DAY_KIND_LABEL[k]}</option>)}
-        </select>
-        <input type="time" className={input} value={f.start_time} onChange={e => setF({ ...f, start_time: e.target.value })} />
-        <input type="time" className={input} value={f.end_time} onChange={e => setF({ ...f, end_time: e.target.value })} />
-        <button className={btn} disabled={busy} onClick={() => onAdd(f)}><Plus size={10} /> Add block</button>
+      <div className="rounded-lg border border-gray-50 bg-gray-50/40 p-3 space-y-2">
+        <p className="text-[10px] font-semibold text-gray-500">{f.id ? `Editing "${rows.find(r => r.id === f.id)?.label ?? ''}"` : 'New daily block'}</p>
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="text-[10px] text-gray-400">Label<br />
+            <input className={input} placeholder="Kindergarten pickup" value={f.label} onChange={e => setF({ ...f, label: e.target.value })} />
+          </label>
+          <label className="text-[10px] text-gray-400">Days<br />
+            <select className={input} value={f.day_kind} onChange={e => setF({ ...f, day_kind: e.target.value })}>
+              {DAY_KINDS.map(k => <option key={k} value={k}>{DAY_KIND_LABEL[k]}</option>)}
+            </select>
+          </label>
+          <label className="text-[10px] text-gray-400">From<br />
+            <input type="time" className={input} value={f.start_time} onChange={e => setF({ ...f, start_time: e.target.value })} />
+          </label>
+          <label className="text-[10px] text-gray-400">To<br />
+            <input type="time" className={input} value={f.end_time} onChange={e => setF({ ...f, end_time: e.target.value })} />
+          </label>
+        </div>
+        <CategoryPicker value={f.categories} onChange={v => setF({ ...f, categories: v })} />
+        <div className="flex items-center gap-2">
+          <button className={f.id ? primary : btn} disabled={busy || !f.label.trim() || !f.start_time || !f.end_time} onClick={submit}>
+            {f.id ? <><Save size={10} /> Save changes</> : <><Plus size={10} /> Add block</>}
+          </button>
+          {f.id && <button className={btn} onClick={() => setF(empty)}>Cancel</button>}
+        </div>
       </div>
-      <CategoryPicker value={f.categories} onChange={v => setF({ ...f, categories: v })} />
     </Card>
   )
 }

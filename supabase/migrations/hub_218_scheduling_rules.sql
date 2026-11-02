@@ -1,8 +1,15 @@
 -- hub_218_scheduling_rules.sql
 --
--- STATUS: PROPOSED, NOT APPLIED. Apply to production (htfrfaxlcuyawtlztxxm) only,
--- through the Supabase connector as migration name hub_218_scheduling_rules, after an
--- explicit go. Not for npu-platform-nonprod: the Hub has no nonprod.
+-- STATUS: APPLIED 2026-11-02 to production (htfrfaxlcuyawtlztxxm) only, through the
+-- Supabase connector as migration name hub_218_scheduling_rules (the statements between
+-- begin and commit, without the comments). Ledger version: 20261102210252 (UTC).
+-- Read back after apply: 10 hub_sched_* tables, RLS on all 10, 0 policies; anon,
+-- authenticated and PUBLIC have no grants on them and cannot execute hub_sched_check or
+-- hub_sched_reply_rules_owner_check; service_role reads, writes and executes.
+-- Seed: 1 settings row, 8 category windows, 1 blocked window (Kindergarten pickup),
+-- 24 full kids-home weekdays + 2 from-12:30 dates, Cormac (inactive), 4 reply rules.
+-- scripts/scheduling/check-tests.sql: HUB_SCHED_TESTS PASS 27/27; fixtures rolled back.
+-- Not applied to npu-platform-nonprod: the Hub has no nonprod.
 --
 -- Hub band (200+). Checked 2026-11-02: the ledger stops at hub_216; hub_217 is reserved
 -- by the unmerged inbox-triage branch (feat/mail-triage). This is 218 and does not
