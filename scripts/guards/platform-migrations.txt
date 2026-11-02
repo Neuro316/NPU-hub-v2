@@ -263,3 +263,4 @@ pf_283_paper_reviews.sql
 pf_284_message_thread_indexes.sql
 pf_285_program_co_ownership.sql
 pf_287_programs_popular_pin.sql
+pf_288_paywall_compare_at.sql
