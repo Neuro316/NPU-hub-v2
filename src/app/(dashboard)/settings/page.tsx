@@ -7,9 +7,10 @@ import {
   Save, Plus, X, Trash2, CheckCircle2, AlertTriangle,
   LayoutGrid, Eye, EyeOff, Search, Activity, History,
   BarChart3, ChevronRight, ChevronDown, ArrowUp, ArrowDown,
-  GripVertical, RotateCcw, Inbox,
+  GripVertical, RotateCcw, Inbox, CalendarClock,
 } from 'lucide-react'
 import { MailboxesSection } from '@/components/settings/mailboxes-section'
+import { SchedulingRulesSection } from '@/components/settings/scheduling-rules-section'
 import { useWorkspace } from '@/lib/workspace-context'
 import { useTeamData, ROLE_CONFIG } from '@/lib/hooks/use-team-data'
 import type { TeamMember } from '@/lib/hooks/use-team-data'
@@ -19,7 +20,7 @@ import type { SidebarOrder } from '@/lib/nav-config'
 import { createClient } from '@/lib/supabase-browser'
 import { toE164 } from '@/lib/phone'
 
-type Section = 'email' | 'twilio' | 'ai' | 'pipeline' | 'team' | 'notifications' | 'compliance' | 'general' | 'modules' | 'admin_tools' | 'sidebar_layout' | 'mailboxes'
+type Section = 'email' | 'twilio' | 'ai' | 'pipeline' | 'team' | 'notifications' | 'compliance' | 'general' | 'modules' | 'admin_tools' | 'sidebar_layout' | 'mailboxes' | 'scheduling'
 
 const SECTIONS: { id: Section; label: string; icon: any }[] = [
   { id: 'general', label: 'General', icon: Sliders },
@@ -29,6 +30,7 @@ const SECTIONS: { id: Section; label: string; icon: any }[] = [
   { id: 'admin_tools', label: 'Admin Tools', icon: Shield },
   { id: 'email', label: 'Email', icon: Mail },
   { id: 'mailboxes', label: 'Mailboxes', icon: Inbox },
+  { id: 'scheduling', label: 'Scheduling Rules', icon: CalendarClock },
   { id: 'twilio', label: 'Twilio / SMS', icon: Phone },
   { id: 'ai', label: 'AI Integration', icon: Brain },
   { id: 'pipeline', label: 'Pipeline', icon: Sliders },
@@ -122,6 +124,9 @@ export default function SettingsPage() {
   // Mailboxes is for platform superadmins (profiles.role), which the client does not
   // hold; the list endpoint answers 403 to anyone else, so its status decides the nav.
   const [mailboxesAllowed, setMailboxesAllowed] = useState(false)
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('section') === 'scheduling') setActive('scheduling')
+  }, [])
   useEffect(() => {
     fetch('/api/mail/connections', { cache: 'no-store' }).then(r => {
       setMailboxesAllowed(r.ok)
@@ -937,6 +942,9 @@ export default function SettingsPage() {
           {/* Mailboxes (superadmin) */}
           {active === 'mailboxes' && mailboxesAllowed && <MailboxesSection orgId={currentOrg?.id} />}
 
+          {/* Scheduling Rules (every user, their own rules only) */}
+          {active === 'scheduling' && <SchedulingRulesSection />}
+
           {/* Notifications */}
           {active === 'notifications' && (
             <div className="space-y-4">
@@ -979,7 +987,7 @@ export default function SettingsPage() {
           )}
 
           {/* Save Button — hidden for sections that don't need it */}
-          {active !== 'team' && active !== 'admin_tools' && active !== 'mailboxes' && (
+          {active !== 'team' && active !== 'admin_tools' && active !== 'mailboxes' && active !== 'scheduling' && (
             <div className="flex items-center justify-end gap-2 mt-6 pt-4 border-t border-gray-100">
               {saved && <span className="flex items-center gap-1 text-[10px] text-green-600 font-medium"><CheckCircle2 size={12} /> Saved</span>}
               <button onClick={handleSave} disabled={saving}
