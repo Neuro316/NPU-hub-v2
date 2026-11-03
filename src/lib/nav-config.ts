@@ -45,7 +45,7 @@ export const navCategories: NavCategory[] = [
       { label: 'Forms and Pages', href: '/forms', icon: FileInput, moduleKey: 'campaigns' },
       { label: 'Media & Affiliates', href: '/media-affiliates', icon: Radio, moduleKey: 'media_affiliates' },
       { label: 'ICP Profiles', href: '/icps', icon: Users, moduleKey: 'icps' },
-      { label: 'Analytics', href: '/analytics', icon: BarChart3, moduleKey: 'analytics' },
+      { label: 'Analytics', href: '/analytics', icon: BarChart3, moduleKey: 'analytics', superadminOnly: true },
     ],
   },
   {
