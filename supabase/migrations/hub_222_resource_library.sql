@@ -1,8 +1,11 @@
 -- hub_222_resource_library.sql
 --
--- STATUS: PROPOSED, NOT APPLIED. Apply to production (htfrfaxlcuyawtlztxxm) only,
--- through the Supabase connector as migration name hub_222_resource_library, after an
--- explicit go. Not for npu-platform-nonprod: the Hub has no nonprod.
+-- STATUS: APPLIED to production (htfrfaxlcuyawtlztxxm) on 2026-11-03, ledger version
+-- 20261103125315, migration name hub_222_resource_library. Amended before the apply so
+-- hub_resource_sends.mailbox_id is nullable with on delete set null: deleting a Hub user
+-- cascades to hub_mail_connections, and a plain foreign key would block that.
+-- Verified after the apply: the bucket is private with no storage policies; both tables
+-- have RLS on, no policies, and no anon or authenticated grants.
 --
 -- Hub band (200+). Checked 2026-11-02: the ledger stops at hub_221. This is 222.
 --
@@ -68,7 +71,7 @@ create table public.hub_resource_sends (
   org_id            uuid not null references public.organizations(id) on delete cascade,
   contact_id        uuid references public.contacts(id) on delete set null,
   sent_by           uuid not null,
-  mailbox_id        uuid not null references public.hub_mail_connections(id),
+  mailbox_id        uuid references public.hub_mail_connections(id) on delete set null,  -- nullable: deleting a Hub user cascades to hub_mail_connections
   from_address      text not null,
   to_address        text not null,
   subject           text not null check (length(subject) between 1 and 250),

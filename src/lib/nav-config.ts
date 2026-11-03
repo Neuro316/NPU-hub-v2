@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Route, CheckSquare, Brain, FileText, Lightbulb,
   Users, Target, Megaphone, Radio, Calendar, BarChart3, Settings,
-  BookOpen, TicketCheck, Image, Rocket, Contact2, DollarSign, Package, GitBranch, GraduationCap, FileInput, Inbox,
+  BookOpen, TicketCheck, Image, Rocket, Contact2, DollarSign, Package, GitBranch, GraduationCap, FileInput, Inbox, FolderOpen,
 } from 'lucide-react'
 
 /* ───────────────────────────────────────────────────────────
@@ -67,6 +67,7 @@ export const navCategories: NavCategory[] = [
     collapsible: true,
     items: [
       { label: 'Inbox', href: '/mail', icon: Inbox, moduleKey: 'mail_inbox', superadminOnly: true },
+      { label: 'Resources', href: '/resources', icon: FolderOpen, moduleKey: 'resources', superadminOnly: true },
       { label: 'Meetings', href: '/meetings', icon: Calendar, moduleKey: 'meetings' },
       { label: 'Rocks', href: '/rocks', icon: Target, moduleKey: 'rocks' },
       { label: 'My Tasks', href: '/tasks/my-tasks', icon: CheckSquare, moduleKey: 'tasks' },

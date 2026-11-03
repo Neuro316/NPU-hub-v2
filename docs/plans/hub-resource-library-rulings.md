@@ -1,7 +1,15 @@
 # Build 2: Resource Library — rulings and build plan
 
 Branch `feat/resource-library` off `main` at `198e496`. Migration `hub_222_resource_library`
-is **proposed, not applied**. It waits for a separate go, and the code is written after it.
+was **applied to production on 2026-11-03** (ledger 20261103125315). The rulings below were
+accepted at the go.
+
+**Amended at the go:** `hub_resource_sends.mailbox_id` is nullable with `on delete set null`.
+Deleting a Hub user cascades to `hub_mail_connections`, and a plain foreign key would block
+that. A send row keeps its `from_address` either way.
+
+**Tests:** `node scripts/resources/plan-check.mjs` passes 11/11 (the 20 MB split and the
+email text).
 
 ## 1. What I read
 
