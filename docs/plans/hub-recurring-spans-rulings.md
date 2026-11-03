@@ -1,7 +1,8 @@
 # Hub recurring blocks as spans: rulings and build plan
 
 Branch `feat/recurring-spans` off `main` at `169b71f`. Migration `hub_219_recurring_spans` is
-**proposed, not applied**. It waits for a separate go.
+**applied to production** on 2026-11-02 (ledger version 20261103004445), with Cormac converted
+Wednesday to Tuesday as ruled at the go. Tests: **PASS 47/47**, rolled back.
 
 The need: a custody schedule ("Cormac every other week, Wednesday to Wednesday") is one block,
 not one block per weekday.

@@ -1,8 +1,10 @@
 -- hub_219_recurring_spans.sql
 --
--- STATUS: PROPOSED, NOT APPLIED. Apply to production (htfrfaxlcuyawtlztxxm) only,
--- through the Supabase connector as migration name hub_219_recurring_spans, after an
--- explicit go. Not for npu-platform-nonprod: the Hub has no nonprod.
+-- STATUS: APPLIED to production (htfrfaxlcuyawtlztxxm) on 2026-11-02 through the Supabase
+-- connector as hub_219_recurring_spans, ledger version 20261103004445. Never applied to
+-- npu-platform-nonprod. Cormac converted Wed..Tue, days {Wed}, 14:00-15:30, every other
+-- week (ruled at the go). Access verified: RLS on, no policies, anon/authenticated have no
+-- table or function privileges. scripts/scheduling/check-tests.sql: PASS 47/47, rolled back.
 --
 -- Hub band (200+). Checked 2026-11-02: the ledger stops at hub_218. This is 219.
 --
