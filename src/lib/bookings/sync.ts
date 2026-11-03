@@ -52,7 +52,10 @@ function splitName(name: string | null | undefined) {
 
 function when(iso: string, tz: string | null) {
   try {
-    return new Intl.DateTimeFormat('en-US', { timeZone: tz || 'America/New_York', dateStyle: 'medium', timeStyle: 'short', timeZoneName: 'short' }).format(new Date(iso))
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: tz || 'America/New_York', year: 'numeric', month: 'short', day: 'numeric',
+      hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+    }).format(new Date(iso))
   } catch {
     return new Date(iso).toISOString()
   }
