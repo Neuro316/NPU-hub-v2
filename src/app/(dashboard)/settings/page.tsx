@@ -7,10 +7,11 @@ import {
   Save, Plus, X, Trash2, CheckCircle2, AlertTriangle,
   LayoutGrid, Eye, EyeOff, Search, Activity, History,
   BarChart3, ChevronRight, ChevronDown, ArrowUp, ArrowDown,
-  GripVertical, RotateCcw, Inbox, CalendarClock,
+  GripVertical, RotateCcw, Inbox, CalendarClock, CalendarCheck,
 } from 'lucide-react'
 import { MailboxesSection } from '@/components/settings/mailboxes-section'
 import { SchedulingRulesSection } from '@/components/settings/scheduling-rules-section'
+import { BookingRoutesSection } from '@/components/settings/booking-routes-section'
 import { useWorkspace } from '@/lib/workspace-context'
 import { useTeamData, ROLE_CONFIG } from '@/lib/hooks/use-team-data'
 import type { TeamMember } from '@/lib/hooks/use-team-data'
@@ -20,7 +21,7 @@ import type { SidebarOrder } from '@/lib/nav-config'
 import { createClient } from '@/lib/supabase-browser'
 import { toE164 } from '@/lib/phone'
 
-type Section = 'email' | 'twilio' | 'ai' | 'pipeline' | 'team' | 'notifications' | 'compliance' | 'general' | 'modules' | 'admin_tools' | 'sidebar_layout' | 'mailboxes' | 'scheduling'
+type Section = 'email' | 'twilio' | 'ai' | 'pipeline' | 'team' | 'notifications' | 'compliance' | 'general' | 'modules' | 'admin_tools' | 'sidebar_layout' | 'mailboxes' | 'scheduling' | 'booking_routes'
 
 const SECTIONS: { id: Section; label: string; icon: any }[] = [
   { id: 'general', label: 'General', icon: Sliders },
@@ -31,6 +32,7 @@ const SECTIONS: { id: Section; label: string; icon: any }[] = [
   { id: 'email', label: 'Email', icon: Mail },
   { id: 'mailboxes', label: 'Mailboxes', icon: Inbox },
   { id: 'scheduling', label: 'Scheduling Rules', icon: CalendarClock },
+  { id: 'booking_routes', label: 'Booking Routes', icon: CalendarCheck },
   { id: 'twilio', label: 'Twilio / SMS', icon: Phone },
   { id: 'ai', label: 'AI Integration', icon: Brain },
   { id: 'pipeline', label: 'Pipeline', icon: Sliders },
@@ -121,8 +123,9 @@ export default function SettingsPage() {
     addMember, updateMember, deleteMember,
   } = useTeamData()
   const [active, setActive] = useState<Section>('general')
-  // Mailboxes is for platform superadmins (profiles.role), which the client does not
-  // hold; the list endpoint answers 403 to anyone else, so its status decides the nav.
+  // Mailboxes and Booking Routes are for platform superadmins (profiles.role), which the
+  // client does not hold; the mailbox list answers 403 to anyone else, so its status
+  // decides the nav. The booking routes API checks superadmin itself as well.
   const [mailboxesAllowed, setMailboxesAllowed] = useState(false)
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('section') === 'scheduling') setActive('scheduling')
@@ -130,7 +133,8 @@ export default function SettingsPage() {
   useEffect(() => {
     fetch('/api/mail/connections', { cache: 'no-store' }).then(r => {
       setMailboxesAllowed(r.ok)
-      if (r.ok && new URLSearchParams(window.location.search).get('section') === 'mailboxes') setActive('mailboxes')
+      const section = new URLSearchParams(window.location.search).get('section')
+      if (r.ok && (section === 'mailboxes' || section === 'booking_routes')) setActive(section)
     }).catch(() => {})
   }, [])
   const [saving, setSaving] = useState(false)
@@ -331,7 +335,7 @@ export default function SettingsPage() {
     <div className="flex gap-6 animate-in fade-in duration-300">
       {/* Section Nav */}
       <div className="w-48 flex-shrink-0 space-y-0.5">
-        {SECTIONS.filter(s => s.id !== 'mailboxes' || mailboxesAllowed).map(s => (
+        {SECTIONS.filter(s => (s.id !== 'mailboxes' && s.id !== 'booking_routes') || mailboxesAllowed).map(s => (
           <button key={s.id} onClick={() => setActive(s.id)}
             className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
               active === s.id ? 'bg-np-blue/8 text-np-blue border border-np-blue/20' : 'text-gray-500 hover:bg-gray-50 border border-transparent'
@@ -942,6 +946,9 @@ export default function SettingsPage() {
           {/* Mailboxes (superadmin) */}
           {active === 'mailboxes' && mailboxesAllowed && <MailboxesSection orgId={currentOrg?.id} />}
 
+          {/* Booking Routes (superadmin) */}
+          {active === 'booking_routes' && mailboxesAllowed && <BookingRoutesSection orgId={currentOrg?.id} />}
+
           {/* Scheduling Rules (every user, their own rules only) */}
           {active === 'scheduling' && <SchedulingRulesSection />}
 
@@ -987,7 +994,7 @@ export default function SettingsPage() {
           )}
 
           {/* Save Button — hidden for sections that don't need it */}
-          {active !== 'team' && active !== 'admin_tools' && active !== 'mailboxes' && active !== 'scheduling' && (
+          {active !== 'team' && active !== 'admin_tools' && active !== 'mailboxes' && active !== 'scheduling' && active !== 'booking_routes' && (
             <div className="flex items-center justify-end gap-2 mt-6 pt-4 border-t border-gray-100">
               {saved && <span className="flex items-center gap-1 text-[10px] text-green-600 font-medium"><CheckCircle2 size={12} /> Saved</span>}
               <button onClick={handleSave} disabled={saving}
