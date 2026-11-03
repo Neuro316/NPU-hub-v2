@@ -7,6 +7,9 @@
 // another user's rules.
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { toE164 } from '@/lib/phone'
+import {
+  REPEATS, WEEKDAY_LONG, intervalFor, isoWeekday, isRegularSpanStart, spanDays, weekdaysInSpan,
+} from '@/lib/scheduling/spans'
 
 export const SCHED_CATEGORIES = ['one_on_one', 'podcast', 'in_person', 'group_coaching', 'team_familiar'] as const
 export const DAY_KINDS = ['school', 'kids_home', 'weekend', 'summer'] as const
@@ -63,6 +66,11 @@ function text(v: unknown, field: string, max: number, required = false): string 
   if (required && !s) throw new Invalid(`${field} is required.`)
   if (s.length > max) throw new Invalid(`${field} must be at most ${max} characters.`)
   return s
+}
+function isoDay(v: unknown, field: string): number {
+  const n = Number(v)
+  if (!Number.isInteger(n) || n < 1 || n > 7) throw new Invalid(`${field} must be a weekday, 1 (Monday) to 7 (Sunday).`)
+  return n
 }
 function bool(v: unknown, field: string): boolean {
   if (typeof v !== 'boolean') throw new Invalid(`${field} must be true or false.`)
@@ -163,27 +171,32 @@ export const RESOURCES: Record<string, ResourceSpec> = {
   'recurring-blocks': {
     table: 'hub_sched_recurring_blocks',
     methods: ['POST', 'PATCH', 'DELETE'],
-    validate(b, partial) {
-      const r = pick(b, partial, {
-        name: v => text(v, 'name', 120, true),
-        active: v => bool(v, 'active'),
-        anchor_date: v => dateOrNull(v, 'anchor date'),
-        interval_weeks: v => {
-          const n = Number(v)
-          if (!Number.isInteger(n) || n < 1 || n > 52) throw new Invalid('Repeat every 1 to 52 weeks.')
-          return n
-        },
-        weekday: v => {
-          const n = Number(v)
-          if (!Number.isInteger(n) || n < 1 || n > 7) throw new Invalid('Weekday must be 1 (Monday) to 7 (Sunday).')
-          return n
-        },
-        start_time: v => timeOrNull(v, 'start'),
-        end_time: v => timeOrNull(v, 'end'),
-        categories: categoriesOrAll,
-      })
-      ordered(r.start_time as string | null, r.end_time as string | null)
-      return r
+    // Always validated whole (the page sends the full block), because the span rules
+    // relate the fields to each other. Per-day times travel separately as day_times.
+    validate(b) {
+      const repeat = oneOf(b.repeat, REPEATS, 'repeat')
+      const n = Number(b.interval_weeks)
+      if (repeat === 'custom' && (!Number.isInteger(n) || n < 1 || n > 52)) throw new Invalid('Repeat every 1 to 52 weeks.')
+      const from = isoDay(b.from_weekday, 'From'), to = isoDay(b.to_weekday, 'To')
+      const anchor = dateOrNull(b.anchor_date, 'starting date')
+      if (anchor && isoWeekday(anchor) !== from) throw new Invalid(`The starting date must be a ${WEEKDAY_LONG[from]}.`)
+      if (!Array.isArray(b.days) || !b.days.length) throw new Invalid('Choose at least one day.')
+      const inSpan = weekdaysInSpan(from, to)
+      const days = Array.from(new Set<number>(b.days.map((d: unknown) => isoDay(d, 'Day')))).sort((x, y) => x - y)
+      if (days.some(d => !inSpan.includes(d))) throw new Invalid('Choose only days inside the span.')
+      const all_day = b.all_day === true, per_day_times = b.per_day_times === true
+      const start_time = all_day ? null : timeOrNull(b.start_time, 'start')
+      const end_time = all_day ? null : timeOrNull(b.end_time, 'end')
+      ordered(start_time, end_time)
+      if (!!start_time !== !!end_time) throw new Invalid('Give both a start and an end time, or neither.')
+      const active = bool(b.active, 'active')
+      if (active && !anchor) throw new Invalid('An active block needs a starting date.')
+      if (active && !all_day && !per_day_times && !start_time) throw new Invalid('An active block needs times, all day, or different times per day.')
+      return {
+        name: text(b.name, 'name', 120, true), active, repeat, interval_weeks: intervalFor(repeat, n),
+        from_weekday: from, to_weekday: to, anchor_date: anchor, days, all_day, start_time, end_time,
+        per_day_times, categories: categoriesOrAll(b.categories),
+      }
     },
   },
   'recurring-overrides': {
@@ -193,13 +206,13 @@ export const RESOURCES: Record<string, ResourceSpec> = {
       const r = pick(b, partial, {
         block_id: v => { if (!isUuid(v)) throw new Invalid('Unknown block.'); return v },
         date: v => date(v, 'date'),
-        kind: v => oneOf(v, ['skip', 'add', 'change'] as const, 'kind'),
+        kind: v => oneOf(v, ['skip', 'add', 'change', 'skip_span', 'add_span'] as const, 'kind'),
         start_time: v => timeOrNull(v, 'start'),
         end_time: v => timeOrNull(v, 'end'),
       })
       ordered(r.start_time as string | null, r.end_time as string | null)
       if (r.kind === 'change' && (!r.start_time || !r.end_time)) throw new Invalid('A changed date needs a start and an end time.')
-      if (r.kind === 'skip') { r.start_time = null; r.end_time = null }
+      if (r.kind === 'skip' || r.kind === 'skip_span' || r.kind === 'add_span') { r.start_time = null; r.end_time = null }
       return r
     },
   },
@@ -287,3 +300,37 @@ export const SETTINGS_FIELDS =(b: Row): Row => pick(b, false, {
   earliest_start: v => time(v, 'earliest start'),
   school_year_end: v => dateOrNull(v, 'school year end'),
 })
+
+/** Per-day times for a block with per_day_times: one row per chosen day of the span
+ *  (by offset, so the two Wednesdays of a Wed..Wed span are separate). An active block
+ *  must give every chosen day a row. */
+export function validateDayTimes(raw: unknown, block: Row): Row[] {
+  if (!block.per_day_times) return []
+  if (!Array.isArray(raw)) throw new Invalid('Give times for each chosen day.')
+  const chosen = spanDays(block.from_weekday as number, block.to_weekday as number)
+    .filter(d => (block.days as number[]).includes(d.weekday)).map(d => d.offset)
+  const rows = new Map<number, Row>()
+  for (const item of raw as Row[]) {
+    const off = Number(item?.span_offset)
+    if (!chosen.includes(off)) throw new Invalid('Per-day times must be for days chosen in the span.')
+    const all_day = item.all_day === true
+    const start_time = all_day ? null : time(item.start_time, 'start')
+    const end_time = all_day ? null : time(item.end_time, 'end')
+    ordered(start_time, end_time)
+    rows.set(off, { span_offset: off, all_day, start_time, end_time })
+  }
+  if (block.active && chosen.some(o => !rows.has(o))) throw new Invalid('Give a time window or all day for every chosen day.')
+  return Array.from(rows.values())
+}
+
+/** skip_span must name the first day of a regular span; add_span must start on the
+ *  block's From weekday. `block` is the owner's own row. */
+export function checkSpanOverride(kind: unknown, date: unknown, block: Row | null) {
+  if (kind !== 'skip_span' && kind !== 'add_span') return
+  if (!block) throw new Invalid('Unknown block.')
+  if (typeof date !== 'string') throw new Invalid('Choose a date.')
+  if (isoWeekday(date) !== block.from_weekday) throw new Invalid(`A week starts on a ${WEEKDAY_LONG[block.from_weekday as number]}.`)
+  if (kind === 'skip_span' && (!block.anchor_date || !isRegularSpanStart(block.anchor_date as string, block.interval_weeks as number, date))) {
+    throw new Invalid('That date does not start one of this block\'s weeks.')
+  }
+}

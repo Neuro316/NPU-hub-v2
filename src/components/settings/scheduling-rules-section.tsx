@@ -6,6 +6,9 @@
 // rows; nobody can see or edit another user's rules from this page.
 import { useCallback, useEffect, useState } from 'react'
 import { Plus, X, Save, CheckCircle2, AlertTriangle, Pencil } from 'lucide-react'
+import {
+  WEEKDAY_LONG, WEEKDAY_SHORT, intervalFor, isoWeekday, nextSpans, spanDays, summary, weekdaysInSpan,
+} from '@/lib/scheduling/spans'
 
 const CATEGORIES = ['one_on_one', 'podcast', 'in_person', 'group_coaching', 'team_familiar'] as const
 const DAY_KINDS = ['school', 'kids_home', 'weekend', 'summer'] as const
@@ -13,7 +16,6 @@ const MAIL_CATEGORIES = [
   'scheduling', 'lead', 'participant_support', 'partner_outreach', 'personal', 'legal_financial',
   'clinical', 'vendor_billing', 'security_alert', 'newsletter', 'spam',
 ]
-const WEEKDAYS = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 const DAY_KIND_LABEL: Record<string, string> = { school: 'School days', kids_home: 'Kids-home days', weekend: 'Weekends', summer: 'Summer' }
 const label = (s: string) => s.replace(/_/g, ' ')
 const hhmm = (t: string | null | undefined) => (t ? t.slice(0, 5) : '')
@@ -26,6 +28,7 @@ interface Data {
   kids_home_dates: Any[]
   recurring_blocks: Any[]
   recurring_overrides: Any[]
+  recurring_block_days: Any[]
   one_off_blocks: Any[]
   trusted_senders: Any[]
   reply_rules: Any[]
@@ -143,7 +146,7 @@ export function SchedulingRulesSection() {
       <BlockedWindows rows={data.blocked_windows} busy={busy}
         onAdd={b => create('blocked-windows', b)} onSave={b => patch('blocked-windows', b)} onRemove={id => remove('blocked-windows', id)} />
       <KidsHome rows={data.kids_home_dates} busy={busy} onAdd={b => create('kids-home-dates', b)} onRemove={id => remove('kids-home-dates', id)} />
-      <RecurringBlocks blocks={data.recurring_blocks} overrides={data.recurring_overrides} busy={busy}
+      <RecurringBlocks blocks={data.recurring_blocks} overrides={data.recurring_overrides} blockDays={data.recurring_block_days} busy={busy}
         onCreate={b => create('recurring-blocks', b)} onSave={b => patch('recurring-blocks', b)} onRemove={id => remove('recurring-blocks', id)}
         onAddOverride={b => create('recurring-overrides', b)} onRemoveOverride={id => remove('recurring-overrides', id)} />
       <OneOffBlocks rows={data.one_off_blocks} tz={tz} busy={busy}
@@ -355,91 +358,249 @@ function KidsHome({ rows, busy, onAdd, onRemove }: { rows: Any[]; busy: boolean;
   )
 }
 
-// ─── Recurring blocks ────────────────────────────────────────────────────────
-function RecurringBlock({ block, overrides, busy, onSave, onRemove, onAddOverride, onRemoveOverride }: {
-  block: Any; overrides: Any[]; busy: boolean
+// ─── Recurring blocks (custody-style spans, hub_219) ─────────────────────────
+// One block = a repeat pattern + a span (From weekday forward to To weekday; same day =
+// 8 days, both ends included) + which weekdays in it are blocked + times, either one
+// window for all chosen days or per day (the two ends of an 8-day span separately).
+const todayLocal = () => new Date().toLocaleDateString('en-CA')
+
+type DayTime = { all_day: boolean; start_time: string; end_time: string }
+
+function RecurringBlock({ block, overrides, blockDays, busy, onSave, onRemove, onAddOverride, onRemoveOverride }: {
+  block: Any; overrides: Any[]; blockDays: Any[]; busy: boolean
   onSave: (b: Any) => void; onRemove: () => void; onAddOverride: (b: Any) => void; onRemoveOverride: (id: string) => void
 }) {
   const [f, setF] = useState<Any>({
-    name: block.name, active: block.active, anchor_date: block.anchor_date ?? '', interval_weeks: block.interval_weeks,
-    weekday: block.weekday, start_time: hhmm(block.start_time), end_time: hhmm(block.end_time), categories: block.categories,
+    name: block.name, active: block.active, repeat: block.repeat, interval_weeks: block.interval_weeks,
+    from_weekday: block.from_weekday, to_weekday: block.to_weekday, anchor_date: block.anchor_date ?? '',
+    days: block.days as number[], all_day: block.all_day, start_time: hhmm(block.start_time), end_time: hhmm(block.end_time),
+    per_day_times: block.per_day_times, categories: block.categories,
   })
-  const [o, setO] = useState({ date: '', kind: 'skip', start_time: '', end_time: '' })
+  const [dayTimes, setDayTimes] = useState<Record<number, DayTime>>(() => Object.fromEntries(blockDays.map(d => [
+    d.span_offset, { all_day: d.all_day, start_time: hhmm(d.start_time), end_time: hhmm(d.end_time) },
+  ])))
+  const [o, setO] = useState({ kind: 'skip', date: '', start_time: '', end_time: '' })
+
+  const interval = intervalFor(f.repeat, Number(f.interval_weeks) || 1)
+  const inSpan = weekdaysInSpan(f.from_weekday, f.to_weekday)
+  const days = (f.days as number[]).filter(d => inSpan.includes(d))
+  const span = spanDays(f.from_weekday, f.to_weekday)
+  const repeated = span.length === 8
+  const chosen = span.filter(d => days.includes(d.weekday))
+  const anchorWrong = !!f.anchor_date && isoWeekday(f.anchor_date) !== f.from_weekday
+  const dayLabel = (d: { offset: number; weekday: number }) =>
+    `${WEEKDAY_SHORT[d.weekday]}${repeated && d.weekday === f.from_weekday ? (d.offset === 0 ? ' (first day)' : ' (last day)') : ''}`
+  const timeOf = (off: number): DayTime => dayTimes[off] ?? { all_day: f.all_day, start_time: f.start_time, end_time: f.end_time }
+
+  // the form as the span model, for the summary and preview
+  const model = {
+    anchor_date: anchorWrong ? null : f.anchor_date || null, interval_weeks: interval,
+    from_weekday: f.from_weekday, to_weekday: f.to_weekday, days,
+    all_day: f.all_day, start_time: f.start_time || null, end_time: f.end_time || null, per_day_times: f.per_day_times,
+    day_times: chosen.map(d => ({ span_offset: d.offset, ...timeOf(d.offset), start_time: timeOf(d.offset).start_time || null, end_time: timeOf(d.offset).end_time || null })),
+  }
+  const today = todayLocal()
+  const spanOverrides = overrides as { date: string; kind: string }[]
+  const preview = nextSpans(model, spanOverrides, today, 4)
+  const upcomingStarts = model.anchor_date ? nextSpans({ ...model, days: [1, 2, 3, 4, 5, 6, 7] }, [], today, 8).filter(s => !s.extra).map(s => s.start) : []
+
+  const save = () => onSave({
+    id: block.id, name: f.name, active: f.active, repeat: f.repeat, interval_weeks: interval,
+    from_weekday: f.from_weekday, to_weekday: f.to_weekday, anchor_date: f.anchor_date || null, days,
+    all_day: f.per_day_times ? false : f.all_day,
+    start_time: f.per_day_times || f.all_day ? null : f.start_time || null,
+    end_time: f.per_day_times || f.all_day ? null : f.end_time || null,
+    per_day_times: f.per_day_times, categories: f.categories,
+    day_times: f.per_day_times ? chosen.map(d => ({ span_offset: d.offset, ...timeOf(d.offset) })) : [],
+  })
+
+  const addOverride = () => {
+    const spanKind = o.kind === 'skip_span' || o.kind === 'add_span'
+    onAddOverride({
+      block_id: block.id, date: o.date, kind: o.kind,
+      start_time: spanKind || o.kind === 'skip' ? null : o.start_time || null,
+      end_time: spanKind || o.kind === 'skip' ? null : o.end_time || null,
+    })
+  }
+  const OVERRIDE_LABEL: Record<string, string> = {
+    skip: 'Skip a date', add: 'Add a date', change: 'Change times on a date', skip_span: 'Skip this week', add_span: 'Add a week',
+  }
+
   return (
-    <div className="rounded-lg border border-gray-50 bg-gray-50/40 p-3 space-y-2">
+    <div className="rounded-lg border border-gray-50 bg-gray-50/40 p-3 space-y-3">
       <div className="flex flex-wrap items-end gap-2">
         <label className="flex items-center gap-1.5 text-[10px] text-gray-600 pb-2">
           <input type="checkbox" className="accent-teal w-3 h-3" checked={f.active} onChange={e => setF({ ...f, active: e.target.checked })} /> Active
         </label>
         <label className="text-[10px] text-gray-400">Name<br /><input className={input} value={f.name} onChange={e => setF({ ...f, name: e.target.value })} /></label>
-        <label className="text-[10px] text-gray-400">Every<br />
-          <select className={input} value={f.interval_weeks} onChange={e => setF({ ...f, interval_weeks: Number(e.target.value) })}>
-            {[1, 2, 3, 4].map(n => <option key={n} value={n}>{n === 1 ? 'week' : `${n} weeks`}</option>)}
+        <label className="text-[10px] text-gray-400">Repeats<br />
+          <select className={input} value={f.repeat} onChange={e => setF({ ...f, repeat: e.target.value, interval_weeks: e.target.value === 'custom' ? Math.max(3, f.interval_weeks) : f.interval_weeks })}>
+            <option value="weekly">Weekly</option>
+            <option value="every_other_week">Every other week</option>
+            <option value="custom">Custom</option>
           </select>
         </label>
-        <label className="text-[10px] text-gray-400">On<br />
-          <select className={input} value={f.weekday} onChange={e => setF({ ...f, weekday: Number(e.target.value) })}>
-            {WEEKDAYS.slice(1).map((d, i) => <option key={d} value={i + 1}>{d}</option>)}
+        {f.repeat === 'custom' && (
+          <label className="text-[10px] text-gray-400">Every N weeks<br />
+            <input type="number" min={1} max={52} className={`${input} w-20`} value={f.interval_weeks}
+              onChange={e => setF({ ...f, interval_weeks: Number(e.target.value) })} />
+          </label>
+        )}
+        <label className="text-[10px] text-gray-400">From<br />
+          <select className={input} value={f.from_weekday} onChange={e => setF({ ...f, from_weekday: Number(e.target.value) })}>
+            {WEEKDAY_LONG.slice(1).map((d, i) => <option key={d} value={i + 1}>{d}</option>)}
           </select>
         </label>
-        <label className="text-[10px] text-gray-400">Starting (a {WEEKDAYS[f.weekday]})<br />
-          <input type="date" className={input} value={f.anchor_date} onChange={e => setF({ ...f, anchor_date: e.target.value })} />
+        <label className="text-[10px] text-gray-400">To<br />
+          <select className={input} value={f.to_weekday} onChange={e => setF({ ...f, to_weekday: Number(e.target.value) })}>
+            {WEEKDAY_LONG.slice(1).map((d, i) => <option key={d} value={i + 1}>{d}</option>)}
+          </select>
         </label>
-        <label className="text-[10px] text-gray-400">From<br /><input type="time" className={input} value={f.start_time} onChange={e => setF({ ...f, start_time: e.target.value })} /></label>
-        <label className="text-[10px] text-gray-400">To<br /><input type="time" className={input} value={f.end_time} onChange={e => setF({ ...f, end_time: e.target.value })} /></label>
+        <label className="text-[10px] text-gray-400">Starting date<br />
+          <input type="date" className={`${input} ${anchorWrong ? 'border-red-300' : ''}`} value={f.anchor_date}
+            onChange={e => setF({ ...f, anchor_date: e.target.value })} />
+        </label>
       </div>
+      <p className="text-[10px] text-gray-400 -mt-1">
+        {span.length}-day span, {WEEKDAY_LONG[f.from_weekday]} to {repeated ? 'the next ' : ''}{WEEKDAY_LONG[f.to_weekday]}.
+        {anchorWrong && <span className="text-red-500"> The starting date must be a {WEEKDAY_LONG[f.from_weekday]}.</span>}
+      </p>
+
+      <div>
+        <p className="text-[10px] text-gray-400 mb-1">Blocked days</p>
+        <div className="flex flex-wrap gap-1">
+          {[1, 2, 3, 4, 5, 6, 7].filter(d => inSpan.includes(d)).map(d => (
+            <button key={d} type="button"
+              onClick={() => setF({ ...f, days: days.includes(d) ? days.filter(x => x !== d) : [...days, d].sort() })}
+              className={`px-2 py-1 rounded-md text-[10px] border ${days.includes(d) ? 'bg-np-blue text-white border-np-blue' : 'bg-white text-gray-500 border-gray-100'}`}>
+              {WEEKDAY_SHORT[d]}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="flex items-center gap-1.5 text-[10px] text-gray-600">
+          <input type="checkbox" className="accent-teal w-3 h-3" checked={f.per_day_times} onChange={e => setF({ ...f, per_day_times: e.target.checked })} />
+          Different times per day
+        </label>
+        {!f.per_day_times ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1 text-[10px] text-gray-600">
+              <input type="checkbox" className="accent-teal w-3 h-3" checked={f.all_day} onChange={e => setF({ ...f, all_day: e.target.checked })} /> All day
+            </label>
+            {!f.all_day && (
+              <>
+                <input type="time" className={input} value={f.start_time} onChange={e => setF({ ...f, start_time: e.target.value })} />
+                <span className="text-[10px] text-gray-400">to</span>
+                <input type="time" className={input} value={f.end_time} onChange={e => setF({ ...f, end_time: e.target.value })} />
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {chosen.map(d => {
+              const t = timeOf(d.offset)
+              const set = (patch: Partial<DayTime>) => setDayTimes({ ...dayTimes, [d.offset]: { ...t, ...patch } })
+              return (
+                <div key={d.offset} className="flex flex-wrap items-center gap-2">
+                  <span className="w-28 text-[11px] text-np-dark">{dayLabel(d)}</span>
+                  <label className="flex items-center gap-1 text-[10px] text-gray-600">
+                    <input type="checkbox" className="accent-teal w-3 h-3" checked={t.all_day} onChange={e => set({ all_day: e.target.checked })} /> All day
+                  </label>
+                  {!t.all_day && (
+                    <>
+                      <input type="time" className={input} value={t.start_time} onChange={e => set({ start_time: e.target.value })} />
+                      <span className="text-[10px] text-gray-400">to</span>
+                      <input type="time" className={input} value={t.end_time} onChange={e => set({ end_time: e.target.value })} />
+                    </>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
       <CategoryPicker value={f.categories} onChange={v => setF({ ...f, categories: v })} />
+
       <div className="flex items-center gap-2">
-        <button className={primary} disabled={busy} onClick={() => onSave({
-          id: block.id, ...f, anchor_date: f.anchor_date || null, start_time: f.start_time || null, end_time: f.end_time || null,
-        })}><Save size={10} /> Save</button>
+        <button className={primary} disabled={busy || anchorWrong || !days.length} onClick={save}><Save size={10} /> Save</button>
         <button className={btn} disabled={busy} onClick={() => confirm(`Delete "${block.name}"?`) && onRemove()}><X size={10} /> Delete</button>
       </div>
-      <div className="pt-1 space-y-1">
+
+      <div className="rounded-md bg-white border border-gray-100 p-2 space-y-1">
+        <p className="text-[11px] text-np-dark">{summary(model, f.repeat, spanOverrides, today)}</p>
+        {preview.map(s => (
+          <div key={s.start} className="text-[10px] text-gray-500">
+            <span className="font-semibold text-gray-600">{s.start} to {s.end}{s.extra ? ' (added week)' : ''}:</span>{' '}
+            {s.blocked.length ? s.blocked.map(b => b.label).join(' · ') : 'no days chosen'}
+          </div>
+        ))}
+        {!f.active && <p className="text-[10px] text-amber-600">Inactive: nothing is blocked until you switch it on and save.</p>}
+      </div>
+
+      <div className="space-y-1">
         <p className="text-[10px] font-semibold text-gray-500">Date changes</p>
         {overrides.map(x => (
           <div key={x.id} className="flex items-center gap-2 text-[11px] text-gray-600">
             <span className="w-24">{x.date}</span>
-            <span>{x.kind === 'skip' ? 'skipped' : `${x.kind === 'add' ? 'added' : 'changed'} ${hhmm(x.start_time) || hhmm(block.start_time)}–${hhmm(x.end_time) || hhmm(block.end_time)}`}</span>
+            <span>
+              {x.kind === 'skip' ? 'date skipped'
+                : x.kind === 'skip_span' ? 'week skipped'
+                : x.kind === 'add_span' ? 'week added'
+                : `${x.kind === 'add' ? 'date added' : 'times changed'} ${x.start_time ? `${hhmm(x.start_time)}–${hhmm(x.end_time)}` : '(block times)'}`}
+            </span>
             <Remove onClick={() => onRemoveOverride(x.id)} />
           </div>
         ))}
         <div className="flex flex-wrap items-center gap-2">
-          <input type="date" className={input} value={o.date} onChange={e => setO({ ...o, date: e.target.value })} />
-          <select className={input} value={o.kind} onChange={e => setO({ ...o, kind: e.target.value })}>
-            <option value="skip">Skip this date</option>
-            <option value="add">Add this date</option>
-            <option value="change">Change times on this date</option>
+          <select className={input} value={o.kind} onChange={e => setO({ ...o, kind: e.target.value, date: '' })}>
+            {Object.entries(OVERRIDE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
-          {o.kind !== 'skip' && (
+          {o.kind === 'skip_span' ? (
+            <select className={input} value={o.date} onChange={e => setO({ ...o, date: e.target.value })}>
+              <option value="">Choose a week</option>
+              {upcomingStarts.map(s => <option key={s} value={s}>{s} ({WEEKDAY_SHORT[isoWeekday(s)]})</option>)}
+            </select>
+          ) : (
+            <input type="date" className={input} value={o.date} onChange={e => setO({ ...o, date: e.target.value })} />
+          )}
+          {(o.kind === 'add' || o.kind === 'change') && (
             <>
               <input type="time" className={input} value={o.start_time} onChange={e => setO({ ...o, start_time: e.target.value })} />
               <input type="time" className={input} value={o.end_time} onChange={e => setO({ ...o, end_time: e.target.value })} />
             </>
           )}
-          <button className={btn} disabled={busy || !o.date} onClick={() => onAddOverride({
-            block_id: block.id, date: o.date, kind: o.kind, start_time: o.start_time || null, end_time: o.end_time || null,
-          })}><Plus size={10} /> Add</button>
+          {o.kind === 'add_span' && o.date && isoWeekday(o.date) !== f.from_weekday && (
+            <span className="text-[10px] text-red-500">A week starts on a {WEEKDAY_LONG[f.from_weekday]}.</span>
+          )}
+          <button className={btn} disabled={busy || !o.date} onClick={addOverride}><Plus size={10} /> Add</button>
         </div>
       </div>
     </div>
   )
 }
 
-function RecurringBlocks({ blocks, overrides, busy, onCreate, onSave, onRemove, onAddOverride, onRemoveOverride }: {
-  blocks: Any[]; overrides: Any[]; busy: boolean
+function RecurringBlocks({ blocks, overrides, blockDays, busy, onCreate, onSave, onRemove, onAddOverride, onRemoveOverride }: {
+  blocks: Any[]; overrides: Any[]; blockDays: Any[]; busy: boolean
   onCreate: (b: Any) => void; onSave: (b: Any) => void; onRemove: (id: string) => void
   onAddOverride: (b: Any) => void; onRemoveOverride: (id: string) => void
 }) {
   return (
-    <Card title="Recurring blocks" hint="Blocks a time on a weekday every N weeks, counted from the start date. Inactive blocks do nothing.">
-      {blocks.map(b => (
-        <RecurringBlock key={`${b.id}:${b.active}:${b.anchor_date}:${b.start_time}:${b.end_time}`} block={b} busy={busy}
-          overrides={overrides.filter(o => o.block_id === b.id)}
-          onSave={onSave} onRemove={() => onRemove(b.id)} onAddOverride={onAddOverride} onRemoveOverride={onRemoveOverride} />
-      ))}
+    <Card title="Recurring blocks" hint="A repeating stretch of days, e.g. custody every other week from Wednesday to Wednesday. Choose the span, the days inside it and the times. Inactive blocks do nothing.">
+      {blocks.map(b => {
+        const days = blockDays.filter(d => d.block_id === b.id)
+        return (
+          <RecurringBlock key={JSON.stringify([b, days])} block={b} blockDays={days} busy={busy}
+            overrides={overrides.filter(o => o.block_id === b.id)}
+            onSave={onSave} onRemove={() => onRemove(b.id)} onAddOverride={onAddOverride} onRemoveOverride={onRemoveOverride} />
+        )
+      })}
       <button className={btn} disabled={busy} onClick={() => onCreate({
-        name: 'New block', active: false, anchor_date: null, interval_weeks: 1, weekday: 1, start_time: null, end_time: null, categories: null,
+        name: 'New block', active: false, repeat: 'weekly', interval_weeks: 1, from_weekday: 1, to_weekday: 7,
+        anchor_date: null, days: [1, 2, 3, 4, 5, 6, 7], all_day: true, start_time: null, end_time: null,
+        per_day_times: false, categories: null, day_times: [],
       })}><Plus size={10} /> Add recurring block</button>
     </Card>
   )
