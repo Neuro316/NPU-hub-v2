@@ -1,11 +1,18 @@
 # Build 1: University bookings into Hub pipelines — rulings and build plan
 
-Branch `feat/booking-routes` off `main` at `9e5bd8a`. Two migrations are **proposed, not
-applied**, and wait for a separate go:
+Branch `feat/booking-routes` off `main` at `9e5bd8a`. **Both migrations are applied to
+production** on 2026-11-02:
 
-- `hub_220_booking_sync` (schema): the new Hub table `hub_booking_syncs`.
-- `hub_221_booking_routes_seed` (data only): the "Discovery Call Booked" stage and the two
-  routes. **Blocked on the choice of sales pipeline (§1).**
+- `hub_220_booking_sync` (schema, ledger 20261103015855): the new Hub table `hub_booking_syncs`.
+- `hub_221_booking_routes_seed` (data only, ledger 20261103015905): the two routes.
+  - WNW Discovery Call → Waynesville Neuro Wellness › Scheduled discovery call
+  - Interesting meeting → Neuro Progeny Email Meetings › Meeting Booked
+
+**Ruled at the go:**
+- The sales pipeline is Waynesville Neuro Wellness (`pipeline-1790143608575`).
+- It uses its existing stage "Scheduled discovery call", so no stage was created.
+- The three rulings in §3 (other pipeline left alone, no stage emails, an already-cancelled
+  booking skipped) are accepted.
 
 ## 1. The sales pipeline is ambiguous
 

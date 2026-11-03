@@ -1,8 +1,8 @@
 -- hub_220_booking_sync.sql
 --
--- STATUS: PROPOSED, NOT APPLIED. Apply to production (htfrfaxlcuyawtlztxxm) only,
--- through the Supabase connector as migration name hub_220_booking_sync, after an
--- explicit go. Not for npu-platform-nonprod: the Hub has no nonprod.
+-- STATUS: APPLIED to production (htfrfaxlcuyawtlztxxm) on 2026-11-02 through the Supabase
+-- connector as hub_220_booking_sync, ledger version 20261103015855. Never applied to
+-- npu-platform-nonprod. Read back: RLS on, no policies, anon/authenticated no privileges.
 --
 -- Hub band (200+). Checked 2026-11-02: the ledger stops at hub_219. This is 220.
 --

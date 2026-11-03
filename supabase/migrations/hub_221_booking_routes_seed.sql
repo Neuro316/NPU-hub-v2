@@ -1,10 +1,10 @@
 -- hub_221_booking_routes_seed.sql
 --
--- STATUS: PROPOSED, NOT APPLIED. Waiting on two things: Cameron's choice of the
--- "Neuro Progeny sales pipeline" (it is ambiguous; see the candidates in
--- docs/plans/hub-booking-routes-rulings.md §1), then a separate go. Apply to
--- production (htfrfaxlcuyawtlztxxm) only, as migration name
--- hub_221_booking_routes_seed, after hub_220_booking_sync.
+-- STATUS: APPLIED to production (htfrfaxlcuyawtlztxxm) on 2026-11-02 as
+-- hub_221_booking_routes_seed, ledger version 20261103015905, after hub_220. Ruled at the
+-- go: the sales pipeline is Waynesville Neuro Wellness (pipeline-1790143608575) with its
+-- EXISTING stage "Scheduled discovery call"; no stage was created. Read back: both routes
+-- present, create_contact_if_missing and move_earlier_stages_only on.
 --
 -- DATA ONLY, no schema change:
 --   1. In org_settings.crm_pipelines (Neuro Progeny org), add the stage "Discovery Call
@@ -37,9 +37,9 @@ begin;
 do $seed$
 declare
   c_org      constant uuid := '00000000-0000-0000-0000-000000000001';
-  -- ▼ set at the go: the board id of the chosen sales pipeline (e.g. 'default')
-  c_sales    constant text := '__CHOOSE_SALES_PIPELINE__';
-  c_stage    constant text := 'Discovery Call Booked';
+  -- ruled at the go (2026-11-02): Waynesville Neuro Wellness, its existing stage
+  c_sales    constant text := 'pipeline-1790143608575';
+  c_stage    constant text := 'Scheduled discovery call';
   v_cfg      jsonb;
   v_pipes    jsonb;
   v_pipe     jsonb;
@@ -52,10 +52,6 @@ declare
   v_int      uuid;
   i          int;
 begin
-  if c_sales = '__CHOOSE_SALES_PIPELINE__' then
-    raise exception 'hub_221: choose the sales pipeline first';
-  end if;
-
   select setting_value into v_cfg from public.org_settings
    where org_id = c_org and setting_key = 'crm_pipelines' for update;
   v_pipes := v_cfg->'pipelines';
@@ -64,7 +60,7 @@ begin
     from jsonb_array_elements(v_pipes) with ordinality t(p, o) where p->>'id' = c_sales;
   if v_pipe is null then raise exception 'hub_221: sales pipeline % not found', c_sales; end if;
 
-  -- 1. the stage, after the first stage, unless it exists
+  -- 1. the stage, after the first stage, unless it exists (it does: nothing is created)
   v_stages := coalesce(v_pipe->'stages', '[]');
   if not exists (select 1 from jsonb_array_elements(v_stages) s where lower(trim(s->>'name')) = lower(c_stage)) then
     for i in 0 .. jsonb_array_length(v_stages) - 1 loop
