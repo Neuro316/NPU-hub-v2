@@ -1,212 +1,422 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+// Growth Dashboard (superadmin only), replacing the old Analytics page at the same URL.
+// Tiles read hub_metrics_daily through /api/metrics/summary; a tile's records come from
+// /api/metrics/records, which runs the same collector, so the two agree. Definitions live
+// in docs/metrics/definitions.md. Client outcomes are aggregates: no individual values.
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { useWorkspace } from '@/lib/workspace-context'
 import {
-  BarChart3, TrendingUp, Target, Users, Zap, Brain, ArrowUpRight, ArrowDownRight,
-  DollarSign, Percent, Clock, UserPlus, Gauge, Activity, Phone, Mail,
-  ExternalLink, ShieldCheck, Repeat
+  BarChart3, ArrowUpRight, ArrowDownRight, X, BookOpen, Target, RefreshCw, Loader2,
+  CheckCircle2, AlertTriangle, Trash2, Save, ShieldCheck, ShieldOff, Undo2,
 } from 'lucide-react'
-import { fetchContacts, fetchCallLogs, fetchCampaigns, fetchTasks } from '@/lib/crm-client'
-import type { CrmContact, EmailCampaign, CrmTask } from '@/types/crm'
+import { METRICS, METRIC, TABS, type MetricDef, type Tab } from '@/lib/metrics/registry'
 
-function KPI({ label, value, change, icon: Icon, color, link }: {
-  label: string; value: string; change?: number | null; icon: any; color: string; link?: string
-}) {
+interface TileValue {
+  value: number | null; prev: number | null; n?: number | null; hidden?: boolean
+  dims?: Record<string, { value: string; v: number }[]>; target?: number; pace?: number; status?: 'green' | 'amber' | 'red'
+}
+interface Summary { from: string; to: string; prev: { from: string; to: string }; metrics: Record<string, TileValue>; series?: Record<string, { day: string; v: number }[]>; computed_at: string | null }
+interface RecordRow { day: string; label: string; sub?: string; href?: string; value?: number; dims?: Record<string, string> }
+
+const DEF_URL = 'https://github.com/Neuro316/NPU-hub-v2/blob/main/docs/metrics/definitions.md'
+const STATUS_COLOR = { green: '#16a34a', amber: '#f59e0b', red: '#dc2626' } as const
+
+// ─── dates (New York days) ───────────────────────────────────────────────────
+const nyToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date())
+const shift = (d: string, n: number) => { const x = new Date(`${d}T12:00:00Z`); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10) }
+type Preset = 'week' | 'month' | 'last30' | 'last90' | 'custom'
+function presetRange(p: Preset, today: string): [string, string] {
+  if (p === 'week') { const dow = new Date(`${today}T12:00:00Z`).getUTCDay(); return [shift(today, -((dow + 6) % 7)), today] }
+  if (p === 'month') return [`${today.slice(0, 8)}01`, today]
+  if (p === 'last90') return [shift(today, -89), today]
+  return [shift(today, -29), today]
+}
+const fmtDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+
+// ─── formatting ──────────────────────────────────────────────────────────────
+function fmt(def: MetricDef, v: number | null | undefined): string {
+  if (v == null) return '—'
+  switch (def.unit) {
+    case 'usd': return `$${Math.round(v).toLocaleString('en-US')}`
+    case 'pct': return `${v.toFixed(v < 10 ? 1 : 0)}%`
+    case 'minutes': return v >= 120 ? `${(v / 60).toFixed(1)} h` : `${Math.round(v)} min`
+    case 'days': return `${v.toFixed(v < 10 ? 1 : 0)} d`
+    case 'rating': return v.toFixed(2)
+    default: return Math.round(v).toLocaleString('en-US')
+  }
+}
+function delta(t: TileValue): number | null {
+  if (t.value == null || t.prev == null || t.prev === 0) return null
+  return Math.round(((t.value - t.prev) / Math.abs(t.prev)) * 100)
+}
+
+// ─── tile ────────────────────────────────────────────────────────────────────
+function Tile({ def, t, onOpen }: { def: MetricDef; t?: TileValue; onOpen: (def: MetricDef) => void }) {
+  if (def.agg === 'gap') {
+    return (
+      <div className="bg-white border border-dashed border-gray-200 rounded-xl p-4">
+        <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wider">{def.label}</p>
+        <p className="text-xs text-gray-400 mt-2">No data source yet ({def.gap}).</p>
+        <a href={`${DEF_URL}#${def.def}`} target="_blank" rel="noreferrer" className="text-[10px] text-np-blue hover:underline inline-flex items-center gap-1 mt-2"><BookOpen size={10} /> What to collect</a>
+      </div>
+    )
+  }
+  const d = t ? delta(t) : null
+  const good = d == null ? null : def.lowerIsBetter ? d < 0 : d > 0
+  const clickable = !def.noRecords
+  const dims = t?.dims ? Object.values(t.dims)[0] ?? [] : []
   return (
-    <div className="bg-white border border-gray-100 rounded-xl p-4">
-      <div className="flex items-center justify-between mb-2">
-        <Icon className="w-4 h-4" style={{ color }} />
-        {change !== undefined && change !== null && (
-          <span className={`text-[9px] font-bold flex items-center gap-0.5 ${change > 0 ? 'text-green-500' : change < 0 ? 'text-red-500' : 'text-gray-400'}`}>
-            {change > 0 ? <ArrowUpRight className="w-3 h-3" /> : change < 0 ? <ArrowDownRight className="w-3 h-3" /> : null}
-            {Math.abs(change)}%
-          </span>
+    <div className="bg-white border border-gray-100 rounded-xl p-4 flex flex-col">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wider">{def.label}</p>
+        {t?.status && (
+          <span title={`${fmt(def, t.value)} against a pace of ${fmt(def, t.pace)} (target ${fmt(def, t.target)} for the range)`}
+            className="w-2.5 h-2.5 rounded-full shrink-0 mt-0.5" style={{ background: STATUS_COLOR[t.status] }} />
         )}
       </div>
-      <p className="text-lg font-bold text-np-dark">{value}</p>
-      <div className="flex items-center justify-between mt-0.5">
-        <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wider">{label}</p>
-        {link && <Link href={link} className="text-[9px] text-np-blue hover:underline flex items-center gap-0.5"><ExternalLink size={8} /></Link>}
+      <button onClick={() => clickable && onOpen(def)} disabled={!clickable}
+        className={`text-left mt-1 ${clickable ? 'hover:text-np-blue cursor-pointer' : 'cursor-default'}`}>
+        <span className="text-xl font-bold text-np-dark">{t?.hidden ? `n < ${def.minN}` : fmt(def, t?.value)}</span>
+      </button>
+      <div className="flex items-center gap-2 mt-0.5 text-[10px] text-gray-400">
+        {d != null ? (
+          <span className={`font-bold flex items-center gap-0.5 ${good ? 'text-green-600' : 'text-red-500'}`}>
+            {d > 0 ? <ArrowUpRight className="w-3 h-3" /> : d < 0 ? <ArrowDownRight className="w-3 h-3" /> : null}{Math.abs(d)}%
+          </span>
+        ) : null}
+        <span>prev {t?.hidden ? '—' : fmt(def, t?.prev)}</span>
+        {t?.target != null && <span>· target {fmt(def, t.target)}</span>}
+        {t?.n != null && !t.hidden && <span>· n {t.n}</span>}
+      </div>
+      {dims.length > 0 && (
+        <div className="mt-2 space-y-0.5">
+          {dims.slice(0, 5).map(x => (
+            <div key={x.value} className="flex justify-between text-[10px] text-gray-500 gap-2">
+              <span className="truncate">{x.value.replace(/_/g, ' ')}</span><span className="text-np-dark">{fmt(def, x.v)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex-1" />
+      <a href={`${DEF_URL}#${def.def}`} target="_blank" rel="noreferrer" className="text-[10px] text-gray-400 hover:text-np-blue inline-flex items-center gap-1 mt-2">
+        <BookOpen size={10} /> Definition
+      </a>
+    </div>
+  )
+}
+
+// ─── records drawer ──────────────────────────────────────────────────────────
+function Records({ def, from, to, onClose }: { def: MetricDef; from: string; to: string; onClose: () => void }) {
+  const [data, setData] = useState<{ total: number; records: RecordRow[]; names_only: boolean } | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  useEffect(() => {
+    let live = true
+    fetch(`/api/metrics/records?metric=${def.key}&from=${from}&to=${to}`, { cache: 'no-store' })
+      .then(async r => { const d = await r.json().catch(() => ({})); if (!live) return; if (r.ok) setData(d); else setErr(d.error || 'The records could not be loaded.') })
+      .catch(() => live && setErr('The records could not be loaded.'))
+    return () => { live = false }
+  }, [def.key, from, to])
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/20" onClick={onClose}>
+      <div className="w-full max-w-md bg-white h-full overflow-y-auto p-5 space-y-3" onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-np-dark">{def.label}</h3>
+            <p className="text-[10px] text-gray-400">{fmtDay(from)} – {fmtDay(to)}{data ? ` · ${data.total} record${data.total === 1 ? '' : 's'}` : ''}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-np-dark"><X size={16} /></button>
+        </div>
+        {data?.names_only && <p className="text-[10px] text-gray-400">Names only: client outcomes never show individual values.</p>}
+        {err && <p className="text-xs text-red-500">{err}</p>}
+        {!data && !err && <p className="text-xs text-gray-400 flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> Loading...</p>}
+        {data && data.records.length === 0 && <p className="text-xs text-gray-400">No records in this range.</p>}
+        <div className="divide-y divide-gray-50">
+          {data?.records.map((r, i) => (
+            <div key={i} className="py-2 flex items-start gap-3">
+              <span className="text-[10px] text-gray-400 w-12 shrink-0 pt-0.5">{fmtDay(r.day)}</span>
+              <div className="flex-1 min-w-0">
+                {r.href ? <Link href={r.href} className="text-xs font-medium text-np-dark hover:text-np-blue">{r.label}</Link> : <p className="text-xs font-medium text-np-dark">{r.label}</p>}
+                {r.sub && <p className="text-[10px] text-gray-500 truncate">{r.sub}</p>}
+              </div>
+              {r.value != null && def.unit !== 'count' && <span className="text-[11px] text-np-dark">{fmt(def, r.value)}</span>}
+            </div>
+          ))}
+        </div>
+        {data && data.total > data.records.length && <p className="text-[10px] text-gray-400">Showing the latest {data.records.length}.</p>}
       </div>
     </div>
   )
 }
 
-export default function AnalyticsPage() {
-  const { currentOrg, loading: orgLoading } = useWorkspace()
-  const [contacts, setContacts] = useState<CrmContact[]>([])
-  const [calls, setCalls] = useState<any[]>([])
-  const [campaigns, setCampaigns] = useState<EmailCampaign[]>([])
-  const [tasks, setTasks] = useState<CrmTask[]>([])
-  const [loading, setLoading] = useState(true)
+// ─── scorecard extras: funnel strip and 12-week trend ────────────────────────
+const FUNNEL = ['leads', 'booked_calls', 'shows', 'sales', 'onboarded']
+function Funnel({ m }: { m: Record<string, TileValue> }) {
+  return (
+    <div className="bg-white border border-gray-100 rounded-xl p-4">
+      <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wider mb-3">Funnel</p>
+      <div className="flex items-stretch gap-1 overflow-x-auto">
+        {FUNNEL.map((k, i) => {
+          const v = m[k]?.value ?? 0, prev = i ? m[FUNNEL[i - 1]]?.value ?? 0 : null
+          return (
+            <div key={k} className="flex items-center gap-1">
+              {i > 0 && <div className="text-[10px] text-gray-400 px-1 text-center">→<br />{prev ? `${Math.round((v / prev) * 100)}%` : '—'}</div>}
+              <div className="px-3 py-2 rounded-lg bg-np-blue/5 min-w-[88px]">
+                <p className="text-[10px] text-gray-500">{METRIC[k].label}</p>
+                <p className="text-sm font-bold text-np-dark">{Math.round(v)}</p>
+                {k === 'shows' && <p className="text-[9px] text-amber-600">not recorded yet (G2)</p>}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [cRes, clRes, cpRes, tRes] = await Promise.allSettled([
-          fetchContacts({ org_id: currentOrg?.id, limit: 2000 }), fetchCallLogs(undefined, 200), fetchCampaigns(), fetchTasks(),
-        ])
-        if (cRes.status === 'fulfilled') setContacts(cRes.value.contacts)
-        if (clRes.status === 'fulfilled') setCalls(clRes.value)
-        if (cpRes.status === 'fulfilled') setCampaigns(cpRes.value)
-        if (tRes.status === 'fulfilled') setTasks(tRes.value)
-      } catch (e) { console.error(e) }
-      finally { setLoading(false) }
-    }
-    load()
+function Trend({ series, today }: { series: Summary['series']; today: string }) {
+  const weeks = useMemo(() => {
+    const dow = new Date(`${today}T12:00:00Z`).getUTCDay()
+    const thisMon = shift(today, -((dow + 6) % 7))
+    return Array.from({ length: 12 }, (_, i) => shift(thisMon, -7 * (11 - i)))
+  }, [today])
+  const keys = ['leads', 'booked_calls', 'sales', 'onboarded', 'revenue']
+  return (
+    <div className="bg-white border border-gray-100 rounded-xl p-4 overflow-x-auto">
+      <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wider mb-3">12-week trend (weeks start Monday)</p>
+      <table className="text-[10px] w-full">
+        <thead><tr><th className="text-left text-gray-400 font-medium pr-3" />{weeks.map(w => <th key={w} className="text-gray-400 font-medium px-1 text-right">{fmtDay(w)}</th>)}</tr></thead>
+        <tbody>
+          {keys.map(k => {
+            const vals = weeks.map(w => (series?.[k] ?? []).filter(p => p.day >= w && p.day <= shift(w, 6)).reduce((n, p) => n + p.v, 0))
+            const max = Math.max(...vals, 1)
+            return (
+              <tr key={k}>
+                <td className="text-gray-500 pr-3 py-1 whitespace-nowrap">{METRIC[k].label}</td>
+                {vals.map((v, i) => (
+                  <td key={i} className="px-1 py-1 text-right">
+                    <div className="flex flex-col items-end gap-0.5">
+                      <div className="h-6 w-full flex items-end justify-end"><div className="w-3 bg-np-blue/70 rounded-sm" style={{ height: `${Math.max(2, (v / max) * 24)}px` }} /></div>
+                      <span className="text-np-dark">{fmt(METRIC[k], v)}</span>
+                    </div>
+                  </td>
+                ))}
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ─── targets editor and test-account review ──────────────────────────────────
+interface TargetRow { metric_key: string; month: string; target_value: number; amber_threshold: number; red_threshold: number }
+interface Suspect { kind: 'contact' | 'profile'; id: string; name: string; email: string | null; detail: string | null; decision: 'exclude' | 'keep' | null; already: boolean }
+
+function Targets({ today, onChanged }: { today: string; onChanged: () => void }) {
+  const [targets, setTargets] = useState<TargetRow[]>([])
+  const [metrics, setMetrics] = useState<{ key: string; label: string; unit: string }[]>([])
+  const [draft, setDraft] = useState({ metric_key: 'leads', month: `${today.slice(0, 8)}01`, target_value: '', amber: '90', red: '75' })
+  const [suspects, setSuspects] = useState<Suspect[]>([])
+  const [seeded, setSeeded] = useState<{ id: string; rule: string; reason: string | null }[]>([])
+  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    const [t, r] = await Promise.all([fetch('/api/metrics/targets', { cache: 'no-store' }), fetch('/api/metrics/review', { cache: 'no-store' })])
+    const td = await t.json().catch(() => ({})), rd = await r.json().catch(() => ({}))
+    if (t.ok) { setTargets(td.targets); setMetrics(td.metrics) }
+    if (r.ok) { setSuspects(rd.suspects); setSeeded(rd.seeded) }
+    if (!t.ok || !r.ok) setNotice({ ok: false, text: td.error || rd.error || 'Targets could not be loaded.' })
   }, [])
+  useEffect(() => { load() }, [load])
 
-  if (orgLoading || loading) return <div className="flex items-center justify-center h-64"><div className="animate-pulse text-gray-400">Loading analytics...</div></div>
-
-  // ── Compute everything ──
-  const now = Date.now(); const week = 7*86400000; const month = 30*86400000
-  const thisMonth = contacts.filter(c => now - new Date(c.created_at).getTime() < month)
-  const lastMonth = contacts.filter(c => { const d = now - new Date(c.created_at).getTime(); return d >= month && d < 2*month })
-  const monthGrowth = lastMonth.length > 0 ? Math.round(((thisMonth.length - lastMonth.length)/lastMonth.length)*100) : null
-  const wonContacts = contacts.filter(c => c.pipeline_stage === 'Won')
-  const lostContacts = contacts.filter(c => c.pipeline_stage === 'Lost')
-  const closedTotal = wonContacts.length + lostContacts.length
-  const winRate = closedTotal > 0 ? ((wonContacts.length/closedTotal)*100).toFixed(1) : '--'
-  const totalRevenue = wonContacts.reduce((s,c) => s + ((c.custom_fields?.value as number)||0), 0)
-  const pipelineValue = contacts.reduce((s,c) => s + ((c.custom_fields?.value as number)||0), 0)
-  const avgDealSize = wonContacts.length > 0 ? totalRevenue / wonContacts.length : 0
-  const repeatBuyers = wonContacts.filter(c => (c.custom_fields?.purchases as number) > 1).length
-  const repeatRate = wonContacts.length > 0 ? repeatBuyers / wonContacts.length : 0
-  const estimatedLTV = avgDealSize > 0 ? avgDealSize * (1 + repeatRate * 2) : 0
-  const totalSpend = campaigns.reduce((s,c) => s + ((c as any).spend || 0), 0)
-  const newFromCampaigns = contacts.filter(c => c.source && ['Website','Social Media','Cold Outreach','Podcast'].includes(c.source)).length
-  const estimatedCAC = newFromCampaigns > 0 ? totalSpend / newFromCampaigns : 0
-  const ltvCacRatio = estimatedCAC > 0 ? (estimatedLTV / estimatedCAC).toFixed(1) : '--'
-  const closeTimes = wonContacts.map(c => { if (!c.created_at || !c.updated_at) return null; return (new Date(c.updated_at).getTime()-new Date(c.created_at).getTime())/86400000 }).filter((d):d is number => d!==null && d>0)
-  const avgCloseTime = closeTimes.length > 0 ? Math.round(closeTimes.reduce((a,b)=>a+b,0)/closeTimes.length) : null
-  const totalSent = campaigns.reduce((s,c) => s + c.sent_count, 0)
-  const openTasks = tasks.filter(t => t.status === 'todo' || t.status === 'in_progress').length
-  const completedTasks = tasks.filter(t => t.status === 'done').length
-  const activeDeals = contacts.length - wonContacts.length - lostContacts.length
-  const velocity = avgCloseTime && avgDealSize > 0 && winRate !== '--'
-    ? ((activeDeals * (parseFloat(winRate as string)/100) * avgDealSize) / avgCloseTime) : 0
-
-  // Source distribution for chart
-  const sourceCounts: Record<string,number> = {}
-  contacts.forEach(c => { const s = c.source || 'Unknown'; sourceCounts[s] = (sourceCounts[s]||0)+1 })
-  const maxSource = Math.max(...Object.values(sourceCounts), 1)
+  const send = async (url: string, method: string, body?: unknown, ok = 'Saved.') => {
+    setNotice(null)
+    const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
+    const d = await res.json().catch(() => ({}))
+    setNotice(res.ok ? { ok: true, text: ok } : { ok: false, text: d.error || 'That did not save.' })
+    if (res.ok) load()
+    return res.ok
+  }
+  const recompute = async () => {
+    setBusy('recompute')
+    try { if (await send('/api/metrics/recompute', 'POST', { days: 120 }, 'Recomputed the last 120 days.')) onChanged() } finally { setBusy(null) }
+  }
+  const label = (k: string) => METRIC[k]?.label ?? k
+  const undecided = suspects.filter(s => !s.decision && !s.already)
+  const decided = suspects.filter(s => s.decision)
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-xl font-semibold text-np-dark">Analytics</h1>
-          <p className="text-xs text-gray-400 mt-0.5">{currentOrg?.name} · Business Intelligence</p>
+    <div className="space-y-5">
+      {notice && (
+        <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs ${notice.ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
+          {notice.ok ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />} {notice.text}
         </div>
-        <Link href="/crm/analytics" className="flex items-center gap-1.5 px-3 py-2 bg-np-blue/10 text-np-blue text-xs font-medium rounded-lg hover:bg-np-blue/20 transition-colors">
-          <BarChart3 size={13} /> Detailed CRM Analytics
-        </Link>
-      </div>
-
-      {/* ── Revenue KPIs ── */}
-      <div className="mb-6">
-        <h3 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-3">Revenue</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <KPI label="Total Revenue" value={`$${(totalRevenue/1000).toFixed(0)}k`} icon={DollarSign} color="#34D399" link="/crm/analytics" />
-          <KPI label="Pipeline Value" value={`$${(pipelineValue/1000).toFixed(0)}k`} icon={Target} color="#228DC4" />
-          <KPI label="Avg Deal Size" value={avgDealSize > 0 ? `$${(avgDealSize/1000).toFixed(1)}k` : '--'} icon={BarChart3} color="#8B5CF6" />
-          <KPI label="Sales Velocity" value={velocity > 0 ? `$${(velocity/1000).toFixed(1)}k/day` : '--'} icon={TrendingUp} color="#2A9D8F" />
+      )}
+      <div className="bg-white border border-gray-100 rounded-xl p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-bold text-np-dark flex items-center gap-1"><Target size={12} /> Monthly targets</h3>
+          <button onClick={recompute} disabled={!!busy} className="flex items-center gap-1 px-2.5 py-1 text-[10px] border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40">
+            {busy === 'recompute' ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />} Recompute now
+          </button>
         </div>
-      </div>
-
-      {/* ── Unit Economics ── */}
-      <div className="mb-6">
-        <h3 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-3">Unit Economics</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <KPI label="Est. LTV" value={estimatedLTV > 0 ? `$${(estimatedLTV/1000).toFixed(1)}k` : '--'} icon={Repeat} color="#2A9D8F" />
-          <KPI label="Est. CAC" value={estimatedCAC > 0 ? `$${estimatedCAC.toFixed(0)}` : '--'} icon={UserPlus} color="#E76F51" />
-          <KPI label="LTV:CAC Ratio" value={ltvCacRatio as string} icon={Gauge} color={parseFloat(ltvCacRatio as string) >= 3 ? '#34D399' : '#F87171'} />
-          <KPI label="Win Rate" value={`${winRate}%`} icon={Percent} color="#34D399" />
+        <p className="text-[10px] text-gray-400">Amber below the amber share of the target pace, red below the red share. A month without its own row uses the latest earlier month. Weeks and custom ranges are prorated by day.</p>
+        <div className="flex flex-wrap items-end gap-2">
+          <select value={draft.metric_key} onChange={e => setDraft({ ...draft, metric_key: e.target.value })} className="px-2 py-1.5 text-[11px] border border-gray-100 rounded-lg">
+            {metrics.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+          </select>
+          <input type="month" value={draft.month.slice(0, 7)} onChange={e => setDraft({ ...draft, month: `${e.target.value}-01` })} className="px-2 py-1.5 text-[11px] border border-gray-100 rounded-lg" />
+          <input value={draft.target_value} onChange={e => setDraft({ ...draft, target_value: e.target.value })} placeholder="Target" inputMode="decimal" className="w-24 px-2 py-1.5 text-[11px] border border-gray-100 rounded-lg" />
+          <label className="text-[10px] text-gray-500">Amber % <input value={draft.amber} onChange={e => setDraft({ ...draft, amber: e.target.value })} className="w-12 px-1.5 py-1 border border-gray-100 rounded" /></label>
+          <label className="text-[10px] text-gray-500">Red % <input value={draft.red} onChange={e => setDraft({ ...draft, red: e.target.value })} className="w-12 px-1.5 py-1 border border-gray-100 rounded" /></label>
+          <button onClick={() => send('/api/metrics/targets', 'PUT', { metric_key: draft.metric_key, month: draft.month, target_value: Number(draft.target_value), amber_threshold: Number(draft.amber) / 100, red_threshold: Number(draft.red) / 100 }, 'Target saved.')}
+            disabled={draft.target_value === ''} className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium bg-np-blue text-white rounded-lg disabled:opacity-40">
+            <Save size={10} /> Save target
+          </button>
         </div>
-      </div>
-
-      {/* ── Operations ── */}
-      <div className="mb-6">
-        <h3 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-3">Operations</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <KPI label="Contacts" value={contacts.length.toString()} change={monthGrowth} icon={Users} color="#2A9D8F" link="/crm/contacts" />
-          <KPI label="Avg Close Time" value={avgCloseTime ? `${avgCloseTime} days` : '--'} icon={Clock} color="#228DC4" />
-          <KPI label="Active Deals" value={activeDeals.toString()} icon={Activity} color="#FBBF24" link="/crm/pipelines" />
-          <KPI label="Task Completion" value={`${completedTasks+openTasks > 0 ? Math.round((completedTasks/(completedTasks+openTasks))*100) : 0}%`} icon={ShieldCheck} color="#8B5CF6" link="/crm/tasks" />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        {/* Source Attribution */}
-        <div className="bg-white border border-gray-100 rounded-xl p-5">
-          <h3 className="text-xs font-bold text-np-dark mb-3 flex items-center gap-2"><Zap size={13} className="text-amber-500" /> Lead Sources</h3>
-          <div className="space-y-2.5">
-            {Object.entries(sourceCounts).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([source, count]) => (
-              <div key={source} className="flex items-center gap-3">
-                <span className="text-xs text-np-dark w-28 truncate">{source}</span>
-                <div className="flex-1 bg-gray-100 rounded-full h-2.5 overflow-hidden">
-                  <div className="h-full rounded-full bg-teal/70 transition-all duration-500" style={{ width: `${(count/maxSource)*100}%` }} />
-                </div>
-                <span className="text-[10px] font-semibold text-np-dark w-8 text-right">{count}</span>
-              </div>
+        <table className="w-full text-[11px]">
+          <thead><tr className="text-left text-gray-400"><th className="font-medium py-1">Month</th><th className="font-medium">Metric</th><th className="font-medium text-right">Target</th><th className="font-medium text-right">Amber</th><th className="font-medium text-right">Red</th><th /></tr></thead>
+          <tbody>
+            {targets.map(t => (
+              <tr key={`${t.metric_key}${t.month}`} className="border-t border-gray-50">
+                <td className="py-1.5">{t.month.slice(0, 7)}</td>
+                <td>{label(t.metric_key)}</td>
+                <td className="text-right">{fmt(METRIC[t.metric_key] ?? METRICS[0], Number(t.target_value))}</td>
+                <td className="text-right">{Math.round(Number(t.amber_threshold) * 100)}%</td>
+                <td className="text-right">{Math.round(Number(t.red_threshold) * 100)}%</td>
+                <td className="text-right">
+                  <button onClick={() => setDraft({ metric_key: t.metric_key, month: t.month, target_value: String(t.target_value), amber: String(Math.round(t.amber_threshold * 100)), red: String(Math.round(t.red_threshold * 100)) })} className="text-[10px] text-np-blue mr-2">Edit</button>
+                  <button onClick={() => send(`/api/metrics/targets?metric_key=${t.metric_key}&month=${t.month}`, 'DELETE', undefined, 'Target removed.')} className="text-gray-400 hover:text-red-500"><Trash2 size={11} /></button>
+                </td>
+              </tr>
             ))}
-          </div>
-        </div>
-
-        {/* Conversion Funnel */}
-        <div className="bg-white border border-gray-100 rounded-xl p-5">
-          <h3 className="text-xs font-bold text-np-dark mb-3 flex items-center gap-2"><Target size={13} className="text-np-blue" /> Conversion Funnel</h3>
-          <div className="flex items-end justify-center gap-3 h-40">
-            {[
-              { label: 'Total Leads', value: contacts.length, color: '#DBEAFE' },
-              { label: 'Contacted', value: contacts.filter(c => c.last_contacted_at).length, color: '#93C5FD' },
-              { label: 'Qualified', value: contacts.filter(c => ['Qualified','Proposal','Negotiation','Won'].includes(c.pipeline_stage||'')).length, color: '#60A5FA' },
-              { label: 'Proposal', value: contacts.filter(c => ['Proposal','Negotiation','Won'].includes(c.pipeline_stage||'')).length, color: '#3B82F6' },
-              { label: 'Won', value: wonContacts.length, color: '#1D4ED8' },
-            ].map((step, i) => {
-              const maxVal = contacts.length || 1
-              return (
-                <div key={i} className="flex flex-col items-center gap-1 flex-1">
-                  <div className="w-full rounded-t-lg transition-all duration-500" style={{ height: `${Math.max((step.value/maxVal)*100, 5)}%`, backgroundColor: step.color }} />
-                  <span className="text-[8px] text-gray-500 font-medium text-center">{step.label}</span>
-                  <span className="text-[10px] font-bold text-np-dark">{step.value}</span>
-                </div>
-              )
-            })}
-          </div>
-        </div>
+          </tbody>
+        </table>
       </div>
 
-      {/* Bayesian Campaign Stack */}
-      <div className="bg-white border border-gray-100 rounded-2xl p-6 mb-6">
-        <div className="flex items-center gap-2 mb-4">
-          <Brain className="w-5 h-5 text-np-blue" />
-          <h2 className="text-sm font-bold text-np-dark">Bayesian Campaign Stack Ranking</h2>
-          <span className="text-[9px] bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full font-medium">Intelligence Engine</span>
-        </div>
-        <p className="text-xs text-gray-500 mb-6">
-          As campaigns collect data, the Bayesian engine ranks your best-performing combinations of quiz type + post format + platform + ICP target.
+      <div className="bg-white border border-gray-100 rounded-xl p-4 space-y-3">
+        <h3 className="text-xs font-bold text-np-dark flex items-center gap-1"><ShieldCheck size={12} /> Review test accounts</h3>
+        <p className="text-[10px] text-gray-400">
+          These look like test accounts by name or email. Nothing here is excluded until you press Exclude. Keep records that the person is real, so it stops being suggested.
+          Press Recompute now afterwards to update past days (the nightly run does it too).
         </p>
-        {campaigns.length > 0 ? (
-          <div className="space-y-2">
-            {campaigns.slice(0, 5).map((c, i) => (
-              <div key={c.id} className="flex items-center gap-3 p-3 rounded-lg bg-gray-50">
-                <span className="text-xs font-bold text-gray-400 w-6">#{i+1}</span>
-                <div className="flex-1"><p className="text-xs font-medium text-np-dark">{c.name}</p><p className="text-[10px] text-gray-400">{c.sent_count} sent · {c.status}</p></div>
-                <div className="text-right"><p className="text-xs font-semibold text-np-dark">{c.total_recipients || 0}</p><p className="text-[9px] text-gray-400">recipients</p></div>
+        <div className="text-[10px] text-gray-500">
+          Always excluded: {seeded.map(s => s.rule).join(', ') || 'none'}, contacts in Campaign test contacts, contacts tagged “test”, promo codes CTEST and CTEST2, and programs named “Test”.
+        </div>
+        {undecided.length === 0 ? <p className="text-[11px] text-gray-400">Nothing waiting for review.</p> : (
+          <div className="divide-y divide-gray-50">
+            {undecided.map(s => (
+              <div key={`${s.kind}${s.id}`} className="py-1.5 flex items-center gap-2 text-[11px]">
+                <span className="text-[9px] uppercase text-gray-400 w-12">{s.kind}</span>
+                <span className="flex-1 min-w-0 truncate"><span className="text-np-dark">{s.name}</span> <span className="text-gray-400">{s.email}{s.detail ? ` · ${s.detail}` : ''}</span></span>
+                <button onClick={() => send('/api/metrics/review', 'POST', { kind: s.kind, id: s.id, decision: 'exclude' }, `${s.name} is excluded from the dashboard.`)} className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-red-600 border border-red-100 rounded hover:bg-red-50"><ShieldOff size={10} /> Exclude</button>
+                <button onClick={() => send('/api/metrics/review', 'POST', { kind: s.kind, id: s.id, decision: 'keep' }, `${s.name} is kept as a real person.`)} className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-green-700 border border-green-100 rounded hover:bg-green-50"><ShieldCheck size={10} /> Keep</button>
               </div>
             ))}
-          </div>
-        ) : (
-          <div className="bg-gray-50 rounded-xl p-8 text-center">
-            <BarChart3 className="w-12 h-12 text-gray-200 mx-auto mb-3" />
-            <p className="text-sm font-medium text-gray-400 mb-1">Campaign data needed</p>
-            <p className="text-xs text-gray-400">Create campaigns to start building your ranking stack.</p>
           </div>
         )}
+        {decided.length > 0 && (
+          <details className="text-[11px]">
+            <summary className="text-[10px] text-gray-400 cursor-pointer">Decided ({decided.length})</summary>
+            <div className="divide-y divide-gray-50 mt-1">
+              {decided.map(s => (
+                <div key={`${s.kind}${s.id}`} className="py-1.5 flex items-center gap-2">
+                  <span className={`text-[9px] font-bold w-12 ${s.decision === 'exclude' ? 'text-red-500' : 'text-green-600'}`}>{s.decision}</span>
+                  <span className="flex-1 min-w-0 truncate">{s.name} <span className="text-gray-400">{s.email}</span></span>
+                  <button onClick={() => send(`/api/metrics/review?kind=${s.kind}&id=${s.id}`, 'DELETE', undefined, 'Decision undone.')} className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-np-dark"><Undo2 size={10} /> Undo</button>
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
       </div>
+    </div>
+  )
+}
+
+// ─── page ────────────────────────────────────────────────────────────────────
+export default function GrowthDashboardPage() {
+  const today = useMemo(nyToday, [])
+  const [tab, setTab] = useState<Tab | 'targets'>('scorecard')
+  const [preset, setPreset] = useState<Preset>('month')
+  const [range, setRange] = useState<[string, string]>(() => presetRange('month', nyToday()))
+  const [data, setData] = useState<Summary | null>(null)
+  const [trend, setTrend] = useState<Summary | null>(null)
+  const [allowed, setAllowed] = useState<boolean | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const [open, setOpen] = useState<MetricDef | null>(null)
+  const [reload, setReload] = useState(0)
+
+  useEffect(() => { if (preset !== 'custom') setRange(presetRange(preset, today)) }, [preset, today])
+
+  useEffect(() => {
+    let live = true
+    setErr(null)
+    fetch(`/api/metrics/summary?from=${range[0]}&to=${range[1]}`, { cache: 'no-store' }).then(async r => {
+      if (!live) return
+      if (r.status === 403) { setAllowed(false); return }
+      const d = await r.json().catch(() => ({}))
+      setAllowed(true)
+      if (r.ok) setData(d); else setErr(d.error || 'The dashboard could not be loaded.')
+    }).catch(() => live && setErr('The dashboard could not be loaded.'))
+    return () => { live = false }
+  }, [range, reload])
+
+  useEffect(() => {
+    if (tab !== 'scorecard' || trend) return
+    fetch(`/api/metrics/summary?from=${shift(today, -90)}&to=${today}&series=1`, { cache: 'no-store' })
+      .then(r => (r.ok ? r.json() : null)).then(d => d && setTrend(d)).catch(() => {})
+  }, [tab, today, trend])
+
+  if (allowed === false) return <div className="p-6 text-sm text-gray-500">The Growth Dashboard is for superadmins.</div>
+
+  const shown = tab === 'targets' ? [] : METRICS.filter(m => m.tab === tab && !m.hidden)
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-lg font-bold text-np-dark flex items-center gap-2"><BarChart3 size={18} /> Growth Dashboard</h1>
+          <p className="text-[11px] text-gray-400">
+            {fmtDay(range[0])} – {fmtDay(range[1])}, compared with {data ? `${fmtDay(data.prev.from)} – ${fmtDay(data.prev.to)}` : 'the previous period'}.
+            Test data excluded. {data?.computed_at ? `Updated ${new Date(data.computed_at).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}.` : 'Not computed yet: the first run fills it.'}
+          </p>
+        </div>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {([['week', 'This week'], ['month', 'This month'], ['last30', 'Last 30'], ['last90', 'Last 90'], ['custom', 'Custom']] as [Preset, string][]).map(([p, l]) => (
+            <button key={p} onClick={() => setPreset(p)} className={`px-2.5 py-1 text-[11px] rounded-lg border ${preset === p ? 'bg-np-blue text-white border-np-blue' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>{l}</button>
+          ))}
+          {preset === 'custom' && (
+            <>
+              <input type="date" value={range[0]} max={range[1]} onChange={e => e.target.value && setRange([e.target.value, range[1]])} className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg" />
+              <input type="date" value={range[1]} min={range[0]} max={today} onChange={e => e.target.value && setRange([range[0], e.target.value])} className="px-2 py-1 text-[11px] border border-gray-200 rounded-lg" />
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="flex gap-1 overflow-x-auto border-b border-gray-100">
+        {TABS.map(t => (
+          <button key={t.key} onClick={() => setTab(t.key)} className={`px-3 py-2 text-xs whitespace-nowrap border-b-2 -mb-px ${tab === t.key ? 'border-np-blue text-np-blue font-semibold' : 'border-transparent text-gray-500 hover:text-np-dark'}`}>{t.label}</button>
+        ))}
+        <button onClick={() => setTab('targets')} className={`px-3 py-2 text-xs whitespace-nowrap border-b-2 -mb-px flex items-center gap-1 ${tab === 'targets' ? 'border-np-blue text-np-blue font-semibold' : 'border-transparent text-gray-500 hover:text-np-dark'}`}><Target size={11} /> Targets</button>
+      </div>
+
+      {err && <p className="text-xs text-red-500">{err}</p>}
+      {tab === 'targets' ? <Targets today={today} onChanged={() => { setReload(n => n + 1); setTrend(null) }} /> : (
+        <>
+          {tab === 'scorecard' && data && <Funnel m={data.metrics} />}
+          {allowed === null && !err ? <p className="text-xs text-gray-400">Loading...</p> : (
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
+              {shown.map(def => <Tile key={def.key} def={def} t={data?.metrics[def.key]} onOpen={setOpen} />)}
+            </div>
+          )}
+          {tab === 'scorecard' && trend && <Trend series={trend.series} today={today} />}
+          {tab === 'outcomes' && <p className="text-[10px] text-gray-400">Aggregates only. A share is hidden when fewer than 5 people qualify, and click-through lists names, never values.</p>}
+        </>
+      )}
+      {open && <Records def={open} from={range[0]} to={range[1]} onClose={() => setOpen(null)} />}
     </div>
   )
 }

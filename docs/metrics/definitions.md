@@ -1,6 +1,8 @@
 # Growth Dashboard: metric definitions
 
-Read-only mapping done on 2026-11-02 against production (`htfrfaxlcuyawtlztxxm`). Every
+Read-only mapping done on 2026-11-02 against production (`htfrfaxlcuyawtlztxxm`), corrected on
+2026-11-03 from Cameron's rulings: revenue comes from `payments`, comps are the $0 rows, and the
+test rows are seeded. Every
 metric is computed by the Hub rollup job into `hub_metrics_daily`, using plain service-role
 SELECTs on the shared tables. Nothing is written to a University-owned table.
 
@@ -26,8 +28,8 @@ metric uses it. A person is **test** when any of the following is true:
 | # | Rule | Source |
 |---|---|---|
 | T1 | Email or phone (last 10 digits) matches a row in `campaign_test_contacts` | `campaign_test_contacts.email`, `.phone` (2 rows) |
-| T2 | Email is `cameron.s.allen@gmail.com` (profile and contact) | `profiles.email`, `contacts.email` |
-| T3 | Flagged test in the Hub's own list `hub_metric_exclusions` (proposed in hub_223), by contact, profile or email | Hub-owned |
+| T2 | Email is `cameron.s.allen@gmail.com` (profile and contact). Hard-coded, so it holds even if its T3 row is removed | `profiles.email`, `contacts.email` |
+| T3 | `hub_metric_exclusions` rows with decision `exclude`, by contact, profile, email or email pattern (a lower-case LIKE pattern). **Seeded at the go:** `cameron.s.allen+%@gmail.com` (any plus address), `cameron.s.allen@gmail.com` and `cameron@neuroprogeny.com` | Hub-owned (hub_223) |
 | T4 | Contact tag matching `test` (case-insensitive) | `contacts.tags` (4 contacts today) |
 
 Linked records:
@@ -42,13 +44,17 @@ Purchases are **test** when any of the following is true:
 | P1 | The buyer is a test person | as above |
 | P2 | Promo code `CTEST` or `CTEST2` (the codes used for test checkouts) | `promo_redemptions.promo_code` via `enrollment_id` |
 | P3 | The program's name contains "Test" (Test Retreat, Sensorium Walkthrough Test Program) | `programs.name` |
+| P1a | **The four test payments** (50¢ refunded, $10, $10 and $33.57) are under `cameron@neuroprogeny.com` and `cameron.s.allen+…` addresses, so P1 removes them | `payments.participant_id` → `profiles.email` |
 | P4 | **Stripe test mode.** No table records `livemode`. The platform webhook refuses any event whose `livemode` disagrees with `STRIPE_EXPECT_LIVEMODE` (`npu-platform-v2/src/app/api/stripe/webhook/route.ts:67`), so stored Stripe rows are live by construction. Test-mode rows from before that gate can't be told apart by data; P1–P3 catch the known ones | — |
 
-**Deliberately not used:** heuristics on names or emails such as "test" in a name, or
+**Not used to exclude:** heuristics on names or emails such as "test" in a name, or
 `example.com`.
-- 16 contacts and 21 profiles match loose patterns, and some are real people.
-- They appear as **suggestions** in the Targets › Test data panel. Cameron confirms them
-  into `hub_metric_exclusions`.
+- Contacts and profiles that match loose patterns (for example `sgranau+test…`) are listed in
+  **Analytics › Targets › Review test accounts**, each with **Exclude** or **Keep**.
+- Nothing beyond the seeded rows is excluded until Cameron presses Exclude. Keep records that
+  the person is real, so they stop being suggested.
+- A decision applies to new rollups at once. "Recompute now" (or the nightly run) rewrites
+  past days.
 
 ---
 
@@ -71,14 +77,15 @@ Purchases are **test** when any of the following is true:
 | Metric | Source and filter | Formula | Status |
 |---|---|---|---|
 | **Leads** | New contacts by `contacts.created_at`; dimension `channel` from the table above | count where channel ∉ {`prospecting`, `import`} (the scorecard counts inbound demand; prospecting is shown separately on Acquisition) | ✅ 22 contacts in Oct, all channels |
-| **Assessments sold** | `enrollments` (status active, completed or refunded) in programs with `offering_kind='assessment'` (In Office Neuro Assessment $750, Capacity Assessment $0), by `enrolled_at`. Dimension `paid` / `free` from `programs.price_cents` and promo | count | ⚠ 3 enrollments, all $0 so far |
+| **Assessments sold** | `payments` whose product (the description without "Paywall: ") contains "assessment", by `paid_at`, test excluded. Paid and $0 rows both count, because the Capacity Assessment is a $0 program. Dimension `paid` / `free` | count | ✅ |
 | **Booked calls** | `nr_bookings` created in period, status not `released`, for public free call types (WNW Discovery Call, Interesting meeting, Collaboration Meeting) | count | ⚠ 4 real bookings ever |
 | **Shows** | `nr_bookings.status='arrived'`, by `starts_at` | count | ⚠ the status exists but is never set yet (no one marks arrival) |
-| **Sales by program** | Paid program enrollments (`enrollments` with `paywall_id`, source `paywall` or `stripe`) and Clarity entitlements (`entitlements.keyword='clarity-protocol'`, `granted_by like 'paywall:%'`), by date; dimension = program | count | ✅ Clarity 6 in Oct; many are 100% promo (see P2 and Gap G3) |
-| **Clarity sales** | `entitlements.keyword='clarity-protocol'` granted by paywall `77ef2e05…` | count | ✅ |
+| **Sales (paid)** | `payments` with `amount_cents > 0` and a positive net after refunds, by `coalesce(paid_at, created_at)`, test excluded; dimension = product | count | ✅ |
+| **Comps** | `payments` with `amount_cents = 0` and status `succeeded` (100% promo enrollments), shown beside sales; dimension = product | count | ✅ |
+| **Clarity sales** | Paid sales with product `clarity-protocol`. Clarity comps count under Comps | count | ✅ |
 | **Onboarded** | First valid HRV session (`np_hrv_sessions.valid`, min `start_time` per participant) in period. "Fully onboarded" = consent, pairing and a session | count of clients whose first session falls in the period | ✅ 17 participants with sessions |
-| **Revenue** | `revenue_records.amount` (Stripe, by `paid_at`, minus `refund_amount`) + `acct_payments.amount` (clinic, by `payment_date`) + `fin_income.amount` where `source='manual'` and there's no Stripe id; dimension = stream | sum USD | ⚠ see Gap G1: Stripe revenue is under-recorded |
-| **Funnel strip** | Leads → Booked calls → Shows → Sales → Onboarded | step conversion = next ÷ previous, same period | ⚠ shows are missing |
+| **Revenue** | `payments` (`amount_cents − amount_refunded_cents`, by `coalesce(paid_at, created_at)`, status succeeded, refunded or partially refunded, test excluded) + `acct_payments.amount` (clinic, by `payment_date`) + `fin_income.amount` where `source='manual'`, with no Stripe or NP payment id and status not void, refunded, cancelled or pending (anything taken off-platform). Dimension = stream (`university`, `clinic`, `manual`). Labelled "Revenue" | sum USD | ✅ |
+| **Funnel strip** | Leads → Booked calls → Shows → Sales → Onboarded | step conversion = next ÷ previous, same period. The "biggest drop-off" skips Shows until they are recorded (G2) | ⚠ shows are missing |
 | **12-week trend** | Each of the above, weekly (Mon–Sun) | — | as above |
 
 ## 2. Acquisition
@@ -91,7 +98,7 @@ Purchases are **test** when any of the following is true:
 | Leads by campaign | `campaign_enrollments.campaign_id` (5 rows), plus `contacts.acquisition_campaign` (0 filled) | count | ⚠ |
 | Cost per lead | Spend ÷ leads (inbound channels), monthly. Spend = `acct_marketing_charges.amount` where not `waived`, by `month` | $ | ⚠ spend is clinic co-op charges only (G5) |
 | Cost per client | Spend ÷ sales, monthly | $ | ⚠ |
-| Speed to lead | Per new lead: minutes from `contacts.created_at` to the first outbound touch, which is the earliest of: `crm_messages` (direction `outbound`, joined through `conversations.contact_id`), `call_logs` (direction `outbound`), `message_sends` (status `sent`, `dry_run=false`), `email_sends.sent_at` | median minutes, per day | ⚠ Gmail-sent replies aren't visible (G6) |
+| Speed to lead | Per new scorecard lead: minutes from `contacts.created_at` to the first outbound touch, which is the earliest of: `crm_messages` (direction `outbound`, joined through `conversations.contact_id`), `call_logs` (direction `outbound`), `message_sends` (`dry_run=false`, sent), `email_sends.sent_at`. **A lead with no touch yet counts the minutes it has waited so far** | median minutes over the leads created in the range | ⚠ Gmail-sent replies aren't visible (G6) |
 | Lead → booked rate by source | Leads in period that have any `nr_bookings` (matched by email: contact ↔ lead or profile) within 30 days ÷ leads, by channel | % | ⚠ |
 
 ## 3. Sales
@@ -102,7 +109,7 @@ Purchases are **test** when any of the following is true:
 | Booked / held / no-show | `nr_bookings` status `confirmed` / `arrived` / `no_show`, by `starts_at` | count | ⚠ held and no-show never set |
 | Close rate | Sales ÷ booked calls (rolling 30 days) | % | ⚠ |
 | Median days lead → purchase | Contact `created_at` → first sale (enrollment or entitlement), joined by email | median days | ✅ |
-| Revenue by product | As Revenue; product = program through `revenue_records.enrollment_id → enrollments.program_id`, or the clinic `acct_services.service_type` | sum $ | ⚠ G1 |
+| Revenue by product | University payments only, by product (the payment description) | sum $ | ✅ |
 | Checkout started vs paid | Started: `np_onboarding_log` / enrollments in `pending` status | — | ❌ G7 (no checkout-started record) |
 | Promo sales | `promo_redemptions` by `created_at`, dimension = code; P2 excluded | count, discount $, final $ | ✅ |
 | Partner-referred sales | `affiliate_referrals` (0 rows), `promo_redemptions.affiliate_id` (0 set) | count | ❌ G8 |
@@ -145,9 +152,9 @@ completed lesson in the last 14 days.
 |---|---|---|---|
 | Clarity → Capacity upgrades | A profile with a `clarity-protocol` entitlement that later gets a Capacity Protocol entitlement or enrollment (`capacity-protocol*` keywords, programs named "Capacity Protocol…") | count by upgrade date | ✅ |
 | Membership tier mix | `subscriptions` (0 rows) | — | ❌ G9; shown from `entitlements` keywords as a stand-in |
-| Refunds | `enrollments.status='refunded'`, `revenue_records.refunded_at` / `refund_amount` | count, $ | ⚠ |
-| Repeat purchase | Buyers with ≥ 2 distinct paid programs | % of buyers | ✅ |
-| Lifetime value | Revenue per buyer (as Revenue, joined by profile) | mean $ | ⚠ G1 |
+| Refunds | `payments.amount_refunded_cents > 0`, on the payment's date (no refund date is stored) | count, $ | ✅ |
+| Repeat purchase | Buyers with ≥ 2 distinct paid products, all time | count | ✅ |
+| Lifetime value | All-time University revenue ÷ paying buyers (net of refunds) | mean $ | ✅ |
 
 ## 7. Marketing engine
 
@@ -182,9 +189,9 @@ completed lesson in the last 14 days.
 
 | # | Gap | What would close it |
 |---|---|---|
-| G1 | **Stripe revenue is under-recorded.** `payments` is empty. `revenue_records` holds $6,554 in total, and its Clarity/Capacity rows are $0 even where the paywall price is $3,297, because most were 100% promo, and real paid checkouts aren't all written (see `docs/revenue/findings.md`). | A platform-side fix to its revenue ledger, or a Hub read of Stripe charges (Stripe API, read-only). Until then, revenue = recorded rows only |
+| G1 | **Closed 2026-11-03 (my error).** The first mapping read `payments` as empty. It holds 29 rows, 5 with amounts, and four of those are Cameron's tests. The platform ledger is accurate. Revenue now comes from `payments`, and no Stripe reader is needed | — |
 | G2 | **Shows and no-shows.** `nr_bookings.status` supports `arrived` / `no_show`, but nothing sets them | Mark arrival in the University, or infer it from the Zoom join |
-| G3 | **Comp vs sale.** 27 promo redemptions gave $78,521 of discounts for $53 paid; most "sales" are comps | Decide whether a 100%-discount enrollment counts as a sale. The dashboard shows paid and comp separately |
+| G3 | **Comp vs sale (ruled).** A $0 payment (100% promo) is a comp. It is shown beside sales and not counted as one | — |
 | G4 | **Lead device.** No table stores a device or user agent | Capture it at the lead forms and quiz (University) |
 | G5 | **Ad spend.** Only clinic marketing co-op charges exist (`acct_marketing_charges`) | A spend table or entries per channel |
 | G6 | **Gmail replies** from connected mailboxes don't count toward speed to lead (only inbox mail is synced) | Sync the Sent label in mail-sync |
