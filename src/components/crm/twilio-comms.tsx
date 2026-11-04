@@ -227,7 +227,7 @@ export function VoipCall({ contact, onClose, onEnded, lineE164 }: {
   // End at any stage. The provider hangs up and reports back once the call is
   // actually gone; the panel follows that.
   const handleHangup = () => {
-    if (mine && outbound.live) outbound.hangUp('call_panel')
+    if (mine && outbound.live) outbound.hangUp()
     else onEndedRef.current?.()
   }
 

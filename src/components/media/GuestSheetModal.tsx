@@ -3,8 +3,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { X, Save, ExternalLink, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase-browser'
-import { useRouter } from 'next/navigation'
-import { openHubPage } from '@/lib/call-navigation-guard'
 
 interface Appearance {
   id: string
@@ -41,7 +39,6 @@ interface GuestSheetModalProps {
 }
 
 export default function GuestSheetModal({ appearance, orgId, onClose }: GuestSheetModalProps) {
-  const router = useRouter()
   const [guestProfile, setGuestProfile] = useState<GuestProfile>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -129,7 +126,7 @@ export default function GuestSheetModal({ appearance, orgId, onClose }: GuestShe
         .update({ guest_sheet_overrides: buildOverrides() })
         .eq('id', appearance.id)
       if (error) throw error
-      openHubPage(`/guest-sheet/${appearance.id}`, router.push)
+      window.open(`/guest-sheet/${appearance.id}`, '_blank')
       onClose()
     } catch (e) {
       console.error('Failed to save guest sheet overrides:', e)
@@ -140,7 +137,7 @@ export default function GuestSheetModal({ appearance, orgId, onClose }: GuestShe
   }
 
   const handleGenerateWithoutSaving = () => {
-    openHubPage(`/guest-sheet/${appearance.id}`, router.push)
+    window.open(`/guest-sheet/${appearance.id}`, '_blank')
     onClose()
   }
 
