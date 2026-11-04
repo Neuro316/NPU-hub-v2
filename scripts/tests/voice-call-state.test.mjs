@@ -9,6 +9,7 @@ import assert from 'node:assert/strict'
 import {
   applyCallEvent, shouldRing, createRinger, isMicrophoneError,
   createOutboundCall, createOutboundStore, MIC_BLOCKED_MESSAGE,
+  reviveAction, AUTO_RECONNECT_MIN_GAP_MS,
 } from '../../src/lib/voice-call-state.ts'
 
 const call = (id, phase = 'ringing') => ({ id, phase, connectedAt: null, muted: false })
@@ -414,7 +415,7 @@ function storeHarness({ gateMic = false } = {}) {
     }
     let grant
     const mic = gateMic ? new Promise(r => { grant = r }) : Promise.resolve({ ok: true })
-    const rec = { target, call, device, server: [], timers: [], grant: () => grant({ ok: true }) }
+    const rec = { target, call, device, server: [], reasons: [], timers: [], grant: () => grant({ ok: true }) }
     made.push(rec)
     return {
       ensureMicrophone: () => mic,
@@ -422,7 +423,7 @@ function storeHarness({ gateMic = false } = {}) {
       createDevice: () => device,
       onRemoteAudio: () => {},
       ringback: { start() {}, stop() {} },
-      hangupOnServer: id => rec.server.push(id),
+      hangupOnServer: (id, reason) => { rec.server.push(id); rec.reasons.push(reason) },
       later: (fn) => { rec.timers.push(fn) },
     }
   }, () => clock)
@@ -457,6 +458,78 @@ test('store: a call survives a route change (every subscriber unmounting)', asyn
   assert.equal(seen.ended.session, res.session)
   assert.equal(seen.ended.wasConnected, true)
   unsubOther()
+})
+
+test('store: a call survives navigating to a contact card and back (call navigation guard)', async () => {
+  const { store, made } = storeHarness()
+  // On the Conversations page, a call is placed and answered.
+  const unsubConversations = store.subscribe(() => {})
+  const res = store.place(target('A'))
+  await flush(); await flush()
+  made[0].call.emit('accept')
+  const connectedAt = store.getSnapshot().connectedAt
+  // Route change to the contact card: the Conversations page unmounts, the
+  // contact page mounts. Then back again.
+  unsubConversations()
+  const unsubContact = store.subscribe(() => {})
+  unsubContact()
+  const unsubBack = store.subscribe(() => {})
+  const snap = store.getSnapshot()
+  assert.equal(snap.stage, 'connected')
+  assert.equal(snap.session, res.session)
+  assert.equal(snap.connectedAt, connectedAt, 'the call timer keeps its start time')
+  assert.equal(made[0].call.disconnects, 0, 'no navigation hung up')
+  assert.equal(made[0].device.destroyed, 0, 'the device (and its audio) was not torn down')
+  unsubBack()
+  store.hangUp()
+})
+
+test('store: a call placed from the Dialer survives Conversations, a contact and Pipelines', async () => {
+  const { store, made } = storeHarness()
+  // Each page that shows the call subscribes while mounted, like useSyncExternalStore.
+  const page = () => store.subscribe(() => {})
+  const unsubDialer = page()
+  const res = store.place(target('A'))
+  await flush(); await flush()
+  made[0].call.emit('accept')
+  const connectedAt = store.getSnapshot().connectedAt
+  // Dialer -> Conversations -> a contact card -> Pipelines, one page at a time.
+  unsubDialer()
+  for (const name of ['conversations', 'contact', 'pipelines']) {
+    const unsub = page()
+    const snap = store.getSnapshot()
+    assert.equal(snap.stage, 'connected', `still connected on ${name}`)
+    assert.equal(snap.session, res.session, `same call on ${name}`)
+    assert.equal(snap.connectedAt, connectedAt, `timer kept on ${name}`)
+    unsub()
+  }
+  assert.equal(made[0].call.disconnects, 0, 'no navigation hung up')
+  assert.equal(made[0].device.disconnectAlls, 0)
+  assert.equal(made[0].device.destroyed, 0, 'the device (and its audio) was not torn down')
+  assert.deepEqual(made[0].server, [], 'no server hangup')
+  store.hangUp('dialer_end')
+  assert.deepEqual(made[0].reasons, ['dialer_end'])
+})
+
+test('store: every hangup tells the server why; unmounting the layout says so', async () => {
+  const { store, made } = storeHarness()
+  store.place(target('A'))
+  await flush(); await flush()
+  made[0].call.emit('accept')
+  store.hangUp('call_controls')
+  assert.deepEqual(made[0].reasons, ['call_controls'])
+
+  store.place(target('B'))
+  await flush(); await flush()
+  made[1].call.emit('accept')
+  store.dispose()
+  assert.deepEqual(made[1].reasons, ['layout_unmount'], 'a provider unmount is named in the log')
+
+  store.place(target('C'))
+  await flush(); await flush()
+  made[2].call.emit('accept')
+  store.hangUp()
+  assert.deepEqual(made[2].reasons, ['unspecified'])
 })
 
 test('store: only one live call at a time', async () => {
@@ -531,4 +604,42 @@ test('store: a late event from an ended call cannot touch the next call', async 
   made[0].call.emit('disconnect')
   assert.equal(store.getSnapshot().stage, 'ringing')
   assert.equal(store.getSnapshot().target.contactId, 'B')
+})
+
+// ── Receiver recovery (reviveAction) ─────────────────────────────────────────
+
+const base = {
+  enabled: true, hasOrg: true, status: 'ready', deviceState: 'registered',
+  activeCalls: 0, visible: true, online: true, lastReconnectAt: 0, now: 100_000,
+}
+
+test('revive: a healthy registration is left alone', () => {
+  assert.equal(reviveAction(base), 'none')
+})
+
+test('revive: "Not receiving calls" reconnects in full when the tab is back', () => {
+  // Errored Device, torn-down Device (failed register), destroyed Device.
+  assert.equal(reviveAction({ ...base, status: 'error', deviceState: 'unregistered' }), 'reconnect')
+  assert.equal(reviveAction({ ...base, status: 'error', deviceState: null }), 'reconnect')
+  assert.equal(reviveAction({ ...base, status: 'starting', deviceState: 'destroyed' }), 'reconnect')
+})
+
+test('revive: a dropped but valid registration only re-registers', () => {
+  assert.equal(reviveAction({ ...base, status: 'starting', deviceState: 'unregistered' }), 'register')
+})
+
+test('revive: never while hidden, offline, off, or under a ringing or live call', () => {
+  const err = { ...base, status: 'error', deviceState: null }
+  assert.equal(reviveAction({ ...err, visible: false }), 'none')
+  assert.equal(reviveAction({ ...err, online: false }), 'none')
+  assert.equal(reviveAction({ ...err, enabled: false }), 'none')
+  assert.equal(reviveAction({ ...err, status: 'off' }), 'none')
+  assert.equal(reviveAction({ ...err, activeCalls: 1 }), 'none')
+  assert.equal(reviveAction({ ...err, hasOrg: false }), 'none')
+})
+
+test('revive: full reconnects are spaced out, so a failing one cannot loop', () => {
+  const err = { ...base, status: 'error', deviceState: null }
+  assert.equal(reviveAction({ ...err, lastReconnectAt: err.now - 1000 }), 'none')
+  assert.equal(reviveAction({ ...err, lastReconnectAt: err.now - AUTO_RECONNECT_MIN_GAP_MS }), 'reconnect')
 })

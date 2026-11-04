@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
 import {
@@ -98,6 +98,7 @@ const SHOW_NOTES_CHECKLIST = [
 ]
 
 export default function GuestSheetPage() {
+  const router = useRouter()
   const params = useParams()
   const id = params.id as string
   const supabase = createClient()
@@ -241,7 +242,7 @@ export default function GuestSheetPage() {
         {/* Print button - hidden in print */}
         <div className="no-print mb-6 flex items-center justify-between">
           <button
-            onClick={() => { window.location.href = '/media-affiliates' }}
+            onClick={() => router.push('/media-affiliates')}
             className="text-sm text-gray-500 hover:text-gray-700"
           >
             &larr; Back

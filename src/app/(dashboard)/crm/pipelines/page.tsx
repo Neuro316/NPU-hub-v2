@@ -75,7 +75,81 @@ export interface CardConfig {
     consent_billing: boolean
     minor_guardian: boolean
     intelligence_ai: boolean
+    // On the board card itself. Absent means on, so every pipeline, including
+    // one whose card settings were saved before these existed, shows them.
+    recent_notes?: boolean
+    open_tasks?: boolean
   }
+}
+
+const BOARD_SECTION_LABELS: Record<'recent_notes' | 'open_tasks', string> = {
+  recent_notes: 'Recent notes',
+  open_tasks: 'Open tasks',
+}
+const boardSectionOn = (cfg: CardConfig | undefined, key: 'recent_notes' | 'open_tasks') => cfg?.sections?.[key] !== false
+
+// Recent notes and open tasks for one card (/api/crm/pipeline-card-activity).
+interface CardActivity {
+  notes: { id: string; body: string; created_at: string }[]
+  notes_total: number
+  tasks: { id: string; title: string; due_date: string | null }[]
+  tasks_total: number
+}
+
+// "Oct 28". A due date saved from a date picker is stored as midnight UTC, so it
+// is read as that calendar day rather than shifted into the previous local day.
+function dueDay(ts: string): Date {
+  const d = new Date(ts)
+  return d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0
+    ? new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
+    : new Date(d.getFullYear(), d.getMonth(), d.getDate())
+}
+const shortDate = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+
+function CardActivitySections({ activity, showNotes, showTasks, onMore }: {
+  activity: CardActivity | undefined
+  showNotes: boolean
+  showTasks: boolean
+  onMore: () => void
+}) {
+  if (!activity) return null
+  const notes = showNotes ? activity.notes : []
+  const tasks = showTasks ? activity.tasks : []
+  if (!notes.length && !tasks.length) return null
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const more = (n: number) => n > 0 && (
+    <button onClick={e => { e.stopPropagation(); onMore() }} className="text-[9px] text-np-blue hover:underline">+{n} more</button>
+  )
+  return (
+    <div className="mt-2 pt-2 border-t border-gray-50 space-y-1.5">
+      {notes.length > 0 && (
+        <div>
+          <p className="text-[8px] font-semibold uppercase tracking-wider text-gray-300">Recent notes</p>
+          {notes.map(n => (
+            <p key={n.id} className="text-[9px] text-gray-500 truncate" title={n.body}>
+              <span className="text-gray-400">{shortDate(new Date(n.created_at))}</span> {n.body}
+            </p>
+          ))}
+          {more(activity.notes_total - notes.length)}
+        </div>
+      )}
+      {tasks.length > 0 && (
+        <div>
+          <p className="text-[8px] font-semibold uppercase tracking-wider text-gray-300">Open tasks</p>
+          {tasks.map(t => {
+            const due = t.due_date ? dueDay(t.due_date) : null
+            const overdue = !!due && due < today
+            return (
+              <p key={t.id} className="text-[9px] text-gray-500 truncate" title={t.title}>
+                <span className={overdue ? 'text-red-500 font-semibold' : 'text-gray-400'}>{due ? shortDate(due) : 'No date'}</span> {t.title}
+              </p>
+            )
+          })}
+          {more(activity.tasks_total - tasks.length)}
+        </div>
+      )}
+    </div>
+  )
 }
 
 const CARD_CONFIG_TEMPLATES: Record<string, CardConfig> = {
@@ -128,7 +202,7 @@ const TEMPLATES: Record<string, PipelineStageConfig[]> = {
   ],
 }
 
-function ContactCard({ contact, stages, pipelines, activePipelineId, customFields, dealValue, onSaveValue, onMove, onMovePipeline, onRemovePipeline, onOpenContact }: { 
+function ContactCard({ contact, stages, pipelines, activePipelineId, customFields, dealValue, onSaveValue, onMove, onMovePipeline, onRemovePipeline, onOpenContact, activity, showNotes, showTasks }: { 
   contact: CrmContact
   dealValue: number | null
   onSaveValue: (value: number | null) => Promise<void>
@@ -140,6 +214,9 @@ function ContactCard({ contact, stages, pipelines, activePipelineId, customField
   onMovePipeline: (pipelineId: string, firstStage: string) => void
   onRemovePipeline: () => void
   onOpenContact: (id: string) => void
+  activity?: CardActivity
+  showNotes: boolean
+  showTasks: boolean
 }) {
   const [showMenu, setShowMenu] = useState(false)
   const [menuSection, setMenuSection] = useState<'main'|'stage'|'pipeline'>('main')
@@ -229,6 +306,7 @@ function ContactCard({ contact, stages, pipelines, activePipelineId, customField
         {daysSince !== null && daysSince > 7 && <span className="text-[9px] text-orange-400">{daysSince}d</span>}
         <LeadValueEditor value={dealValue} onSave={onSaveValue} onEditingChange={setEditingValue} />
       </div>
+      <CardActivitySections activity={activity} showNotes={showNotes} showTasks={showTasks} onMore={() => onOpenContact(contact.id)} />
       <div className="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-all" onClick={e => e.stopPropagation()}>
         <ContactCommsButtons contact={contact} size="sm" />
       </div>
@@ -652,11 +730,15 @@ function CardConfigEditor({ pipeline, onSave, onClose }: { pipeline: PipelineCon
 
   const setTemplate = (tpl: string) => {
     const t = CARD_CONFIG_TEMPLATES[tpl] || CARD_CONFIG_TEMPLATES.marketing
-    setCfg({ ...t, sections: { ...t.sections } })
+    setCfg(prev => ({ ...t, sections: { ...t.sections, recent_notes: boardSectionOn(prev, 'recent_notes'), open_tasks: boardSectionOn(prev, 'open_tasks') } }))
   }
 
   const toggle = (key: keyof CardConfig['sections']) =>
     setCfg(prev => ({ ...prev, template: 'custom', sections: { ...prev.sections, [key]: !prev.sections[key] } }))
+  // Board sections default on, so absent counts as on. Changing them is not a
+  // template change: templates do not set them.
+  const toggleBoard = (key: 'recent_notes' | 'open_tasks') =>
+    setCfg(prev => ({ ...prev, sections: { ...prev.sections, [key]: !boardSectionOn(prev, key) } }))
 
   const sectionKeys = Object.keys(SECTION_LABELS) as Array<keyof CardConfig['sections']>
   const TPL_OPTIONS: [string, string][] = [['marketing','Marketing / Outreach'],['clinical','Clinical / Research'],['mastermind','Mastermind'],['minimal','Minimal']]
@@ -680,6 +762,22 @@ function CardConfigEditor({ pipeline, onSave, onClose }: { pipeline: PipelineCon
               {l}
             </button>
           ))}
+        </div>
+
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">On the Board Card</p>
+        <div className="space-y-1.5 mb-4">
+          {(Object.keys(BOARD_SECTION_LABELS) as Array<'recent_notes' | 'open_tasks'>).map(key => {
+            const on = boardSectionOn(cfg, key)
+            return (
+              <button key={key} onClick={() => toggleBoard(key)}
+                className={'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all ' + (on ? 'border-np-blue/30 bg-np-blue/5' : 'border-gray-100 bg-gray-50/50')}>
+                <div className={'w-8 h-4 rounded-full relative flex-shrink-0 transition-colors ' + (on ? 'bg-np-blue' : 'bg-gray-200')}>
+                  <div className="absolute top-0.5 w-3 h-3 bg-white rounded-full shadow-sm transition-all" style={{ left: on ? '17px' : '2px' }} />
+                </div>
+                <span className={'text-xs font-medium ' + (on ? 'text-np-dark' : 'text-gray-400')}>{BOARD_SECTION_LABELS[key]}</span>
+              </button>
+            )
+          })}
         </div>
 
         <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Field Sections</p>
@@ -874,6 +972,8 @@ export default function PipelinesPage() {
   const toast = useToast()
   // Deals for the active pipeline, keyed by contact id.
   const [deals, setDeals] = useState<Record<string, PipelineDeal>>({})
+  // Recent notes and open tasks for the active pipeline's cards, keyed by contact id.
+  const [activity, setActivity] = useState<Record<string, CardActivity>>({})
   const activePipeline = pipelines.find(p => p.id === activePipelineId) || pipelines[0]
 
   useEffect(() => {
@@ -926,6 +1026,32 @@ export default function PipelinesPage() {
       .catch(e => console.error('[Pipelines] deals load error:', e))
     return () => { cancelled = true }
   }, [currentOrg?.id, activePipeline?.id])
+
+  // One request for the whole board. Pipelines whose cards show neither section
+  // skip it entirely.
+  const cardSectionsOn = boardSectionOn(activePipeline?.card_config, 'recent_notes') || boardSectionOn(activePipeline?.card_config, 'open_tasks')
+  useEffect(() => {
+    if (!currentOrg || !activePipeline?.id || !cardSectionsOn) { setActivity({}); return }
+    let cancelled = false
+    setActivity({})
+    fetch(`/api/crm/pipeline-card-activity?org_id=${currentOrg.id}&pipeline_key=${encodeURIComponent(activePipeline.id)}`)
+      .then(r => r.json())
+      .then(j => { if (!cancelled && j?.activity) setActivity(j.activity) })
+      .catch(e => console.error('[Pipelines] card activity load error:', e))
+    return () => { cancelled = true }
+  }, [currentOrg?.id, activePipeline?.id, cardSectionsOn])
+
+  // One card, after a note or task changed in the contact detail view.
+  const refreshCardActivity = (contactId: string) => {
+    if (!currentOrg || !activePipeline?.id || !cardSectionsOn) return
+    fetch(`/api/crm/pipeline-card-activity?org_id=${currentOrg.id}&pipeline_key=${encodeURIComponent(activePipeline.id)}&contact_id=${contactId}`)
+      .then(r => r.json())
+      .then(j => {
+        if (!j?.activity) return
+        setActivity(a => { const n = { ...a }; if (j.activity[contactId]) n[contactId] = j.activity[contactId]; else delete n[contactId]; return n })
+      })
+      .catch(e => console.error('[Pipelines] card activity refresh error:', e))
+  }
 
   const postDeal = async (payload: Record<string, unknown>): Promise<PipelineDeal> => {
     const res = await fetch('/api/crm/pipeline-deals', {
@@ -1131,7 +1257,7 @@ export default function PipelinesPage() {
                 onDragLeave={e => { e.currentTarget.classList.remove('bg-np-blue/10', 'border-np-blue/40', 'scale-[1.01]'); e.currentTarget.classList.add('bg-gray-50/50', 'border-gray-100/50') }}
                 onDrop={e => { e.preventDefault(); e.currentTarget.classList.remove('bg-np-blue/10', 'border-np-blue/40', 'scale-[1.01]'); e.currentTarget.classList.add('bg-gray-50/50', 'border-gray-100/50'); const cid = e.dataTransfer.getData('contactId'); if (cid) moveContact(cid, stage.name) }}
               >
-                {sc.map(c => <ContactCard key={c.id} contact={c} stages={activePipeline.stages} pipelines={pipelines} activePipelineId={activePipelineId} customFields={activePipeline.custom_fields || []} dealValue={deals[c.id]?.value ?? null} onSaveValue={v => saveDealValue(c.id, v)} onMove={s => moveContact(c.id, s)} onMovePipeline={(pid, fs) => moveToPipeline(c.id, pid, fs)} onRemovePipeline={() => setRemoveTarget(c)} onOpenContact={setSelectedContactId} />)}
+                {sc.map(c => <ContactCard key={c.id} contact={c} stages={activePipeline.stages} pipelines={pipelines} activePipelineId={activePipelineId} customFields={activePipeline.custom_fields || []} dealValue={deals[c.id]?.value ?? null} onSaveValue={v => saveDealValue(c.id, v)} onMove={s => moveContact(c.id, s)} onMovePipeline={(pid, fs) => moveToPipeline(c.id, pid, fs)} onRemovePipeline={() => setRemoveTarget(c)} onOpenContact={setSelectedContactId} activity={activity[c.id]} showNotes={boardSectionOn(activePipeline.card_config, 'recent_notes')} showTasks={boardSectionOn(activePipeline.card_config, 'open_tasks')} />)}
                 {sc.length === 0 && <div className="text-center py-8 text-[10px] text-gray-400">No contacts</div>}
               </div>
             </div>
@@ -1147,8 +1273,11 @@ export default function PipelinesPage() {
       {showNewContact && <NewContactModal pipeline={activePipeline} firstStage={activePipeline.stages[0]?.name || 'New Lead'} onSave={handleNewContact} onClose={() => setShowNewContact(false)} />}
       {selectedContactId && <ContactDetail contactId={selectedContactId} cardConfig={activePipeline.card_config} pipelineCustomFields={activePipeline.custom_fields}
         leadValue={{ pipelineName: activePipeline.name, value: deals[selectedContactId]?.value ?? null, onSave: v => saveDealValue(selectedContactId, v) }}
-        onClose={() => setSelectedContactId(null)} onUpdate={() => {
+        onClose={() => setSelectedContactId(null)}
+        onActivityChange={() => refreshCardActivity(selectedContactId)}
+        onUpdate={() => {
         if (!currentOrg) return
+        refreshCardActivity(selectedContactId)
         const before = contacts.find(c => c.id === selectedContactId)
         fetchContacts({ org_id: currentOrg.id, limit: 500 }).then(r => {
           setContacts(r.contacts)

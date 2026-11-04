@@ -1,7 +1,8 @@
 // node scripts/resources/plan-check.mjs
 // Checks the Send resources pure rules (src/lib/resources/plan.ts): the 20 MB split
-// (largest attached file moves to a link while the total is over) and the email text.
-import { splitFiles, emailBodies, ATTACH_LIMIT_BYTES } from '../../src/lib/resources/plan.ts'
+// (largest attached file moves to a link while the total is over), the email text and the
+// "Send from" default.
+import { splitFiles, emailBodies, defaultFrom, ATTACH_LIMIT_BYTES } from '../../src/lib/resources/plan.ts'
 
 const MB = 1024 * 1024
 const f = (id, mb) => ({ id, name: id, size_bytes: Math.round(mb * MB) })
@@ -31,6 +32,20 @@ const pre = emailBodies('Hi', [{ name: 'Big guide' }], exp)
 if (!pre.text.includes('Big guide: [download link]') || !pre.text.includes('November 10, 2026') || !pre.text.includes('One file was')) { fail++; console.log('FAIL preview links') }
 const real = emailBodies('Hi', [{ name: 'A & B', url: 'https://x/y?token=1&b=2' }, { name: 'C', url: 'https://x/c' }], exp)
 if (!real.html.includes('href="https://x/y?token=1&amp;b=2"') || !real.html.includes('A &amp; B') || !real.text.includes('Some files were')) { fail++; console.log('FAIL real links') }
-const total = cases.length + 3
+const mb = (id, email_address, usable = true) => ({ id, email_address, usable })
+const fromCases = [
+  ['Cameron: the own mailbox first', [mb('ops', 'ops@neuroprogeny.com'), mb('me', 'cameron.allen@neuroprogeny.com'), mb('adm', 'admin@neuroprogeny.com')], 'me'],
+  ['anyone else: ops@', [mb('ops', 'ops@neuroprogeny.com'), mb('x', 'paul@neuroprogeny.com')], 'ops'],
+  ['own mailbox unusable: ops@', [mb('me', 'cameron.allen@neuroprogeny.com', false), mb('ops', 'ops@neuroprogeny.com')], 'ops'],
+  ['neither: the first usable', [mb('x', 'x@neuroprogeny.com', false), mb('y', 'y@neuroprogeny.com')], 'y'],
+  ['address case is ignored', [mb('ops', 'Ops@NeuroProgeny.com')], 'ops'],
+  ['nothing usable: none', [mb('ops', 'ops@neuroprogeny.com', false)], null],
+  ['no mailboxes: none', [], null],
+]
+for (const [name, list, want] of fromCases) {
+  const got = defaultFrom(list)?.id ?? null
+  if (got !== want) { fail++; console.log(`FAIL from: ${name}: want ${want} got ${got}`) }
+}
+const total = cases.length + 3 + fromCases.length
 console.log(fail ? `plan-check FAIL ${fail}/${total}` : `plan-check PASS ${total}/${total}`)
 process.exit(fail ? 1 : 0)
