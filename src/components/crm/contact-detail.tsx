@@ -30,6 +30,8 @@ import { helpId } from '@/lib/agent/help/help-id'
 import { LeadValueEditor } from '@/components/crm/lead-value'
 import { AddNamePrompt } from '@/components/crm/add-name-prompt'
 import { needsName } from '@/lib/call-new-number'
+import { BookingAnswers } from '@/components/crm/booking-answers'
+import { SendResources } from '@/components/crm/send-resources'
 
 interface PipelineCustomField {
   id: string
@@ -57,6 +59,8 @@ const EVENT_ICONS: Record<string, any> = {
   note_added: FileText, quiz_completed: Brain, mastermind_enrolled: GraduationCap,
   lifecycle_event: Activity, health_score_changed: Heart,
   tag_added: Tag, tag_removed: Tag,
+  booking_created: Calendar, booking_rescheduled: Calendar, booking_cancelled: Calendar,
+  resources_sent: Send,
 }
 
 const EVENT_COLORS: Record<string, string> = {
@@ -64,6 +68,8 @@ const EVENT_COLORS: Record<string, string> = {
   email_sent: '#f59e0b', pipeline_changed: '#ec4899', task_created: '#6b7280',
   task_completed: '#22c55e', note_added: '#64748b', quiz_completed: '#386797',
   mastermind_enrolled: '#059669', health_score_changed: '#ef4444',
+  booking_created: '#228DC4', booking_rescheduled: '#f59e0b', booking_cancelled: '#ef4444',
+  resources_sent: '#228DC4',
 }
 
 const HEALTH_CONFIG: Record<string, { color: string; bg: string; label: string }> = {
@@ -1348,6 +1354,10 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                       {contact.guardian_email && <p className="text-[10px] text-gray-500">{contact.guardian_email}</p>}
                     </div>
                   )}
+
+                  {contactId && <BookingAnswers contactId={contactId} />}
+
+                  {contactId && <SendResources contactId={contactId} />}
 
                   <div className="space-y-2">
                     <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
