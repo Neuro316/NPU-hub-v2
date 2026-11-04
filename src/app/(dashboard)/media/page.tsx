@@ -5,7 +5,6 @@ import { useMediaData } from '@/lib/hooks/use-media-data'
 import type { MediaAsset } from '@/lib/hooks/use-media-data'
 // Upload handled via /api/media/upload route
 import { useWorkspace } from '@/lib/workspace-context'
-import { useQuickSendIndex, QuickSendBadge, MediaQuickSendSection } from '@/components/media/quick-send-toggle'
 import { Plus, Search, Grid, List, Upload, Image, Film, FileText, Folder, X, ExternalLink, Trash2, Tag, Eye, Download, Play, Maximize2, MoreVertical, Link2, CheckCircle2, Copy } from 'lucide-react'
 
 const BRAND_OPTIONS = [
@@ -108,9 +107,6 @@ export default function MediaPage() {
   const [search, setSearch] = useState('')
   const [brandFilter, setBrandFilter] = useState('all')
   const [collectionFilter, setCollectionFilter] = useState<string | null>(null)
-  // Quick Send: which items are in it (hub_quick_send_items), and the filter.
-  const quickSend = useQuickSendIndex(currentOrg?.id)
-  const [quickSendOnly, setQuickSendOnly] = useState(false)
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [gridSize, setGridSize] = useState<'sm' | 'md' | 'lg'>('md')
   const [selectedAsset, setSelectedAsset] = useState<MediaAsset | null>(null)
@@ -137,7 +133,6 @@ export default function MediaPage() {
     if (search && !a.name.toLowerCase().includes(search.toLowerCase()) && !a.tags.some(t => t.toLowerCase().includes(search.toLowerCase()))) return false
     if (brandFilter !== 'all' && a.brand !== brandFilter) return false
     if (collectionFilter && a.collection_id !== collectionFilter) return false
-    if (quickSendOnly && !quickSend.items.has(a.id)) return false
     return true
   })
 
@@ -328,12 +323,6 @@ export default function MediaPage() {
           ))}
         </div>
 
-        {/* Quick Send filter */}
-        <button onClick={() => setQuickSendOnly(q => !q)} aria-pressed={quickSendOnly}
-          className={`text-[10px] font-medium px-2.5 py-1.5 rounded-lg ${quickSendOnly ? 'bg-fire text-np-dark' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-          Quick Send
-        </button>
-
         {/* Size + View toggle */}
         <div className="flex items-center gap-2">
           {viewMode === 'grid' && (
@@ -424,11 +413,10 @@ export default function MediaPage() {
                   </div>
                 )}
                 {/* Brand badge */}
-                <div className="absolute bottom-2 left-2 flex items-center gap-1">
+                <div className="absolute bottom-2 left-2">
                   <span className="text-[7px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-black/50 text-white">
                     {asset.brand === 'np' ? 'NP' : asset.brand === 'sensorium' ? 'SEN' : 'ALL'}
                   </span>
-                  {quickSend.items.get(asset.id)?.available && <QuickSendBadge />}
                 </div>
               </div>
               {/* Info */}
@@ -472,7 +460,6 @@ export default function MediaPage() {
                     {asset.tags.slice(0, 3).map(t => (
                       <span key={t} className="text-[8px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">{t}</span>
                     ))}
-                    {quickSend.items.get(asset.id)?.available && <QuickSendBadge />}
                   </div>
                 </div>
                 <div className="text-[9px] text-gray-400 flex-shrink-0 mr-2">
@@ -616,10 +603,6 @@ export default function MediaPage() {
                     }}
                     className="w-full text-xs border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300" />
                 </div>
-                {currentOrg && (
-                  <MediaQuickSendSection orgId={currentOrg.id} assetId={selectedAsset.id}
-                    hasFile={!!(selectedAsset as any).storage_path} index={quickSend} />
-                )}
                 {selectedAsset.url && (
                   <div className="flex items-center gap-3">
                     <button onClick={() => { navigator.clipboard.writeText(selectedAsset.url); setCopiedId(selectedAsset.id); setTimeout(() => setCopiedId(null), 1500) }}

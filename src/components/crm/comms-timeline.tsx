@@ -5,9 +5,6 @@
 // One timestamp-sorted stream per contact, UNIONing:
 //   - crm_messages  (texts / MMS)
 //   - call_logs     (calls / voicemails / missed)
-//   - hub_quick_send_sends (Quick Send emails, one entry per email: the
-//                   resources, who sent it and when; crm_messages only holds
-//                   texts, so these come from the send records)
 // Used by BOTH the /crm/conversations comms tab and the contact-card panel so
 // they render identically. Voicemails get an in-browser player pointed at the
 // authenticated proxy (/api/comms/recording/[id]) + inline transcript. A recorded
@@ -20,10 +17,10 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { fmtClock, fmtFull, fmtDuration, groupByDay, UNDATED_LABEL } from '@/lib/date-format'
 import {
   Voicemail, Loader2, PhoneMissed, ArrowUpRight, ArrowDownLeft,
-  Check, CheckCheck, Clock, Paperclip, PhoneCall, Play, FileText,
+  Check, CheckCheck, Clock, Paperclip, PhoneCall, Play,
 } from 'lucide-react'
 
-export type TimelineKind = 'text' | 'call' | 'voicemail' | 'missed' | 'quick_send'
+export type TimelineKind = 'text' | 'call' | 'voicemail' | 'missed'
 
 export interface TimelineEntry {
   id: string                       // crm_messages.id or call_logs.id (proxy key for voicemail)
@@ -41,10 +38,6 @@ export interface TimelineEntry {
   /** The org line this event used: inbound -> the number dialled/texted,
    *  outbound -> the From. Null when unknown (older outbound calls). */
   line_e164?: string | null
-  /** Quick Send: the attached resources, who sent it, and to which address. */
-  resources?: string[]
-  sender?: string | null
-  to_email?: string | null
 }
 
 // ── Data: load + merge both tables for a contact ──
@@ -100,38 +93,6 @@ export async function buildTimeline(
       line_e164: (c.direction === 'inbound' ? c.to_number : c.from_number) || null,
     })
   })
-
-  // Quick Send emails — by contact, one entry per email (batch_id). Best effort:
-  // a failed read leaves the texts and calls as they are.
-  try {
-    const { data: sends } = await supabase
-      .from('hub_quick_send_sends')
-      .select('batch_id, asset_name, to_email, sender_email, status, sent_at')
-      .eq('contact_id', opts.contactId)
-      .order('sent_at', { ascending: true })
-    const batches = new Map<string, any[]>()
-    for (const s of sends || []) batches.set(s.batch_id, [...(batches.get(s.batch_id) || []), s])
-    const emails = Array.from(new Set((sends || []).map((s: any) => s.sender_email).filter(Boolean)))
-    const names = new Map<string, string>()
-    if (emails.length) {
-      const { data: team } = await supabase.from('team_profiles').select('email, display_name').in('email', emails)
-      for (const t of team || []) if (t.email && t.display_name) names.set(t.email, t.display_name)
-    }
-    batches.forEach((rows, batchId) => {
-      const first = rows[0]
-      entries.push({
-        id: `quick-send-${batchId}`,
-        kind: 'quick_send',
-        direction: 'outbound',
-        body: null,
-        status: first.status,
-        created_at: first.sent_at,
-        resources: rows.map(r => r.asset_name),
-        sender: names.get(first.sender_email) || first.sender_email || null,
-        to_email: first.to_email,
-      })
-    })
-  } catch { /* no Quick Send records readable */ }
 
   const filtered = opts.directionFilter && opts.directionFilter !== 'both'
     ? entries.filter(e => e.direction === opts.directionFilter)
@@ -333,33 +294,6 @@ function CallRow({ entry, onCallBack, lineLabel }: {
   )
 }
 
-// ── Quick Send: one email of resources, outbound side ──
-function QuickSendCard({ entry }: { entry: TimelineEntry }) {
-  const failed = entry.status === 'failed'
-  const n = entry.resources?.length ?? 0
-  return (
-    <div className="flex justify-end">
-      <div className={`max-w-[85%] rounded-xl border p-2.5 ${failed ? 'border-red-200 bg-red-50/60' : 'border-fire/30 bg-fire-light/60'}`}>
-        <div className="flex items-center gap-1.5 mb-1">
-          <FileText size={12} className={failed ? 'text-red-500' : 'text-fire-warm'} />
-          <span className="text-[10px] font-semibold text-np-dark">
-            {failed ? 'Quick Send not sent' : `Quick Send · ${n} ${n === 1 ? 'resource' : 'resources'}`}
-          </span>
-          <span className="text-[8px] text-gray-400" title={fmtFull(entry.created_at)}>{fmtClock(entry.created_at)}</span>
-        </div>
-        <ul className="space-y-0.5">
-          {(entry.resources || []).map((r, i) => (
-            <li key={i} className="flex items-center gap-1 text-[10px] text-np-dark"><Paperclip size={9} className="text-gray-400" /> {r}</li>
-          ))}
-        </ul>
-        <p className="mt-1 text-[9px] text-gray-500">
-          {entry.sender ? `Sent by ${entry.sender}` : 'Sent'}{entry.to_email ? ` to ${entry.to_email}` : ''}
-        </p>
-      </div>
-    </div>
-  )
-}
-
 // ── The stream ──
 export function TimelineStream({ entries, emptyLabel = 'No messages yet', onCallBack, lineLabel }: {
   entries: TimelineEntry[]
@@ -399,7 +333,6 @@ export function TimelineStream({ entries, emptyLabel = 'No messages yet', onCall
           </div>
           {day.items.map(entry => {
             if (entry.kind === 'text') return <TextBubble key={entry.id} entry={entry} />
-            if (entry.kind === 'quick_send') return <QuickSendCard key={entry.id} entry={entry} />
             if (entry.kind === 'voicemail') {
               return (
                 <div key={entry.id} className="flex justify-start">

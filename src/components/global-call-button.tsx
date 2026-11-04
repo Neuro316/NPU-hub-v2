@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   Phone, PhoneOff, PhoneCall, PhoneOutgoing, Mic, MicOff, Grid3x3, Volume2, X, Search,
-  UserPlus, ChevronDown, Loader2, AlertTriangle, Delete, FileText,
+  UserPlus, ChevronDown, Loader2, AlertTriangle, Delete,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase-browser'
 import { resolveCallContact, updateContact } from '@/lib/crm-client'
@@ -16,7 +16,6 @@ import { formatUsPhone, toE164 } from '@/lib/phone'
 import { primeCallTones, unlockCallAudio } from '@/lib/voice-audio'
 import { useOutboundCall, ALREADY_ON_CALL_MESSAGE, type OutboundTarget } from '@/lib/voice-outbound-context'
 import { useIsNarrowCallScreen } from '@/components/incoming-call-banner'
-import { QuickSendDialog, QuickSendSheet, QuickSendToast } from '@/components/crm/quick-send'
 
 // The Call button at the top of every Hub page, and the live outbound call's
 // indicator and controls. Rendered once, in the top-right cluster of the
@@ -33,8 +32,6 @@ import { QuickSendDialog, QuickSendSheet, QuickSendToast } from '@/components/cr
 //              timer). Tapping it opens the controls: Mute, Keypad, Speaker
 //              where supported, Hang up. On a phone that is the same
 //              full-screen layout as the incoming call overlay.
-//              Quick Send (email resources to the contact) opens over the
-//              call without leaving it: a dialog on desktop, a sheet on a phone.
 //
 // The call itself lives in OutboundCallProvider, not here, so pages can change
 // underneath it without ending it.
@@ -466,16 +463,13 @@ function DesktopCallControls({ onClose }: { onClose: () => void }) {
   const speaker = useSpeaker()
   const [keypad, setKeypad] = useState(false)
   const [sent, setSent] = useState('')
-  const [quickSend, setQuickSend] = useState(false)
-  const [toast, setToast] = useState('')
   const connected = snapshot.stage === 'connected'
   const t = snapshot.target
   const btn = 'flex flex-col items-center justify-center gap-1 h-14 rounded-xl text-[10px] font-semibold'
-  const cols = 3 + (speaker.canSpeaker ? 1 : 0) + (t?.contactId ? 1 : 0)
 
   return (
     <div role="dialog" aria-label="Call controls"
-      className={`absolute right-0 top-full mt-2 ${cols > 4 ? 'w-[22rem]' : 'w-80'} rounded-xl border border-gray-100 bg-white p-4 shadow-xl`}>
+      className="absolute right-0 top-full mt-2 w-72 rounded-xl border border-gray-100 bg-white p-4 shadow-xl">
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{connected ? 'On call' : 'Outgoing call'}</p>
@@ -501,7 +495,7 @@ function DesktopCallControls({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
-      <div className={`mt-3 grid gap-2 ${cols === 5 ? 'grid-cols-5' : cols === 4 ? 'grid-cols-4' : 'grid-cols-3'}`}>
+      <div className={`mt-3 grid gap-2 ${speaker.canSpeaker ? 'grid-cols-4' : 'grid-cols-3'}`}>
         <button type="button" disabled={!connected} onClick={() => setMuted(!snapshot.muted)} aria-pressed={snapshot.muted}
           className={`${btn} disabled:opacity-40 ${snapshot.muted ? 'bg-amber-100 text-amber-700' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
           {snapshot.muted ? <MicOff size={16} /> : <Mic size={16} />}
@@ -511,12 +505,6 @@ function DesktopCallControls({ onClose }: { onClose: () => void }) {
           className={`${btn} disabled:opacity-40 ${keypad ? 'bg-np-blue/10 text-np-blue' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
           <Grid3x3 size={16} /> Keypad
         </button>
-        {t?.contactId && (
-          <button type="button" onClick={() => setQuickSend(true)}
-            className={`${btn} bg-fire hover:bg-fire-warm text-np-dark`}>
-            <FileText size={16} /> Quick Send
-          </button>
-        )}
         {speaker.canSpeaker && (
           <button type="button" disabled={!connected} onClick={speaker.next}
             className={`${btn} disabled:opacity-40 bg-gray-50 text-gray-600 hover:bg-gray-100`}>
@@ -527,10 +515,6 @@ function DesktopCallControls({ onClose }: { onClose: () => void }) {
           <PhoneOff size={16} /> Hang up
         </button>
       </div>
-      {toast && <div className="mt-3 flex justify-center"><QuickSendToast message={toast} onDone={() => setToast('')} className="border border-gray-100 shadow-none" /></div>}
-      {quickSend && t?.contactId && (
-        <QuickSendDialog contactId={t.contactId} onClose={() => setQuickSend(false)} onSent={setToast} />
-      )}
     </div>
   )
 }
@@ -547,8 +531,6 @@ function MobileOutboundOverlay({ onMinimize }: { onMinimize: () => void }) {
   const speaker = useSpeaker()
   const [keypad, setKeypad] = useState(false)
   const [sent, setSent] = useState('')
-  const [quickSend, setQuickSend] = useState(false)
-  const [toast, setToast] = useState('')
   const connected = snapshot.stage === 'connected'
   const t = snapshot.target
   const number = t ? formatUsPhone(t.phone) : ''
@@ -589,7 +571,6 @@ function MobileOutboundOverlay({ onMinimize }: { onMinimize: () => void }) {
         {t?.name && number && <p className="mt-1 text-base font-mono text-white/70">{number}</p>}
         {t?.newContact && t.contactId && <AddNamePrompt contactId={t.contactId} tone="dark" className="mt-3 w-full max-w-xs" />}
         {connected && keypad && <p className="mt-4 min-h-[2rem] text-2xl font-mono tracking-widest">{sent}</p>}
-        {toast && <QuickSendToast message={toast} onDone={() => setToast('')} className="mt-4" />}
       </div>
 
       <div className="px-6">
@@ -605,9 +586,7 @@ function MobileOutboundOverlay({ onMinimize }: { onMinimize: () => void }) {
             </div>
           )}
           {connected && (
-            // Mute, Keypad and Quick Send share the first row at the same size;
-            // Speaker, where the browser can choose an output, takes a second row.
-            <div className="grid w-full max-w-xs grid-cols-3 gap-3">
+            <div className={`grid w-full max-w-xs gap-3 ${speaker.canSpeaker ? 'grid-cols-3' : 'grid-cols-2'}`}>
               <button type="button" onClick={() => setMuted(!snapshot.muted)} aria-pressed={snapshot.muted}
                 className={`${ctlBtn} ${snapshot.muted ? 'bg-amber-400 text-np-dark' : 'bg-white/10 active:bg-white/25'}`}>
                 {snapshot.muted ? <MicOff size={24} /> : <Mic size={24} />}
@@ -618,15 +597,8 @@ function MobileOutboundOverlay({ onMinimize }: { onMinimize: () => void }) {
                 <Grid3x3 size={24} />
                 {keypad ? 'Hide keypad' : 'Keypad'}
               </button>
-              {t?.contactId ? (
-                <button type="button" onClick={() => setQuickSend(true)}
-                  className={`${ctlBtn} bg-fire active:bg-fire-warm text-np-dark`}>
-                  <FileText size={24} />
-                  Quick Send
-                </button>
-              ) : <span />}
               {speaker.canSpeaker && (
-                <button type="button" onClick={speaker.next} className={`${ctlBtn} col-start-2 bg-white/10 active:bg-white/25`}>
+                <button type="button" onClick={speaker.next} className={`${ctlBtn} bg-white/10 active:bg-white/25`}>
                   <Volume2 size={24} />
                   <span className="truncate max-w-full px-1">{speaker.label}</span>
                 </button>
@@ -641,10 +613,6 @@ function MobileOutboundOverlay({ onMinimize }: { onMinimize: () => void }) {
           </button>
         </div>
       </div>
-      {/* Over the call, not instead of it: no navigation, the call keeps running. */}
-      {quickSend && t?.contactId && (
-        <QuickSendSheet contactId={t.contactId} onClose={() => setQuickSend(false)} onSent={setToast} zClass="z-[1995]" />
-      )}
     </div>
   )
 }
