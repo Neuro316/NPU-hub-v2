@@ -38,8 +38,9 @@
 //            on answered calls) on purpose. The timeline at cbc2664 still carries its
 //            CLICK-TO-CALL block, so byte equality keeps that block in place too.
 //
-// SINCE_QUICK_SEND byte-for-byte equal to QUICK_SEND_BASE (eecb957): the timeline, which
-//            gained the Quick Send email card. Moved here from SINCE_TRANSCRIPTS.
+// SINCE_QUICK_SEND byte-for-byte equal to QUICK_SEND_BASE (458f8a7): the timeline. Quick Send
+//            (eecb957) added an email card to it; the release dropped Quick Send at 458f8a7
+//            (ruled 2026-11-04), which removed the card again.
 //
 // SINCE_PLAYBACK byte-for-byte equal to PLAYBACK_BASE (bd38207), the recording playback fix,
 //            which changed twilio-org (range, no-store and timeout on the recording fetch),
@@ -125,9 +126,9 @@ const SINCE_PLAYBACK = {
   'intelligence': 'src/app/api/twilio/intelligence/route.ts',
   'voice-intelligence': 'src/lib/voice-intelligence.ts',
 }
-// Quick Send (feat/quick-send, eecb957) added its email card to the timeline on purpose,
-// so the timeline is compared with that commit. Its CLICK-TO-CALL block is still in place.
-const QUICK_SEND_BASE = process.env.QUICK_SEND_BASE || RELEASE_BASE
+// Quick Send (eecb957) added its email card to the timeline and the release removed it at
+// 458f8a7, so the timeline is compared with that commit. Its CLICK-TO-CALL block is still in place.
+const QUICK_SEND_BASE = process.env.QUICK_SEND_BASE || '458f8a7'
 const SINCE_QUICK_SEND = {
   'timeline': 'src/components/crm/comms-timeline.tsx',
 }
