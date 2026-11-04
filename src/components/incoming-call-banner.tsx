@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import {
   Phone, PhoneOff, PhoneIncoming, Mic, MicOff, Loader2, AlertTriangle, PhoneCall,
-  Grid3x3, Volume2,
+  Grid3x3, Volume2, FolderOpen,
 } from 'lucide-react'
 import { useVoiceReceiver, type IncomingCall } from '@/lib/voice-receiver-context'
 import { useWorkspace } from '@/lib/workspace-context'
@@ -11,6 +11,7 @@ import { useOrgLines } from '@/lib/hooks/use-org-lines'
 import { formatUsPhone } from '@/lib/phone'
 import { useOutboundCall } from '@/lib/voice-outbound-context'
 import { GlobalCallButton } from '@/components/global-call-button'
+import { SendResourcesOverlay, SendResourcesToast } from '@/components/crm/send-resources'
 
 // Inbound-call UI for the browser softphone: a banner PINNED to the top of the
 // viewport, above everything else, on every Hub page.
@@ -64,22 +65,27 @@ export function useCallBannerVisible(): boolean {
 }
 
 // Who's calling — same normalized match the webhook threads the call with.
-function useCallerName(from: string, orgId: string | undefined): string | null {
-  const [name, setName] = useState<string | null>(null)
+// The name only for a real contact; the id also for a placeholder, so Send
+// resources can reach the contact the call is threaded to.
+function useCallerContact(from: string, orgId: string | undefined): { name: string | null; contactId: string | null } {
+  const [found, setFound] = useState<{ name: string | null; contactId: string | null }>({ name: null, contactId: null })
   useEffect(() => {
-    setName(null)
+    setFound({ name: null, contactId: null })
     if (!orgId || !from) return
     let cancelled = false
     fetch(`/api/comms/caller-lookup?org_id=${encodeURIComponent(orgId)}&phone=${encodeURIComponent(from)}`)
       .then(r => r.json())
       .then(d => {
-        if (cancelled) return
-        if (d?.contact?.name && !d.contact.is_placeholder) setName(d.contact.name)
+        if (cancelled || !d?.contact) return
+        setFound({
+          name: d.contact.name && !d.contact.is_placeholder ? d.contact.name : null,
+          contactId: typeof d.contact.id === 'string' ? d.contact.id : null,
+        })
       })
       .catch(() => { /* the number alone is enough to answer */ })
     return () => { cancelled = true }
   }, [from, orgId])
-  return name
+  return found
 }
 
 // One-second tick while any call is connected, for the duration readout.
@@ -106,10 +112,12 @@ function CallRow({ entry, lineLabel, now, otherCallConnected }: {
 }) {
   const { currentOrg } = useWorkspace()
   const { answer, decline, hangUp, setMuted } = useVoiceReceiver()
-  const callerName = useCallerName(entry.from, currentOrg?.id)
+  const { name: callerName, contactId } = useCallerContact(entry.from, currentOrg?.id)
   const display = callerName || formatUsPhone(entry.from) || 'Unknown caller'
   const ringing = entry.phase === 'ringing'
   const seconds = entry.connectedAt ? Math.max(0, Math.floor((now - entry.connectedAt) / 1000)) : 0
+  const [resources, setResources] = useState(false)
+  const [toast, setToast] = useState('')
 
   // Inline "End current call and answer?" — only while another call is live.
   // If that call ends on its own while the question is up, the question is
@@ -197,6 +205,19 @@ function CallRow({ entry, lineLabel, now, otherCallConnected }: {
         )
       ) : (
         <div className="flex items-center gap-2 flex-shrink-0">
+          {toast && <SendResourcesToast message={toast} onDone={() => setToast('')} className="py-1.5" />}
+          {contactId && (
+            <button
+              type="button"
+              onClick={() => setResources(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-xs font-semibold"
+            >
+              <FolderOpen size={14} /> Send resources
+            </button>
+          )}
+          {resources && contactId && (
+            <SendResourcesOverlay contactId={contactId} onClose={() => setResources(false)} onSent={setToast} />
+          )}
           <button
             type="button"
             onClick={() => setMuted(entry.id, !entry.muted)}
@@ -299,7 +320,7 @@ function MobileCallOverlay({ entry, lineLabel, now, onAnotherCall, queued }: {
     answer, decline, hangUp, setMuted, sendDigits, ringerLocked,
     outputDevices, outputDeviceId, setOutputDevice,
   } = useVoiceReceiver()
-  const callerName = useCallerName(entry.from, currentOrg?.id)
+  const { name: callerName, contactId } = useCallerContact(entry.from, currentOrg?.id)
   const number = formatUsPhone(entry.from)
   const display = callerName || number || 'Unknown caller'
   const ringing = entry.phase === 'ringing'
@@ -308,6 +329,8 @@ function MobileCallOverlay({ entry, lineLabel, now, onAnotherCall, queued }: {
   const [confirming, setConfirming] = useState(false)
   const [keypad, setKeypad] = useState(false)
   const [digits, setDigits] = useState('')
+  const [resources, setResources] = useState(false)
+  const [toast, setToast] = useState('')
   useEffect(() => { if (!onAnotherCall) setConfirming(false) }, [onAnotherCall])
   useEffect(() => { setKeypad(false); setDigits('') }, [entry.id, entry.phase])
 
@@ -373,6 +396,7 @@ function MobileCallOverlay({ entry, lineLabel, now, onAnotherCall, queued }: {
         {!ringing && keypad && (
           <p className="mt-4 min-h-[2rem] text-2xl font-mono tracking-widest">{digits}</p>
         )}
+        {!ringing && toast && <SendResourcesToast message={toast} onDone={() => setToast('')} className="mt-4 max-w-xs" />}
       </div>
 
       {/* Actions: bottom half, thumb reach */}
@@ -440,6 +464,12 @@ function MobileCallOverlay({ entry, lineLabel, now, onAnotherCall, queued }: {
                 </button>
               )}
             </div>
+            {contactId && (
+              <button type="button" onClick={() => setResources(true)}
+                className="flex w-full max-w-xs items-center justify-center gap-2 h-12 rounded-2xl bg-white/10 active:bg-white/25 text-sm font-semibold select-none">
+                <FolderOpen size={18} /> Send resources
+              </button>
+            )}
             <button type="button" onClick={() => hangUp(entry.id)} className={bigBtn} aria-label="Hang up">
               <span className="flex h-20 w-20 items-center justify-center rounded-full bg-red-600 active:bg-red-500 shadow-lg">
                 <PhoneOff size={32} />
@@ -449,6 +479,10 @@ function MobileCallOverlay({ entry, lineLabel, now, onAnotherCall, queued }: {
           </div>
         )}
       </div>
+      {/* Over the call, not instead of it: no navigation, the call keeps running. */}
+      {!ringing && resources && contactId && (
+        <SendResourcesOverlay contactId={contactId} onClose={() => setResources(false)} onSent={setToast} zClass="z-[2005]" />
+      )}
     </div>
   )
 }
