@@ -1,7 +1,8 @@
 -- hub_224_drop_quick_send.sql
 --
--- STATUS: PROPOSED, NOT APPLIED. Waiting for Cameron's go. Production only
--- (htfrfaxlcuyawtlztxxm); the Hub has no nonprod.
+-- STATUS: APPLIED to production (htfrfaxlcuyawtlztxxm) on 2026-11-04 after Cameron's go,
+-- ledger version 20261104224640. Verified in pg_catalog: no hub_quick_send relations or
+-- policies remain, and the crm_quick_send setting row is gone. The Hub has no nonprod.
 --
 -- Hub band (200+). Checked 2026-11-04: files stop at hub_223, no hub_224 or 224.
 --
