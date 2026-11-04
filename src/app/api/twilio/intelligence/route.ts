@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminSupabase } from '@/lib/supabase';
 import { voiceSignatureUrl } from '@/lib/twilio-voice-signature';
-import { handleIntelligenceCallback, type CallLogForTranscript } from '@/lib/voice-intelligence';
+import { handleIntelligenceCallback, wavChannelLevels, type CallLogForTranscript } from '@/lib/voice-intelligence';
 
 // Twilio Voice Intelligence completion webhook (the Service's WebhookUrl).
 // Saves the speaker-labeled transcript of an ANSWERED call onto its call_logs
@@ -12,6 +12,16 @@ import { handleIntelligenceCallback, type CallLogForTranscript } from '@/lib/voi
 // Hub org that owns the posting Twilio account. The signed URL is rebuilt from
 // NEXT_PUBLIC_APP_URL (as every other Twilio route here does) plus the query
 // string Twilio called with, which is where bodySHA256 rides for a JSON body.
+
+// Downloading the recording to label speakers takes a few seconds on a long call.
+export const maxDuration = 60;
+
+// A WAV above this is not downloaded for labeling (about 50 minutes of 8 kHz
+// stereo); the transcript then keeps Twilio's own channel labels.
+const MAX_LABEL_WAV_BYTES = 100 * 1024 * 1024;
+
+const basicAuth = (creds: { accountSid: string; authToken: string }) =>
+  'Basic ' + Buffer.from(`${creds.accountSid}:${creds.authToken}`).toString('base64');
 
 export async function POST(request: NextRequest) {
   const rawBody = await request.text().catch(() => '');
@@ -47,15 +57,25 @@ export async function POST(request: NextRequest) {
           return null;
         },
         async getJson(url, creds) {
-          const res = await fetch(url, {
-            headers: { Authorization: 'Basic ' + Buffer.from(`${creds.accountSid}:${creds.authToken}`).toString('base64') },
-          });
+          // no-store: Next.js would otherwise cache a GET made inside a route handler.
+          const res = await fetch(url, { headers: { Authorization: basicAuth(creds) }, cache: 'no-store' });
           if (!res.ok) throw new Error(`Twilio GET ${res.status}`);
           return res.json();
         },
+        async channelLevels(recordingSid, creds) {
+          // Both channels, uncompressed, so each sentence can be matched to the side speaking.
+          const url = `https://api.twilio.com/2010-04-01/Accounts/${creds.accountSid}/Recordings/${recordingSid}.wav?RequestedChannels=2`;
+          const res = await fetch(url, {
+            headers: { Authorization: basicAuth(creds) }, cache: 'no-store', signal: AbortSignal.timeout(30_000),
+          });
+          if (!res.ok) return null;
+          if (Number(res.headers.get('content-length') || 0) > MAX_LABEL_WAV_BYTES) return null;
+          const bytes = new Uint8Array(await res.arrayBuffer());
+          return bytes.byteLength > MAX_LABEL_WAV_BYTES ? null : wavChannelLevels(bytes);
+        },
         async findCallLog(id): Promise<CallLogForTranscript | null> {
           const { data: log } = await db.from('call_logs')
-            .select('id, org_id, contact_id, direction, from_number, to_number')
+            .select('id, org_id, contact_id, direction, from_number, to_number, recording_sid')
             .eq('id', id).maybeSingle();
           if (!log) return null;
           const { data: s } = await db.from('org_settings').select('setting_value')
@@ -71,6 +91,7 @@ export async function POST(request: NextRequest) {
             direction,
             account_sid: s?.setting_value?.account_sid || process.env.TWILIO_ACCOUNT_SID || '',
             contact_label: name || (direction === 'outbound' ? log.to_number : log.from_number) || 'Contact',
+            recording_sid: log.recording_sid ?? null,
           };
         },
         async updateCallLog(id, fields) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabase } from '@/lib/supabase';
 import { getOrgTwilioConfig, createOrgTwilioClient } from '@/lib/twilio-org';
+import { HANGUP_REASONS } from '@/lib/voice-call-state';
 
 // End a browser-placed call from the server. The backstop for End in the
 // dialer and VoipCall (createOutboundCall in voice-call-state.ts): the browser
@@ -24,6 +25,11 @@ export async function POST(request: NextRequest) {
     try { body = await request.json(); } catch { /* validated below */ }
     const callLogId = String(body?.call_log_id || '').trim();
     if (!callLogId) return NextResponse.json({ error: 'call_log_id required' }, { status: 400 });
+    // Which control ended the call (voice-call-state.ts HANGUP_REASONS). Logged
+    // so a call that ended unexpectedly can be traced; anything else is 'unspecified'.
+    const reason = (HANGUP_REASONS as readonly string[]).includes(String(body?.reason))
+      ? String(body.reason) : 'unspecified';
+    console.log('voice hangup:', JSON.stringify({ call_log_id: callLogId, reason }));
 
     const { data: row } = await supabase
       .from('call_logs')
