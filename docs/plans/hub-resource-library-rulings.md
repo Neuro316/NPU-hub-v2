@@ -8,30 +8,8 @@ accepted at the go.
 Deleting a Hub user cascades to `hub_mail_connections`, and a plain foreign key would block
 that. A send row keeps its `from_address` either way.
 
-**Tests:** `node scripts/resources/plan-check.mjs` passes 18/18 (the 20 MB split, the email
-text and the "Send from" default).
-
-## Additions on 2026-11-04 (branch `feat/resource-send-from`, no schema change)
-
-Quick Send (#13) was dropped from release #17. The Resource Library is the one way to email
-documents to a contact.
-
-- **Send resources during a call.** A "Send resources" button in the in-call panels opens the
-  same panel for the contact on the call, over the call without navigating:
-  - outbound: the desktop call controls and the phone's full-screen call screen
-  - inbound: the desktop call banner and the phone's full-screen call screen (the caller is
-    matched by `/api/comms/caller-lookup`, placeholders included)
-  - A short "Sent" line shows in the call panel afterwards.
-- **Send from.** The panel lists every connected mailbox the signed-in user may see
-  (`listVisible`, the `canSee` rule): their own private mailboxes and the shared ones. A
-  mailbox that is not active or lacks `gmail.send` is listed but disabled, with the reason.
-  - **Default** (`defaultFrom`): cameron.allen@ if the user can send from it (only Cameron,
-    since it is private), else ops@, else the first usable one.
-  - The POST takes `mailbox_id` and checks it again with `loadVisible`; a mailbox the
-    caller cannot see is refused.
-  - Sends go through that mailbox's Gmail connection. `hub_resource_sends` records its
-    `mailbox_id` and `from_address` as before, and the timeline entry names the sender address.
-- Rulings 2 and 5 below still hold, with "cameron.allen@" read as "the chosen mailbox".
+**Tests:** `node scripts/resources/plan-check.mjs` passes 11/11 (the 20 MB split and the
+email text).
 
 ## 1. What I read
 
