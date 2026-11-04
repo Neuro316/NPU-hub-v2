@@ -14,8 +14,15 @@
 // "Send from" lists the mailboxes the signed-in user may see: their own private ones and
 // the shared ones. It starts on cameron.allen@ for Cameron and on ops@ for anyone else
 // (defaultFrom in src/lib/resources/plan.ts, chosen by the API).
-import { useEffect, useMemo, useState } from 'react'
-import { Send, Eye, Loader2, CheckCircle2, AlertTriangle, Paperclip, Link2, FolderOpen, X } from 'lucide-react'
+//
+// "Suggested from your call": when the panel opens, /api/resources/suggest is asked in the
+// background for the files that fit the contact's latest transcribed call and a drafted
+// note. The panel never waits for it. Suggested files are added to the checked ones and
+// labelled; the drafted note replaces the standard one, with a link to switch back. A
+// suggestion that arrives after the person has edited the files, the note or previewed is
+// not applied over their edits. No answer, a slow one or an error shows nothing.
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Send, Eye, Loader2, CheckCircle2, AlertTriangle, Paperclip, Link2, FolderOpen, X, Sparkles } from 'lucide-react'
 
 interface Resource { id: string; name: string; description: string | null; size_bytes: number; is_default_followup: boolean }
 interface Summary { id: string; name: string; size_bytes: number }
@@ -30,6 +37,7 @@ interface Panel {
   defaults: { subject: string; note: string; link_days: number }
   sends: SendRow[]
 }
+interface Suggestion { resource_ids: string[]; note: string | null; call_at: string }
 interface Preview { from: string | null; to: string; subject: string; attached: Summary[]; linked: Summary[]; links_expire_at: string | null; text: string; can_send: boolean; reason: string | null }
 
 const fmtSize = (n: number) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`)
@@ -64,9 +72,34 @@ function SendForm({ contactId, panel, onCancel, onSent, roomy = false }: {
   const [preview, setPreview] = useState<Preview | null>(null)
   const [busy, setBusy] = useState<'preview' | 'send' | null>(null)
   const [error, setError] = useState('')
+  const [suggestion, setSuggestion] = useState<Suggestion | null>(null)
+  // set once the person edits the files or the note, or previews: a late suggestion is then
+  // shown as labels only and never overrides what they chose
+  const edited = useRef({ files: false, note: false, previewed: false })
 
   // any edit invalidates the preview, so Send always follows a preview of what will go
   useEffect(() => { setPreview(null) }, [checked, subject, note, mailboxId])
+
+  useEffect(() => {
+    if (!panel.resources.length) return
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 25_000)
+    fetch(`/api/resources/suggest?contact_id=${encodeURIComponent(contactId)}`, { cache: 'no-store', signal: ctrl.signal })
+      .then(r => (r.ok ? r.json() : null))
+      .then((d: { suggestion: Suggestion | null } | null) => {
+        const sg = d?.suggestion
+        if (!sg) return
+        setSuggestion(sg)
+        if (edited.current.previewed) return
+        if (!edited.current.files && sg.resource_ids.length) {
+          setChecked(prev => [...prev, ...sg.resource_ids.filter(id => !prev.includes(id))])
+        }
+        if (!edited.current.note && sg.note) setNote(sg.note)
+      })
+      .catch(() => { /* no suggestion: the panel works as it always has */ })
+      .finally(() => clearTimeout(timer))
+    return () => { clearTimeout(timer); ctrl.abort() }
+  }, [contactId, panel]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const ordered = useMemo(() => panel.resources.filter(r => checked.includes(r.id)).map(r => r.id), [panel, checked])
   const mailbox = panel.mailboxes.find(m => m.id === mailboxId) ?? null
@@ -82,7 +115,7 @@ function SendForm({ contactId, panel, onCancel, onSent, roomy = false }: {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) { setError(data.error || 'That did not work.'); return }
-      if (!send) { setPreview(data); return }
+      if (!send) { edited.current.previewed = true; setPreview(data); return }
       onSent(`Sent to ${panel.to} from ${data.from}: ${data.attached} attached${data.linked ? `, ${data.linked} as links` : ''}.`)
     } finally { setBusy(null) }
   }
@@ -116,16 +149,33 @@ function SendForm({ contactId, panel, onCancel, onSent, roomy = false }: {
           {panel.resources.map(r => (
             <label key={r.id} className={`flex items-start gap-2 ${text} text-np-dark cursor-pointer`}>
               <input type="checkbox" checked={checked.includes(r.id)} className="mt-0.5 rounded border-gray-300"
-                onChange={e => setChecked(prev => (e.target.checked ? [...prev, r.id] : prev.filter(x => x !== r.id)))} />
-              <span className="flex-1">{r.name} <span className="text-gray-400">· {fmtSize(r.size_bytes)}</span></span>
+                onChange={e => { edited.current.files = true; setChecked(prev => (e.target.checked ? [...prev, r.id] : prev.filter(x => x !== r.id))) }} />
+              <span className="flex-1">
+                {r.name} <span className="text-gray-400">· {fmtSize(r.size_bytes)}</span>
+                {suggestion?.resource_ids.includes(r.id) && (
+                  <span className={`ml-1.5 inline-flex items-center gap-0.5 ${small} text-np-blue`}><Sparkles size={9} /> Suggested from your call</span>
+                )}
+              </span>
             </label>
           ))}
         </div>
       )}
       <input value={subject} onChange={e => setSubject(e.target.value)} maxLength={250} placeholder="Subject"
         className={`w-full px-2 py-1.5 ${text} border border-gray-100 rounded-lg`} />
-      <textarea value={note} onChange={e => setNote(e.target.value)} maxLength={5000} rows={3}
+      <textarea value={note} onChange={e => { edited.current.note = true; setNote(e.target.value) }} maxLength={5000} rows={suggestion?.note ? 6 : 3}
         className={`w-full px-2 py-1.5 ${text} border border-gray-100 rounded-lg`} />
+      {suggestion?.note && (
+        <div className={`flex items-center gap-2 ${small} text-gray-400`}>
+          {note === suggestion.note ? (
+            <>
+              <span className="flex items-center gap-0.5 text-np-blue"><Sparkles size={9} /> Note drafted from your call on {fmtWhen(suggestion.call_at)}</span>
+              <button type="button" onClick={() => { edited.current.note = true; setNote(panel.defaults.note) }} className="underline hover:text-np-dark">Use standard note</button>
+            </>
+          ) : (
+            <button type="button" onClick={() => { edited.current.note = true; setNote(suggestion.note!) }} className="underline hover:text-np-dark">Use note drafted from your call</button>
+          )}
+        </div>
+      )}
 
       {preview && (
         <div className={`p-2 rounded-lg bg-gray-50 space-y-1 ${small} text-gray-600`}>

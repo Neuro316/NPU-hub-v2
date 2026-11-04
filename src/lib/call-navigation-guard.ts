@@ -27,8 +27,8 @@ export const LEAVE_ON_CALL_MESSAGE = 'You are on a call. Leaving this page will 
 export const DASHBOARD_SEGMENTS = [
   'activity-log', 'advisory', 'analytics', 'auditor', 'calendar', 'campaigns', 'crm', 'ehr',
   'equipment', 'finance', 'financial', 'flowcharts', 'forms', 'guest-sheet', 'icps', 'ideas',
-  'integrations', 'journeys', 'library', 'media', 'media-affiliates', 'media-appearances',
-  'meetings', 'platform-advisor', 'rocks', 'settings', 'shipit', 'social', 'sops', 'tasks',
+  'integrations', 'journeys', 'library', 'mail', 'media', 'media-affiliates', 'media-appearances',
+  'meetings', 'platform-advisor', 'resources', 'rocks', 'settings', 'shipit', 'social', 'sops', 'tasks',
   'team', 'tickets', 'university-access', 'usage-analytics',
 ] as const
 const DASHBOARD = new Set<string>(DASHBOARD_SEGMENTS)
