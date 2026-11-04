@@ -263,3 +263,7 @@ pf_283_paper_reviews.sql
 pf_284_message_thread_indexes.sql
 pf_285_program_co_ownership.sql
 pf_287_programs_popular_pin.sql
+pf_288_paywall_compare_at.sql
+pf_290_buyer_emails_and_xreg_log.sql
+pf_291_open_as_sessions.sql
+pf_293_messages_deleted_hard.sql

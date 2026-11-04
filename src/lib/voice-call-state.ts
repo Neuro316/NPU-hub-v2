@@ -198,6 +198,15 @@ export const MIC_BLOCKED_MESSAGE =
 
 export type OutboundStage = 'idle' | 'dialing' | 'ringing' | 'connected' | 'ending'
 
+// Why a call was ended from the browser. Sent with the server backstop and
+// logged by /api/voice/hangup, so a call that ended unexpectedly can be traced
+// to the control (or the unmount) that ended it.
+export const HANGUP_REASONS = [
+  'dialer_end', 'call_controls', 'phone_overlay', 'call_panel',
+  'answered_incoming', 'layout_unmount', 'setup_aborted', 'unspecified',
+] as const
+export type HangupReason = typeof HANGUP_REASONS[number]
+
 export type OutboundPrep =
   | { ok: true; token: string; params: Record<string, string>; callLogId: string | null }
   | { ok: false; message: string }
@@ -215,7 +224,7 @@ export interface OutboundCallDeps {
   /** Local ringback for when the network sends none. Primed in the Call tap. */
   ringback: { start(): void; stop(): void }
   /** Ask the server to end the call by its call_logs row. Fire and forget. */
-  hangupOnServer(callLogId: string): void
+  hangupOnServer(callLogId: string, reason: HangupReason): void
   later(fn: () => void, ms: number): unknown
 }
 
@@ -315,7 +324,7 @@ export function createOutboundCall(deps: OutboundCallDeps) {
           // End was pressed while this call was being placed.
           try { c?.disconnect() } catch { /* */ }
           releaseDevice(d)
-          if (prep.callLogId) deps.hangupOnServer(prep.callLogId)
+          if (prep.callLogId) deps.hangupOnServer(prep.callLogId, 'setup_aborted')
           return
         }
         call = c
@@ -328,7 +337,7 @@ export function createOutboundCall(deps: OutboundCallDeps) {
     },
 
     /** End, at any stage. Pressing it again while ending finishes at once. */
-    hangUp(): void {
+    hangUp(reason: HangupReason = 'unspecified'): void {
       if (stage === 'idle') return
       if (stage === 'ending') { finish(null); return }
       attempt++ // any setup still awaiting stops at its next step
@@ -337,7 +346,7 @@ export function createOutboundCall(deps: OutboundCallDeps) {
       const logId = callLogId // disconnect() can finish() synchronously
       if (!c) { finish(null); return }
       set('ending')
-      if (logId) deps.hangupOnServer(logId)
+      if (logId) deps.hangupOnServer(logId, reason)
       try { device?.disconnectAll() } catch { /* */ }
       try { c.disconnect() } catch { /* */ }
       let closed = false
@@ -359,7 +368,7 @@ export function createOutboundCall(deps: OutboundCallDeps) {
     /** Unmount: end anything live. */
     dispose(): void {
       if (stage === 'idle') return
-      this.hangUp()
+      this.hangUp('layout_unmount')
       finish(null) // no-op if hangUp already finished
     },
   }
@@ -400,7 +409,7 @@ export type OutboundCallSetup = Omit<OutboundCallDeps, 'onStage' | 'onEnded'>
 
 export type PlaceResult = { ok: true; session: number } | { ok: false; reason: 'busy' }
 
-export function createOutboundStore<T>(setupFor: (target: T) => OutboundCallSetup, now: () => number = Date.now) {
+export function createOutboundStore<T>(setupFor: (target: T, session: number) => OutboundCallSetup, now: () => number = Date.now) {
   let snap: OutboundSnapshot<T> = {
     session: 0, stage: 'idle', target: null, connectedAt: null, muted: false, ended: null,
   }
@@ -425,7 +434,7 @@ export function createOutboundStore<T>(setupFor: (target: T) => OutboundCallSetu
       if (ctl || snap.stage !== 'idle') return { ok: false, reason: 'busy' }
       const session = snap.session + 1
       const c: OutboundCall = createOutboundCall({
-        ...setupFor(target),
+        ...setupFor(target, session),
         onStage: (stage) => {
           if (ctl !== c || stage === 'idle') return // idle is reported by onEnded
           emit({ stage, connectedAt: stage === 'connected' ? now() : snap.connectedAt })
@@ -442,7 +451,16 @@ export function createOutboundStore<T>(setupFor: (target: T) => OutboundCallSetu
       return { ok: true, session }
     },
 
-    hangUp(): void { ctl?.hangUp() },
+    hangUp(reason: HangupReason = 'unspecified'): void { ctl?.hangUp(reason) },
+
+    /**
+     * Update the shown target of a call that is still the current one, e.g. the
+     * contact a typed number resolved to while dialing, or a name added mid-call.
+     */
+    updateTarget(session: number, patch: Partial<T>): void {
+      if (snap.session !== session || !snap.target) return
+      emit({ target: { ...snap.target, ...patch } })
+    },
 
     setMuted(muted: boolean): void {
       if (ctl?.mute(muted)) emit({ muted })
@@ -456,3 +474,43 @@ export function createOutboundStore<T>(setupFor: (target: T) => OutboundCallSetu
 }
 
 export type OutboundStore<T> = ReturnType<typeof createOutboundStore<T>>
+
+// ── Receiver recovery ───────────────────────────────────────────────────────
+//
+// On a phone the receiver often drops while the browser is in the background
+// ("Not receiving calls · Reconnect"). When the tab comes back to the
+// foreground or the network returns, the Hub now recovers on its own; the
+// Reconnect button stays as the fallback. A device that is still valid only
+// needs register(); one that errored, was torn down, or whose token expired
+// needs a full re-registration with a fresh token.
+
+export const AUTO_RECONNECT_MIN_GAP_MS = 10_000
+
+export type ReviveAction = 'none' | 'register' | 'reconnect'
+
+export function reviveAction(s: {
+  enabled: boolean
+  hasOrg: boolean
+  /** The receiver's status: 'ready', 'starting', 'error', 'off', 'unsupported'. */
+  status: string
+  /** The Device's state, or null when there is none. */
+  deviceState: string | null
+  /** Calls ringing or connected on this tab. */
+  activeCalls: number
+  visible: boolean
+  online: boolean
+  /** When the last automatic full reconnect started, 0 if never. */
+  lastReconnectAt: number
+  now: number
+}): ReviveAction {
+  if (!s.enabled || !s.hasOrg || !s.visible || !s.online) return 'none'
+  if (s.status === 'off' || s.status === 'unsupported') return 'none'
+  // Never touch the Device under a ringing or live call.
+  if (s.activeCalls > 0) return 'none'
+  if (s.status === 'ready' && s.deviceState === 'registered') return 'none'
+  const deviceUsable = s.deviceState !== null && s.deviceState !== 'destroyed'
+  if (s.status !== 'error' && deviceUsable) return s.deviceState === 'registered' ? 'none' : 'register'
+  // Errored, torn down or destroyed: a fresh token and Device, at most every few seconds.
+  if (s.now - s.lastReconnectAt < AUTO_RECONNECT_MIN_GAP_MS) return 'none'
+  return 'reconnect'
+}

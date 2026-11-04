@@ -393,10 +393,18 @@ export { CLIENT_STAGES }
  */
 export async function fetchTwilioRecording(
   orgId: string,
-  recordingUrl: string
+  recordingUrl: string,
+  opts: { range?: string | null } = {}
 ): Promise<
-  | { ok: true; body: ReadableStream<Uint8Array>; contentType: string; contentLength: string | null }
-  | { ok: false; reason: 'not_configured' | 'fetch_failed' }
+  | {
+      ok: true
+      status: number
+      body: ReadableStream<Uint8Array>
+      contentType: string
+      contentLength: string | null
+      contentRange: string | null
+    }
+  | { ok: false; reason: 'not_configured' | 'fetch_failed' | 'timeout' }
 > {
   const admin = createAdminSupabase()
   const config = await getOrgTwilioConfig(admin, orgId)
@@ -405,19 +413,26 @@ export async function fetchTwilioRecording(
   const authHeader =
     'Basic ' + Buffer.from(`${config.account_sid}:${config.auth_token}`).toString('base64')
 
+  // no-store: inside a GET route handler Next.js caches fetch by default, and the
+  // cached path never answered a browser's range request in time. The timeout
+  // turns a stalled fetch into a clear error instead of Vercel's 25s cutoff.
+  const headers: Record<string, string> = { Authorization: authHeader }
+  if (opts.range) headers.Range = opts.range
   let res: Response
   try {
-    res = await fetch(recordingUrl, { headers: { Authorization: authHeader } })
-  } catch {
-    return { ok: false, reason: 'fetch_failed' }
+    res = await fetch(recordingUrl, { headers, cache: 'no-store', signal: AbortSignal.timeout(20_000) })
+  } catch (e: any) {
+    return { ok: false, reason: e?.name === 'TimeoutError' ? 'timeout' : 'fetch_failed' }
   }
   if (!res.ok || !res.body) return { ok: false, reason: 'fetch_failed' }
 
   return {
     ok: true,
+    status: res.status,
     body: res.body as ReadableStream<Uint8Array>,
     contentType: res.headers.get('content-type') || 'audio/mpeg',
     contentLength: res.headers.get('content-length'),
+    contentRange: res.headers.get('content-range'),
   }
 }
 
