@@ -10,7 +10,7 @@
     "lint": "next lint",
     "type-check": "tsc --noEmit",
     "check:twiml": "node scripts/np-twiml-snapshot.mjs",
-    "test:voice": "node --test scripts/tests/voice-call-state.test.mjs scripts/tests/voice-intelligence.test.mjs",
+    "test:voice": "node --test scripts/tests/voice-call-state.test.mjs scripts/tests/voice-intelligence.test.mjs scripts/tests/outbound-call-status.test.mjs scripts/tests/call-navigation-guard.test.mjs scripts/tests/recording-media.test.mjs scripts/tests/call-new-number.test.mjs scripts/tests/resource-suggestions.test.mjs",
     "check:kj": "node scripts/hrv/kj-hub-writers-tamper.cjs",
     "verify": "node scripts/verify.cjs",
     "guards": "node scripts/guards/run-guards.cjs",

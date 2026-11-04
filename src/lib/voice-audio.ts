@@ -238,12 +238,12 @@ export function createRingback(): { start(): void; stop(): void } {
 }
 
 /** Server backstop for End: ends the call by its call_logs row. */
-export function hangupOnServer(callLogId: string): void {
+export function hangupOnServer(callLogId: string, reason: string = 'unspecified'): void {
   try {
     fetch('/api/voice/hangup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ call_log_id: callLogId }),
+      body: JSON.stringify({ call_log_id: callLogId, reason }),
       keepalive: true,
     }).catch(() => { /* the client hangup already went out */ })
   } catch { /* */ }
