@@ -4,7 +4,6 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { createClient } from '@/lib/supabase-browser'
-import { contactForNumber, type NumberContact } from '@/lib/call-new-number'
 import type {
   CrmContact, Conversation, Message, CallLog, EmailCampaign,
   CrmTask, ContactNote, LifecycleEvent, ActivityLogEntry,
@@ -695,35 +694,6 @@ export async function seedNetworkIntelligence(orgId: string) {
 export async function computeNetworkScores(orgId: string) {
   const { error } = await supabase().rpc('compute_contact_network_scores', { p_org_id: orgId })
   if (error) throw error
-}
-
-// ── Calling a number with no contact (call-new-number.ts) ──
-
-/**
- * The contact a call to a typed number is logged against, in this org: the
- * existing one for that number, or a new "Unknown" one (source "Outbound call")
- * created through createContact. Runs while the call dials.
- */
-export async function resolveCallContact(orgId: string, phoneE164: string): Promise<{ id: string; name: string; created: boolean }> {
-  const { contact, created } = await contactForNumber({
-    async findInOrg(org, key) {
-      // Narrow on the last four digits (contiguous in every stored format), then
-      // contactForNumber compares all ten.
-      const { data, error } = await supabase()
-        .from('contacts')
-        .select('id, first_name, last_name, phone')
-        .eq('org_id', org)
-        .is('merged_into_id', null)
-        .ilike('phone', `%${key.slice(-4)}%`)
-        .order('created_at', { ascending: true })
-        .limit(50)
-      if (error) throw error
-      return (data || []) as NumberContact[]
-    },
-    create: row => createContact(row as Partial<CrmContact>),
-  }, orgId, phoneE164)
-  const name = `${contact.first_name || ''} ${contact.last_name || ''}`.trim()
-  return { id: contact.id, name: created ? '' : name, created }
 }
 
 // ── Phone Lookup (for dialer auto-match) ──
