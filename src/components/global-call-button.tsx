@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   Phone, PhoneOff, PhoneCall, PhoneOutgoing, Mic, MicOff, Grid3x3, Volume2, X, Search,
-  UserPlus, ChevronDown, Loader2, AlertTriangle, Delete,
+  UserPlus, ChevronDown, Loader2, AlertTriangle, Delete, FolderOpen,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase-browser'
 import { resolveCallContact, updateContact } from '@/lib/crm-client'
@@ -16,6 +16,7 @@ import { formatUsPhone, toE164 } from '@/lib/phone'
 import { primeCallTones, unlockCallAudio } from '@/lib/voice-audio'
 import { useOutboundCall, ALREADY_ON_CALL_MESSAGE, type OutboundTarget } from '@/lib/voice-outbound-context'
 import { useIsNarrowCallScreen } from '@/components/incoming-call-banner'
+import { SendResourcesOverlay, SendResourcesToast } from '@/components/crm/send-resources'
 
 // The Call button at the top of every Hub page, and the live outbound call's
 // indicator and controls. Rendered once, in the top-right cluster of the
@@ -32,6 +33,8 @@ import { useIsNarrowCallScreen } from '@/components/incoming-call-banner'
 //              timer). Tapping it opens the controls: Mute, Keypad, Speaker
 //              where supported, Hang up. On a phone that is the same
 //              full-screen layout as the incoming call overlay.
+//              Send resources (the contact card's panel) opens over the call
+//              without leaving it: a dialog on desktop, a sheet on a phone.
 //
 // The call itself lives in OutboundCallProvider, not here, so pages can change
 // underneath it without ending it.
@@ -463,6 +466,8 @@ function DesktopCallControls({ onClose }: { onClose: () => void }) {
   const speaker = useSpeaker()
   const [keypad, setKeypad] = useState(false)
   const [sent, setSent] = useState('')
+  const [resources, setResources] = useState(false)
+  const [toast, setToast] = useState('')
   const connected = snapshot.stage === 'connected'
   const t = snapshot.target
   const btn = 'flex flex-col items-center justify-center gap-1 h-14 rounded-xl text-[10px] font-semibold'
@@ -515,6 +520,16 @@ function DesktopCallControls({ onClose }: { onClose: () => void }) {
           <PhoneOff size={16} /> Hang up
         </button>
       </div>
+      {t?.contactId && (
+        <button type="button" onClick={() => setResources(true)}
+          className="mt-2 flex w-full items-center justify-center gap-1.5 h-9 rounded-xl bg-np-blue/10 text-np-blue hover:bg-np-blue/15 text-xs font-semibold">
+          <FolderOpen size={14} /> Send resources
+        </button>
+      )}
+      {toast && <SendResourcesToast message={toast} onDone={() => setToast('')} className="mt-2" />}
+      {resources && t?.contactId && (
+        <SendResourcesOverlay contactId={t.contactId} onClose={() => setResources(false)} onSent={setToast} />
+      )}
     </div>
   )
 }
@@ -531,6 +546,8 @@ function MobileOutboundOverlay({ onMinimize }: { onMinimize: () => void }) {
   const speaker = useSpeaker()
   const [keypad, setKeypad] = useState(false)
   const [sent, setSent] = useState('')
+  const [resources, setResources] = useState(false)
+  const [toast, setToast] = useState('')
   const connected = snapshot.stage === 'connected'
   const t = snapshot.target
   const number = t ? formatUsPhone(t.phone) : ''
@@ -571,6 +588,7 @@ function MobileOutboundOverlay({ onMinimize }: { onMinimize: () => void }) {
         {t?.name && number && <p className="mt-1 text-base font-mono text-white/70">{number}</p>}
         {t?.newContact && t.contactId && <AddNamePrompt contactId={t.contactId} tone="dark" className="mt-3 w-full max-w-xs" />}
         {connected && keypad && <p className="mt-4 min-h-[2rem] text-2xl font-mono tracking-widest">{sent}</p>}
+        {toast && <SendResourcesToast message={toast} onDone={() => setToast('')} className="mt-4 max-w-xs" />}
       </div>
 
       <div className="px-6">
@@ -605,6 +623,12 @@ function MobileOutboundOverlay({ onMinimize }: { onMinimize: () => void }) {
               )}
             </div>
           )}
+          {t?.contactId && (
+            <button type="button" onClick={() => setResources(true)}
+              className="flex w-full max-w-xs items-center justify-center gap-2 h-12 rounded-2xl bg-white/10 active:bg-white/25 text-sm font-semibold select-none">
+              <FolderOpen size={18} /> Send resources
+            </button>
+          )}
           <button type="button" onClick={() => hangUp('phone_overlay')} className={bigBtn} aria-label="Hang up">
             <span className="flex h-20 w-20 items-center justify-center rounded-full bg-red-600 active:bg-red-500 shadow-lg">
               <PhoneOff size={32} />
@@ -613,6 +637,10 @@ function MobileOutboundOverlay({ onMinimize }: { onMinimize: () => void }) {
           </button>
         </div>
       </div>
+      {/* Over the call, not instead of it: no navigation, the call keeps running. */}
+      {resources && t?.contactId && (
+        <SendResourcesOverlay contactId={t.contactId} onClose={() => setResources(false)} onSent={setToast} zClass="z-[1995]" />
+      )}
     </div>
   )
 }
