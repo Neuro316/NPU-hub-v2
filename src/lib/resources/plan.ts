@@ -7,23 +7,9 @@ export const ATTACH_LIMIT_BYTES = 20 * 1024 * 1024
 export const LINK_DAYS = 7
 export const DEFAULT_SUBJECT = 'Resources from Neuro Progeny'
 export const DEFAULT_NOTE = 'Great to connect today. Here are the resources we talked about. Reply here anytime with questions.'
-/** "Send from" defaults, in order: Cameron's own mailbox (private, so only Cameron ever sees
- *  it), then the shared ops@ mailbox, then the first one the caller can send from. */
-export const DEFAULT_FROM_ADDRESSES = ['cameron.allen@neuroprogeny.com', 'ops@neuroprogeny.com']
+export const SENDING_ADDRESS = 'cameron.allen@neuroprogeny.com'
 
 export interface PlanFile { id: string; name: string; size_bytes: number }
-
-export interface FromOption { id: string; email_address: string; usable: boolean }
-
-/** The mailbox the "Send from" picker starts on, from the caller's visible mailboxes. */
-export function defaultFrom<T extends FromOption>(options: T[]): T | null {
-  const usable = options.filter(o => o.usable)
-  for (const address of DEFAULT_FROM_ADDRESSES) {
-    const hit = usable.find(o => o.email_address.toLowerCase() === address)
-    if (hit) return hit
-  }
-  return usable[0] ?? null
-}
 
 /** Every file is attached; while the total is above the limit, the largest attached file
  *  moves to a signed link (ties: the later one in the list). Order is kept in both lists. */

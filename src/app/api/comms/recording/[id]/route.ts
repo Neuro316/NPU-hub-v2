@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabase, createAdminSupabase } from '@/lib/supabase';
 import { getOrgTwilioConfig, fetchTwilioRecording, twilioRecordingUrlFromSid } from '@/lib/twilio-org';
-import { planRangeResponse, playbackMediaUrl } from '@/lib/recording-media';
-
-// Per request: auth, then a live fetch from Twilio. Never cached.
-export const dynamic = 'force-dynamic';
 
 // Authenticated proxy for Twilio call recordings / voicemails.
 // The browser <audio> points HERE, never at the raw Twilio URL: Twilio media
@@ -14,7 +10,7 @@ export const dynamic = 'force-dynamic';
 // Twilio credentials, which never reach the client.
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   // 1. Must be an authenticated Hub user.
@@ -77,13 +73,8 @@ export async function GET(
   }
   if (!mediaUrl) return new NextResponse('Not found', { status: 404 });
 
-  // 5. Byte ranges. A browser's <audio> asks for them and Safari will not play
-  //    without them (recording-media.ts). Twilio is asked for the same range;
-  //    if it sends the whole file instead, the slice is cut here.
-  const range = request.headers.get('range');
-  const media = await fetchTwilioRecording(callLog.org_id, playbackMediaUrl(mediaUrl), { range });
+  const media = await fetchTwilioRecording(callLog.org_id, mediaUrl);
   if (!media.ok) {
-    if (media.reason === 'timeout') return new NextResponse('Recording took too long to load', { status: 504 });
     return new NextResponse(
       media.reason === 'not_configured' ? 'Recording unavailable' : 'Recording fetch failed',
       { status: 502 }
@@ -93,33 +84,8 @@ export async function GET(
   const headers: Record<string, string> = {
     'Content-Type': media.contentType,
     'Cache-Control': 'private, no-store',
-    'Accept-Ranges': 'bytes',
   };
-
-  if (media.status === 206 && media.contentRange) {
-    headers['Content-Range'] = media.contentRange;
-    if (media.contentLength) headers['Content-Length'] = media.contentLength;
-    return new NextResponse(media.body, { status: 206, headers });
-  }
-
-  if (range) {
-    const bytes = new Uint8Array(await new Response(media.body).arrayBuffer());
-    const plan = planRangeResponse(range, bytes.byteLength);
-    if (plan.status === 416) return new NextResponse(null, { status: 416, headers: { ...headers, ...plan.headers } });
-    if (plan.status === 206) {
-      return new NextResponse(bytes.slice(plan.start, plan.end + 1), { status: 206, headers: { ...headers, ...plan.headers } });
-    }
-    if (bytes.byteLength <= 4 * 1024 * 1024) {
-      headers['Content-Length'] = String(bytes.byteLength);
-      return new NextResponse(bytes, { status: 200, headers });
-    }
-    // Too large to send buffered: stream a fresh copy instead.
-    const again = await fetchTwilioRecording(callLog.org_id, playbackMediaUrl(mediaUrl));
-    if (!again.ok) return new NextResponse('Recording fetch failed', { status: 502 });
-    if (again.contentLength) headers['Content-Length'] = again.contentLength;
-    return new NextResponse(again.body, { status: 200, headers });
-  }
-
   if (media.contentLength) headers['Content-Length'] = media.contentLength;
+
   return new NextResponse(media.body, { status: 200, headers });
 }
