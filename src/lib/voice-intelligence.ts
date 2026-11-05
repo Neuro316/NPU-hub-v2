@@ -40,97 +40,7 @@ export interface TranscriptSentence {
   media_channel?: number | string | null
   transcript?: string | null
   start_time?: number | string | null
-  end_time?: number | string | null
   sentence_index?: number | string | null
-}
-
-// ── Who said it: measured from the recording itself ─────────────────────────
-//
-// Voice Intelligence's media_channel did not separate the speakers: on Cameron's
-// test calls (2026-10-31) the contact's "Hello?", which is only on channel 2 of
-// the dual-channel recording, came back labeled as the Hub user, so every line
-// read "You:". The recording is the ground truth, so each sentence is labeled by
-// which channel is clearly louder while it is spoken. media_channel is only the
-// fallback, for a mono recording or a sentence where neither side dominates.
-
-/** RMS loudness per window, one array per channel (index 0 is channel 1). */
-export interface ChannelLevels { windowSec: number; channels: number[][] }
-
-/** Below this RMS (full scale 1.0) a window is treated as silence. */
-export const SPEECH_RMS = 0.004
-/** One channel must be this many times louder than the other to win. */
-export const DOMINANCE = 2
-
-/**
- * Per-window loudness of a 16-bit PCM WAV with two or more channels.
- * Null for anything else (mono, compressed, malformed): the caller falls back.
- */
-export function wavChannelLevels(bytes: Uint8Array, windowSec = 0.1): ChannelLevels | null {
-  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-  const tag = (o: number) => String.fromCharCode(bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3])
-  if (bytes.length < 12 || tag(0) !== 'RIFF' || tag(8) !== 'WAVE') return null
-  let channels = 0, rate = 0, bits = 0, format = 0, dataAt = -1, dataLen = 0
-  for (let o = 12; o + 8 <= bytes.length;) {
-    const id = tag(o), size = dv.getUint32(o + 4, true)
-    if (id === 'fmt ' && o + 24 <= bytes.length) {
-      format = dv.getUint16(o + 8, true)
-      channels = dv.getUint16(o + 10, true)
-      rate = dv.getUint32(o + 12, true)
-      bits = dv.getUint16(o + 22, true)
-    } else if (id === 'data') {
-      dataAt = o + 8
-      dataLen = Math.min(size, bytes.length - dataAt)
-      break
-    }
-    o += 8 + size + (size % 2)
-  }
-  // 1 = PCM, 0xFFFE = WAVE_FORMAT_EXTENSIBLE (PCM inside, for these files).
-  if ((format !== 1 && format !== 0xfffe) || bits !== 16 || channels < 2 || !rate || dataAt < 0) return null
-  const frameBytes = channels * 2
-  const frames = Math.floor(dataLen / frameBytes)
-  const per = Math.max(1, Math.round(rate * windowSec))
-  const out: number[][] = Array.from({ length: channels }, () => [])
-  for (let start = 0; start < frames; start += per) {
-    const end = Math.min(frames, start + per)
-    for (let c = 0; c < channels; c++) {
-      let sum = 0
-      for (let f = start; f < end; f++) {
-        const v = dv.getInt16(dataAt + f * frameBytes + c * 2, true) / 32768
-        sum += v * v
-      }
-      out[c].push(Math.sqrt(sum / (end - start)))
-    }
-  }
-  return { windowSec: per / rate, channels: out }
-}
-
-/** The channel (1 or 2) clearly speaking during this sentence, or null. */
-export function loudestChannel(s: TranscriptSentence, levels: ChannelLevels): 1 | 2 | null {
-  if (levels.channels.length < 2) return null
-  const start = Number(s.start_time ?? NaN)
-  if (!Number.isFinite(start)) return null
-  const endRaw = Number(s.end_time ?? NaN)
-  const end = Number.isFinite(endRaw) && endRaw > start ? endRaw : start + 1
-  const from = Math.max(0, Math.floor(start / levels.windowSec))
-  const to = Math.max(from + 1, Math.ceil(end / levels.windowSec))
-  const mean = (ch: number[]) => {
-    const w = ch.slice(from, to)
-    return w.length ? w.reduce((a, b) => a + b, 0) / w.length : 0
-  }
-  const a = mean(levels.channels[0]), b = mean(levels.channels[1])
-  if (Math.max(a, b) < SPEECH_RMS) return null
-  if (a >= b * DOMINANCE) return 1
-  if (b >= a * DOMINANCE) return 2
-  return null
-}
-
-/**
- * media_channel as 1 or 2. Twilio documents it as defaulting to 0, so a
- * transcript that uses 0 at all is read as 0-based.
- */
-function reportedChannel(s: TranscriptSentence, zeroBased: boolean): number {
-  const n = Number(s.media_channel)
-  return zeroBased ? n + 1 : n
 }
 
 /**
@@ -142,13 +52,9 @@ function reportedChannel(s: TranscriptSentence, zeroBased: boolean): number {
 export function formatSpeakerTranscript(
   sentences: TranscriptSentence[],
   direction: CallDirection,
-  contactLabel: string,
-  levels: ChannelLevels | null = null
+  contactLabel: string
 ): string {
   const { hub } = channelSpeakers(direction)
-  const zeroBased = sentences.some(s => s.media_channel !== null && s.media_channel !== undefined && Number(s.media_channel) === 0)
-  const channelOf = (s: TranscriptSentence) =>
-    (levels ? loudestChannel(s, levels) : null) ?? reportedChannel(s, zeroBased)
   const ordered = [...sentences]
     .filter(s => String(s.transcript ?? '').trim())
     .sort((a, b) =>
@@ -156,7 +62,7 @@ export function formatSpeakerTranscript(
       (Number(a.sentence_index ?? 0) - Number(b.sentence_index ?? 0)))
   const turns: { label: string; text: string[] }[] = []
   for (const s of ordered) {
-    const label = channelOf(s) === hub ? HUB_SPEAKER_LABEL : (contactLabel || 'Contact')
+    const label = Number(s.media_channel) === hub ? HUB_SPEAKER_LABEL : (contactLabel || 'Contact')
     const text = String(s.transcript).trim()
     const last = turns[turns.length - 1]
     if (last && last.label === label) last.text.push(text)
@@ -239,7 +145,6 @@ export interface CallLogForTranscript {
   /** The Twilio account of the row's org, so a callback can't write across accounts. */
   account_sid: string
   contact_label: string
-  recording_sid?: string | null
 }
 
 export interface IntelligenceDeps {
@@ -248,12 +153,6 @@ export interface IntelligenceDeps {
   /** GET a Voice Intelligence URL with the account's credentials. */
   getJson(url: string, creds: TwilioCreds): Promise<any>
   findCallLog(id: string): Promise<CallLogForTranscript | null>
-  /**
-   * Loudness per channel of the call's recording (dual-channel WAV), so each
-   * sentence is labeled by who is actually speaking. Null or a throw falls back
-   * to Twilio's media_channel.
-   */
-  channelLevels?(recordingSid: string, creds: TwilioCreds): Promise<ChannelLevels | null>
   /** Rows updated. */
   updateCallLog(id: string, fields: { transcript: string | null; transcription_status: 'completed' | 'failed' }): Promise<number>
 }
@@ -314,12 +213,7 @@ export async function handleIntelligenceCallback(
     sentences.push(...(Array.isArray(j?.sentences) ? j.sentences : []))
     next = j?.meta?.next_page_url || null
   }
-  const recordingSid = String(transcript?.channel?.media_properties?.source_sid || log.recording_sid || '')
-  let levels: ChannelLevels | null = null
-  if (deps.channelLevels && /^RE[0-9a-f]{32}$/i.test(recordingSid)) {
-    try { levels = await deps.channelLevels(recordingSid, creds) } catch { levels = null }
-  }
-  const text = formatSpeakerTranscript(sentences, log.direction, log.contact_label, levels) || 'No speech was detected on this call.'
+  const text = formatSpeakerTranscript(sentences, log.direction, log.contact_label) || 'No speech was detected on this call.'
   const n = await deps.updateCallLog(log.id, { transcript: text, transcription_status: 'completed' })
   return { status: 200, body: { ok: true, call_log_id: log.id, transcription_status: 'completed', rows_updated: n } }
 }
