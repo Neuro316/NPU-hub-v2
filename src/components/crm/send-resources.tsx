@@ -23,8 +23,9 @@
 // not applied over their edits. No answer, a slow one or an error shows nothing.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Send, Eye, Loader2, CheckCircle2, AlertTriangle, Paperclip, Link2, FolderOpen, X, Sparkles } from 'lucide-react'
+import { ResourceThumb } from '@/components/crm/resource-thumb'
 
-interface Resource { id: string; name: string; description: string | null; size_bytes: number; is_default_followup: boolean }
+interface Resource { id: string; name: string; description: string | null; file_name: string; mime_type: string; size_bytes: number; is_default_followup: boolean; thumb_url: string | null }
 interface Summary { id: string; name: string; size_bytes: number }
 interface SendRow { id: string; sent_by_name: string; from_address: string; to_address: string; subject: string; attached: Summary[]; linked: Summary[]; sent_at: string }
 interface Mailbox { id: string; email_address: string; visibility: 'private' | 'shared'; usable: boolean; reason: string | null }
@@ -147,10 +148,11 @@ function SendForm({ contactId, panel, onCancel, onSent, roomy = false }: {
       ) : (
         <div className="space-y-1">
           {panel.resources.map(r => (
-            <label key={r.id} className={`flex items-start gap-2 ${text} text-np-dark cursor-pointer`}>
-              <input type="checkbox" checked={checked.includes(r.id)} className="mt-0.5 rounded border-gray-300"
+            <label key={r.id} className={`flex items-center gap-2 ${text} text-np-dark cursor-pointer`}>
+              <input type="checkbox" checked={checked.includes(r.id)} className="rounded border-gray-300"
                 onChange={e => { edited.current.files = true; setChecked(prev => (e.target.checked ? [...prev, r.id] : prev.filter(x => x !== r.id))) }} />
-              <span className="flex-1">
+              <ResourceThumb url={r.thumb_url} mime={r.mime_type} fileName={r.file_name} name={r.name} size="sm" />
+              <span className="flex-1 min-w-0">
                 {r.name} <span className="text-gray-400">· {fmtSize(r.size_bytes)}</span>
                 {suggestion?.resource_ids.includes(r.id) && (
                   <span className={`ml-1.5 inline-flex items-center gap-0.5 ${small} text-np-blue`}><Sparkles size={9} /> Suggested from your call</span>

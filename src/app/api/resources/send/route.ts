@@ -21,6 +21,7 @@ import { isUsableEmail } from '@/lib/contacts/match'
 import { RESOURCE_BUCKET, ONLY_SUPERADMIN, isUuid } from '@/lib/resources/common'
 import { splitFiles, emailBodies, linkExpiry, defaultFrom, LINK_DAYS, DEFAULT_SUBJECT, DEFAULT_NOTE } from '@/lib/resources/plan'
 import { buildMime, gmailSendRaw } from '@/lib/resources/send'
+import { thumbUrls } from '@/lib/resources/thumb-store'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -69,7 +70,7 @@ export const GET = withStaff(async (req: NextRequest, ctx) => {
   const orgId = requireOrg(ctx, contact.org_id)
   if (orgId instanceof Response) return orgId
   const [resources, sends, mailboxes] = await Promise.all([
-    ctx.db.from('hub_resources').select('id, name, description, file_name, mime_type, size_bytes, is_default_followup')
+    ctx.db.from('hub_resources').select('id, name, description, file_name, mime_type, size_bytes, is_default_followup, storage_path')
       .eq('org_id', orgId).is('archived_at', null).order('sort_order').order('created_at'),
     ctx.db.from('hub_resource_sends').select('id, sent_by, from_address, to_address, subject, attached, linked, sent_at')
       .eq('contact_id', contact.id).order('sent_at', { ascending: false }).limit(10),
@@ -81,8 +82,9 @@ export const GET = withStaff(async (req: NextRequest, ctx) => {
     ? await ctx.db.from('profiles').select('id, full_name, email').in('id', senderIds)
     : { data: [] as { id: string; full_name: string | null; email: string | null }[] }
   const senderName = (id: string) => { const p = (senders ?? []).find(s => s.id === id); return p?.full_name || p?.email || 'Someone' }
+  const thumbs = await thumbUrls(ctx.db, orgId, resources.data ?? [])
   return NextResponse.json({
-    resources: resources.data ?? [],
+    resources: (resources.data ?? []).map(({ storage_path: _path, ...r }) => ({ ...r, thumb_url: thumbs.get(r.id) ?? null })),
     to: contact.email && isUsableEmail(contact.email) ? contact.email.trim() : null,
     mailboxes,
     default_mailbox_id: defaultFrom(mailboxes)?.id ?? null,
