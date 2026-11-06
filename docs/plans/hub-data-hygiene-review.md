@@ -44,28 +44,31 @@ All counts below were recounted against live data on 2026-11-06. Every data-fix 
 
 | Item | Result |
 |---|---|
-| Cold outreach revokes | 23 contacts, guarded at 20 to 23 |
+| Cold outreach revokes | 12 contacts, guarded at exactly 12 |
 | Backfill | Still 18. The new exclusions remove none of them, guarded at 15 to 20 |
 | Test records | 16 live tagged contacts after the data fix, 0 on the allowlist |
 | T7 | Still 35. All are state codes, so no two-letter tags stay behind |
-| Email marketing allowed | 97 today - 23 cold - 11 test + 18 restored = 81 |
+| Email marketing allowed | 97 today - 12 cold - 11 test + 18 restored = 92 |
 
 ### Cold outreach corrected in hub_226
-hub_225 backfilled these 23 under `existing_relationship`, which Cameron ruled out for cold outreach. Each gets one `consent_events` row: email, marketing, revoked, basis `admin`, source `existing_relationship_2026_11_withdrawn`, with evidence saying it corrects the backfill. Anyone with an express opt-in is skipped, in the ledger or on the contact's consent fields. None of the 23 has one, and none has a send or an enrollment.
+hub_225 backfilled these 12 under `existing_relationship`, which Cameron ruled out for cold outreach. Each gets one `consent_events` row: email, marketing, revoked, basis `admin`, source `existing_relationship_2026_11_withdrawn`, with evidence saying it corrects the backfill. Anyone with an express opt-in is skipped, in the ledger or on the contact's consent fields. None of the 12 has one, and none has a send or an enrollment.
 
 | Group | Count | Contacts |
 |---|---:|---|
-| June 2026 NP Outreach, blank source | 11 | Angie Chaplin, Anna Gudmunson, Catherine McCarthy, Danielle Griff, Darrell Barr, Divine Celiane, Gary Jacobs, Jenna Lee Anderson, Robert Rhoton, Tammy Waldron, Tony Alexander |
 | Coaches and Therapist, source was a city | 12 | Amy Porterfield, Angela Martinucci, Ashlyn Burnett, Diane Grimard Wilson, Ed Mylett, Grant Cardone, Jay Abraham, Joel Jamieson, John Maxwell, Leah Lagos, Sean Brawley, Tara Garrison |
 
 Not covered by the ruling, so their grants stay:
 - **Brent Beam:** in Coaches and Therapist, with source `Other` rather than a city.
 - **The 7 Collaborations contacts (`partner_outreach`):** Adam Grimm, Amanda Gautreaux, Brian Ellis, Christina Font, David Wiacek, Sarah Leslie, Dr. Shami Varthan.
 
-All 11 June contacts are at a Discovery Call stage (9 completed, 2 scheduled). The Hub will describe them as having withdrawn, because `marketing_revoked` reads "This person withdrew their agreement".
+**Kept by ruling:** the 11 June 2026 NP Outreach contacts reached a Discovery Call stage (9 completed, 2 scheduled), so they have a real relationship and keep their hub_225 grant: Angie Chaplin, Anna Gudmunson, Catherine McCarthy, Danielle Griff, Darrell Barr, Divine Celiane, Gary Jacobs, Jenna Lee Anderson, Robert Rhoton, Tammy Waldron, Tony Alexander.
+
+**How the rows read:** the Consent tab labels a revoked row with basis `admin` "Removed by staff". The send-decision text for `marketing_revoked` still says the person withdrew, because the gate's reason doesn't carry the basis.
 
 ### Backfill exclusions
 hub_226's backfill also excludes `prospect_unknown`, `outreach_2026_06` and any `*_research` source. The 18 are 9 `xregulation`, 7 `unknown_enrolled`, 1 `unknown_sales` and 1 `unknown`.
+
+The `outreach_2026_06` exclusion stays and changes nothing today. Only the 11 June contacts will hold that source, and they already hold a grant, so the existing-record test leaves them out either way.
 
 ### Test records
 `hub_email_marketing_allowed` and `hub_texting_allowed` return false for a contact tagged `quarantine:test-record` unless its email or phone is on `campaign_test_contacts`. `gate_check` denies the same contacts with reason `test_record`, on every channel and kind, after the engine and WNW sender checks. All 11 test accounts tagged by the data fix hold a hub_225 grant and read as allowed today. This turns them off.

@@ -23,17 +23,20 @@
 --    campaign_test_contacts. Read 2026-11-06: 16 live tagged contacts after the data fix, none on the
 --    allowlist. 11 of them hold a hub_225 consent row and read as allowed today.
 --
--- 3. COLD OUTREACH CORRECTION. hub_225 backfilled 23 cold prospects under existing_relationship, which
---    Cameron ruled out for cold outreach. Each gets one revoke row. consent_events is append-only, so the
---    grant stays and the later revoke wins in consent_state. Anyone with an express opt-in is skipped;
---    none of the 23 has one today.
+-- 3. COLD OUTREACH CORRECTION. hub_225 backfilled 12 cold prospects in Coaches and Therapist, whose source
+--    was a city name, under existing_relationship, which Cameron ruled out for cold outreach. Each gets
+--    one revoke row. consent_events is append-only, so the grant stays and the later revoke wins in
+--    consent_state. Anyone with an express opt-in is skipped; none of the 12 has one today. The 11 June
+--    2026 NP Outreach contacts reached a Discovery Call stage, so they keep their hub_225 grant.
 --
 -- 4. BACKFILL. hub_225's eligibility with that DNC test changed, and these sources also excluded:
 --    prospect_unknown, outreach_2026_06 and any *_research source. Same basis, same source, Neuro Progeny
 --    only, the earlier exclusions kept, and no existing ledger record overridden. 18 contacts when
---    projected on 2026-11-06 after the data fix. The new exclusions remove none of the 18.
+--    projected on 2026-11-06 after the data fix. The new exclusions remove none of the 18. The
+--    outreach_2026_06 exclusion changes nothing today: only the 11 June contacts will hold that source,
+--    and they already hold a grant, so the existing-record test leaves them out either way.
 --
--- EMAIL MARKETING ALLOWED, Neuro Progeny live contacts: 97 today - 23 cold - 11 test + 18 restored = 81.
+-- EMAIL MARKETING ALLOWED, Neuro Progeny live contacts: 97 today - 12 cold - 11 test + 18 restored = 92.
 --
 -- SENDS NOTHING: gate_live_sends stays off and no campaign's live_enabled changes.
 --
@@ -262,6 +265,7 @@ end $$;
 
 -- Cold outreach correction: one revoke row per contact. The list is named so the review doc and this
 -- file can be compared. Brent Beam (Coaches and Therapist, source "Other") is not a city and not in it.
+-- The June 2026 NP Outreach contacts are not in it either: they reached a Discovery Call stage.
 do $$
 declare
   v_n int;
@@ -275,18 +279,6 @@ begin
     from public.consent_events g
     join public.contacts c on c.id = g.contact_id
     join (values
-      -- June 2026 NP Outreach, blank source (11)
-      ('7c32aa8a-36d0-4e1b-a93b-241b7ff234ec'::uuid),  -- Angie Chaplin
-      ('4a636f9c-dd12-462c-944e-57f9c4133792'::uuid),  -- Anna Gudmunson
-      ('cdd7c3d6-92cb-48ce-acfc-e6577c373c6e'::uuid),  -- Catherine McCarthy
-      ('dd84b7e3-fdd6-4675-b3ee-441c0f829fc5'::uuid),  -- Danielle Griff
-      ('9a858e62-36e9-4d29-aece-710436153cba'::uuid),  -- Darrell Barr
-      ('8a0f7fd3-3a68-4e00-974a-d6dc12bc3a95'::uuid),  -- Divine Celiane
-      ('5cbbeaf8-77ea-47b5-b8e4-47deff84f421'::uuid),  -- Gary Jacobs
-      ('9a3e40bd-5d23-4c5f-9c37-f115eb975b02'::uuid),  -- Jenna Lee Anderson
-      ('2b759d21-f043-4bd2-9d68-1f301f09bc99'::uuid),  -- Robert Rhoton
-      ('0e65a57c-412c-4b0f-83d0-0f2af7e11ddd'::uuid),  -- Tammy Waldron
-      ('b82b717b-e584-4951-ad3b-4efe726fbf07'::uuid),  -- Tony Alexander
       -- Coaches and Therapist, source was a city (12)
       ('274aeb71-090e-4830-a96c-6535a89ac16b'::uuid),  -- Amy Porterfield, Nashville
       ('b3ab86a4-1fe3-4dad-8f23-4edcca4c4761'::uuid),  -- Angela Martinucci, Albany
@@ -311,9 +303,9 @@ begin
                       and (x.contact_id in (select public.hub_contact_family(c.id))
                            or (x.org_id = g.org_id and x.address = g.address)));
   get diagnostics v_n = row_count;
-  -- 23 when read on 2026-11-06, and it can't be higher. A count far from that means stop and look.
-  if v_n not between 20 and 23 then
-    raise exception 'hub_226: cold outreach correction would write % rows, expected 23', v_n;
+  -- Exactly 12 when read on 2026-11-06. Any other count means stop and look.
+  if v_n <> 12 then
+    raise exception 'hub_226: cold outreach correction would write % rows, expected exactly 12', v_n;
   end if;
   raise notice 'hub_226: revoked % cold outreach backfill grants', v_n;
 end $$;
