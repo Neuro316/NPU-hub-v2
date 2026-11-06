@@ -2,6 +2,7 @@
 
 Branch `feat/marketing-m1-m2` off `main` at `8a236cf`. Migration `hub_225`, production only, on Cameron's go.
 This work sends nothing live: `gate_live_sends` stays off and no campaign's `live_enabled` changes.
+Cameron's rulings 2026-11-05: backfill is Neuro Progeny only and excludes research-sourced contacts (97 rows).
 
 ## Order
 1. Propose `hub_225` and the backfill count, then stop for the go.
@@ -24,7 +25,7 @@ This work sends nothing live: `gate_live_sends` stays off and no campaign's `liv
 - **Evaluation:** a pure TypeScript matcher in `src/lib/marketing/smart-lists/` runs over `hub_contact_facts(org)` on
   each read. No membership is stored, so lists are always current. This matches how metrics are computed in TS.
 - **Definition:** `{match: all|any, rules: [{field, op, value}]}`. Flat, with no nested groups.
-- **No data source yet:** a field catalog marks `quiz_archetype`, `lead_device`, `no_show`, `attended`,
+- **No data source yet:** a field catalog marks `quiz_archetype` (seeded as Holder, Giver, Ember and Tender, pending the Transitions quiz), `lead_device`, `no_show`, `attended`,
   `webinar_registered` and `webinar_attended` as having no source. A rule on one of those matches nobody and never
   widens a list. The badge comes from the catalog, so it clears when a source is added.
 - **API:** `/api/marketing/smart-lists` for list, create, update, duplicate, archive, count and preview.

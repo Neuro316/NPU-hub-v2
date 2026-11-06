@@ -1,6 +1,7 @@
 -- hub_225_marketing_foundations_smart_lists.sql
 --
--- STATUS: PROPOSED, NOT APPLIED. Needs Cameron's separate go. Production only (the Hub has no nonprod).
+-- STATUS: APPLIED to production (htfrfaxlcuyawtlztxxm) on 2026-11-05 after Cameron's go.
+-- The Hub has no nonprod.
 --
 -- Hub band (200+). Checked 2026-11-05: files and ledger stop at hub_224, no hub_225 or 225.
 --
@@ -348,7 +349,7 @@ update public.org_settings
 do $$
 declare
   v_org constant uuid := '00000000-0000-0000-0000-000000000001';
-  v_exclude_research constant boolean := false;  -- CAMERON'S DECISION: true leaves out the 42 research contacts
+  v_exclude_research constant boolean := true;  -- Cameron's decision 2026-11-05: leave out the 42 research contacts
   v_n int;
 begin
   insert into public.consent_events (org_id, contact_id, address, channel, kind, action, basis, source, evidence)
@@ -368,9 +369,9 @@ begin
                            or (e.org_id = b.org_id and e.address = lower(btrim(b.email)))))
      and not (v_exclude_research and coalesce(b.source, '') ~* '^https?:|research|Thinkers50|Import|media_appearance');
   get diagnostics v_n = row_count;
-  -- 139 eligible when read on 2026-11-05 (97 with research excluded). A count far from that means stop and look.
-  if v_n not between 90 and 150 then
-    raise exception 'hub_225: backfill would write % rows, expected about 139 or 97', v_n;
+  -- 97 eligible when read on 2026-11-05 with research excluded. A count far from that means stop and look.
+  if v_n not between 90 and 105 then
+    raise exception 'hub_225: backfill would write % rows, expected about 97', v_n;
   end if;
   raise notice 'hub_225: backfilled % contacts', v_n;
 end $$;
@@ -379,8 +380,14 @@ end $$;
 insert into public.smart_lists (org_id, seed_key, name, brand, definition) values
  ('00000000-0000-0000-0000-000000000001','new_leads_30','New leads 30 days','np',
   '{"match":"all","rules":[{"field":"created_days","op":"lte","value":30},{"field":"purchased","op":"is","value":false}]}'),
- ('00000000-0000-0000-0000-000000000001','quiz_archetype','Quiz archetype','np',
-  '{"match":"all","rules":[{"field":"quiz_archetype","op":"in","value":[]}]}'),
+ ('00000000-0000-0000-0000-000000000001','quiz_holder','Quiz: The Holder','np',
+  '{"match":"all","rules":[{"field":"quiz_archetype","op":"in","value":["Holder"]}]}'),
+ ('00000000-0000-0000-0000-000000000001','quiz_giver','Quiz: The Giver','np',
+  '{"match":"all","rules":[{"field":"quiz_archetype","op":"in","value":["Giver"]}]}'),
+ ('00000000-0000-0000-0000-000000000001','quiz_ember','Quiz: The Ember','np',
+  '{"match":"all","rules":[{"field":"quiz_archetype","op":"in","value":["Ember"]}]}'),
+ ('00000000-0000-0000-0000-000000000001','quiz_tender','Quiz: The Tender','np',
+  '{"match":"all","rules":[{"field":"quiz_archetype","op":"in","value":["Tender"]}]}'),
  ('00000000-0000-0000-0000-000000000001','booked_discovery','Booked discovery call','np',
   '{"match":"any","rules":[{"field":"stage","op":"in","value":["Discovery call Scheduled","Scheduled discovery call"]},{"field":"booking_type","op":"contains","value":"discovery"}]}'),
  ('00000000-0000-0000-0000-000000000001','discovery_no_show','Discovery no-show','np',
