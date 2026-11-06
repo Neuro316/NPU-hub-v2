@@ -27,7 +27,7 @@ const ROOT = path.resolve(__dirname, '..', '..')
 const BASE = process.env.PARITY_BASE || '3492d97'
 // inbound-sms stopped logging message content on Cameron's ruling, so its unmarked lines are compared
 // with that commit.
-const INBOUND_BASE = process.env.INBOUND_BASE || 'ce28172'
+const INBOUND_BASE = process.env.INBOUND_BASE || '1319978'
 const UNTOUCHED = {
   'stage-emails': 'src/app/api/crm/stage-emails/route.ts',
   'sms-outbox-cron': 'src/app/api/cron/sms-outbox/route.ts',

@@ -118,9 +118,13 @@ const SINCE_ACTIVITY = {
 // and no message content in logActivity. They are compared with that commit.
 const LEAD_RULINGS_BASE = process.env.LEAD_RULINGS_BASE || 'ce28172'
 const SINCE_LEAD_RULINGS = {
-  'inbound-sms': 'src/app/api/twilio/inbound-sms/route.ts',
   'sms-send': 'src/app/api/sms/send/route.ts',
   'middleware': 'src/middleware.ts',
+}
+// The message.received webhook stopped carrying message content on Cameron's ruling.
+const LEAD_KIT_BASE = process.env.LEAD_KIT_BASE || '1319978'
+const SINCE_LEAD_KIT = {
+  'inbound-sms': 'src/app/api/twilio/inbound-sms/route.ts',
 }
 const MARKED = {
   'conversations': 'src/app/(dashboard)/crm/conversations/page.tsx',
@@ -186,6 +190,10 @@ for (const [k, f] of Object.entries(SINCE_C2C)) {
 for (const [k, [f, ref]] of Object.entries(SINCE_DIALER)) {
   const same = work(f) === base(f, ref)
   rows.push({ id: `D_${k}`, ok: same, got: same ? `identical to ${ref}` : `differs from ${ref}` })
+}
+for (const [k, f] of Object.entries(SINCE_LEAD_KIT)) {
+  const same = work(f) === base(f, LEAD_KIT_BASE)
+  rows.push({ id: `LK_${k}`, ok: same, got: same ? `identical to ${LEAD_KIT_BASE}` : `differs from ${LEAD_KIT_BASE}` })
 }
 for (const [k, f] of Object.entries(SINCE_LEAD_RULINGS)) {
   const same = work(f) === base(f, LEAD_RULINGS_BASE)
