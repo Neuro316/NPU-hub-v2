@@ -205,7 +205,8 @@ export async function POST(request: NextRequest) {
     contact_id: contact.id,
     channel: 'sms',
     direction: 'inbound',
-    body: body.substring(0, 100),
+    line: lineE164,
+    occurred_at: new Date().toISOString(),
   });
 
   // ── Direct counter increment (admin bypasses RLS) ──

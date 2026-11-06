@@ -23,7 +23,7 @@ const TAMPERS = {
   anyhost: [[F, ".split(':')[0] === LEAD_DEVICE_HOST", ".split(':')[0].endsWith(LEAD_DEVICE_HOST)"]],
   hubhost: [[F, "export const LEAD_DEVICE_HOST = 'start.neuroprogeny.com'", "export const LEAD_DEVICE_HOST = 'hub.neuroprogeny.com'"]],
   anypath: [[F, "if (parts.length > 2 || !SLUG.test(parts[0])) return null\n  if (parts.length === 2 && !SUBPATHS.has(parts[1])) return null\n", '']],
-  looseorg: [[F, "typeof o === 'string' && HTTPS_ORIGIN.test(o)", "typeof o === 'string'"]],
+  looseorg: [[F, "typeof o === 'string' && PUBLIC_HTTPS_ORIGIN.test(o)", "typeof o === 'string'"]],
   keepcook: [],
   noapi: [],
 }

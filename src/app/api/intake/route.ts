@@ -26,6 +26,7 @@ import { createAdminSupabase } from '@/lib/supabase'
 import { getFlags } from '@/lib/marketing/flags'
 import { validateIntake, type FormDefinition } from '@/lib/marketing/intake'
 import { toE164 } from '@/lib/phone'
+import { externalIntake, isLeadIntakeCaller } from '@/lib/lead-devices/external'
 
 export const dynamic = 'force-dynamic'
 
@@ -65,10 +66,18 @@ export async function OPTIONS(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const h = cors(req)
   if (!h) return new NextResponse(null, { status: 403 })
+  // A lead device hosted on another site (docs/INTEGRATION_CONTRACT.md). Its own secret, and only that secret
+  // opens this path; everything below is the form intake, unchanged.
+  if (isLeadIntakeCaller(req.headers.get('authorization'))) {
+    const leadBody = await req.json().catch(() => null)
+    const r = await externalIntake(createAdminSupabase(), leadBody)
+    return json(r.body, r.status, h)
+  }
   const server = serverCaller(req)
   if (server === false) return json({ error: 'unauthorized' }, 401, h)
   let body: any
   try { body = await req.json() } catch { return json({ error: 'Please send the form again.' }, 400, h) }
+  if (body?.device && body?.submission) return json({ error: 'unauthorized' }, 401, h)
   const eventId = server ? (typeof body?.event_id === 'string' && EVENT_ID.test(body.event_id) ? body.event_id : null) : null
   if (server && !eventId) return json({ error: 'event_id is required: letters, numbers and : _ . - only, up to 120 characters' }, 400, h)
   const slug = typeof body?.form === 'string' ? body.form : ''

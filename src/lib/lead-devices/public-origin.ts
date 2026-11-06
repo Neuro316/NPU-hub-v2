@@ -20,7 +20,7 @@ export const FRAME_ANCESTORS = [
 
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const SUBPATHS = new Set(['file', 'submit', 'track'])
-const HTTPS_ORIGIN = /^https:\/\/[a-z0-9-]+(?:\.[a-z0-9-]+)+$/
+export const PUBLIC_HTTPS_ORIGIN = /^https:\/\/[a-z0-9-]+(?:\.[a-z0-9-]+)+$/
 
 /** Exact match on the host, ignoring case and a port. Nothing else leaves the Hub login. */
 export function isLeadDeviceHost(host: string | null | undefined): boolean {
@@ -38,7 +38,7 @@ export function leadDeviceRoute(pathname: string): string | null {
 /** Pure: the frame-ancestors value for a device's page. A manifest entry counts only as a plain https origin. */
 export function frameAncestors(embedOrigins: unknown): string {
   const extra = Array.isArray(embedOrigins)
-    ? embedOrigins.filter((o): o is string => typeof o === 'string' && HTTPS_ORIGIN.test(o))
+    ? embedOrigins.filter((o): o is string => typeof o === 'string' && PUBLIC_HTTPS_ORIGIN.test(o))
     : []
   return ['frame-ancestors', ...Array.from(new Set([...FRAME_ANCESTORS, ...extra]))].join(' ')
 }

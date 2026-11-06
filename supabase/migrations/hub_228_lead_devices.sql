@@ -1,6 +1,6 @@
 -- hub_228_lead_devices.sql
 --
--- STATUS: PROPOSED. Not applied. Waiting for Cameron's go.
+-- STATUS: APPLIED to production 2026-11-06 on Cameron's go, migration name hub_228_lead_devices.
 --
 -- Hub band (200+). Checked 2026-11-06: the ledger stops at hub_227. This is 228.
 --
@@ -24,7 +24,7 @@
 -- public origin, so the link is https://start.neuroprogeny.com/<slug>, and the external intake can name a
 -- device by slug alone.
 --
--- SEARCH PATH: hub_lead_device_contact does not use the empty search path of hub_intake_contact. A contact
+-- SEARCH PATH: hub_lead_device_contact and hub_intake_contact use a named search path, not an empty one. A contact
 -- insert fires trg_contact_identity, whose function and resolve_identity name their objects without a schema
 -- and use similarity(), so they run under the caller's path.
 --
@@ -45,6 +45,7 @@
 --   -- recreate hub_contact_facts from its definition in hub_225_marketing_foundations_smart_lists.sql,
 --   -- then revoke and grant execute as below
 --   drop function public.hub_lead_device_contact(uuid, text, text, text, text, text, jsonb);
+--   alter function public.hub_intake_contact(uuid, text, text, text, text, text, jsonb) set search_path to '';
 --   drop table public.lead_device_events;
 --   drop table public.lead_device_submissions;
 --   alter table public.lead_devices drop constraint lead_devices_live_version_fk;
@@ -200,6 +201,10 @@ end $function$;
 
 revoke all on function public.hub_lead_device_contact(uuid, text, text, text, text, text, jsonb) from public, anon, authenticated;
 grant execute on function public.hub_lead_device_contact(uuid, text, text, text, text, text, jsonb) to service_role;
+
+-- The form intake's empty search path carries into trg_contact_identity, which names its objects without a
+-- schema, so a new contact with an email could not be created. Its body already qualifies everything it uses.
+alter function public.hub_intake_contact(uuid, text, text, text, text, text, jsonb) set search_path to 'public', 'extensions', 'pg_temp';
 
 -- The return type changes, so the function is dropped and recreated rather than replaced. The body is
 -- the live definition read on 2026-11-06, with the two new columns and their two joins added.

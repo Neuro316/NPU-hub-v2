@@ -31,6 +31,7 @@ import { LeadValueEditor } from '@/components/crm/lead-value'
 import { AddNamePrompt } from '@/components/crm/add-name-prompt'
 import { needsName } from '@/lib/call-new-number'
 import { BookingAnswers } from '@/components/crm/booking-answers'
+import { DeviceAnswers } from '@/components/crm/device-answers'
 import { SendResources } from '@/components/crm/send-resources'
 
 interface PipelineCustomField {
@@ -1055,6 +1056,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
 
               {tab === 'overview' && (
                 <>
+                  {contactId && <DeviceAnswers contactId={contactId} />}
                   {/* Notes surfaced at the top of Overview. Pinned-first, then newest
                       (fetchNotes orders pinned desc, created_at desc), so slice(0,3)
                       shows the most relevant. Only renders when notes exist. */}
