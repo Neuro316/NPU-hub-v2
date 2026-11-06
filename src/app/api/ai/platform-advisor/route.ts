@@ -37,9 +37,9 @@ export async function POST(request: NextRequest) {
   // 3. Activity log (what CRM actions happen most)
   const { data: activityEvents } = await supabase
     .from('activity_log')
-    .select('event_type')
+    .select('action')
     .eq('org_id', org_id)
-    .gte('occurred_at', since30d)
+    .gte('created_at', since30d)
     .limit(2000)
 
   // 4. Team members count
@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
   // Activity type counts
   const activityCounts: Record<string, number> = {}
   ;(activityEvents || []).forEach(e => {
-    activityCounts[e.event_type] = (activityCounts[e.event_type] || 0) + 1
+    activityCounts[e.action] = (activityCounts[e.action] || 0) + 1
   })
 
   // Help request patterns

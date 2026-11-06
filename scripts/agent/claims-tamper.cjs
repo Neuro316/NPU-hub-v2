@@ -21,7 +21,7 @@ const ts = require('typescript')
 const ROOT = path.resolve(__dirname, '..', '..')
 const SRC = path.join(ROOT, 'src')
 const GUIDE = path.join(ROOT, 'docs', 'marketing', 'voice-and-claims-guide.md')
-const MODULES = ['lib/agent/claims.ts', 'lib/marketing/render.ts', 'lib/crm-server.ts', 'lib/phone.ts', 'lib/sms-split.ts']
+const MODULES = ['lib/agent/claims.ts', 'lib/marketing/render.ts', 'lib/crm-server.ts', 'lib/activity-log.ts', 'lib/phone.ts', 'lib/sms-split.ts']
 
 const TAMPERS = {
   emdash: [['lib/agent/claims.ts', 'if (EM_DASH.test(subject) || EM_DASH.test(i.body))', 'if (false)']],

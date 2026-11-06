@@ -42,7 +42,7 @@ const real = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPA
 // under node_modules/.cache so bare imports (next/server, @supabase) resolve; a fresh dir per run
 fs.mkdirSync(path.join(ROOT, 'node_modules', '.cache'), { recursive: true })
 const out = fs.mkdtempSync(path.join(ROOT, 'node_modules', '.cache', 'hub-seqprobe-'))
-const MODULES = ['app/api/marketing/sequences/route.ts', 'lib/sms-split.ts', 'lib/marketing/render.ts', 'lib/crm-server.ts',
+const MODULES = ['app/api/marketing/sequences/route.ts', 'lib/sms-split.ts', 'lib/marketing/render.ts', 'lib/crm-server.ts', 'lib/activity-log.ts',
   'lib/marketing/team-member.ts', 'lib/marketing/db-errors.ts']
 for (const rel of MODULES) {
   const file = path.join(SRC, rel)
