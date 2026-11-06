@@ -17,9 +17,16 @@
 --                                 endpoint's attempts, which the rate limit counts
 --   hub_contact_facts             gains lead_devices and quiz_archetypes, so those two Smart List
 --                                 fields have a data source. Test submissions do not count.
+--   hub_lead_device_contact       matches or creates the contact. Only a new contact takes the device
+--                                 slug as its source; an existing contact keeps its source.
 --
 -- SLUGS ARE UNIQUE ACROSS THE HUB, stricter than the brief's "unique per org". Every device shares one
--- public origin, so the link is <origin>/<slug>, and the external intake can name a device by slug alone.
+-- public origin, so the link is https://start.neuroprogeny.com/<slug>, and the external intake can name a
+-- device by slug alone.
+--
+-- SEARCH PATH: hub_lead_device_contact does not use the empty search path of hub_intake_contact. A contact
+-- insert fires trg_contact_identity, whose function and resolve_identity name their objects without a schema
+-- and use similarity(), so they run under the caller's path.
 --
 -- REPOINTING: lead_device_submissions.contact_id follows a contact merge, because
 -- merge_contact_repoint updates every public column named like %contact_id%.
@@ -37,6 +44,7 @@
 --   drop function public.hub_contact_facts(uuid);
 --   -- recreate hub_contact_facts from its definition in hub_225_marketing_foundations_smart_lists.sql,
 --   -- then revoke and grant execute as below
+--   drop function public.hub_lead_device_contact(uuid, text, text, text, text, text, jsonb);
 --   drop table public.lead_device_events;
 --   drop table public.lead_device_submissions;
 --   alter table public.lead_devices drop constraint lead_devices_live_version_fk;
@@ -56,7 +64,7 @@ create table public.lead_devices (
   org_id             uuid not null references public.organizations(id) on delete cascade,
   slug               text not null unique
                      check (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$' and length(slug) <= 80
-                            and slug not in ('api', 'favicon', 'health', 'robots', 'sitemap')),
+                            and slug not in ('api', 'favicon', 'health', 'lead-device', 'robots', 'sitemap')),
   name               text not null check (length(btrim(name)) between 1 and 200),
   brand              text not null check (brand in ('neuro_progeny', 'wnw')),
   type               text not null check (type in ('quiz', 'lead_magnet', 'webinar', 'tool', 'form', 'booking')),
@@ -166,6 +174,32 @@ revoke all on public.lead_devices, public.lead_device_versions, public.lead_devi
   from public, anon, authenticated;
 grant all on public.lead_devices, public.lead_device_versions, public.lead_device_submissions, public.lead_device_events
   to service_role;
+
+-- The same match as hub_intake_contact: by email, or by phone when there is no email. An existing contact
+-- is returned untouched, so it keeps its source.
+create function public.hub_lead_device_contact(p_org uuid, p_email text, p_phone text, p_first text, p_last text, p_slug text, p_utm jsonb default null)
+ returns uuid
+ language plpgsql
+ security definer
+ set search_path to 'public', 'extensions', 'pg_temp'
+as $function$
+declare v uuid; e text := nullif(lower(btrim(p_email)), ''); ph text := nullif(btrim(p_phone), '');
+begin
+  if e is null and ph is null then raise exception 'hub: a lead device submission needs an email or a phone'; end if;
+  select c.id into v from public.contacts c
+   where c.org_id = p_org and c.merged_into_id is null and c.archived_at is null
+     and ((e is not null and lower(btrim(c.email)) = e) or (e is null and ph is not null and btrim(c.phone) = ph))
+   order by c.created_at limit 1;
+  if v is not null then return v; end if;
+  insert into public.contacts (org_id, first_name, last_name, email, phone, source, acquisition_source, acquisition_utm)
+  values (p_org, coalesce(nullif(btrim(p_first), ''), 'Unknown'), coalesce(btrim(p_last), ''), e, ph,
+          p_slug, 'lead_device:' || p_slug, p_utm)
+  returning id into v;
+  return v;
+end $function$;
+
+revoke all on function public.hub_lead_device_contact(uuid, text, text, text, text, text, jsonb) from public, anon, authenticated;
+grant execute on function public.hub_lead_device_contact(uuid, text, text, text, text, text, jsonb) to service_role;
 
 -- The return type changes, so the function is dropped and recreated rather than replaced. The body is
 -- the live definition read on 2026-11-06, with the two new columns and their two joins added.

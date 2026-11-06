@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
     contact_id,
     org_id,
     event_type: 'email_sent',
-    event_data: { subject: resolvedSubject, status: result.success ? 'sent' : 'failed' },
+    event_data: { status: result.success ? 'sent' : 'failed' },
     ref_table: 'email_sends',
     ref_id: emailSend?.id,
     actor_id: user.id,

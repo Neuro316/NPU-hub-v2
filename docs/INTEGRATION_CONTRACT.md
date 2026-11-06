@@ -182,6 +182,8 @@ Content-Type: application/json
 1. Registers the device in draft if the slug is new, and creates what goes around it in dry run.
 2. Matches the contact by email, or by phone when there is no email, or creates one.
 3. Adds the source and outcome tags, and stores the answers for the contact card's Device answers section.
+   A new contact takes the device slug as its source. An existing contact keeps its source; the
+   `lead_device` Smart List field covers attribution for both.
 4. Records each consent as marketing consent with the text you sent. It never reverses the person's own
    earlier opt-out, and an SMS consent counts only when the phone sent is the phone on the contact.
 5. Places the contact at New lead and routes it through `route_and_enroll` with the idempotency key as

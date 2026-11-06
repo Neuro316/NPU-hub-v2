@@ -1,7 +1,21 @@
-import { type NextRequest } from 'next/server'
+import { NextResponse, type NextRequest } from 'next/server'
 import { updateSession } from '@/lib/supabase-middleware'
+import { isLeadDeviceHost, leadDeviceRoute } from '@/lib/lead-devices/public-origin'
+
+// start.neuroprogeny.com only: it serves lead devices and nothing else, with no session and no
+// cookies in either direction. Every other host goes through the Hub login exactly as before.
+function leadDeviceResponse(request: NextRequest) {
+  const route = leadDeviceRoute(request.nextUrl.pathname)
+  if (!route) return new NextResponse(null, { status: 404 })
+  const url = request.nextUrl.clone()
+  url.pathname = route
+  const headers = new Headers(request.headers)
+  headers.delete('cookie')
+  return NextResponse.rewrite(url, { request: { headers } })
+}
 
 export async function middleware(request: NextRequest) {
+  if (isLeadDeviceHost(request.headers.get('host'))) return leadDeviceResponse(request)
   return await updateSession(request)
 }
 

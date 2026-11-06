@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
 
       await logActivity(supabase, {
         contact_id, org_id: contact.org_id, event_type: 'sms_sent',
-        event_data: { body: msgBody.substring(0, 100), twilio_sid: twilioMsg.sid },
+        event_data: { twilio_sid: twilioMsg.sid },
         ref_table: 'crm_messages', ref_id: messageId, actor_id: user.id,
       });
 

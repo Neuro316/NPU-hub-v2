@@ -39,6 +39,15 @@ export const ACTOR_USER_PATH = 'details->>actor_user_id'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+// The log says that something happened, never what a message, email or call said. Any org member can
+// read this table, so these are dropped here even if a caller passes one.
+const CONTENT_KEYS = new Set(['body', 'content', 'html', 'message', 'preview', 'subject', 'summary', 'text', 'transcript', 'transcription'])
+
+function withoutContent(data: Record<string, unknown> | undefined) {
+  if (!data) return null
+  return Object.fromEntries(Object.entries(data).filter(([k]) => !CONTENT_KEYS.has(k.toLowerCase())))
+}
+
 /** Pure: the row to insert. entity_id is a uuid column, so any other reference stays in details. */
 export function toActivityRow(entry: ActivityInput, teamMemberId: string | null) {
   const refIsUuid = !!entry.ref_id && UUID.test(entry.ref_id)
@@ -50,7 +59,7 @@ export function toActivityRow(entry: ActivityInput, teamMemberId: string | null)
     entity_type: entry.ref_table ?? 'contact',
     entity_id: refIsUuid ? entry.ref_id! : null,
     details: {
-      event_data: entry.event_data ?? null,
+      event_data: withoutContent(entry.event_data),
       actor_user_id: entry.actor_id ?? null,
       ...(entry.ref_id && !refIsUuid ? { ref_id: entry.ref_id } : {}),
     },

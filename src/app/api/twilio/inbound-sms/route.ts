@@ -195,7 +195,7 @@ export async function POST(request: NextRequest) {
     contact_id: contact.id,
     org_id: orgId,
     event_type: 'sms_received',
-    event_data: { body: body.substring(0, 100) },
+    event_data: { line: lineE164 },
     ref_table: 'crm_messages',
     ref_id: message?.id,
   });

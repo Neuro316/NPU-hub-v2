@@ -7,13 +7,15 @@
 //   A_ACTOR    actor_id takes the team member; the auth user stays in details
 //   A_READ     a stored row reads back as what was logged
 //   A_READERS  no reader of activity_log asks for a column the table lacks
+//   A_CONTENT  no message, email or call content is stored, and no caller passes any
 //
 //   rawcols    the row names event_type again           {A_COLS,A_READ}
 //   refraw     any reference goes to the uuid column     {A_REF}
 //   actorraw   actor_id takes the auth user              {A_ACTOR}
 //   readold    a row reads event_type, not action        {A_READ}
 //   orderold   the shared loader orders by occurred_at   {A_READERS}
-// TAMPER=1 reddens the union (5).
+//   keepbody   message content is stored again           {A_CONTENT}
+// TAMPER=1 reddens the union (6).
 const fs = require('fs'), path = require('path')
 const H = require('../agent/lib/harness.cjs')
 
@@ -24,9 +26,10 @@ const TAMPERS = {
   actorraw: [[F, 'actor_id: teamMemberId,', 'actor_id: entry.actor_id ?? null,']],
   readold: [[F, 'event_type: row.action,', 'event_type: row.event_type,']],
   orderold: [[F, ".order('created_at', { ascending: false })", ".order('occurred_at', { ascending: false })"]],
+  keepbody: [[F, 'event_data: withoutContent(entry.event_data),', 'event_data: entry.event_data ?? null,']],
 }
 const RED_OF = {
-  rawcols: ['A_COLS', 'A_READ'], refraw: ['A_REF'], actorraw: ['A_ACTOR'], readold: ['A_READ'], orderold: ['A_READERS'],
+  rawcols: ['A_COLS', 'A_READ'], refraw: ['A_REF'], actorraw: ['A_ACTOR'], readold: ['A_READ'], orderold: ['A_READERS'], keepbody: ['A_CONTENT'],
 }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-activity')
@@ -68,5 +71,12 @@ for (const file of walk(SRC)) {
 }
 const compiledLoader = fs.readFileSync(path.join(out, 'lib', 'activity-log.js'), 'utf8')
 check('A_READERS', stale.length === 0 && !compiledLoader.includes("order('occurred_at'"), { stale })
+
+const scrubbed = toActivityRow({ ...entry, event_data: { body: 'x', Subject: 'y', transcript: 'z', message: 'm', line: '+18285550100', status: 'sent' } }, null).details.event_data
+const callersWithContent = walk(SRC).filter((file) => {
+  const text = fs.readFileSync(file, 'utf8')
+  return [...text.matchAll(/logActivity\([\s\S]{0,400}?event_data:\s*\{([^}]*)\}/g)].some((m) => /\b(body|subject|content|message|transcript|summary|html)\b\s*[:,]/.test(m[1]))
+}).map((file) => path.relative(SRC, file))
+check('A_CONTENT', Object.keys(scrubbed).sort().join() === 'line,status' && callersWithContent.length === 0, { scrubbed, callersWithContent })
 
 H.report(rows, active, RED_OF, () => fs.rmSync(out, { recursive: true, force: true }))
