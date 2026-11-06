@@ -5,7 +5,7 @@
 -- Rulings are in docs/plans/hub-data-hygiene-review.md. Scope: live Neuro Progeny contacts only
 -- (not merged, not archived). Sensorium is untouched (P1 and P2 skipped).
 --
--- BEFORE AND AFTER, read 2026-11-05. Each item aborts the whole file if it would touch a different
+-- BEFORE AND AFTER, recounted 2026-11-06 with the same numbers. Each item aborts the whole file if it would touch a different
 -- number of contacts, and the last statement prints the same table from the live data.
 --
 --   Item  Change                                            Contacts  Before -> After
@@ -19,7 +19,7 @@
 --   T4    delete comma-split fragments                            16  16 -> 0
 --   T5    rank-N tag -> outreach_rank, delete tag                100  tag 100 -> 0, outreach_rank 0 -> 100
 --   T6    URL tags: 2 moved to fields, 13 duplicates deleted       8  URL tags 26 -> 11 (11 kept, no field)
---   T7    state tag -> address_state, delete tag                  35  35 -> 0
+--   T7    US state or DC tag -> address_state, delete tag         35  35 -> 0 (no other two-letter tags exist)
 --   T9    delete Instagram and LinkedIn tags                     100  100 -> 0
 --   S1    blank source -> proposed value                          91  91 -> 0
 --   S2    city -> address_city, source -> prospect_unknown        31  31 -> 0
@@ -82,6 +82,9 @@ declare
   v_cities constant text[] := array['Denver','Chicago','Colorado Springs','Laguna Hills','Wellington','Rocklin','South Pasadena',
     'Los Angeles','Laguna Beach','Santa Barbara','Pittsburgh','Seattle','West Sacramento','Aventura','Virginia Beach','Scottsdale',
     'Stamford','Albany','Kirkland','Miami','Silver Spring','Duluth','Nashville','New York','Salt Lake City','Dallas','Culver City','Carmel','Dover'];
+  v_states constant text[] := array['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD',
+    'MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA',
+    'WA','WV','WI','WY','DC'];
 begin
   -- D2: two phones from platform profiles, E.164, only where the contact has none
   update public.contacts c set phone = v.phone
@@ -206,12 +209,13 @@ begin
   get diagnostics v_n = row_count;
   insert into hygiene_report values ('T6', v_n, 8);
 
-  -- T7: no contact has two state tags, and address_state is blank on all 35
+  -- T7: the 50 US state codes and DC only; any other two-letter tag stays a tag. Read 2026-11-06: all 35
+  -- are state codes, no contact has two, and address_state is blank on all 35.
   update public.contacts c set
-      address_state = (select t from unnest(c.tags) t where t ~ '^[A-Z]{2}$' limit 1),
-      tags = array(select t from unnest(c.tags) with ordinality u(t, o) where t !~ '^[A-Z]{2}$' order by o)
+      address_state = (select t from unnest(c.tags) t where t = any (v_states) limit 1),
+      tags = array(select t from unnest(c.tags) with ordinality u(t, o) where t <> all (v_states) order by o)
    where c.org_id = v_org and c.merged_into_id is null and c.archived_at is null and coalesce(c.address_state, '') = ''
-     and exists (select 1 from unnest(c.tags) t where t ~ '^[A-Z]{2}$');
+     and c.tags && v_states;
   get diagnostics v_n = row_count;
   insert into hygiene_report values ('T7', v_n, 35);
 

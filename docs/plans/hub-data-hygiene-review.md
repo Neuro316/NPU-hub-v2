@@ -5,7 +5,8 @@ Neither is applied. Apply the data fix first, then hub_226, each on Cameron's go
 
 ## Cameron's rulings
 - **In the data fix:** D2 (Ted Adams and Sarah Leslie only), D3 (2 of 25), P6, T1, T2, T3 (all 10 pairs), T4, T5, T6, T7, T9, S1a to S1h, S2 (as `prospect_unknown`), S3, S4, the 11 test accounts, and Clarity graduates by stage.
-- **In hub_226:** D1, by the rule that a merged duplicate's flag counts only if its merge snapshot shows it was set before the merge.
+- **In hub_226:** D1, by the rule that a merged duplicate's flag counts only if its merge snapshot shows it was set before the merge. Also the cold outreach correction, the added backfill exclusions and the test-record block (see Amendments of 2026-11-06).
+- **T7, narrowed:** only the 50 US state codes and DC move to `address_state`. Any other two-letter tag stays a tag.
 - **In code:** the merge route no longer sets the flag, and `leadChannel` keeps the new unknown values in `unknown`.
 - **No change needed:** P3 to P5, T10.
 - **Ruled out:** P1, P2, P7, T8, and the neuro@ and sgranau+test4@ phones.
@@ -36,7 +37,40 @@ It was meant to stop outreach to a hidden record. All 36 merged duplicates have 
 - **Blocked:** 26 live contacts have a merged duplicate with the flag.
 - **Left out of the email backfill:** 21 of them have a valid email and got no consent row. None has a research source.
   They are Amy Gordon, Bob Curtis, Brenden Allen, Bryant Smith, Cameron Allen, Caroline Yongue, Ella Brown, Erica Thiessen, Gabriel Robinson, Harper MacKenzie, John Fahl, Matt Kolousek, Brenda Walls, Melissa Allen, Millard Powell, Mary Lynn Manley, Ian Gough, Rachel Kimmel, Hazel Thornton, Skot Waldron and Wes Lehman.
-- **Fix:** hub_226 restores 18 of the 21 by backfill. Erica Thiessen stays blocked because her snapshot shows the flag set, Melissa Allen's address already has a row through her other contact, and Hazel Thornton becomes a test record.
+- **Fix:** hub_226 restores 18 of the 21 by backfill. Erica Thiessen stays blocked (Cameron's ruling, 2026-11-06) because her snapshot shows the flag set, Melissa Allen's address already has a row through her other contact, and Hazel Thornton becomes a test record.
+
+## Amendments of 2026-11-06
+All counts below were recounted against live data on 2026-11-06. Every data-fix item came back at the number already in the file. Nothing is applied.
+
+| Item | Result |
+|---|---|
+| Cold outreach revokes | 23 contacts, guarded at 20 to 23 |
+| Backfill | Still 18. The new exclusions remove none of them, guarded at 15 to 20 |
+| Test records | 16 live tagged contacts after the data fix, 0 on the allowlist |
+| T7 | Still 35. All are state codes, so no two-letter tags stay behind |
+| Email marketing allowed | 97 today - 23 cold - 11 test + 18 restored = 81 |
+
+### Cold outreach corrected in hub_226
+hub_225 backfilled these 23 under `existing_relationship`, which Cameron ruled out for cold outreach. Each gets one `consent_events` row: email, marketing, revoked, basis `admin`, source `existing_relationship_2026_11_withdrawn`, with evidence saying it corrects the backfill. Anyone with an express opt-in is skipped, in the ledger or on the contact's consent fields. None of the 23 has one, and none has a send or an enrollment.
+
+| Group | Count | Contacts |
+|---|---:|---|
+| June 2026 NP Outreach, blank source | 11 | Angie Chaplin, Anna Gudmunson, Catherine McCarthy, Danielle Griff, Darrell Barr, Divine Celiane, Gary Jacobs, Jenna Lee Anderson, Robert Rhoton, Tammy Waldron, Tony Alexander |
+| Coaches and Therapist, source was a city | 12 | Amy Porterfield, Angela Martinucci, Ashlyn Burnett, Diane Grimard Wilson, Ed Mylett, Grant Cardone, Jay Abraham, Joel Jamieson, John Maxwell, Leah Lagos, Sean Brawley, Tara Garrison |
+
+Not covered by the ruling, so their grants stay:
+- **Brent Beam:** in Coaches and Therapist, with source `Other` rather than a city.
+- **The 7 Collaborations contacts (`partner_outreach`):** Adam Grimm, Amanda Gautreaux, Brian Ellis, Christina Font, David Wiacek, Sarah Leslie, Dr. Shami Varthan.
+
+All 11 June contacts are at a Discovery Call stage (9 completed, 2 scheduled). The Hub will describe them as having withdrawn, because `marketing_revoked` reads "This person withdrew their agreement".
+
+### Backfill exclusions
+hub_226's backfill also excludes `prospect_unknown`, `outreach_2026_06` and any `*_research` source. The 18 are 9 `xregulation`, 7 `unknown_enrolled`, 1 `unknown_sales` and 1 `unknown`.
+
+### Test records
+`hub_email_marketing_allowed` and `hub_texting_allowed` return false for a contact tagged `quarantine:test-record` unless its email or phone is on `campaign_test_contacts`. `gate_check` denies the same contacts with reason `test_record`, on every channel and kind, after the engine and WNW sender checks. All 11 test accounts tagged by the data fix hold a hub_225 grant and read as allowed today. This turns them off.
+
+A tagged contact's phone matches the allowlist on its last 10 digits, the way `gate_check` compares them. To run a live test through one of these accounts, add its address to the allowlist first.
 
 ## T3: the 10 proposed pairs
 Each pair is nearly the same people. Cameron ruled to merge all 10.

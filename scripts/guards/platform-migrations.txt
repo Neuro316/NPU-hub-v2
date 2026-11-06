@@ -269,3 +269,4 @@ pf_291_open_as_sessions.sql
 pf_293_messages_deleted_hard.sql
 pf_294_paywall_addon_preselected.sql
 pf_295_under_load_tables.sql
+pf_296_under_load_early_access.sql
