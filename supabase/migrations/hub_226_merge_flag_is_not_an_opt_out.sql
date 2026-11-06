@@ -1,6 +1,8 @@
 -- hub_226_merge_flag_is_not_an_opt_out.sql
 --
--- STATUS: PROPOSED, NOT APPLIED. Needs Cameron's separate go. Production only (the Hub has no nonprod).
+-- STATUS: APPLIED to production 2026-11-06 on Cameron's go. Production only (the Hub has no nonprod).
+-- RESULT: 12 revokes, 19 backfill grants, 93 email marketing allowed. The figures below are the projection:
+-- the 19th grant is Dyann Myers, a Stripe buyer whose contact was created that morning, after the projection. Cameron ruled they keep it.
 -- ORDER: apply supabase/data-fixes/2026-11-05_hub_hygiene.sql first. The first block refuses otherwise.
 --
 -- Hub band (200+). Checked 2026-11-06: Hub files and ledger stop at hub_225. pf_226 is the platform's

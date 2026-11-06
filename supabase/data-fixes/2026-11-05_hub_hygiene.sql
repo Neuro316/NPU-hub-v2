@@ -1,6 +1,6 @@
 -- 2026-11-05_hub_hygiene.sql  (data fix, not a migration: no schema change)
 --
--- STATUS: PROPOSED, NOT APPLIED. Needs Cameron's separate go. Production only.
+-- STATUS: APPLIED to production 2026-11-06 on Cameron's go. Every count in the report matched. Do not re-run.
 --
 -- Rulings are in docs/plans/hub-data-hygiene-review.md. Scope: live Neuro Progeny contacts only
 -- (not merged, not archived). Sensorium is untouched (P1 and P2 skipped).

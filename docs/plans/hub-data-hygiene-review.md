@@ -1,7 +1,9 @@
 # Data hygiene: rulings and review (2026-11-05)
 
 The data changes are in `supabase/data-fixes/2026-11-05_hub_hygiene.sql`, and the merge-flag fix is `supabase/migrations/hub_226_merge_flag_is_not_an_opt_out.sql`.
-Neither is applied. Apply the data fix first, then hub_226, each on Cameron's go.
+Both were applied to production on 2026-11-06 on Cameron's go, the data fix first. Every count in the data fix report matched. hub_226 wrote 12 revokes and 19 backfill grants, not the projected 18, so email marketing allowed is 93, not 92. The 19th is Dyann Myers, a Stripe buyer whose contact was created that morning, after the projection. Cameron ruled they keep the grant. The figures below are the projection as reviewed.
+
+hub_227, applied the same day on Cameron's ruling that all podcast hosts are email allowed, granted 20 more, so email marketing allowed is 113. Six others on the Podcast hosts and media list have no valid email and aren't covered.
 
 ## Cameron's rulings
 - **In the data fix:** D2 (Ted Adams and Sarah Leslie only), D3 (2 of 25), P6, T1, T2, T3 (all 10 pairs), T4, T5, T6, T7, T9, S1a to S1h, S2 (as `prospect_unknown`), S3, S4, the 11 test accounts, and Clarity graduates by stage.
@@ -48,7 +50,7 @@ All counts below were recounted against live data on 2026-11-06. Every data-fix 
 | Backfill | Still 18. The new exclusions remove none of them, guarded at 15 to 20 |
 | Test records | 16 live tagged contacts after the data fix, 0 on the allowlist |
 | T7 | Still 35. All are state codes, so no two-letter tags stay behind |
-| Email marketing allowed | 97 today - 12 cold - 11 test + 18 restored = 92 |
+| Email marketing allowed | Projected: 97 today - 12 cold - 11 test + 18 restored = 92. Actual: 93, with 19 backfilled |
 
 ### Cold outreach corrected in hub_226
 hub_225 backfilled these 12 under `existing_relationship`, which Cameron ruled out for cold outreach. Each gets one `consent_events` row: email, marketing, revoked, basis `admin`, source `existing_relationship_2026_11_withdrawn`, with evidence saying it corrects the backfill. Anyone with an express opt-in is skipped, in the ledger or on the contact's consent fields. None of the 12 has one, and none has a send or an enrollment.
