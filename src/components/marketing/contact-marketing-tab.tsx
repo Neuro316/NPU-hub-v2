@@ -8,9 +8,9 @@ import { useToast } from '@/components/ui/toast'
 
 const when = (s: string | null) => (s ? new Date(s).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '')
 const words = (s: string) => s.replace(/_/g, ' ')
-// A revoke with basis admin was entered by staff, so it doesn't claim the person withdrew.
-const consentLabel = (e: { action: string; basis: string }) =>
-  e.action === 'granted' ? 'Agreed' : e.basis === 'admin' ? 'Removed by staff' : 'Withdrew'
+// The hub_226 cold outreach correction never heard from the person, so it doesn't claim they withdrew.
+const consentLabel = (e: { action: string; source: string }) =>
+  e.action === 'granted' ? 'Agreed' : e.source === 'existing_relationship_2026_11_withdrawn' ? 'Removed by staff (cold prospect)' : 'Withdrew'
 
 export function ContactMarketingTab({ contactId, mode }: { contactId: string; mode: 'consent' | 'campaigns' }) {
   const toast = useToast()

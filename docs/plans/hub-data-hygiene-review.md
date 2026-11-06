@@ -63,7 +63,7 @@ Not covered by the ruling, so their grants stay:
 
 **Kept by ruling:** the 11 June 2026 NP Outreach contacts reached a Discovery Call stage (9 completed, 2 scheduled), so they have a real relationship and keep their hub_225 grant: Angie Chaplin, Anna Gudmunson, Catherine McCarthy, Danielle Griff, Darrell Barr, Divine Celiane, Gary Jacobs, Jenna Lee Anderson, Robert Rhoton, Tammy Waldron, Tony Alexander.
 
-**How the rows read:** the Consent tab labels a revoked row with basis `admin` "Removed by staff". The send-decision text for `marketing_revoked` still says the person withdrew, because the gate's reason doesn't carry the basis.
+**How the rows read:** the Consent tab labels a revoked row with source `existing_relationship_2026_11_withdrawn` "Removed by staff (cold prospect)". Every other revoked row, including a staff-entered one with basis `admin`, reads "Withdrew". The send-decision text for `marketing_revoked` still says the person withdrew, because the gate's reason doesn't carry the basis.
 
 ### Backfill exclusions
 hub_226's backfill also excludes `prospect_unknown`, `outreach_2026_06` and any `*_research` source. The 18 are 9 `xregulation`, 7 `unknown_enrolled`, 1 `unknown_sales` and 1 `unknown`.
