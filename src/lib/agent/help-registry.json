@@ -47,6 +47,7 @@
   "/rocks",
   "/settings",
   "/shipit",
+  "/smart-lists",
   "/social",
   "/sops",
   "/tasks",
@@ -115,6 +116,7 @@
   "crm-pipelines",
   "crm-settings",
   "forms",
+  "smart-lists",
   "university-access"
  ]
 }

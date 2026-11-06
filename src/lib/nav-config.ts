@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Route, CheckSquare, Brain, FileText, Lightbulb,
   Users, Target, Megaphone, Radio, Calendar, BarChart3, Settings,
-  BookOpen, TicketCheck, Image, Rocket, Contact2, DollarSign, Package, GitBranch, GraduationCap, FileInput, Inbox, FolderOpen,
+  BookOpen, TicketCheck, Image, Rocket, Contact2, DollarSign, Package, GitBranch, GraduationCap, FileInput, Inbox, FolderOpen, ListFilter,
 } from 'lucide-react'
 
 /* ───────────────────────────────────────────────────────────
@@ -41,6 +41,7 @@ export const navCategories: NavCategory[] = [
     items: [
       { label: 'CRM', href: '/crm', icon: Contact2, moduleKey: 'crm' },
       { label: 'Campaigns', href: '/campaigns', icon: Megaphone, moduleKey: 'campaigns' },
+      { label: 'Smart Lists', href: '/smart-lists', icon: ListFilter, moduleKey: 'campaigns' },
       { label: 'University Access', href: '/university-access', icon: GraduationCap, moduleKey: 'campaigns' },
       { label: 'Forms and Pages', href: '/forms', icon: FileInput, moduleKey: 'campaigns' },
       { label: 'Media & Affiliates', href: '/media-affiliates', icon: Radio, moduleKey: 'media_affiliates' },

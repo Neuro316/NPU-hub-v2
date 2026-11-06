@@ -20,6 +20,7 @@ const run = (cmd, args, env = {}) => {
 const HARNESSES = [
   { file: 'scripts/marketing/pure-tamper.cjs', selectors: ['flagson', 'placeholder', 'svixopen', 'redirect', 'nostop', 'onefail', 'unsubreq', 'noescape', 'stopmerged', 'connected', 'optout', 'nocap', '1'] },
   { file: 'scripts/marketing/entry-wiring-tamper.cjs', selectors: ['nocall', 'mergeorder', 'importoptin', 'nosummary', 'hardcoded', 'consent', 'cached', '1'] },
+  { file: 'scripts/marketing/smart-list-tamper.cjs', selectors: ['emptyall', 'missingyes', 'unknownyes', 'anyall', 'nonepass', 'activity', 'consent', 'nocheck', '1'] },
   { file: 'scripts/marketing/flags-off-parity.cjs', selectors: ['outside', 'untouched', '1'] },
   { file: 'scripts/agent/claims-tamper.cjs', selectors: ['emdash', 'certified', 'noboundary', 'stopline', 'program', 'version', '1'] },
   { file: 'scripts/agent/validator-parity.cjs', selectors: ['message', 'delay', 'lower', 'slug', '1'] },
