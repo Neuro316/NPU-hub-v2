@@ -8,6 +8,9 @@ import { useToast } from '@/components/ui/toast'
 
 const when = (s: string | null) => (s ? new Date(s).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '')
 const words = (s: string) => s.replace(/_/g, ' ')
+// The hub_226 cold outreach correction never heard from the person, so it doesn't claim they withdrew.
+const consentLabel = (e: { action: string; source: string }) =>
+  e.action === 'granted' ? 'Agreed' : e.source === 'existing_relationship_2026_11_withdrawn' ? 'Removed by staff (cold prospect)' : 'Withdrew'
 
 export function ContactMarketingTab({ contactId, mode }: { contactId: string; mode: 'consent' | 'campaigns' }) {
   const toast = useToast()
@@ -46,7 +49,7 @@ export function ContactMarketingTab({ contactId, mode }: { contactId: string; mo
         {d.consent_events.length === 0 && <p className="text-[11px] text-gray-400">No consent has been recorded for this person yet.</p>}
         {d.consent_events.map((e: any) => (
           <div key={e.id} className="rounded-lg border border-gray-100 p-2 text-[11px]">
-            <div className="flex gap-2"><b className={e.action === 'granted' ? 'text-teal-dark' : 'text-fire'}>{e.action === 'granted' ? 'Agreed' : 'Withdrew'}</b>
+            <div className="flex gap-2"><b className={e.action === 'granted' ? 'text-teal-dark' : 'text-fire'}>{consentLabel(e)}</b>
               <span className="text-gray-600">{e.channel === 'sms' ? 'text' : 'email'}, {e.kind}</span><span className="flex-1" /><span className="text-gray-400">{when(e.occurred_at)}</span></div>
             <p className="text-gray-500">Source: {e.source}{e.text_shown ? `. Shown: "${e.text_shown}"` : ''}</p>
           </div>

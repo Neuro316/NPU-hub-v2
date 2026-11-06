@@ -68,9 +68,9 @@ Purchases are **test** when any of the following is true:
 | `podcast_pr` | `media_appearance`, `Podcast` |
 | `inbound_call` | `inbound_call` |
 | `event` | `Workshop` |
-| `prospecting` | URL sources (instagram, linkedin and others), city or state names, `ChatGPT curated public research`, `Thinkers50…` |
+| `prospecting` | URL sources (instagram, linkedin and others), city or state names, `prospect_unknown`, `instagram_research`, `linkedin_research`, `web_research`, `partner_outreach`, `outreach_2026_06`, `ChatGPT curated public research`, `Thinkers50…` |
 | `import` | `Import`, `admin`, `manual-chat`, `manual_ecr` |
-| `unknown` | empty source |
+| `unknown` | empty source, `other`, `unknown`, `unknown_enrolled`, `unknown_sales`, `wnw_local`, `referral` |
 
 ### Metrics
 
