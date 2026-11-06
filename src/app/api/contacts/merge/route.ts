@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabase, createAdminSupabase } from '@/lib/supabase';
-import { logActivity } from '@/lib/crm-server';
 import { ADMIN_ROLES } from '@/lib/org-settings-keys';
 import { resolveConsent, CONSENT_FIELDS } from '@/lib/consent-merge';
 import { guardContacts, releaseGuard } from '@/lib/marketing/entry-events';
@@ -235,20 +234,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: loserError.message }, { status: 500 });
     }
 
-    await logActivity(admin, {
-      contact_id: winnerId,
+    // The merge has happened by now and contact_merge_log holds the record, so a failed
+    // timeline write is logged and does not fail the request.
+    const mergedName = `${loser.first_name || ''} ${loser.last_name || ''}`.trim();
+    const { error: timelineError } = await admin.from('contact_timeline').insert({
       org_id: winner.org_id,
+      contact_id: winnerId,
       event_type: 'contact_merged',
-      event_data: {
+      title: mergedName ? `Merged with ${mergedName}` : 'Merged with a duplicate contact',
+      metadata: {
         merged_contact_id: loserId,
-        merged_name: `${loser.first_name || ''} ${loser.last_name || ''}`.trim(),
+        merged_name: mergedName,
         repointed: (repoint as any)?.repointed ?? null,
         rows_repointed: (repoint as any)?.total ?? 0,
       },
-      ref_table: 'contacts',
-      ref_id: loserId,
+      source_table: 'contacts',
+      source_id: loserId,
+      actor_type: 'user',
       actor_id: user.id,
+      occurred_at: new Date().toISOString(),
     });
+    if (timelineError) {
+      console.error('[contacts/merge] timeline write failed:', timelineError.code ?? 'unknown');
+    }
     await releaseGuard(admin, [winnerId, loserId], 'contact_merge');
 
     return NextResponse.json({
