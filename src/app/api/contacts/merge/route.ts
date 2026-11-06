@@ -224,9 +224,11 @@ export async function POST(request: NextRequest) {
     }
 
     // ── 4. Soft-delete the loser ───────────────────────────────────────────
+    // merged_into_id is the marker: the send gate resolves a merged contact to its survivor and read
+    // paths filter on it. do_not_contact is left as it was, because that flag means a person opted
+    // out, and setting it here made every merge look like an opt-out (hub_226).
     const { error: loserError } = await admin.from('contacts').update({
       merged_into_id: winnerId,
-      do_not_contact: true,
     }).eq('id', loserId);
     if (loserError) {
       console.error('[contacts/merge] soft-delete failed:', loserError);

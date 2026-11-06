@@ -104,6 +104,7 @@ export default function DialerPage() {
         .from('contacts')
         .select('id, first_name, last_name, phone, email, company, tags, pipeline_stage')
         .or(`first_name.ilike.%${searchQuery}%,last_name.ilike.%${searchQuery}%,phone.ilike.%${searchQuery}%,email.ilike.%${searchQuery}%`)
+        .is('merged_into_id', null)
         .is('do_not_contact', false)
         .limit(20)
       setContacts((data || []) as unknown as CrmContact[])

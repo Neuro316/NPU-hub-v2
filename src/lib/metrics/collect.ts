@@ -63,7 +63,8 @@ async function inChunks<T = any>(ids: string[], q: (chunk: string[]) => PromiseL
 const INBOUND_WEB = ['stripe', 'xregulation', 'neuroreport', 'profile', 'website', 'university_booking', 'quiz', 'booking', 'form', 'landing']
 export function leadChannel(source: string | null | undefined): string {
   const s = lower(source)
-  if (!s || s === 'other') return 'unknown'
+  // the 2026-11 hygiene values for leads whose origin was never recorded stay in `unknown`, as a blank source did
+  if (!s || s === 'other' || s === 'unknown' || s.startsWith('unknown_') || s === 'wnw_local' || s === 'referral') return 'unknown'
   if (s.includes('http') || s.includes('www.') || s.includes('research') || s.includes('thinkers50')) return 'prospecting'
   if (['import', 'admin', 'manual-chat', 'manual_ecr'].includes(s)) return 'import'
   if (s === 'media_appearance' || s.includes('podcast')) return 'podcast_pr'
