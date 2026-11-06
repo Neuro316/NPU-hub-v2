@@ -60,16 +60,13 @@ const BASE = process.env.PARITY_BASE || 'd49d00e'
 const UNTOUCHED = {
   'ring-complete': 'src/app/api/twilio/ring-complete/route.ts',
   'transcription': 'src/app/api/twilio/transcription/route.ts',
-  'inbound-sms': 'src/app/api/twilio/inbound-sms/route.ts',
   'voice-token': 'src/app/api/voice/token/route.ts',
-  'sms-send': 'src/app/api/sms/send/route.ts',
   'twilio': 'src/lib/twilio.ts',
   'voice-signature': 'src/lib/twilio-voice-signature.ts',
   'inbound-voice': 'src/lib/inbound-voice.ts',
   'notify-sms': 'src/lib/notify-sms.ts',
   'entry-events': 'src/lib/marketing/entry-events.ts',
   'api-guard': 'src/lib/api-guard.ts',
-  'middleware': 'src/middleware.ts',
 }
 const C2C_BASE = process.env.C2C_BASE || 'd3be328'
 const SINCE_C2C = {
@@ -116,6 +113,14 @@ const SINCE_AGENT = {
 const ACTIVITY_BASE = process.env.ACTIVITY_BASE || '0d01cd2'
 const SINCE_ACTIVITY = {
   'crm-server': 'src/lib/crm-server.ts',
+}
+// The Lead Device Kit rulings changed these on purpose: the middleware's start.neuroprogeny.com branch,
+// and no message content in logActivity. They are compared with that commit.
+const LEAD_RULINGS_BASE = process.env.LEAD_RULINGS_BASE || 'ce28172'
+const SINCE_LEAD_RULINGS = {
+  'inbound-sms': 'src/app/api/twilio/inbound-sms/route.ts',
+  'sms-send': 'src/app/api/sms/send/route.ts',
+  'middleware': 'src/middleware.ts',
 }
 const MARKED = {
   'conversations': 'src/app/(dashboard)/crm/conversations/page.tsx',
@@ -181,6 +186,10 @@ for (const [k, f] of Object.entries(SINCE_C2C)) {
 for (const [k, [f, ref]] of Object.entries(SINCE_DIALER)) {
   const same = work(f) === base(f, ref)
   rows.push({ id: `D_${k}`, ok: same, got: same ? `identical to ${ref}` : `differs from ${ref}` })
+}
+for (const [k, f] of Object.entries(SINCE_LEAD_RULINGS)) {
+  const same = work(f) === base(f, LEAD_RULINGS_BASE)
+  rows.push({ id: `LR_${k}`, ok: same, got: same ? `identical to ${LEAD_RULINGS_BASE}` : `differs from ${LEAD_RULINGS_BASE}` })
 }
 for (const [k, f] of Object.entries(SINCE_ACTIVITY)) {
   const same = work(f) === base(f, ACTIVITY_BASE)
