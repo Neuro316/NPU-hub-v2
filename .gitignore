@@ -35,3 +35,6 @@ next-env.d.ts
 
 # The variable catalogue is documentation, never a secret (ruling 15). Values stay in .env.local.
 !.env.example
+
+# Session export and gate transcripts
+gate-*.txt
