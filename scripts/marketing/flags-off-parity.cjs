@@ -25,6 +25,9 @@ const fs = require('fs'), path = require('path')
 
 const ROOT = path.resolve(__dirname, '..', '..')
 const BASE = process.env.PARITY_BASE || '3492d97'
+// inbound-sms stopped logging message content on Cameron's ruling, so its unmarked lines are compared
+// with that commit.
+const INBOUND_BASE = process.env.INBOUND_BASE || '1319978'
 const UNTOUCHED = {
   'stage-emails': 'src/app/api/crm/stage-emails/route.ts',
   'sms-outbox-cron': 'src/app/api/cron/sms-outbox/route.ts',
@@ -43,9 +46,9 @@ const active = sel === '1' ? Object.keys(RED_OF) : sel ? sel.split(',') : []
 for (const t of active) if (!RED_OF[t]) { console.error(`unknown selector ${t}`); process.exit(2) }
 
 const norm = (s) => s.replace(/\r\n/g, '\n')
-const base = (f) => {
-  try { return norm(execFileSync('git', ['show', `${BASE}:${f}`], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })) }
-  catch (e) { console.error(`git show ${BASE}:${f} failed (is the history fetched?)`); process.exit(2) }
+const base = (f, ref = BASE) => {
+  try { return norm(execFileSync('git', ['show', `${ref}:${f}`], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })) }
+  catch (e) { console.error(`git show ${ref}:${f} failed (is the history fetched?)`); process.exit(2) }
 }
 const work = (f) => norm(fs.readFileSync(path.join(ROOT, f), 'utf8'))
 const stripMarked = (s) => {
@@ -68,7 +71,7 @@ for (const [k, f] of Object.entries(MARKED)) {
   let now = work(f)
   if (active.includes('outside') && k === 'process-step') now = now.replace(".limit(50);", ".limit(51);")
   const s = stripMarked(now)
-  const same = s.text === base(f)
+  const same = s.text === (k === 'inbound-sms' ? stripMarked(base(f, INBOUND_BASE)).text : base(f))
   rows.push({ id: `M_${k}`, ok: same && s.blocks > 0 && !s.unclosed, got: `${same ? 'identical outside marked blocks' : 'differs outside marked blocks'}, blocks=${s.blocks}` })
 }
 // control: the comparison must be able to see a difference at all

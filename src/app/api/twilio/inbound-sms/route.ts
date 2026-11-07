@@ -195,7 +195,7 @@ export async function POST(request: NextRequest) {
     contact_id: contact.id,
     org_id: orgId,
     event_type: 'sms_received',
-    event_data: { body: body.substring(0, 100) },
+    event_data: { line: lineE164 },
     ref_table: 'crm_messages',
     ref_id: message?.id,
   });
@@ -205,7 +205,8 @@ export async function POST(request: NextRequest) {
     contact_id: contact.id,
     channel: 'sms',
     direction: 'inbound',
-    body: body.substring(0, 100),
+    line: lineE164,
+    occurred_at: new Date().toISOString(),
   });
 
   // ── Direct counter increment (admin bypasses RLS) ──

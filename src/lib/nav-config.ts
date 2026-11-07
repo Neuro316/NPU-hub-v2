@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Route, CheckSquare, Brain, FileText, Lightbulb,
   Users, Target, Megaphone, Radio, Calendar, BarChart3, Settings,
-  BookOpen, TicketCheck, Image, Rocket, Contact2, DollarSign, Package, GitBranch, GraduationCap, FileInput, Inbox, FolderOpen, ListFilter,
+  BookOpen, TicketCheck, Image, Rocket, Contact2, DollarSign, Package, GitBranch, GraduationCap, FileInput, Inbox, FolderOpen, ListFilter, Sparkles,
 } from 'lucide-react'
 
 /* ───────────────────────────────────────────────────────────
@@ -44,6 +44,7 @@ export const navCategories: NavCategory[] = [
       { label: 'Smart Lists', href: '/smart-lists', icon: ListFilter, moduleKey: 'campaigns' },
       { label: 'University Access', href: '/university-access', icon: GraduationCap, moduleKey: 'campaigns' },
       { label: 'Forms and Pages', href: '/forms', icon: FileInput, moduleKey: 'campaigns' },
+      { label: 'Lead Devices', href: '/lead-devices', icon: Sparkles, moduleKey: 'campaigns' },
       { label: 'Media & Affiliates', href: '/media-affiliates', icon: Radio, moduleKey: 'media_affiliates' },
       { label: 'ICP Profiles', href: '/icps', icon: Users, moduleKey: 'icps' },
       { label: 'Analytics', href: '/analytics', icon: BarChart3, moduleKey: 'analytics', superadminOnly: true },

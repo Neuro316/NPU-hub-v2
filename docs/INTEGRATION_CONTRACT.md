@@ -89,3 +89,128 @@ Retry on 500 and on network errors **with the same `event_id`**. Do not retry 40
    consent wording identical to what the platform displays.
 3. In Campaigns, Funnels, add the form's source key under "Starts from" on the campaign it should start.
 4. Turn on the `intake` switch for the org (CRM Settings, Campaign Sending).
+
+---
+
+# Lead device external intake: devices hosted on other sites
+
+**Status:** built and deployed.
+**Written:** 2026-11-06.
+
+## What it is for
+
+A quiz, lead magnet, webinar registration, tool or form hosted on neuroprogeny.com or WNW reports each
+submission to the Hub. The first submission from an unknown slug registers the device in draft, and the
+Hub creates its pipeline, tags, lists and draft campaigns around it. Nothing sends to real people until
+Cameron switches the device live.
+
+**A submission to a device that is not live is a test.** It is stored on the device and counts toward the
+readiness checklist, and that is all: no contact is created, and no consent, tag, list, pipeline, campaign
+or text follows. A site should not rely on this endpoint for real leads until the device is live.
+
+This is separate from the University's server mode above. Marketing stays in the Hub: no lead device
+runs in the University, and none of this reads or writes a University table.
+
+## The endpoint
+
+`POST https://hub.neuroprogeny.com/api/intake`. The path is shared with the forms and with server mode,
+and those keep working unchanged. A body with `device` and `submission` is a lead device request.
+
+### Authentication
+
+```
+Authorization: Bearer <LEAD_INTAKE_SECRET>
+Content-Type: application/json
+```
+
+- The secret is at least 32 random characters, set in the Hub's Vercel environment and on the calling
+  server. Compared in constant time and never logged. It must never reach a browser.
+- A missing or wrong secret, or a Hub with no secret set, is refused **401**.
+- `LEAD_INTAKE_SECRET` and `HUB_INTAKE_SERVER_SECRET` are different secrets. Neither opens the other mode.
+
+### Body
+
+```json
+{
+  "device": {
+    "slug": "sleep-reset-guide",
+    "name": "Sleep Reset Guide",
+    "brand": "neuro_progeny",
+    "type": "lead_magnet",
+    "description": "A short guide to resetting sleep through nervous system training.",
+    "outcomes": [{ "key": "starter", "label": "Starter" }],
+    "questions": [{ "key": "q1", "label": "How well did you sleep last week?" }],
+    "fields": ["email", "first_name", "phone"],
+    "email_consent_text": "Email me tips and offers from Neuro Progeny.",
+    "sms_consent_text": "Text me reminders and offers. Message and data rates may apply. Reply STOP to opt out.",
+    "asset_url": "https://neuroprogeny.com/guides/sleep-reset.pdf",
+    "hot_lead_rule": { "outcomes": ["starter"] }
+  },
+  "submission": {
+    "email": "person@example.com",
+    "first_name": "Ana",
+    "phone": "+18285550100",
+    "outcome": "starter",
+    "answers": { "q1": "Poorly" },
+    "consent": {
+      "email": true,
+      "sms": false,
+      "email_text": "Email me tips and offers from Neuro Progeny.",
+      "sms_text": "Text me reminders and offers. Message and data rates may apply. Reply STOP to opt out."
+    },
+    "utm": { "source": "instagram", "medium": "social", "campaign": "sleep", "content": "reel-1" },
+    "page_url": "https://neuroprogeny.com/sleep",
+    "submitted_at": "2026-11-06T18:00:00Z",
+    "idempotency_key": "site-sleep-3f9a1c"
+  }
+}
+```
+
+| Field | Required | Meaning |
+|---|---|---|
+| `device.slug` | yes | Lower case letters, numbers and single hyphens, at most 80 characters. Unique across the Hub. |
+| `device.name`, `brand`, `type` | on the first submission | `brand` is `neuro_progeny` or `wnw`. `type` is `quiz`, `lead_magnet`, `webinar`, `tool`, `form` or `booking`. |
+| `device.*` (the rest) | no | Stored as the manifest when the device registers. A later change to the manifest is made in the Hub, not by a submission. |
+| `submission.idempotency_key` | yes | Your stable id for this submission, letters, numbers and `: _ . -`, at most 120 characters. **The call is idempotent on it**: a replay for the same device answers `200 { ok: true, duplicate: true }` and changes nothing. |
+| `submission.email` | yes, or `phone` | How the contact is matched. |
+| `submission.first_name`, `phone` | no | A new contact takes these. |
+| `submission.outcome` | no | An outcome key from the manifest. It sets the outcome tag, the lists and the campaign. |
+| `submission.answers` | no | An object of answers, keyed by question. |
+| `submission.consent` | yes | `email` and `sms` count only when they are exactly `true`, and each needs its exact text in `email_text` or `sms_text`. Send what the person actually ticked, with boxes unticked by default. |
+| `submission.utm` | no | `source`, `medium`, `campaign`, `content`, each at most 200 characters. |
+| `submission.page_url`, `submitted_at` | no | Where and when it happened. |
+
+### What the Hub does
+
+1. Registers the device in draft if the slug is new, and creates what goes around it in dry run. If the
+   device is not live, it stores the submission as a test and stops here.
+2. Matches the contact by email, or by phone when there is no email, or creates one.
+3. Adds the source and outcome tags, and stores the answers for the contact card's Device answers section.
+   A new contact takes the device slug as its source. An existing contact keeps its source; the
+   `lead_device` Smart List field covers attribution for both.
+4. Records each consent as marketing consent with the text you sent. It never reverses the person's own
+   earlier opt-out, and an SMS consent counts only when the phone sent is the phone on the contact.
+5. Places the contact at New lead. A contact already on a pipeline keeps that place and is added to this
+   pipeline alongside it. Then routes it through `route_and_enroll`.
+6. Texts Cameron when the device's hot lead rule matches.
+
+### Responses
+
+| Status | Body | Meaning |
+|---|---|---|
+| 200 | `{ ok: true, test, device_status }` | Accepted. `test` is true unless the device is live. `device_status` is `draft`, `live` or `paused`. |
+| 200 | `{ ok: true, duplicate: true, test, device_status }` | This key was already accepted for this device |
+| 400 | `{ error, fields? }` | A required field is missing, or a value does not fit |
+| 401 | `{ error: "unauthorized" }` | Wrong or unset secret |
+| 409 | `{ error }` | The slug belongs to a device hosted by the Hub |
+| 500 | `{ error }` | Retry with the same key; it is safe |
+
+Responses never contain contact data. Retry on 500 and on network errors with the same
+`idempotency_key`. Do not retry 400, 401 or 409.
+
+## Setting it up
+
+1. Set `LEAD_INTAKE_SECRET` in the Hub's Vercel environment (Production and Preview) and on the server
+   that will call this endpoint.
+2. Send a test submission. It registers the device in draft.
+3. Review the device on Hub Marketing, Lead Devices, then have Cameron switch it live.

@@ -17,20 +17,8 @@ import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
 import { PermissionGate } from '@/lib/hooks/use-permissions'
 import { fetchTeamMembers } from '@/lib/crm-client'
+import { loadActivity, fromActivityRow, type ActivityEntry } from '@/lib/activity-log'
 import type { TeamMember } from '@/types/crm'
-
-interface ActivityEntry {
-  id: string
-  contact_id: string
-  org_id: string
-  event_type: string
-  event_data: Record<string, unknown> | null
-  ref_table: string | null
-  ref_id: string | null
-  actor_id: string | null
-  occurred_at: string
-  contacts?: { first_name: string; last_name: string } | null
-}
 
 const EVENT_CONFIG: Record<string, { icon: any; color: string; bg: string; label: string }> = {
   contact_created: { icon: UserPlus, color: '#2A9D8F', bg: '#2A9D8F15', label: 'Contact Created' },
@@ -122,24 +110,16 @@ function ActivityLogContent() {
   const load = useCallback(async () => {
     if (!currentOrg) return
     setLoading(true)
-    let query = supabase
-      .from('activity_log')
-      .select('*, contacts(first_name, last_name)')
-      .eq('org_id', currentOrg.id)
-      .order('occurred_at', { ascending: false })
-      .limit(limit)
-
-    if (filter) {
-      query = query.like('event_type', `${filter}%`)
-    }
-    if (actorFilter === '__system__') {
-      query = query.is('actor_id', null)
-    } else if (actorFilter) {
-      query = query.eq('actor_id', actorFilter)
-    }
-
-    const { data } = await query
-    setEntries((data as ActivityEntry[]) || [])
+    const data = await loadActivity(supabase, {
+      orgId: currentOrg.id,
+      limit,
+      actionPrefix: filter || undefined,
+      actor: actorFilter === '__system__' ? 'system' : actorFilter || undefined,
+    }).catch((e) => {
+      console.error('Activity log load failed:', e?.code ?? 'unknown')
+      return [] as ActivityEntry[]
+    })
+    setEntries(data)
     setLoading(false)
   }, [currentOrg?.id, filter, actorFilter, limit])
 
@@ -156,7 +136,7 @@ function ActivityLogContent() {
         table: 'activity_log',
         filter: `org_id=eq.${currentOrg.id}`,
       }, (payload) => {
-        setEntries(prev => [payload.new as ActivityEntry, ...prev])
+        setEntries(prev => [fromActivityRow(payload.new), ...prev])
       })
       .subscribe()
 

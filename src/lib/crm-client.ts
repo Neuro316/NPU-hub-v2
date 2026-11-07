@@ -5,6 +5,7 @@
 
 import { createClient } from '@/lib/supabase-browser'
 import { contactForNumber, type NumberContact } from '@/lib/call-new-number'
+import { loadActivity } from '@/lib/activity-log'
 import type {
   CrmContact, Conversation, Message, CallLog, EmailCampaign,
   CrmTask, ContactNote, LifecycleEvent, ActivityLogEntry,
@@ -278,14 +279,7 @@ export async function createLifecycleEvent(event: Partial<LifecycleEvent>) {
 // ─── Activity Log ───
 
 export async function fetchActivityLog(contactId: string, limit = 50) {
-  const { data, error } = await supabase()
-    .from('activity_log')
-    .select('*')
-    .eq('contact_id', contactId)
-    .order('occurred_at', { ascending: false })
-    .limit(limit)
-  if (error) throw error
-  return (data || []) as ActivityLogEntry[]
+  return (await loadActivity(supabase(), { contactId, limit })) as ActivityLogEntry[]
 }
 
 // ─── Sequences ───

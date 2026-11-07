@@ -30,7 +30,7 @@ const ROUTES = {
   forms: 'app/api/marketing/forms/route.ts',
 }
 const LIBS = ['lib/marketing/db-errors.ts', 'lib/marketing/team-member.ts', 'lib/marketing/intake.ts', 'lib/phone.ts',
-  'lib/sms-split.ts', 'lib/marketing/render.ts', 'lib/crm-server.ts',
+  'lib/sms-split.ts', 'lib/marketing/render.ts', 'lib/crm-server.ts', 'lib/activity-log.ts',
   'lib/marketing/validate/campaign.ts', 'lib/marketing/validate/sequence.ts', 'lib/marketing/validate/route.ts', 'lib/marketing/validate/form.ts']
 const TAMPERS = {
   message: ['lib/marketing/validate/campaign.ts', "message: 'Give the campaign a name.'", "message: 'Name the campaign.'"],

@@ -33,6 +33,10 @@ const TAMPER = process.env.TAMPER || ''
 const G1_REVIEWED_PUBLIC = {
   'src/app/api/intake/route.ts': 'published form + intake flag + honeypot + rate limit',
   'src/app/a/[token]/route.ts': 'hashed single-purpose expiring token, redirect to the University only',
+  'src/app/lead-device/[slug]/route.ts': 'exact public host only, live device or signed preview, reads no identity',
+  'src/app/lead-device/[slug]/file/route.ts': 'exact public host only, live approved version or signed preview, sandboxed',
+  'src/app/lead-device/[slug]/submit/route.ts': 'exact public host only, origin check, rate limit, honeypot, Turnstile that refuses when unset',
+  'src/app/lead-device/[slug]/track/route.ts': 'exact public host only, rate limit, event name only',
   'src/app/api/twilio/intelligence/route.ts': 'Twilio signature, fail closed, verified in handleIntelligenceCallback before any write (scripts/tests/voice-intelligence.test.mjs)',
 }
 // verifyTwilioWebhook: the click-to-call webhooks (always enforced, fail closed). That it

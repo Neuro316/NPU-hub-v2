@@ -33,6 +33,8 @@ export interface ContactFacts {
   email_allowed: boolean
   texting_allowed: boolean
   purchases: Purchase[] | null
+  lead_devices?: string[] | null
+  quiz_archetypes?: string[] | null
 }
 
 export type FieldType = 'bool' | 'days' | 'choices' | 'text' | 'purchase'
@@ -54,9 +56,9 @@ export const FIELDS: FieldDef[] = [
   { key: 'current_client', label: 'Current client', group: 'Relationship', type: 'bool', ops: ['is'] },
   { key: 'brand', label: 'Brand', group: 'Brand', type: 'choices', ops: ['in'] },
   { key: 'tags', label: 'Tags (interest and others)', group: 'Tags', type: 'choices', ops: ['any', 'none'] },
-  { key: 'quiz_archetype', label: 'Quiz archetype', group: 'Tags', type: 'choices', ops: ['in'], noDataSource: 'No quiz records an archetype yet.' },
+  { key: 'quiz_archetype', label: 'Quiz archetype', group: 'Tags', type: 'choices', ops: ['in'] },
   { key: 'source', label: 'Source', group: 'Source', type: 'choices', ops: ['in'] },
-  { key: 'lead_device', label: 'Lead device', group: 'Source', type: 'choices', ops: ['in'], noDataSource: 'Nothing stores a lead device yet (metrics gap G4).' },
+  { key: 'lead_device', label: 'Lead device', group: 'Source', type: 'choices', ops: ['in'] },
   { key: 'pipeline', label: 'Pipeline', group: 'Pipeline', type: 'choices', ops: ['in'] },
   { key: 'stage', label: 'Stage', group: 'Pipeline', type: 'choices', ops: ['in'] },
   { key: 'created_days', label: 'Created within (days)', group: 'Engagement', type: 'days', ops: ['lte'] },
@@ -117,6 +119,8 @@ function matchRule(r: Rule, f: ContactFacts, now: number): boolean {
       return r.op === 'any' ? hit : !hit
     }
     case 'source': return asList(r.value).includes(f.source ?? '')
+    case 'lead_device': return asList(r.value).some((v) => (f.lead_devices ?? []).includes(v))
+    case 'quiz_archetype': return asList(r.value).some((v) => (f.quiz_archetypes ?? []).includes(v))
     case 'pipeline': return asList(r.value).includes(f.pipeline_id ?? '')
     case 'stage': return asList(r.value).includes(f.pipeline_stage ?? '')
     case 'created_days': return daysSince(f.created_at, now) <= Number(r.value)
@@ -193,6 +197,8 @@ export function filterOptions(facts: ContactFacts[]) {
     brand: ['np', 'wnw'],
     tags: uniq(facts.flatMap((f) => f.tags ?? [])),
     source: uniq(facts.map((f) => f.source)),
+    lead_device: uniq(facts.flatMap((f) => f.lead_devices ?? [])),
+    quiz_archetype: uniq(facts.flatMap((f) => f.quiz_archetypes ?? [])),
     stage: uniq(facts.map((f) => f.pipeline_stage)),
     pipeline: Array.from(pipelines, ([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label)),
     purchase: Array.from(products, ([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label)),

@@ -9,15 +9,7 @@ import {
 import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
 import { usePermissions } from '@/lib/hooks/use-permissions'
-
-interface NotifEntry {
-  id: string
-  contact_id: string
-  event_type: string
-  event_data: Record<string, unknown> | null
-  occurred_at: string
-  contacts?: { first_name: string; last_name: string } | null
-}
+import { loadActivity, fromActivityRow, type ActivityEntry as NotifEntry } from '@/lib/activity-log'
 
 const ICON_MAP: Record<string, { icon: any; color: string }> = {
   contact_created: { icon: UserPlus, color: '#2A9D8F' },
@@ -84,19 +76,13 @@ export function NotificationBell() {
 
   const loadEntries = async () => {
     if (!currentOrg) return
-    const { data } = await supabase
-      .from('activity_log')
-      .select('id, contact_id, event_type, event_data, occurred_at, contacts(first_name, last_name)')
-      .eq('org_id', currentOrg.id)
-      .order('occurred_at', { ascending: false })
-      .limit(20)
+    const data = await loadActivity(supabase, { orgId: currentOrg.id, limit: 20 }).catch((e) => {
+      console.warn('Notifications load skipped:', e?.code ?? 'unknown')
+      return null
+    })
 
     if (data) {
-      const mapped = data.map((d: any) => ({
-        ...d,
-        contacts: Array.isArray(d.contacts) ? d.contacts[0] || null : d.contacts,
-      })) as NotifEntry[]
-      setEntries(mapped)
+      setEntries(data)
       // Count unread
       const stored = localStorage.getItem(`notif_last_seen_${currentOrg.id}`)
       if (stored) {
@@ -119,7 +105,7 @@ export function NotificationBell() {
         table: 'activity_log',
         filter: `org_id=eq.${currentOrg.id}`,
       }, (payload) => {
-        const entry = payload.new as NotifEntry
+        const entry = fromActivityRow(payload.new)
         setEntries(prev => [entry, ...prev.slice(0, 19)])
         setUnreadCount(prev => prev + 1)
       })

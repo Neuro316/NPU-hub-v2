@@ -60,7 +60,7 @@ const rows = []
 const check = (id, ok, got) => rows.push({ id, ok: !!ok, got })
 
 check('L_EMPTY', !m(all()) && !m(any()), { all: m(all()), any: m(any()) })
-const miss = [R('no_show', 'is', true), R('no_show', 'is', false), R('webinar_attended', 'is', false), R('quiz_archetype', 'in', ['x']), R('lead_device', 'in', ['x'])]
+const miss = [R('no_show', 'is', true), R('no_show', 'is', false), R('webinar_attended', 'is', false)]
 check('L_MISSING', miss.every((r) => !m(all(r))) && missingSources(all(miss[0])).length === 1, miss.map((r) => m(all(r))))
 check('L_UNKNOWN', !m(all(R('nope', 'is', true))), m(all(R('nope', 'is', true))))
 const yes = R('source', 'in', ['stripe']), no = R('source', 'in', ['other'])

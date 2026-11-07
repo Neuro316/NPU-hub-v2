@@ -39,9 +39,12 @@ const load = H.install(out)
 const { POST } = load('app/api/marketing/agent/route.ts')
 
 const norm = (s) => s.replace(/\r\n/g, '\n')
+// The Lead Device Kit added the external intake to this route on purpose, so it is compared with that commit.
+const INTAKE_BASE = process.env.INTAKE_BASE || '1319978'
 const base = (f) => {
-  try { return norm(execFileSync('git', ['show', `${BASE}:${f}`], { cwd: H.ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })) }
-  catch { console.error(`git show ${BASE}:${f} failed (is the history fetched?)`); process.exit(2) }
+  const ref = f === 'src/app/api/intake/route.ts' ? INTAKE_BASE : BASE
+  try { return norm(execFileSync('git', ['show', `${ref}:${f}`], { cwd: H.ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })) }
+  catch { console.error(`git show ${ref}:${f} failed (is the history fetched?)`); process.exit(2) }
 }
 
 async function call(body, { superadmin = true, flagOn = false } = {}) {

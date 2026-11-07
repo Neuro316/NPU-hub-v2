@@ -1,5 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import type { CrmContact as Contact, EmailWebhookPayload } from '@/types/crm';
+import { toActivityRow, type ActivityInput } from '@/lib/activity-log';
 
 // ─── Do Not Contact Check ───
 // Returns true if contact should NOT be messaged
@@ -49,20 +50,17 @@ export function resolveMergeTags(
 // ─── Log Activity ───
 export async function logActivity(
   supabase: SupabaseClient,
-  entry: {
-    contact_id: string;
-    org_id: string;
-    event_type: string;
-    event_data?: Record<string, unknown>;
-    ref_table?: string;
-    ref_id?: string;
-    actor_id?: string;
-  }
+  entry: ActivityInput
 ) {
-  await supabase.from('activity_log').insert({
-    ...entry,
-    occurred_at: new Date().toISOString(),
-  });
+  let teamMemberId: string | null = null;
+  if (entry.actor_id) {
+    const { data } = await supabase.from('team_members').select('id')
+      .eq('user_id', entry.actor_id).eq('org_id', entry.org_id).limit(1);
+    teamMemberId = data?.[0]?.id ?? null;
+  }
+  // A log failure never fails the action being logged, and it is no longer silent.
+  const { error } = await supabase.from('activity_log').insert(toActivityRow(entry, teamMemberId));
+  if (error) console.error(`[activity_log] ${entry.event_type} not recorded: ${error.code ?? 'unknown'}`);
 }
 
 // ─── Emit Webhook Event ───
