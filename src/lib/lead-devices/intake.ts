@@ -9,6 +9,7 @@
 import { createHash } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { toE164 } from '@/lib/phone'
+import { settleSubmittedPhone, smsConsentBlock, type SettledPhone } from '@/lib/marketing/submitted-phone'
 import {
   deviceTag, hotLeadMatches, isTestSubmission, outcomeTag, sourceKey, type DeviceRow,
 } from './manifest'
@@ -133,12 +134,15 @@ async function placeInPipeline(db: SupabaseClient, device: DeviceRow, contactId:
   if (cErr) console.error(`[lead-device] device=${device.id} placement failed: ${cErr.code ?? 'unknown'}`)
 }
 
-async function recordConsents(db: SupabaseClient, device: DeviceRow, contactId: string, input: SubmissionInput, submissionId: string) {
-  const { data: who } = await db.from('contacts').select('email, phone').eq('id', contactId).maybeSingle()
+async function recordConsents(db: SupabaseClient, device: DeviceRow, contactId: string, input: SubmissionInput, submissionId: string, settled: SettledPhone) {
+  const { data: who } = await db.from('contacts').select('email').eq('id', contactId).maybeSingle()
   const out: Array<OfferedConsent & { recorded: boolean; skipped?: string }> = []
   for (const c of input.consents) {
     if (!c.granted) { out.push({ ...c, recorded: false }); continue }
-    if (c.channel === 'sms' && toE164(String((who as any)?.phone ?? '')) !== input.phone) { out.push({ ...c, recorded: false, skipped: 'phone_differs' }); continue }
+    if (c.channel === 'sms') {
+      const blocked = await smsConsentBlock(db, device.org_id, settled, input.phone)
+      if (blocked) { out.push({ ...c, recorded: false, skipped: blocked }); continue }
+    }
     if (c.channel === 'email' && String((who as any)?.email ?? '').trim().toLowerCase() !== input.email) { out.push({ ...c, recorded: false, skipped: 'email_differs' }); continue }
     // A public form can be filled in with someone else's details, so it adds a consent but never reverses an opt-out.
     const { data: st } = await db.rpc('consent_state', { p_contact: contactId, p_channel: c.channel, p_kind: c.kind })
@@ -146,7 +150,7 @@ async function recordConsents(db: SupabaseClient, device: DeviceRow, contactId: 
     const { error } = await db.rpc('record_consent', {
       p_contact: contactId, p_channel: c.channel, p_kind: c.kind, p_action: 'granted', p_basis: 'express_consent',
       p_source: `lead_device:${device.slug}`, p_text_shown: c.text,
-      p_evidence: { device_id: device.id, version_id: input.versionId, submission_id: submissionId, channel: input.channel, ip_hash: input.ipHash, user_agent: input.userAgent },
+      p_evidence: { device_id: device.id, version_id: input.versionId, submission_id: submissionId, channel: input.channel, ip_hash: input.ipHash, user_agent: input.userAgent, ...(c.channel === 'sms' && settled.filled ? { phone_filled: true } : {}) },
     })
     if (error) console.error(`[lead-device] submission=${submissionId} consent failed: ${error.code ?? 'unknown'}`)
     out.push({ ...c, recorded: !error, ...(error ? { skipped: 'write_failed' } : {}) })
@@ -209,7 +213,8 @@ export async function processSubmission(db: SupabaseClient, device: DeviceRow, i
   }
 
   await placeInPipeline(db, device, contactId as string)
-  const consents = await recordConsents(db, device, contactId as string, input, id)
+  const settled = await settleSubmittedPhone(db, contactId as string, input.phone)
+  const consents = await recordConsents(db, device, contactId as string, input, id, settled)
 
   const { error: rErr } = await db.rpc('route_and_enroll', {
     p_org: device.org_id, p_contact: contactId, p_source_key: sourceKey(device.slug, outcomeDef?.key), p_event_id: `lead_device:${id}`,

@@ -25,7 +25,7 @@ import { createHash, timingSafeEqual } from 'node:crypto'
 import { createAdminSupabase } from '@/lib/supabase'
 import { getFlags } from '@/lib/marketing/flags'
 import { validateIntake, type FormDefinition } from '@/lib/marketing/intake'
-import { toE164 } from '@/lib/phone'
+import { settleSubmittedPhone, smsConsentBlock } from '@/lib/marketing/submitted-phone'
 import { externalIntake, isLeadIntakeCaller } from '@/lib/lead-devices/external'
 
 export const dynamic = 'force-dynamic'
@@ -137,18 +137,22 @@ export async function POST(req: NextRequest) {
     return json({ error: 'We could not save your details. Please try again.' }, 500, h)
   }
   // A public form can be filled in by anyone with someone else's details, so it may ADD a
-  // consent but never reverse a person's own opt-out, and an SMS consent counts only for
-  // the number the visitor typed, never for a different number already on the contact.
-  const { data: who } = await db.from('contacts').select('phone').eq('id', contactId).maybeSingle()
+  // consent but never reverse a person's own opt-out. A blank phone on the contact takes the
+  // number typed; a number already there is never overwritten, and an SMS consent counts only
+  // for the number on the contact (src/lib/marketing/submitted-phone.ts).
+  const settled = await settleSubmittedPhone(db, contactId, v.phone)
   const skipped: string[] = []
   for (const c of v.consents) {
-    if (c.channel === 'sms' && toE164(String(who?.phone ?? '')) !== v.phone) { skipped.push(`${c.id}:phone_differs`); continue }
+    if (c.channel === 'sms') {
+      const blocked = await smsConsentBlock(db, form.org_id, settled, v.phone)
+      if (blocked) { skipped.push(`${c.id}:${blocked}`); continue }
+    }
     const { data: st } = await db.rpc('consent_state', { p_contact: contactId, p_channel: c.channel, p_kind: c.kind })
     if (String((st as any)?.reason ?? '').endsWith('_revoked')) { skipped.push(`${c.id}:opted_out`); continue }
     const { error } = await db.rpc('record_consent', {
       p_contact: contactId, p_channel: c.channel, p_kind: c.kind, p_action: 'granted', p_basis: 'express_consent',
       p_source: `form:${form.slug}`, p_text_shown: c.text,
-      p_evidence: { form_id: form.id, form_version: form.version, consent_id: c.id, submission_id: sub.id, ip_hash: ipHash, user_agent: ua },
+      p_evidence: { form_id: form.id, form_version: form.version, consent_id: c.id, submission_id: sub.id, ip_hash: ipHash, user_agent: ua, ...(c.channel === 'sms' && settled.filled ? { phone_filled: true } : {}) },
     })
     if (error) console.error(`[intake] submission=${sub.id} consent ${c.id} failed: ${error.code ?? 'unknown'}`)
   }
@@ -157,6 +161,6 @@ export async function POST(req: NextRequest) {
   })
   if (rErr) console.error(`[intake] submission=${sub.id} routing failed: ${rErr.code ?? 'unknown'}`)
   await db.from('form_submissions').update({ outcome: 'accepted', contact_id: contactId,
-    payload: { values: v.values, consents: v.consents.map((c) => c.id), consents_not_recorded: skipped, utm, event_id: eventId, routed: routed ?? null } }).eq('id', sub.id)
+    payload: { values: v.values, consents: v.consents.map((c) => c.id), consents_not_recorded: skipped, phone_filled: settled.filled, utm, event_id: eventId, routed: routed ?? null } }).eq('id', sub.id)
   return json({ ok: true, message: form.success_message }, 200, h)
 }

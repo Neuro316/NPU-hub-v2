@@ -53,8 +53,10 @@ Content-Type: application/json
 1. Refuses unless the form is published and the org's `intake` switch is on (404).
 2. Validates `values` against the form definition (400 with per-field messages).
 3. Matches the contact in that org by email, or by phone when there is no email, or creates one.
-4. Records each ticked consent, with two protections: it never reverses the person's own earlier
-   opt-out, and an SMS consent counts only when the phone in `values` is the phone on the contact.
+4. Fills the contact's phone from `values` only if it is blank; a number already there is never
+   overwritten. Then records each ticked consent, with three protections: it never reverses the person's
+   own earlier opt-out, an SMS consent counts only when the phone in `values` is now the phone on the
+   contact, and a number with an active suppression takes no SMS consent.
 5. Routes the form's source key into every active campaign that listens for it, with event id
    `platform:<event_id>`, so the same event can never enroll a person twice.
 
@@ -173,7 +175,7 @@ Content-Type: application/json
 | `device.*` (the rest) | no | Stored as the manifest when the device registers. A later change to the manifest is made in the Hub, not by a submission. |
 | `submission.idempotency_key` | yes | Your stable id for this submission, letters, numbers and `: _ . -`, at most 120 characters. **The call is idempotent on it**: a replay for the same device answers `200 { ok: true, duplicate: true }` and changes nothing. |
 | `submission.email` | yes, or `phone` | How the contact is matched. |
-| `submission.first_name`, `phone` | no | A new contact takes these. |
+| `submission.first_name`, `phone` | no | A new contact takes these. An existing contact takes `phone` only if theirs is blank. |
 | `submission.outcome` | no | An outcome key from the manifest. It sets the outcome tag, the lists and the campaign. |
 | `submission.answers` | no | An object of answers, keyed by question. |
 | `submission.consent` | yes | `email` and `sms` count only when they are exactly `true`, and each needs its exact text in `email_text` or `sms_text`. Send what the person actually ticked, with boxes unticked by default. |
@@ -188,8 +190,10 @@ Content-Type: application/json
 3. Adds the source and outcome tags, and stores the answers for the contact card's Device answers section.
    A new contact takes the device slug as its source. An existing contact keeps its source; the
    `lead_device` Smart List field covers attribution for both.
-4. Records each consent as marketing consent with the text you sent. It never reverses the person's own
-   earlier opt-out, and an SMS consent counts only when the phone sent is the phone on the contact.
+4. Fills the contact's phone from the submission only if it is blank; a number already there is never
+   overwritten. Then records each consent as marketing consent with the text you sent. It never reverses
+   the person's own earlier opt-out, an SMS consent counts only when the phone sent is now the phone on the
+   contact, and a number with an active suppression takes no SMS consent.
 5. Places the contact at New lead. A contact already on a pipeline keeps that place and is added to this
    pipeline alongside it. Then routes it through `route_and_enroll`.
 6. Texts Cameron when the device's hot lead rule matches.
