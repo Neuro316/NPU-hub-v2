@@ -13,6 +13,8 @@
 //   P_MIRROR   hub_229 mirrors to the legacy columns only for the pipeline contacts.pipeline_id names (or an empty
 //              one), and the mirror and the translation trigger each skip the other's write
 //   P_SIGNED   NeuroReport's 'Signed up' is the Enrolled pipeline's first stage, by key, in the sync and the trigger
+//   P_VIEWS    every view hub_229 replaces that platform 157 made security_invoker keeps it (create or replace
+//              without WITH would clear it and the view would bypass RLS)
 //
 //   loosename  stage names match case-insensitively       {P_EXACT}
 //   guess      an unknown stage falls back to the first   {P_PLACE}
@@ -25,6 +27,7 @@
 //   mirrorloop translation ignores the mirror's guard      {P_MIRROR}
 //   mirrorall  the mirror writes for any pipeline          {P_MIRROR}
 //   nosignedup the sync places at the name 'Signed up'     {P_SIGNED}
+//   viewopts   a replaced view drops security_invoker      {P_VIEWS}
 // TAMPER=1 reddens the union.
 const fs = require('fs')
 const H = require('../agent/lib/harness.cjs')
@@ -46,10 +49,11 @@ const STATIC = {
   payfail: [[PAY, "            reason = String(e?.message || 'unknown').slice(0, 60)\n", '            throw e\n']],
   mirrorloop: [[SQL, "  if coalesce(current_setting('app.hub_legacy_mirroring', true), '') = 'on' then return null; end if;\n", '']],
   mirrorall: [[SQL, "         and (nullif(c.pipeline_id, '') is null or c.pipeline_id = v_key)\n", '']],
+  viewopts: [[SQL, 'create or replace view public.contact_lifecycle_summary with (security_invoker = on) as', 'create or replace view public.contact_lifecycle_summary as']],
   nosignedup: [[SYNC, "?.stages.find(s => s.key === NEW_CONTACT_STAGE_KEY)", "?.stages.find(s => s.name === 'Signed up')"]],
 }
 const RED_OF = { loosename: ['P_EXACT'], guess: ['P_PLACE'], keeparch: ['P_ENRICH'], orgopen: ['P_API'], actorbody: ['P_API'], removeall: ['P_ONE'],
-  nowarn: ['P_PAY'], payfail: ['P_PAY'], mirrorloop: ['P_MIRROR'], mirrorall: ['P_MIRROR'], nosignedup: ['P_SIGNED'] }
+  nowarn: ['P_PAY'], payfail: ['P_PAY'], mirrorloop: ['P_MIRROR'], mirrorall: ['P_MIRROR'], nosignedup: ['P_SIGNED'], viewopts: ['P_VIEWS'] }
 const active = H.selectors({ ...TAMPERS, ...STATIC })
 const read = (rel) => {
   let src = fs.readFileSync(require('path').join(H.ROOT, rel), 'utf8').replace(/\r\n/g, '\n')
@@ -148,6 +152,10 @@ const check = (id, ok, got) => rows.push({ id, ok: !!ok, got })
   check('P_SIGNED', sync.includes("const NEW_CONTACT_STAGE_KEY = 'stage-1772022700334'") && sync.includes('?.stages.find(s => s.key === NEW_CONTACT_STAGE_KEY)')
     && !/['"]Signed up['"]/.test(sync.replace(/\/\/.*$/gm, ''))
     && translate.includes("new.pipeline_id = 'pipeline-1771530511407' and new.pipeline_stage = 'Signed up'") && translate.includes("s.legacy_key = 'stage-1772022700334'"), 'signed up')
+
+  const replaced = sql.match(/create or replace view public\.\w+[^\n]*/g) ?? []
+  const invoker = ['attribution_effectiveness', 'contact_lifecycle_summary']
+  check('P_VIEWS', invoker.every((v) => replaced.some((l) => l.startsWith(`create or replace view public.${v} with (security_invoker = on) as`))), replaced)
 
   H.report(rows, active, RED_OF, () => fs.rmSync(out, { recursive: true, force: true }))
 })().catch((e) => { console.error(e); process.exit(2) })

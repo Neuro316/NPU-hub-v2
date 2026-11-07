@@ -537,7 +537,8 @@ revoke all on function public.hub_contact_facts(uuid) from public, anon, authent
 grant execute on function public.hub_contact_facts(uuid) to service_role;
 
 -- 8 ─────────────────────────────────────────────────────────────────────────────────────────────────────
-create or replace view public.attribution_effectiveness as
+-- security_invoker stays on (platform 157): create or replace without WITH would clear it.
+create or replace view public.attribution_effectiveness with (security_invoker = on) as
  select c.org_id,
     coalesce(c.source, 'unknown'::text) as source,
     count(*) as total_contacts,
@@ -551,7 +552,8 @@ create or replace view public.attribution_effectiveness as
 
 -- One row per org, pipeline and stage. A contact in two pipelines counts once in each; one in none counts under a
 -- null stage. pipeline_id is new, at the end.
-create or replace view public.contact_lifecycle_summary as
+-- security_invoker stays on (platform 157): create or replace without WITH would clear it.
+create or replace view public.contact_lifecycle_summary with (security_invoker = on) as
  select c.org_id,
     s.name as pipeline_stage,
     count(*) as count,
