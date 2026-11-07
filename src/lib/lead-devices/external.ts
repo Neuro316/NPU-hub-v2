@@ -55,7 +55,7 @@ export async function externalIntake(db: SupabaseClient, body: any): Promise<Ext
 
   const result = await processSubmission(db, device, {
     channel: 'external', idempotencyKey: s.idempotency_key,
-    email: check.email, firstName: check.firstName, phone: check.phone,
+    email: check.email, firstName: check.firstName, lastName: check.lastName, phone: check.phone,
     outcome: typeof s.outcome === 'string' ? s.outcome : null,
     answers, consents: check.consents, utm: cleanUtm(s.utm),
     pageUrl: typeof s.page_url === 'string' ? s.page_url.slice(0, 2000) : null,
