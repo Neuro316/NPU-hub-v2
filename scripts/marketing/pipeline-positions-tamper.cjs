@@ -15,6 +15,8 @@
 //   P_SIGNED   NeuroReport's 'Signed up' is the Enrolled pipeline's first stage, by key, in the sync and the trigger
 //   P_VIEWS    every view hub_229 replaces that platform 157 made security_invoker keeps it (create or replace
 //              without WITH would clear it and the view would bypass RLS)
+//   P_COLS     the board tells columns apart by colKey (id, else 'name:<stage>'): Mastermind and Subscribed stages have
+//              no id, and matching on the id alone put every card in the first column (seen live 2026-11-07)
 //
 //   loosename  stage names match case-insensitively       {P_EXACT}
 //   guess      an unknown stage falls back to the first   {P_PLACE}
@@ -28,6 +30,7 @@
 //   mirrorall  the mirror writes for any pipeline          {P_MIRROR}
 //   nosignedup the sync places at the name 'Signed up'     {P_SIGNED}
 //   viewopts   a replaced view drops security_invoker      {P_VIEWS}
+//   idcols     columns are matched on the config id alone   {P_COLS}
 // TAMPER=1 reddens the union.
 const fs = require('fs')
 const H = require('../agent/lib/harness.cjs')
@@ -44,16 +47,18 @@ const TAMPERS = {
 // Source-level checks on files the harness does not compile (an API route outside its folders, and the SQL).
 const PAY = 'src/app/api/accounting/payments/route.ts', SQL = 'supabase/migrations/hub_229_pipeline_positions.sql'
 const SYNC = 'src/app/api/integrations/neuroreport/sync/route.ts'
+const BOARD = 'src/app/(dashboard)/crm/pipelines/page.tsx'
 const STATIC = {
   nowarn: [[PAY, "            warnings.push(`Payment saved, but the CRM stage move failed: ${reason}`)\n", '']],
   payfail: [[PAY, "            reason = String(e?.message || 'unknown').slice(0, 60)\n", '            throw e\n']],
   mirrorloop: [[SQL, "  if coalesce(current_setting('app.hub_legacy_mirroring', true), '') = 'on' then return null; end if;\n", '']],
   mirrorall: [[SQL, "         and (nullif(c.pipeline_id, '') is null or c.pipeline_id = v_key)\n", '']],
+  idcols: [[BOARD, '    const sr = columns.find(c => colKey(c.cfg) === colKey(cfg))?.ref\n', '    const sr = columns.find(c => c.cfg.id === cfg.id)?.ref\n']],
   viewopts: [[SQL, 'create or replace view public.contact_lifecycle_summary with (security_invoker = on) as', 'create or replace view public.contact_lifecycle_summary as']],
   nosignedup: [[SYNC, "?.stages.find(s => s.key === NEW_CONTACT_STAGE_KEY)", "?.stages.find(s => s.name === 'Signed up')"]],
 }
 const RED_OF = { loosename: ['P_EXACT'], guess: ['P_PLACE'], keeparch: ['P_ENRICH'], orgopen: ['P_API'], actorbody: ['P_API'], removeall: ['P_ONE'],
-  nowarn: ['P_PAY'], payfail: ['P_PAY'], mirrorloop: ['P_MIRROR'], mirrorall: ['P_MIRROR'], nosignedup: ['P_SIGNED'], viewopts: ['P_VIEWS'] }
+  nowarn: ['P_PAY'], payfail: ['P_PAY'], mirrorloop: ['P_MIRROR'], mirrorall: ['P_MIRROR'], nosignedup: ['P_SIGNED'], viewopts: ['P_VIEWS'], idcols: ['P_COLS'] }
 const active = H.selectors({ ...TAMPERS, ...STATIC })
 const read = (rel) => {
   let src = fs.readFileSync(require('path').join(H.ROOT, rel), 'utf8').replace(/\r\n/g, '\n')
@@ -156,6 +161,15 @@ const check = (id, ok, got) => rows.push({ id, ok: !!ok, got })
   const replaced = sql.match(/create or replace view public\.\w+[^\n]*/g) ?? []
   const invoker = ['attribution_effectiveness', 'contact_lifecycle_summary']
   check('P_VIEWS', invoker.every((v) => replaced.some((l) => l.startsWith(`create or replace view public.${v} with (security_invoker = on) as`))), replaced)
+
+  // P_COLS: run the board's own colKey against stages with and without ids
+  const board = read(BOARD)
+  const colSrc = (board.match(/const colKey = \(s: \{ id\?: string \| null; name: string \}\): string => (.+)\n/) || [])[1]
+  const colKey = colSrc ? new Function('s', `return ${colSrc}`) : null
+  const noIds = [{ name: 'Applied' }, { name: 'Active (in cohort)' }]
+  check('P_COLS', !!colKey && colKey(noIds[0]) !== colKey(noIds[1]) && colKey({ id: 's1', name: 'X' }) === 's1' && colKey(noIds[1]) === 'name:Active (in cohort)'
+    && board.includes('const sr = columns.find(c => colKey(c.cfg) === colKey(cfg))?.ref') && board.includes('const isFirst = colKey(cfg) === firstColumnKey')
+    && !/c\.cfg\.id === cfg\.id/.test(board), colSrc)
 
   H.report(rows, active, RED_OF, () => fs.rmSync(out, { recursive: true, force: true }))
 })().catch((e) => { console.error(e); process.exit(2) })
