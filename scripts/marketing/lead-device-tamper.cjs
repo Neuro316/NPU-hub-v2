@@ -34,7 +34,7 @@
 //   hotall      every submission is a hot lead               {D_HOT}
 //   factsall    lead_device matches everyone                 {D_FACTS}
 //   logname     the contact failure logs the email           {D_NOLOG}
-//   overwrite   a number already on the contact is replaced  {D_FILL,D_OPTOUT}
+//   overwrite   a number already on the contact is replaced  {D_FILL,D_OPTOUT,D_SHARED}
 //   nofill      a blank phone stays blank                    {D_FILL,D_SHARED,D_SUPPRESS}
 //   nocas       the fill ignores a number saved meanwhile    {D_FILL}
 //   nosuppress  a suppressed number takes the consent        {D_SUPPRESS}
@@ -72,7 +72,7 @@ const TAMPERS = {
 const RED_OF = {
   testwrites: ['D_TEST'], notest: ['D_TEST'], noreplay: ['D_REPLAY'], truthy: ['D_CONSENT'], optout: ['D_OPTOUT'], noresult: ['D_LEAD'], secretopen: ['D_SECRET'],
   anypreview: ['D_PREVIEW'], sameorigin: ['D_FILE'], connect: ['D_FILE'], nonce: ['D_PAGE'], hotall: ['D_HOT'], factsall: ['D_FACTS'], logname: ['D_NOLOG'],
-  overwrite: ['D_FILL', 'D_OPTOUT'], nofill: ['D_FILL', 'D_SHARED', 'D_SUPPRESS'], nocas: ['D_FILL'], nosuppress: ['D_SUPPRESS'], checkopen: ['D_SUPPRESS'],
+  overwrite: ['D_FILL', 'D_OPTOUT', 'D_SHARED'], nofill: ['D_FILL', 'D_SHARED', 'D_SUPPRESS'], nocas: ['D_FILL'], nosuppress: ['D_SUPPRESS'], checkopen: ['D_SUPPRESS'],
   nonote: ['D_SHARED'], noother: ['D_SHARED'],
 }
 const active = H.selectors(TAMPERS)
