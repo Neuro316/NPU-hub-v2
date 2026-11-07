@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabase } from '@/lib/supabase'
+import { loadPositions, positionsByContact } from '@/lib/pipelines/positions'
 
 export const maxDuration = 60
 
@@ -20,7 +21,7 @@ export async function POST(req: NextRequest) {
       .eq('org_id', org_id).order('scheduled_at', { ascending: false }).limit(20),
     sb.from('team_profiles').select('*').eq('org_id', org_id).eq('status', 'active'),
     sb.from('org_settings').select('setting_key, setting_value').eq('org_id', org_id),
-    sb.from('contacts').select('id, first_name, last_name, pipeline_stage, tags, occupation, reason_for_contact')
+    sb.from('contacts').select('id, first_name, last_name, tags, occupation, reason_for_contact')
       .eq('org_id', org_id).is('merged_into_id', null).limit(100),
   ])
 
@@ -31,6 +32,12 @@ export async function POST(req: NextRequest) {
   const team = teamRes.data || []
   const settings = settingsRes.data || []
   const contacts = contactsRes.data || []
+  // Each contact's pipelines with stages (contact_pipeline_positions)
+  let stageOf = new Map<string, string>()
+  try {
+    const byContact = positionsByContact(await loadPositions(sb, org_id, { contactIds: contacts.slice(0, 20).map(c => c.id) }))
+    stageOf = new Map(Array.from(byContact, ([id, ps]) => [id, ps.map(p => `${p.pipeline_name} · ${p.stage_name}`).join(', ')]))
+  } catch (e) { console.error(`[meeting-advisor] ${(e as Error).message}`) }
 
   // Build column map (id → title)
   const colMap: Record<string, string> = {}
@@ -160,7 +167,7 @@ ${meetings.slice(0, 10).map(m =>
 
 KEY CONTACTS:
 ${contacts.slice(0, 20).map(c =>
-    `- ${c.first_name} ${c.last_name} (${c.pipeline_stage || 'no stage'}, tags: ${(c.tags || []).join(', ') || 'none'})`
+    `- ${c.first_name} ${c.last_name} (${stageOf.get(c.id) || 'no pipeline'}, tags: ${(c.tags || []).join(', ') || 'none'})`
   ).join('\n')}
 
 ${customInstructions ? `\nCUSTOM AI INSTRUCTIONS:\n${customInstructions}` : ''}

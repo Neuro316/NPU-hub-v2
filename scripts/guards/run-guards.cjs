@@ -15,6 +15,8 @@
 //      Hub number used twice. pf_NNN is the platform's; hub_NNN and bare NNN are the Hub's;
 //      equal numbers under different prefixes are not collisions (ruled 2026-10-04).
 //   G6 platform-migrations.txt missing a migration the sibling checkout has (stale snapshot)
+//   G7 Hub code writing contacts.pipeline_id / contacts.pipeline_stage. Pipeline membership and stage live in
+//      contact_pipeline_positions only (hub_229); the legacy columns are read-only for the Hub.
 //
 // Code that predates this build is listed in scripts/guards/baseline.json by name, so
 // the guards fail on NEW violations. The baseline is a list of known findings, reported
@@ -148,7 +150,26 @@ function g6(tree) {
     .map((n) => `platform-migrations.txt is stale: missing ${n} (npm run guards:refresh)`).sort()
 }
 
-const GUARDS = { G1: g1, G2: g2, G3: g3, G4: g4, G5: g5, G6: g6 }
+// ── G7 ───────────────────────────────────────────────────────────────────────
+// A write to the contacts table whose payload names pipeline_id or pipeline_stage, or an assignment of either onto
+// a payload object. Other tables with a pipeline_id column (booking routes, positions, stages) are not contacts and
+// are not flagged.
+const G7_WRITE = /\.from\(\s*['"]contacts['"]\s*\)[^;]{0,600}?\.(?:update|insert|upsert)\(\s*\{[^}]*?\b(pipeline_stage|pipeline_id)\s*:/gs
+const G7_ASSIGN = /\b(?:updates|update|patch|payload|contactData|newContact|insertRow)\s*(?:\.|\[\s*['"])(pipeline_stage|pipeline_id)\b['"]?\s*\]?\s*=(?!=)/g
+function g7(tree) {
+  const out = new Set()
+  for (const [f, src] of Object.entries(tree)) {
+    if (!/^src\/.*\.tsx?$/.test(f)) continue
+    for (const re of [G7_WRITE, G7_ASSIGN]) {
+      re.lastIndex = 0
+      let m
+      while ((m = re.exec(src))) if (TAMPER !== 'G7') out.add(`${f}: writes contacts.${m[1]}`)
+    }
+  }
+  return Array.from(out).sort()
+}
+
+const GUARDS = { G1: g1, G2: g2, G3: g3, G4: g4, G5: g5, G6: g6, G7: g7 }
 
 // ── self-test: one planted defect per guard, and a clean tree ────────────────
 const CLEAN = {
@@ -177,6 +198,10 @@ const PLANTED = {
          'supabase/migrations/hub_212_y.sql': '', '__platform_snapshot__': 'pf_202_y.sql\npf_212_y.sql\n213_q.sql\n' },
        ['hub migration 213 collides with platform migration 213', 'hub migration 214 is numbered twice']],
   G6: [{ '__platform_sibling__': 'pf_201_x.sql\npf_202_y.sql\npf_203_new.sql\n' }, ['platform-migrations.txt is stale: missing pf_203_new.sql (npm run guards:refresh)']],
+  // both shapes of a legacy write, and a booking route's own pipeline_id, which must stay silent
+  G7: [{ 'src/lib/legacy.ts': "await db.from('contacts').update({ pipeline_stage: 'Won', updated_at: now }).eq('id', id)\nupdates.pipeline_id = key",
+         'src/lib/routes.ts': "await db.from('nr_booking_pipeline_routes').insert({ pipeline_id: key, stage_name: s })" },
+       ['src/lib/legacy.ts: writes contacts.pipeline_id', 'src/lib/legacy.ts: writes contacts.pipeline_stage']],
 }
 let selfFail = 0
 for (const [g, fn] of Object.entries(GUARDS)) {

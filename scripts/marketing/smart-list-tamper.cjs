@@ -46,7 +46,7 @@ const { matches, checkDefinition, missingSources } = load(F)
 const NOW = new Date('2026-11-05T12:00:00Z').getTime()
 const ago = (d) => new Date(NOW - d * 86400000).toISOString()
 const base = {
-  contact_id: 'c', tags: ['podcast'], source: 'stripe', contact_type: 'B2C', partnership_type: null, pipeline_id: 'p1', pipeline_stage: 'Follow up',
+  contact_id: 'c', tags: ['podcast'], source: 'stripe', contact_type: 'B2C', partnership_type: null, pipelines: [{ pipeline_id: 'p1-uuid', pipeline_key: 'p1', pipeline_name: 'P1', stage_id: 's1-uuid', stage: 'Follow up' }],
   brand: 'np', created_at: ago(200), last_activity_at: null, last_open_at: ago(10), last_click_at: null, booked_at: null, booking_types: [],
   client_reasons: [], email_allowed: true, texting_allowed: false,
   purchases: [{ key: 'clarity-protocol', name: 'Clarity', at: ago(40) }],

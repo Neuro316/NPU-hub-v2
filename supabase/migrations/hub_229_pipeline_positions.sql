@@ -11,7 +11,8 @@
 --   3. Backfill: one position for each unmerged contact whose contacts.pipeline_id / pipeline_stage name a
 --      live pipeline and stage and who has no row for that pipeline. Exact match on the pipeline key and the
 --      stage name; nothing is guessed. Values that do not map are left alone and listed by the query at the end.
---      A contact whose row already disagrees with the legacy columns keeps the row.
+--      A contact whose row already disagrees with the legacy columns keeps the row, except in the Sales
+--      Pipeline, where the legacy stage wins (Cameron, 2026-11-07; see the update after the backfill).
 --   4. History and stage triggers move to the positions table: hub_positions_changed writes contact_timeline
 --      (pipeline_added, stage_moved, pipeline_removed) naming the pipeline, and raises the 'stage:<stage_id>'
 --      entry event. The stage part of hub_contacts_entry_events and trg_pipeline_timeline are removed, since
@@ -48,6 +49,8 @@
 --   -- hub_contact_facts and the three views from their definitions read on 2026-11-07 (kept in
 --   -- scripts/marketing/hub_229_before.sql), then the grants as they were
 --   delete from public.contact_pipeline_positions where source = 'legacy_backfill';
+--   -- the legacy_sales_sync rows were at New Lead before (ed0d5aa4-2fd3-404c-9998-ba4099d023d0,
+--   -- 993e54bb-4ed6-4c09-a6a4-5475137ece8f); set them back by hand if wanted
 --   drop table public.hub_pipeline_legacy_unmapped;
 --   delete from supabase_migrations.schema_migrations where name = 'hub_229_pipeline_positions';
 --   commit;
@@ -101,6 +104,20 @@ select c.id, c.org_id, p.id, st.id, coalesce(c.updated_at, now()), null, 'legacy
                  order by s.position limit 1) st on true
  where c.merged_into_id is null
 on conflict (contact_id, pipeline_id) do nothing;
+
+-- Cameron's ruling (2026-11-07): existing rows are kept, including the 51 circle_import_2026_11_07 Sales Pipeline
+-- rows. One exception: where the legacy columns point at the Sales Pipeline and disagree with the contact's Sales
+-- Pipeline row, the legacy stage wins, because until this change ships it is the newer write. Exact stage name
+-- only; read on 2026-11-07 this is 2 contacts (Matt Godfrey: New Lead -> Clarity Phase 1, Cindy Fogle:
+-- New Lead -> Follow up).
+update public.contact_pipeline_positions x
+   set stage_id = st.id, moved_at = now(), moved_by = null, source = 'legacy_sales_sync'
+  from public.contacts c
+  join public.pipelines p on p.org_id = c.org_id and p.legacy_key = c.pipeline_id and p.name = 'Sales Pipeline' and p.archived_at is null
+  join lateral (select s.id from public.pipeline_stages s
+                 where s.pipeline_id = p.id and s.name = c.pipeline_stage and s.archived_at is null
+                 order by s.position limit 1) st on true
+ where x.contact_id = c.id and x.pipeline_id = p.id and c.merged_into_id is null and x.stage_id <> st.id;
 
 -- 4 ─────────────────────────────────────────────────────────────────────────────────────────────────────
 create function public.hub_positions_changed()

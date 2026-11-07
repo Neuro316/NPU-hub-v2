@@ -113,6 +113,21 @@ export async function loadPositions(db: SupabaseClient, orgId: string, opts: { c
   return enrichPositions(rows, pipelines)
 }
 
+/**
+ * The value of {{pipeline_stage}} for one contact: the stage in the given pipeline, or, with none given, the stage only
+ * when the person is in exactly one pipeline (otherwise empty, since one stage cannot speak for several). Never throws:
+ * a failed read renders the tag empty.
+ */
+export async function mergeStageFor(db: SupabaseClient, orgId: string, contactId: string, pipelineId?: string | null): Promise<string> {
+  try {
+    const rows = await loadPositions(db, orgId, { contactIds: [contactId] })
+    if (pipelineId) return rows.find((p) => p.pipeline_id === pipelineId)?.stage_name ?? ''
+    return rows.length === 1 ? rows[0].stage_name : ''
+  } catch {
+    return ''
+  }
+}
+
 /** Pure: positions grouped by contact. */
 export function positionsByContact(rows: Position[]): Map<string, Position[]> {
   const m = new Map<string, Position[]>()

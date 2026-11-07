@@ -11,6 +11,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { createClient } from '@supabase/supabase-js'
+import { loadPipelines, loadPositions, placeContact } from '@/lib/pipelines/positions'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -152,7 +153,6 @@ async function applyTagToContact(
         first_name: firstName,
         last_name: lastName,
         email: email || null,
-        pipeline_stage: 'Enrolled',
         tags: [tag],
         auto_tags: [tag],
         enrollment_type: enrollmentType,
@@ -202,18 +202,30 @@ async function applyTagToContact(
     updates.enrollment_type = enrollmentType
   }
 
-  // Move to Enrolled pipeline if not already there or further along
-  const enrolledStages = ['Enrolled', 'Active', 'Completed']
-  if (!enrolledStages.includes(contact.pipeline_stage || '')) {
-    updates.pipeline_stage = 'Enrolled'
-  }
-
   const { error: updateErr } = await supabase
     .from('contacts')
     .update(updates)
     .eq('id', contact.id)
 
   if (updateErr) throw updateErr
+
+  // Move to the Enrolled stage, never backward, in each pipeline the contact is already in that has a stage named
+  // exactly 'Enrolled' (contact_pipeline_positions). This replaces the legacy pipeline_stage write, which only ever
+  // moved the contact within the pipeline they were on. No pipeline is joined here and no other pipeline is touched.
+  try {
+    const pipelines = await loadPipelines(supabase, orgId)
+    const positions = await loadPositions(supabase, orgId, { contactIds: [contact.id], pipelines })
+    for (const pos of positions) {
+      const enrolled = pipelines.find(p => p.id === pos.pipeline_id)?.stages.find(s => s.name === 'Enrolled')
+      if (!enrolled) continue
+      const r = await placeContact(supabase, contact.id, enrolled.id, true, 'stripe_auto_tag')
+      if (!r.placed && r.reason !== 'already_there' && r.reason !== 'already_further') {
+        console.error(`[stripe-auto-tagger] contact=${contact.id} not placed: ${r.reason ?? 'unknown'}`)
+      }
+    }
+  } catch (e: any) {
+    console.error(`[stripe-auto-tagger] contact=${contact.id} placement failed: ${String(e?.message ?? 'error').slice(0, 60)}`)
+  }
 
   // Audit
   await supabase.from('integration_audit_log').insert({

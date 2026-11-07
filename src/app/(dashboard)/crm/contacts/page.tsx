@@ -14,6 +14,9 @@ import { STAGE_COLORS } from '@/types/crm'
 import ContactDetail from '@/components/crm/contact-detail'
 import CrossOrgContactsPanel from '@/components/crm/cross-org-contacts-panel'
 import { useWorkspace } from '@/lib/workspace-context'
+import { createClient as createBrowserSb } from '@/lib/supabase-browser'
+import { loadPipelines, loadPositions, positionsByContact, firstStage, type PipelineRef, type Position } from '@/lib/pipelines/positions'
+import { apiSetStage } from '@/lib/pipelines/client'
 
 const TAG_COLORS: Record<string, string> = {
   VIP: '#FBBF24', 'Hot Lead': '#F87171', Partner: '#34D399', Referral: '#2A9D8F',
@@ -30,7 +33,7 @@ function ContactTag({ tag }: { tag: string }) {
 
 interface NewContactForm {
   first_name: string; last_name: string; email: string; phone: string
-  company: string; source: string; pipeline_id: string; pipeline_stage: string; assigned_to: string
+  company: string; source: string; add_pipeline_id: string; add_stage_id: string; assigned_to: string
   tags: string[]; newTag: string
   connect_to_id: string; connect_to_name: string; connect_type: string; connect_strength: number
   address_street: string; address_city: string; address_state: string; address_zip: string
@@ -42,7 +45,7 @@ interface NewContactForm {
   referred_by_name: string; referred_by_contact_id: string; source_other: string
 }
 const emptyForm: NewContactForm = {
-  first_name:'', last_name:'', email:'', phone:'', company:'', source:'', pipeline_id:'', pipeline_stage:'', assigned_to:'',
+  first_name:'', last_name:'', email:'', phone:'', company:'', source:'', add_pipeline_id:'', add_stage_id:'', assigned_to:'',
   tags:[], newTag:'', connect_to_id:'', connect_to_name:'', connect_type:'', connect_strength:3,
   address_street:'', address_city:'', address_state:'', address_zip:'', reason_for_contact:'',
   preferred_name:'', date_of_birth:'', timezone:'America/New_York', preferred_contact_method:'',
@@ -68,6 +71,8 @@ function ContactsPageContent() {
   const [search, setSearch] = useState('')
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  // Pipeline / stage filters: pipelines.id and pipeline_stages.id, matched against contact_pipeline_positions.
+  const [pipelineFilter, setPipelineFilter] = useState('')
   const [stageFilter, setStageFilter] = useState('')
   const [tagFilter, setTagFilter] = useState('')
   const [page, setPage] = useState(0)
@@ -79,9 +84,11 @@ function ContactsPageContent() {
   const [relTypes, setRelTypes] = useState<RelationshipType[]>([])
   const [connSearchResults, setConnSearchResults] = useState<CrmContact[]>([])
   const [connSearchQuery, setConnSearchQuery] = useState('')
-  const [pipelineConfigs, setPipelineConfigs] = useState<any[]>([])
+  const [pipelines, setPipelines] = useState<PipelineRef[]>([])
+  const [positionsMap, setPositionsMap] = useState<Map<string, Position[]>>(new Map())
   const [bulkPipelineId, setBulkPipelineId] = useState('')
-  const [bulkPipelineStage, setBulkPipelineStage] = useState('')
+  const [bulkStageId, setBulkStageId] = useState('')
+  const [bulkConfirmRemove, setBulkConfirmRemove] = useState(false)
   const [showColumnConfig, setShowColumnConfig] = useState(false)
   const [aiLooking, setAiLooking] = useState(false)
   const [aiResult, setAiResult] = useState<string | null>(null)
@@ -102,12 +109,13 @@ function ContactsPageContent() {
 
   const SORT_COLUMN_MAP: Record<string, string> = {
     name: 'first_name', email: 'email', phone: 'phone', company: 'source', // company is custom_fields, fallback
-    source: 'source', stage: 'pipeline_stage', last_contact: 'last_contacted_at',
+    source: 'source', last_contact: 'last_contacted_at',
     assigned: 'assigned_to', preferred_name: 'preferred_name', date_of_birth: 'date_of_birth',
     city: 'address_city', state: 'address_state', occupation: 'occupation', industry: 'industry',
     instagram: 'instagram_handle', created: 'created_at', timezone: 'timezone',
     contact_method: 'preferred_contact_method', how_heard: 'how_heard_about_us',
-    reason: 'reason_for_contact', pipeline: 'pipeline_id',
+    reason: 'reason_for_contact',
+    // No 'stage' or 'pipeline' sort: a contact can be in several pipelines, so one sort key is not defined.
   }
 
   const toggleSort = (colKey: string) => {
@@ -234,7 +242,7 @@ function ContactsPageContent() {
 
   // Column renderer
   const renderCell = (c: CrmContact, key: string) => {
-    const sc = STAGE_COLORS[c.pipeline_stage || ''] || '#94a3b8'
+    const cPositions = positionsMap.get(c.id) ?? []
     switch (key) {
       case 'name': {
         const initials = `${c.first_name?.[0] || ''}${c.last_name?.[0] || ''}`.toUpperCase()
@@ -249,11 +257,19 @@ function ContactsPageContent() {
       case 'phone': return <span className="text-[10px] text-gray-500">{c.phone || '--'}</span>
       case 'company': return <span className="text-xs text-gray-600">{(c.custom_fields as any)?.company || '--'}</span>
       case 'source': return <span className="text-[10px] px-1.5 py-0.5 bg-np-blue/8 text-np-blue rounded-full font-medium">{c.source || '--'}</span>
-      case 'stage': return c.pipeline_stage ? <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: sc + '18', color: sc }}>{c.pipeline_stage}</span> : <span className="text-[10px] text-gray-400">--</span>
-      case 'pipeline': {
-        const pl = pipelineConfigs.find((p: any) => p.id === c.pipeline_id)
-        return pl ? <span className="text-[10px] px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded-full font-medium">{pl.name}</span> : <span className="text-[10px] text-gray-400">--</span>
-      }
+      case 'stage': return cPositions.length ? (
+        <div className="flex flex-wrap gap-0.5">
+          {cPositions.map(p => {
+            const sc = p.stage_color || STAGE_COLORS[p.stage_name] || '#94a3b8'
+            return <span key={p.pipeline_id} className="text-[10px] px-1.5 py-0.5 rounded-full font-medium break-words" style={{ background: sc + '18', color: sc }}>{p.pipeline_name} · {p.stage_name}</span>
+          })}
+        </div>
+      ) : <span className="text-[10px] text-gray-400">--</span>
+      case 'pipeline': return cPositions.length ? (
+        <div className="flex flex-wrap gap-0.5">
+          {cPositions.map(p => <span key={p.pipeline_id} className="text-[10px] px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded-full font-medium">{p.pipeline_name}</span>)}
+        </div>
+      ) : <span className="text-[10px] text-gray-400">--</span>
       case 'tags': return <div className="flex gap-0.5 flex-wrap">{c.tags?.slice(0,2).map(t => (c as any).auto_tags?.includes(t) ? <AutoTagIndicator key={t} tag={t} source="stripe" /> : <ContactTag key={t} tag={t} />)}{(c.tags?.length||0)>2 && <span className="text-[9px] text-gray-400">+{c.tags!.length-2}</span>}</div>
       case 'api_status': return <DataApiBadge linked={(c as any).neuroreport_linked} linkedAt={(c as any).neuroreport_linked_at} program={(c as any).neuroreport_program} patientId={(c as any).neuroreport_patient_id} compact />
       case 'enrollment': return <EnrollmentTypeBadge type={(c as any).enrollment_type} />
@@ -300,14 +316,19 @@ function ContactsPageContent() {
 
   useEffect(() => { fetchTeamMembers().then(setTeamMembers).catch(console.error) }, [])
   useEffect(() => { if (currentOrg) fetchRelationshipTypes(currentOrg.id).then(setRelTypes).catch(console.error) }, [currentOrg])
-  useEffect(() => {
+  // Pipelines and every position in the org, read once (and again after a pipeline write) from
+  // contact_pipeline_positions. contacts.pipeline_id / pipeline_stage are legacy and not read.
+  const loadPipelineData = useCallback(async () => {
     if (!currentOrg) return
-    const { createClient } = require('@/lib/supabase-browser')
-    createClient().from('org_settings').select('setting_value').eq('org_id', currentOrg.id).eq('setting_key', 'crm_pipelines').maybeSingle()
-      .then(({ data }: { data: any }) => {
-        if (data?.setting_value?.pipelines) setPipelineConfigs(data.setting_value.pipelines)
-      })
-  }, [currentOrg?.id])
+    try {
+      const sb = createBrowserSb()
+      const pls = await loadPipelines(sb, currentOrg.id)
+      setPipelines(pls)
+      setPositionsMap(positionsByContact(await loadPositions(sb, currentOrg.id, { pipelines: pls })))
+    } catch (e) { console.warn('Pipelines load skipped:', (e as Error)?.message) }
+  }, [currentOrg?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { loadPipelineData() }, [loadPipelineData])
+  useEffect(() => { setPipelineFilter(''); setStageFilter('') }, [currentOrg?.id])
 
   const load = useCallback(async () => {
     if (!currentOrg) return
@@ -315,13 +336,14 @@ function ContactsPageContent() {
     try {
       const params: ContactSearchParams = { org_id: currentOrg.id, limit, offset: page * limit, sort_by: sortBy, sort_dir: sortDir }
       if (search) params.q = search
-      if (stageFilter) params.pipeline_stage = stageFilter
+      if (pipelineFilter) params.position_pipeline_id = pipelineFilter
+      if (stageFilter) params.position_stage_id = stageFilter
       if (tagFilter) params.tags = [tagFilter]
       const res = await fetchContacts(params)
       setContacts(res.contacts); setTotal(res.total)
     } catch (e) { console.error('Contact load error:', e) }
     finally { setLoading(false) }
-  }, [currentOrg?.id, search, stageFilter, tagFilter, page, sortBy, sortDir])
+  }, [currentOrg?.id, search, pipelineFilter, stageFilter, tagFilter, page, sortBy, sortDir])
 
   useEffect(() => { load() }, [load])
 
@@ -339,6 +361,7 @@ function ContactsPageContent() {
         setBulkFeedback({ type: 'success', msg: `Updated ${result.affected} contact${result.affected === 1 ? '' : 's'}${(result as any).campaign_note ? `. ${(result as any).campaign_note}` : ''}` })
         setSelected(new Set())
         load()
+        if (action === 'set_pipeline_stage' || action === 'remove_from_pipeline') loadPipelineData()
       } else if (result.affected === 0) {
         setBulkFeedback({ type: 'error', msg: result.error || 'No contacts were updated. Check org membership.' })
       } else if (!result.success) {
@@ -377,8 +400,6 @@ function ContactsPageContent() {
       if (form.linkedin_url) customFields.linkedin_url = form.linkedin_url
       if (form.emergency_contact_name) customFields.emergency_contact_name = form.emergency_contact_name
       if (form.emergency_contact_phone) customFields.emergency_contact_phone = form.emergency_contact_phone
-      if (form.pipeline_id) customFields.pipeline_id = form.pipeline_id
-      if (form.pipeline_stage) customFields.pipeline_stage = form.pipeline_stage
       if (form.assigned_to) customFields.assigned_to = form.assigned_to
 
       // Debug: log auth state
@@ -410,6 +431,12 @@ function ContactsPageContent() {
         console.error('Supabase insert error:', { message: error.message, details: error.details, hint: error.hint, code: error.code })
         throw error
       }
+      // Pipeline placement is a position (hub_229), set once the contact exists. Only that pipeline is touched.
+      let placementFailed = false
+      if (form.add_stage_id && newContact?.id) {
+        try { await apiSetStage(newContact.id, form.add_stage_id) }
+        catch (e) { placementFailed = true; console.warn('Pipeline placement failed:', (e as Error)?.message) }
+      }
       if (form.connect_to_id && form.connect_type && newContact?.id) {
         await createRelationship({
           org_id: currentOrg.id,
@@ -420,6 +447,8 @@ function ContactsPageContent() {
         }).catch(e => console.warn('Connection create skipped:', e))
       }
       setShowCreate(false); setForm(emptyForm); setConnSearchResults([]); setConnSearchQuery(''); setRefSearchResults([]); setRefSearchQuery(''); setAiResult(null); load()
+      if (form.add_stage_id) loadPipelineData()
+      if (placementFailed) alert('The contact was created, but it could not be added to the pipeline. Add it from the contact card.')
     } catch (e: any) { console.error('Full create error:', e); alert('Failed to create contact: ' + (e?.message || '') + (e?.details ? ' | Details: ' + e.details : '') + (e?.hint ? ' | Hint: ' + e.hint : '') + (e?.code ? ' | Code: ' + e.code : '')) }
     finally { setCreating(false) }
   }
@@ -494,10 +523,19 @@ function ContactsPageContent() {
             placeholder="Search contacts, companies, tags..."
             className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30 placeholder:text-gray-400" />
         </div>
-        <select value={stageFilter} onChange={e => { setStageFilter(e.target.value); setPage(0) }}
-          className="text-xs bg-white border border-gray-100 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-teal/30">
-          <option value="">All Stages</option>
-          {pipelineConfigs.flatMap((p: any) => p.stages || []).map((s: any) => <option key={s.name} value={s.name}>{s.name}</option>)}
+        <select aria-label="Filter by pipeline" value={pipelineFilter} onChange={e => { setPipelineFilter(e.target.value); setStageFilter(''); setPage(0) }}
+          className="w-full sm:w-auto min-h-[40px] text-xs bg-white border border-gray-100 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-teal/30">
+          <option value="">All pipelines</option>
+          {pipelines.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        <select aria-label="Filter by stage" value={stageFilter} onChange={e => { setStageFilter(e.target.value); setPage(0) }}
+          className="w-full sm:w-auto min-h-[40px] text-xs bg-white border border-gray-100 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-teal/30">
+          <option value="">All stages</option>
+          {(pipelineFilter ? pipelines.filter(p => p.id === pipelineFilter) : pipelines).map(p => (
+            <optgroup key={p.id} label={p.name}>
+              {p.stages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </optgroup>
+          ))}
         </select>
         <select value={tagFilter} onChange={e => { setTagFilter(e.target.value); setPage(0) }}
           className="text-xs bg-white border border-gray-100 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-teal/30">
@@ -520,25 +558,37 @@ function ContactsPageContent() {
           )}
           <div className="flex gap-1 items-center ml-auto flex-wrap">
             {/* Pipeline assignment */}
-            <select value={bulkPipelineId} onChange={e => {
+            {/* Writes positions in the chosen pipeline only; the contacts' other pipelines are untouched. */}
+            <select aria-label="Pipeline for selected contacts" value={bulkPipelineId} onChange={e => {
               setBulkPipelineId(e.target.value)
-              const pl = pipelineConfigs.find((p: any) => p.id === e.target.value)
-              setBulkPipelineStage(pl?.stages?.[0]?.name || '')
+              setBulkStageId(firstStage(pipelines.find(p => p.id === e.target.value))?.id ?? '')
+              setBulkConfirmRemove(false)
             }}
-              className="px-2 py-1 text-[10px] bg-white border border-gray-100 rounded-md focus:outline-none focus:ring-1 focus:ring-np-blue/30">
+              className="min-h-[40px] px-2 py-1 text-[10px] bg-white border border-gray-100 rounded-md focus:outline-none focus:ring-1 focus:ring-np-blue/30">
               <option value="">Pipeline...</option>
-              {pipelineConfigs.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              {pipelines.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
-            {bulkPipelineId && (
+            {bulkPipelineId && !bulkConfirmRemove && (
               <>
-                <select value={bulkPipelineStage} onChange={e => setBulkPipelineStage(e.target.value)}
-                  className="px-2 py-1 text-[10px] bg-white border border-gray-100 rounded-md focus:outline-none focus:ring-1 focus:ring-np-blue/30">
-                  {(pipelineConfigs.find((p: any) => p.id === bulkPipelineId)?.stages || []).map((s: any) => (
-                    <option key={s.name} value={s.name}>{s.name}</option>
+                <select aria-label="Stage for selected contacts" value={bulkStageId} onChange={e => setBulkStageId(e.target.value)}
+                  className="min-h-[40px] px-2 py-1 text-[10px] bg-white border border-gray-100 rounded-md focus:outline-none focus:ring-1 focus:ring-np-blue/30">
+                  {(pipelines.find(p => p.id === bulkPipelineId)?.stages ?? []).map(s => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
                   ))}
                 </select>
-                <button onClick={() => { handleBulkAction('set_pipeline', { pipeline_id: bulkPipelineId, pipeline_stage: bulkPipelineStage }); setBulkPipelineId(''); setBulkPipelineStage('') }}
-                  className="px-2 py-1 text-[10px] font-bold text-white bg-np-blue rounded-md hover:bg-np-blue/90">Assign</button>
+                <button disabled={!bulkStageId} onClick={() => { handleBulkAction('set_pipeline_stage', { stage_id: bulkStageId }); setBulkPipelineId(''); setBulkStageId('') }}
+                  className="min-h-[40px] px-2 py-1 text-[10px] font-bold text-white bg-np-blue rounded-md hover:bg-np-blue/90 disabled:opacity-50">Move to stage</button>
+                <button onClick={() => setBulkConfirmRemove(true)}
+                  className="min-h-[40px] px-2 py-1 text-[10px] text-gray-500 bg-white border border-gray-100 rounded-md hover:text-red-600">Remove from pipeline</button>
+              </>
+            )}
+            {bulkPipelineId && bulkConfirmRemove && (
+              <>
+                <span className="text-[10px] text-red-700">Remove {selected.size} from {pipelines.find(p => p.id === bulkPipelineId)?.name}? Other pipelines stay.</span>
+                <button onClick={() => { handleBulkAction('remove_from_pipeline', { pipeline_id: bulkPipelineId }); setBulkPipelineId(''); setBulkStageId(''); setBulkConfirmRemove(false) }}
+                  className="min-h-[40px] px-2 py-1 text-[10px] font-bold text-white bg-red-600 rounded-md hover:bg-red-700">Remove</button>
+                <button onClick={() => setBulkConfirmRemove(false)}
+                  className="min-h-[40px] px-2 py-1 text-[10px] text-gray-500 rounded-md hover:bg-white">Cancel</button>
               </>
             )}
             <div className="w-px h-5 bg-gray-200 mx-1" />
@@ -723,7 +773,7 @@ function ContactsPageContent() {
 
       {currentOrg && <CrossOrgContactsPanel orgId={currentOrg.id} />}
 
-      <ContactDetail contactId={selectedContactId} onClose={() => setSelectedContactId(null)} onUpdate={load} />
+      <ContactDetail contactId={selectedContactId} onClose={() => setSelectedContactId(null)} onUpdate={() => { load(); loadPipelineData() }} />
 
       {showCreate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
@@ -764,18 +814,17 @@ function ContactsPageContent() {
                     <option value="">Select source</option>{SOURCE_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                   </select></div>
                 <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Pipeline</label>
-                  <select value={form.pipeline_id} onChange={e => {
+                  <select value={form.add_pipeline_id} onChange={e => {
                     const pid = e.target.value
-                    const pl = pipelineConfigs.find((p: any) => p.id === pid)
-                    setForm(p => ({ ...p, pipeline_id: pid, pipeline_stage: pl?.stages?.[0]?.name || '' }))
+                    setForm(p => ({ ...p, add_pipeline_id: pid, add_stage_id: firstStage(pipelines.find(x => x.id === pid))?.id ?? '' }))
                   }} className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30">
                     <option value="">No pipeline</option>
-                    {pipelineConfigs.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    {pipelines.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select></div>
                 <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Stage</label>
-                  <select value={form.pipeline_stage} onChange={e => setForm(p=>({...p,pipeline_stage:e.target.value}))} className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30">
-                    <option value="">Select stage</option>
-                    {(pipelineConfigs.find((p: any) => p.id === form.pipeline_id)?.stages || []).map((s: any) => <option key={s.name} value={s.name}>{s.name}</option>)}
+                  <select value={form.add_stage_id} disabled={!form.add_pipeline_id} onChange={e => setForm(p=>({...p,add_stage_id:e.target.value}))} className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30 disabled:opacity-60">
+                    {!form.add_pipeline_id && <option value="">Choose a pipeline first</option>}
+                    {(pipelines.find(p => p.id === form.add_pipeline_id)?.stages ?? []).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select></div>
               </div>
               {/* Conditional source fields */}

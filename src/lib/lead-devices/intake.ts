@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { toE164 } from '@/lib/phone'
 import { settleSubmittedPhone, smsConsentBlock, type SettledPhone } from '@/lib/marketing/submitted-phone'
+import { findPipeline, firstStage, loadPipelines, placeContact } from '@/lib/pipelines/positions'
 import {
   deviceTag, hotLeadMatches, isTestSubmission, outcomeTag, sourceKey, type DeviceRow,
 } from './manifest'
@@ -117,21 +118,23 @@ export function cleanUtm(raw: any): Record<string, string> | null {
   return Object.keys(out).length ? out : null
 }
 
+/**
+ * Adds the contact at the New lead stage (else the first stage) of the device's pipeline, and only there.
+ * A person already in that pipeline keeps their stage unless it comes earlier; every other pipeline they are in
+ * is left as it is (contact_pipeline_positions, through hub_pipeline_place).
+ */
 async function placeInPipeline(db: SupabaseClient, device: DeviceRow, contactId: string) {
   if (!device.pipeline_id) return
-  const { data: pipeline } = await db.from('pipelines').select('id, legacy_key').eq('id', device.pipeline_id).maybeSingle()
-  if (!pipeline) return
-  const { data: stages } = await db.from('pipeline_stages').select('id, name, position').eq('pipeline_id', device.pipeline_id).is('archived_at', null).order('position')
-  const stage = (stages ?? []).find((s: any) => /^new lead$/i.test(s.name)) ?? (stages ?? [])[0]
-  if (!stage) return
-  // A person already on a pipeline keeps their place there; this one is added alongside it.
-  const { error: pErr } = await db.from('contact_pipeline_positions').upsert(
-    { contact_id: contactId, org_id: device.org_id, pipeline_id: device.pipeline_id, stage_id: (stage as any).id, source: `lead_device:${device.slug}` },
-    { onConflict: 'contact_id,pipeline_id', ignoreDuplicates: true })
-  if (pErr) console.error(`[lead-device] device=${device.id} position failed: ${pErr.code ?? 'unknown'}`)
-  const { error: cErr } = await db.from('contacts').update({ pipeline_id: (pipeline as any).legacy_key, pipeline_stage: (stage as any).name })
-    .eq('id', contactId).is('pipeline_id', null)
-  if (cErr) console.error(`[lead-device] device=${device.id} placement failed: ${cErr.code ?? 'unknown'}`)
+  try {
+    const pipeline = findPipeline(await loadPipelines(db, device.org_id), device.pipeline_id)
+    if (!pipeline) { console.error(`[lead-device] device=${device.id} not placed: pipeline_unknown`); return }
+    const stage = pipeline.stages.find((s) => /^new lead$/i.test(s.name)) ?? firstStage(pipeline)
+    if (!stage) { console.error(`[lead-device] device=${device.id} not placed: stage_unknown`); return }
+    const r = await placeContact(db, contactId, stage.id, true, `lead_device:${device.slug}`)
+    if (!r.placed && r.reason !== 'already_there' && r.reason !== 'already_further') console.error(`[lead-device] device=${device.id} not placed: ${r.reason ?? 'unknown'}`)
+  } catch (e: any) {
+    console.error(`[lead-device] device=${device.id} placement failed: ${String(e?.message ?? 'error').slice(0, 60)}`)
+  }
 }
 
 async function recordConsents(db: SupabaseClient, device: DeviceRow, contactId: string, input: SubmissionInput, submissionId: string, settled: SettledPhone) {

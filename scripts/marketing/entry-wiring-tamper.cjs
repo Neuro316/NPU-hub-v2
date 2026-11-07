@@ -43,7 +43,7 @@ const TAMPERS = {
   nocall: [['ring', "await raiseCallEvent(params.CallSid || '', 'missed');", '']],
   mergeorder: [['merge', "if (!(await guardContacts(admin, winner.org_id, [winnerId, loserId], 'contact_merge', 10))) {", 'if (false) {']],
   importoptin: [['importPage', 'if (startCampaigns && batchId) {', 'if (batchId) {']],
-  nosummary: [['bulk', "if (!err && affected) campaignNote = (await summariseBulkStageMove(supabase, orgId, stageMoveStarted, affected, user.id)).note;", '']],
+  nosummary: [['bulk', "if (affected) campaignNote = (await summariseBulkStageMove(supabase, orgId, stageMoveStarted, affected, user.id)).note;", '']],
   hardcoded: [['overview', 'queue: (wiring.data as any)?.queue === true,', 'queue: true,'], ['overview', 'stageTrigger: (wiring.data as any)?.stage === true,', 'stageTrigger: true,']],
   cached: [['supabase', "fetch(input, { ...init, cache: 'no-store' })", 'fetch(input, init)']],
   consent: [['entry', "export const ENTRY_CAP_PER_RUN = 100", "export const ENTRY_CAP_PER_RUN = 100\nexport const _c = (db: any) => db.rpc('record_consent', {})"]],
@@ -116,12 +116,12 @@ const at = (s, needle) => s.indexOf(needle)
   check('W5', /rpc\('hub_flag', \{ p_org: org, p_key: 'engine' \}\)/.test(s) && /\.eq\('source_key', sourceKey\)\.eq\('active', true\)/.test(s)
     && /all\.length > IMPORT_ENROLL_MAX/.test(s) && /withJobRun\(db, 'import-enroll'/.test(s) && /export const POST = withStaff\(/.test(s), 'import enroll route lost a safety check')
 }
-// W6 bulk stage moves: both stage actions write the summary
+// W6 bulk stage moves: both stage actions write the summary. Since hub_229 they share one case body
+// (set_pipeline_stage falls through to set_pipeline), so the summary must be inside that shared body.
 {
   const s = src.bulk
-  const a = s.slice(at(s, "case 'set_pipeline_stage'"), at(s, "case 'set_pipeline':"))
-  const b = s.slice(at(s, "case 'set_pipeline':"), at(s, "case 'assign_to'"))
-  check('W6', /summariseBulkStageMove\(/.test(a) && /summariseBulkStageMove\(/.test(b) && /campaign_note: campaignNote/.test(s), 'a bulk stage action does not write its summary')
+  const body = s.slice(at(s, "case 'set_pipeline_stage':"), at(s, "case 'remove_from_pipeline'"))
+  check('W6', /case 'set_pipeline_stage':\s*case 'set_pipeline':/.test(body) && /summariseBulkStageMove\(/.test(body) && /campaign_note: campaignNote/.test(s), 'a bulk stage action does not write its summary')
 }
 // W7 the cron: secret, the capped processor, one job log row, scheduled
 {

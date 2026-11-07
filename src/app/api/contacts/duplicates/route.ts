@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { loadPositions } from '@/lib/pipelines/positions';
 import { createServerSupabase, createAdminSupabase } from '@/lib/supabase';
 import { isUsableEmail } from '@/lib/contacts/match';
 
@@ -33,7 +34,10 @@ type Signal = 'email' | 'phone' | 'identity' | 'name';
 interface ContactLite {
   id: string; first_name: string | null; last_name: string | null;
   email: string | null; phone: string | null; identity_id: string | null;
-  pipeline_stage: string | null; source: string | null; tags: string[] | null;
+  source: string | null; tags: string[] | null;
+  /** 'Pipeline · Stage' per pipeline, from contact_pipeline_positions (hub_229). Display only: a merge keeps the
+   *  winner's position where both are in a pipeline and moves the rest, so there is nothing to pick. */
+  pipelines?: string[];
   created_at: string; last_contacted_at: string | null;
   total_calls: number | null; notes: string | null;
 }
@@ -114,7 +118,7 @@ function completeness(c: ContactLite): number {
   if (digits10(c.phone)) score += 25;
   if (c.first_name) score += 5;
   if (c.last_name) score += 5;
-  if (c.pipeline_stage) score += 10;
+  if (c.pipelines?.length) score += 10;
   if (c.tags?.length) score += 5;
   if (c.notes) score += 5;
   if (c.last_contacted_at) score += 10;
@@ -153,7 +157,7 @@ export async function GET(request: NextRequest) {
   // Only live contacts — already-merged ones must never be re-flagged.
   const { data: contacts } = await admin
     .from('contacts')
-    .select('id, first_name, last_name, email, phone, identity_id, pipeline_stage, source, tags, created_at, last_contacted_at, total_calls, notes')
+    .select('id, first_name, last_name, email, phone, identity_id, source, tags, created_at, last_contacted_at, total_calls, notes')
     .eq('org_id', orgId)
     .is('merged_into_id', null);
   const list = (contacts || []) as ContactLite[];
@@ -282,6 +286,20 @@ export async function GET(request: NextRequest) {
       if (b.demoted && !existing.notes.includes(b.demoted)) existing.notes.push(b.demoted);
     } else {
       groups.set(gk, { signals: [signalLabel], ids, notes: b.demoted ? [b.demoted] : [] });
+    }
+  }
+
+  // Pipelines of the grouped contacts, from positions only (contacts.pipeline_stage is legacy).
+  const groupedIds = Array.from(new Set(Array.from(groups.values()).flatMap(g => g.ids)));
+  if (groupedIds.length) {
+    try {
+      const positions = await loadPositions(admin, orgId, { contactIds: groupedIds });
+      for (const pos of positions) {
+        const c = byId.get(pos.contact_id);
+        if (c) c.pipelines = [...(c.pipelines ?? []), `${pos.pipeline_name} · ${pos.stage_name}`];
+      }
+    } catch (e) {
+      console.warn(`[duplicates] org=${orgId} positions skipped: ${(e as Error).message}`);
     }
   }
 

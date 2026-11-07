@@ -28,7 +28,7 @@ async function contactOrg(ctx: any, contactId: string): Promise<string | Respons
 export const GET = withStaff(async (req: NextRequest, ctx) => {
   const sp = req.nextUrl.searchParams
   const orgId = requireOrg(ctx, sp.get('org_id'))
-  if (orgId instanceof Response) return orgId
+  if (typeof orgId !== 'string') return orgId
   const contactId = sp.get('contact_id')
   const pipelineId = sp.get('pipeline_id')
   if (contactId && !UUID.test(contactId)) return bad('contact_id is not valid')
@@ -48,7 +48,7 @@ export const POST = withStaff(async (req: NextRequest, ctx) => {
   if (typeof contactId !== 'string' || !UUID.test(contactId)) return bad('contact_id is required')
   if (typeof stageId !== 'string' || !UUID.test(stageId)) return bad('stage_id is required')
   const org = await contactOrg(ctx, contactId)
-  if (org instanceof Response) return org
+  if (typeof org !== 'string') return org
   try {
     await setStage(ctx.db, contactId, stageId, ctx.userId, typeof body?.source === 'string' ? body.source.slice(0, 40) : 'manual')
     const positions = await loadPositions(ctx.db, org, { contactIds: [contactId] })
@@ -65,9 +65,18 @@ export const DELETE = withStaff(async (req: NextRequest, ctx) => {
   if (typeof contactId !== 'string' || !UUID.test(contactId)) return bad('contact_id is required')
   if (typeof pipelineId !== 'string' || !UUID.test(pipelineId)) return bad('pipeline_id is required')
   const org = await contactOrg(ctx, contactId)
-  if (org instanceof Response) return org
+  if (typeof org !== 'string') return org
   try {
     const removed = await removeFromPipeline(ctx.db, contactId, pipelineId, ctx.userId, 'manual')
+    // The deal for that one pipeline goes with the position, as on the board (pipeline-deals/remove).
+    if (removed) {
+      const { data: pipe } = await ctx.db.from('pipelines').select('legacy_key').eq('id', pipelineId).eq('org_id', org).maybeSingle()
+      const key = (pipe as any)?.legacy_key
+      if (key) {
+        const { error: dErr } = await ctx.db.from('hub_pipeline_deals').delete().eq('org_id', org).eq('contact_id', contactId).eq('pipeline_key', key)
+        if (dErr) console.error(`[pipeline-positions] deal remove contact=${contactId} failed: ${dErr.code ?? 'unknown'}`)
+      }
+    }
     const positions = await loadPositions(ctx.db, org, { contactIds: [contactId] })
     return NextResponse.json({ ok: true, removed, positions })
   } catch (e) {

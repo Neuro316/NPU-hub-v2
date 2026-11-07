@@ -3,6 +3,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
+import { loadPipelines, findPipeline, resolveStage, firstStage, type PipelineRef } from '@/lib/pipelines/positions'
+import { apiSetStage } from '@/lib/pipelines/client'
 import {
   Upload, Download, FileSpreadsheet, Loader2, CheckCircle2, AlertTriangle,
   X, ChevronDown, ChevronRight, Copy, Sparkles, Users, ArrowRight,
@@ -319,7 +321,7 @@ export default function ImportPage() {
   // Import state
   const [importing, setImporting] = useState(false)
   const [importProgress, setImportProgress] = useState(0)
-  const [importResult, setImportResult] = useState<{ imported: number; skipped: number; errors: number; merged: number; connections: number } | null>(null)
+  const [importResult, setImportResult] = useState<{ imported: number; skipped: number; errors: number; merged: number; connections: number; placed: number; notPlaced: number } | null>(null)
   // Funnel campaigns (hub_212): an import starts campaigns only when the person ticks this.
   const [startCampaigns, setStartCampaigns] = useState(false)
   const [importEventName, setImportEventName] = useState('')
@@ -626,12 +628,8 @@ export default function ImportPage() {
           tags: parseArray(row.tags),
         }
 
-        if (row._pipelineId) {
-          contact.pipeline_id = row._pipelineId
-          contact.pipeline_stage = row._pipelineStage || pipelines.find((p: any) => p.id === row._pipelineId)?.stages?.[0]?.name || 'New Lead'
-        } else if (row._pipelineStage) {
-          contact.pipeline_stage = row._pipelineStage
-        }
+        // Pipeline and stage are not contact columns any more: they become a position (hub_229) once the
+        // contact exists, below. contacts.pipeline_id / pipeline_stage are legacy and not written.
 
         if (row._contactType) contact.contact_type = row._contactType
 
@@ -777,6 +775,50 @@ export default function ImportPage() {
       }
     }
 
+    // ── Pipeline placement: one position per contact in the chosen pipeline (hub_229) ──
+    // After the contacts exist, through /api/crm/pipeline-positions (service role), a few at a time. Only the
+    // chosen pipeline is touched. The pipeline is matched by id, legacy key or exact name; the stage by exact
+    // name, or the pipeline's first stage when none is given. Nothing is guessed: no match is reported, not placed.
+    let placed = 0, notPlaced = 0
+    const extraGuarded: string[] = []
+    const placements = importedContactIds
+      .map(e => ({ e, row: selected.find(r => r._rowId === e.rowId) }))
+      .filter((x): x is { e: typeof importedContactIds[number]; row: ImportRow } => !!x.row && !!(x.row._pipelineId || x.row._pipelineStage))
+    if (placements.length) {
+      const note = (row: ImportRow, msg: string) => { row._error = row._error ? `${row._error}; ${msg}` : msg }
+      let refs: PipelineRef[] = []
+      try { refs = await loadPipelines(sb, currentOrg.id) } catch (e) { console.warn('Import pipelines read failed:', (e as Error)?.message) }
+      // New contacts get the same campaign guard as merged ones, so placing them never starts a campaign.
+      const newIds = Array.from(new Set(placements.map(x => x.e.contactId).filter(id => !mergeIds.includes(id))))
+      let guarded = true
+      for (let i = 0; i < newIds.length && guarded; i += 5000) {
+        const chunk = newIds.slice(i, i + 5000)
+        const g = await importEvents({ action: 'guard', contact_ids: chunk }).catch(() => ({ ok: false, json: {} as any }))
+        if (g.ok) extraGuarded.push(...chunk); else guarded = false
+      }
+      if (!guarded) {
+        notPlaced = placements.length
+        placements.forEach(x => note(x.row, 'Not added to the pipeline: campaign entry could not be paused'))
+      } else {
+        const queue = [...placements]
+        const worker = async () => {
+          for (let x = queue.shift(); x; x = queue.shift()) {
+            const v = String(x.row._pipelineId || '')
+            const pl = v ? (findPipeline(refs, v) ?? refs.find(r => r.name === v) ?? null) : null
+            const stage = pl ? (x.row._pipelineStage ? resolveStage(refs, pl.id, String(x.row._pipelineStage)) : firstStage(pl)) : null
+            if (!stage) {
+              notPlaced++
+              note(x.row, pl ? 'Not added to the pipeline: stage not found' : 'Not added to a pipeline: pipeline not found')
+              continue
+            }
+            try { await apiSetStage(x.e.contactId, stage.id, 'import'); placed++ }
+            catch (e) { notPlaced++; note(x.row, `Not added to ${pl!.name}: ${(e as Error)?.message || 'failed'}`) }
+          }
+        }
+        await Promise.all(Array.from({ length: Math.min(5, queue.length) }, worker))
+      }
+    }
+
     // Update batch
     if (batchId) {
       await sb.from('contact_import_batches').update({
@@ -787,6 +829,9 @@ export default function ImportPage() {
     }
 
     if (mergeIds.length) await importEvents({ action: 'release', contact_ids: mergeIds }).catch(() => null)
+    for (let i = 0; i < extraGuarded.length; i += 5000) {
+      await importEvents({ action: 'release', contact_ids: extraGuarded.slice(i, i + 5000) }).catch(() => null)
+    }
     if (startCampaigns && batchId) {
       const e = await importEvents({ action: 'enroll', batch_id: batchId, name: importEventName, contact_ids: mergeIds })
         .catch(() => ({ ok: false, json: {} as any }))
@@ -794,7 +839,7 @@ export default function ImportPage() {
     }
 
     setImportRows([...importRows])
-    setImportResult({ imported, skipped, errors, merged, connections })
+    setImportResult({ imported, skipped, errors, merged, connections, placed, notPlaced })
     setImporting(false)
     setStep('done')
   }
@@ -1289,6 +1334,17 @@ export default function ImportPage() {
 
           {campaignNote && (
             <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-800">{campaignNote}</p>
+          )}
+          {(importResult.placed > 0 || importResult.notPlaced > 0) && (
+            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 mb-4 max-w-lg mx-auto">
+              <p className="text-[11px] text-gray-700">
+                Added {importResult.placed} contact{importResult.placed === 1 ? '' : 's'} to a pipeline.
+                {importResult.notPlaced > 0 && ` ${importResult.notPlaced} could not be added.`}
+              </p>
+              {importRows.filter(r => r._error && /pipeline|Not added to/.test(r._error)).slice(0, 5).map(r => (
+                <p key={r._rowId} className="text-[10px] text-amber-700 break-words">{r.first_name} {r.last_name}: {r._error}</p>
+              ))}
+            </div>
           )}
           {importResult.connections > 0 && (
             <div className="bg-purple-50 border border-purple-100 rounded-lg p-3 mb-4 max-w-lg mx-auto text-center">

@@ -27,6 +27,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { findPipeline, firstStage, loadPipelines, placeContact } from '@/lib/pipelines/positions'
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
@@ -45,36 +46,21 @@ const INTERNAL_EMAILS = new Set([
 ])
 
 // Pipeline stage mapping per track — used as fallback only if pipeline lookup fails
-const STAGE_MAP: Record<string, string> = {
-  subscribed:    'Subscribed',
-  enrolled:      'Enrolled',
-  mastermind:    'Awareness',
-  discovery:     'Discovery',
-  application:   'Application',
-  payment_plan:  'Payment plan',
-  new_lead:      'New Lead',
-}
-
-// Look up stage 1 of the active pipeline from org_settings
-async function resolveFirstStage(db: any, pipelineId: string, fallback: string): Promise<string> {
+// Pipeline placement: the contact is added at stage 1 of the onboarding pipeline (params.pipelineId, else
+// NP_PIPELINE_ID, a pipeline legacy key or uuid) in contact_pipeline_positions, and only there. A contact
+// already in that pipeline keeps their stage unless it comes earlier; every other pipeline is untouched.
+// contacts.pipeline (the client track) is written separately, as before.
+async function placeInOnboardingPipeline(db: SupabaseClient, contactId: string, pipelineKeyOrId: string, source: string): Promise<StepResult> {
   try {
-    const { data } = await db
-      .from('org_settings')
-      .select('setting_value')
-      .eq('org_id', NP_ORG_ID)
-      .eq('setting_key', 'crm_pipelines')
-      .single()
-    if (!data?.setting_value?.pipelines) return fallback
-    const pipelines: any[] = data.setting_value.pipelines
-    const pipeline = pipelineId
-      ? pipelines.find((p: any) => p.id === pipelineId)
-      : pipelines.find((p: any) => p.is_default) || pipelines[0]
-    if (!pipeline?.stages?.length) return fallback
-    // Return stage at position 0
-    const sorted = [...pipeline.stages].sort((a: any, b: any) => a.position - b.position)
-    return sorted[0].name || fallback
-  } catch {
-    return fallback
+    const pipeline = findPipeline(await loadPipelines(db, NP_ORG_ID), pipelineKeyOrId)
+    if (!pipeline) return { step: 'pipeline', action: 'not_placed', note: 'pipeline_unknown' }
+    const stage = firstStage(pipeline)
+    if (!stage) return { step: 'pipeline', action: 'not_placed', note: 'stage_unknown' }
+    const r = await placeContact(db, contactId, stage.id, true, `onboarding:${source}`)
+    if (r.placed) return { step: 'pipeline', action: r.moved ? 'moved' : 'added', id: pipeline.id }
+    return { step: 'pipeline', action: r.reason === 'already_there' || r.reason === 'already_further' ? 'kept' : 'not_placed', note: r.reason ?? 'unknown' }
+  } catch (e: any) {
+    return { step: 'pipeline', action: 'error', error: String(e?.message ?? 'error').slice(0, 60) }
   }
 }
 
@@ -195,7 +181,6 @@ export async function runOnboardingPipeline(
   const fullName = [firstName, lastName].filter(Boolean).join(' ')
 
   const track        = params.track
-  const pipelineStage = await resolveFirstStage(db, params.pipelineId || NP_PIPELINE_ID, STAGE_MAP[track] || 'New Lead')
   const trackTags    = TRACK_TAGS[track] || []
   const allTags      = Array.from(new Set([...trackTags, ...(params.extraTags || [])]))
 
@@ -203,7 +188,7 @@ export async function runOnboardingPipeline(
   try {
     const { data: existing } = await db
       .from('contacts')
-      .select('id, tags, auto_tags, pipeline_stage, mastermind_user_id, xreg_user_id')
+      .select('id, tags, auto_tags, mastermind_user_id, xreg_user_id')
       .eq('org_id', NP_ORG_ID)
       .ilike('email', email)
       .maybeSingle()
@@ -216,7 +201,6 @@ export async function runOnboardingPipeline(
         tags:           mergedTags,
         auto_tags:      mergedAutoTags,
         pipeline:       track,
-        pipeline_stage: pipelineStage,
         updated_at:     new Date().toISOString(),
       }
       if (firstName)         updates.first_name  = firstName
@@ -235,9 +219,7 @@ export async function runOnboardingPipeline(
         first_name:     firstName,
         last_name:      lastName,
         email,
-        pipeline_id:    NP_PIPELINE_ID,
         pipeline:       track,
-        pipeline_stage: pipelineStage,
         tags:           allTags,
         auto_tags:      allTags,
         source:         params.source,
@@ -268,6 +250,13 @@ export async function runOnboardingPipeline(
   } catch (e: any) {
     errors.push(`Contact step error: ${e.message}`)
     steps.push({ step: 'contact', action: 'error', error: e.message })
+  }
+
+  // ── STEP 1b: Pipeline position (this pipeline only) ───────────────────
+  if (contactId) {
+    const placed = await placeInOnboardingPipeline(db, contactId, params.pipelineId || NP_PIPELINE_ID, String(params.source || 'unknown'))
+    steps.push(placed)
+    if (placed.action === 'not_placed' || placed.action === 'error') console.error(`[onboarding] contact=${contactId} not placed: ${placed.note ?? placed.error ?? 'unknown'}`)
   }
 
   // ── STEP 2: Profile (auth account) ────────────────────────────────────

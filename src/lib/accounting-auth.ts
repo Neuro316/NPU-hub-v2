@@ -1,4 +1,5 @@
 import type { createAdminSupabase } from '@/lib/supabase'
+import { placeByName } from '@/lib/pipelines/positions'
 
 // ─── Authorisation boundary for accounting writes ───────────────────────────
 //
@@ -49,7 +50,7 @@ export const NP_ORG_ID = '00000000-0000-0000-0000-000000000001'
 
 export const NP_PIPELINE_ID = 'pipeline-1771530511407'
 
-// Both of these must match a stage `name` in org_settings.crm_pipelines for
+// Both of these must match a stage `name` (pipeline_stages.name) for
 // org 0000…01, pipeline-1771530511407, EXACTLY — trailing spaces included.
 // Verified against the live config 2026-09-03 (8 stages).
 export const NP_STAGE_SIGNED_UP =
@@ -182,6 +183,9 @@ export type EnrolFields = {
 /**
  * Creates the CRM contact for an accounting client and links it back, checking
  * BOTH writes. Returns the contact id, or a message describing what failed.
+ * The contact is then placed at NP_STAGE_SIGNED_UP in NP_PIPELINE_ID only
+ * (contact_pipeline_positions); a placement that fails is a warning, not a
+ * failure, because the contact and its link already exist.
  *
  * The link-back is the write that used to be `page.tsx:1651` — fired with no
  * `.select()` and no error check. It is verified by row count here: a zero-row
@@ -192,7 +196,7 @@ export async function enrolContact(
   clientId: string,
   targetOrgId: string,
   f: EnrolFields
-): Promise<{ contactId: string } | { error: string }> {
+): Promise<{ contactId: string; warning?: string } | { error: string }> {
   const { first, last } = splitName(f.name)
   const { data: contact, error: insErr } = await admin
     .from('contacts')
@@ -207,8 +211,6 @@ export async function enrolContact(
       address_city: f.address_city || null,
       address_state: f.address_state || null,
       address_zip: f.address_zip || null,
-      pipeline_id: NP_PIPELINE_ID,
-      pipeline_stage: NP_STAGE_SIGNED_UP,
       tags: [],
       sms_consent: false,
       do_not_contact: false,
@@ -233,5 +235,16 @@ export async function enrolContact(
     return { error: `Contact ${contact.id} was created but the link to the client matched 0 rows. The client is enrolled in the CRM but the accounting record does not point at it.` }
   }
 
+  let reason: string | undefined
+  try {
+    const r = await placeByName(admin, targetOrgId, contact.id, NP_PIPELINE_ID, NP_STAGE_SIGNED_UP, true, 'accounting_enrol')
+    if (!r.placed && r.reason !== 'already_there' && r.reason !== 'already_further') reason = r.reason ?? 'unknown'
+  } catch (e: any) {
+    reason = String(e?.message ?? 'error').slice(0, 60)
+  }
+  if (reason) {
+    console.error(`[accounting] contact=${contact.id} not placed: ${reason}`)
+    return { contactId: contact.id, warning: `Contact ${contact.id} was created and linked, but could not be added to the pipeline (${reason}).` }
+  }
   return { contactId: contact.id }
 }

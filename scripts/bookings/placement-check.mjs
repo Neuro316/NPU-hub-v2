@@ -1,31 +1,30 @@
 // node scripts/bookings/placement-check.mjs
-// Checks the booking sync's pure rules (src/lib/bookings/placement.ts): stage placement,
-// never backward, other pipelines left alone, and the answers as shown on the card.
-import { decidePlacement, answerList } from '../../src/lib/bookings/placement.ts'
+// Checks the booking sync's pure rules (src/lib/bookings/placement.ts): which stage a route
+// points at, nothing guessed, what a placement did, and the answers as shown on the card.
+// "Never backward" and "other pipelines left alone" are hub_pipeline_place's, in hub_229.
+import { routeStage, placementOf, answerList } from '../../src/lib/bookings/placement.ts'
 
 const pipes = [
-  { id: 'sales', name: 'Sales', stages: [{ name: 'New Lead' }, { name: 'Discovery Call Booked' }, { name: 'Discovery Call' }, { name: 'Won', is_closed_won: true }] },
-  { id: 'other', name: 'Other', stages: [{ name: 'A' }] },
+  { id: 'u-sales', key: 'sales', name: 'Sales', stages: [{ id: 's1', name: 'New Lead' }, { id: 's2', name: 'Discovery Call Booked' }, { id: 's3', name: 'Discovery Call' }] },
+  { id: 'u-dup', key: 'dup', name: 'Dup', stages: [{ id: 'd1', name: 'Booked' }, { id: 'd2', name: 'booked' }] },
 ]
-const route = { pipeline_id: 'sales', stage_name: 'discovery call booked', move_earlier_stages_only: true }
+const route = { pipeline_id: 'sales', stage_name: 'discovery call booked' }
+const stageOf = (r) => { const t = routeStage(pipes, r); return t.ok ? t.stage.id : t.reason }
 const cases = [
-  ['no pipeline enters', { pipeline_id: null, pipeline_stage: null }, route, 'entered', 'Discovery Call Booked'],
-  ['deleted pipeline enters', { pipeline_id: 'gone', pipeline_stage: 'X' }, route, 'entered', 'Discovery Call Booked'],
-  ['other live pipeline is left', { pipeline_id: 'other', pipeline_stage: 'A' }, route, 'other_pipeline', undefined],
-  ['earlier stage moves forward', { pipeline_id: 'sales', pipeline_stage: 'New Lead' }, route, 'moved', 'Discovery Call Booked'],
-  ['same stage is kept', { pipeline_id: 'sales', pipeline_stage: 'Discovery Call Booked' }, route, 'kept', undefined],
-  ['later stage is kept (never backward)', { pipeline_id: 'sales', pipeline_stage: 'Discovery Call' }, route, 'kept', undefined],
-  ['won is kept', { pipeline_id: 'sales', pipeline_stage: 'Won' }, route, 'kept', undefined],
-  ['backward allowed when the switch is off', { pipeline_id: 'sales', pipeline_stage: 'Won' }, { ...route, move_earlier_stages_only: false }, 'moved', 'Discovery Call Booked'],
-  ['unknown stage name in pipeline moves', { pipeline_id: 'sales', pipeline_stage: 'Renamed' }, route, 'moved', 'Discovery Call Booked'],
-  ['missing route stage places nothing', { pipeline_id: null, pipeline_stage: null }, { ...route, stage_name: 'Nope' }, 'none', undefined],
-  ['missing route pipeline places nothing', { pipeline_id: null, pipeline_stage: null }, { ...route, pipeline_id: 'gone' }, 'none', undefined],
+  ['legacy key resolves, loose name', stageOf(route), 's2'],
+  ['uuid resolves', stageOf({ ...route, pipeline_id: 'u-sales' }), 's2'],
+  ['exact name wins', stageOf({ pipeline_id: 'dup', stage_name: 'booked' }), 'd2'],
+  ['two loose matches is unknown', stageOf({ pipeline_id: 'dup', stage_name: 'BOOKED' }), 'stage_unknown'],
+  ['missing stage places nothing', stageOf({ ...route, stage_name: 'Nope' }), 'stage_unknown'],
+  ['missing pipeline places nothing', stageOf({ ...route, pipeline_id: 'gone' }), 'pipeline_unknown'],
+  ['added', placementOf({ placed: true, moved: false }), 'entered'],
+  ['moved', placementOf({ placed: true, moved: true }), 'moved'],
+  ['already there is kept', placementOf({ placed: false, reason: 'already_there' }), 'kept'],
+  ['already further is kept', placementOf({ placed: false, reason: 'already_further' }), 'kept'],
+  ['unknown stage is none', placementOf({ placed: false, reason: 'stage_unknown' }), 'none'],
 ]
 let fail = 0
-for (const [name, contact, r, want, stage] of cases) {
-  const got = decidePlacement(pipes, r, contact)
-  if (got.placement !== want || got.stage !== stage) { fail++; console.log(`FAIL ${name}: want ${want}/${stage} got ${got.placement}/${got.stage}`) }
-}
+for (const [name, got, want] of cases) if (got !== want) { fail++; console.log(`FAIL ${name}: want ${want} got ${got}`) }
 const ans = answerList(
   [{ key: 'h', label: 'How did you hear about us?' }, { key: 'w', label: 'What do you want?' }, { key: 'a', label: 'Areas' }],
   { a: ['Sleep', 'Focus'], h: 'Podcast', extra: 'x' },

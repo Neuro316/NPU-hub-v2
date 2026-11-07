@@ -9,6 +9,9 @@
 
 export interface Purchase { key: string; name: string; at: string | null }
 
+/** One pipeline the contact is in (hub_229: from contact_pipeline_positions). pipeline_key is the legacy key saved lists store. */
+export interface FactPosition { pipeline_id: string; pipeline_key: string; pipeline_name: string; stage_id: string; stage: string }
+
 export interface ContactFacts {
   contact_id: string
   first_name: string | null
@@ -19,9 +22,8 @@ export interface ContactFacts {
   source: string | null
   contact_type: string | null
   partnership_type: string | null
-  pipeline_id: string | null
-  pipeline_name: string | null
-  pipeline_stage: string | null
+  /** Every pipeline the contact is in, with its stage there. Empty when in none. */
+  pipelines: FactPosition[] | null
   brand: string | null
   created_at: string
   last_activity_at: string | null
@@ -121,8 +123,9 @@ function matchRule(r: Rule, f: ContactFacts, now: number): boolean {
     case 'source': return asList(r.value).includes(f.source ?? '')
     case 'lead_device': return asList(r.value).some((v) => (f.lead_devices ?? []).includes(v))
     case 'quiz_archetype': return asList(r.value).some((v) => (f.quiz_archetypes ?? []).includes(v))
-    case 'pipeline': return asList(r.value).includes(f.pipeline_id ?? '')
-    case 'stage': return asList(r.value).includes(f.pipeline_stage ?? '')
+    // saved lists store pipeline legacy keys; a contact matches when any of their pipelines is chosen
+    case 'pipeline': { const want = asList(r.value); return (f.pipelines ?? []).some((p) => want.includes(p.pipeline_key)) }
+    case 'stage': { const want = asList(r.value); return (f.pipelines ?? []).some((p) => want.includes(p.stage)) }
     case 'created_days': return daysSince(f.created_at, now) <= Number(r.value)
     case 'opened_days': return daysSince(f.last_open_at, now) <= Number(r.value)
     case 'clicked_days': return daysSince(f.last_click_at, now) <= Number(r.value)
@@ -189,7 +192,7 @@ export function filterOptions(facts: ContactFacts[]) {
   const pipelines = new Map<string, string>()
   const products = new Map<string, string>()
   for (const f of facts) {
-    if (f.pipeline_id) pipelines.set(f.pipeline_id, f.pipeline_name ?? f.pipeline_id)
+    for (const p of f.pipelines ?? []) if (p.pipeline_key) pipelines.set(p.pipeline_key, p.pipeline_name ?? p.pipeline_key)
     for (const p of f.purchases ?? []) products.set(p.key, p.name)
   }
   return {
@@ -199,7 +202,7 @@ export function filterOptions(facts: ContactFacts[]) {
     source: uniq(facts.map((f) => f.source)),
     lead_device: uniq(facts.flatMap((f) => f.lead_devices ?? [])),
     quiz_archetype: uniq(facts.flatMap((f) => f.quiz_archetypes ?? [])),
-    stage: uniq(facts.map((f) => f.pipeline_stage)),
+    stage: uniq(facts.flatMap((f) => (f.pipelines ?? []).map((p) => p.stage))),
     pipeline: Array.from(pipelines, ([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label)),
     purchase: Array.from(products, ([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label)),
   }

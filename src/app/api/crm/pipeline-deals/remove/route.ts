@@ -1,65 +1,63 @@
 // src/app/api/crm/pipeline-deals/remove/route.ts
-// "Remove from pipeline" on a board card. Clears the contact's placement and deletes
-// its deal row for that pipeline (hub_214). The contact itself is kept.
+// "Remove from pipeline" on a board card. Removes the contact's position in THAT one
+// pipeline (contact_pipeline_positions, hub_229) and deletes its deal row there
+// (hub_214). The contact's places in other pipelines, and the contact itself, are kept.
 //
-// POST { contact_id, pipeline_key }
+// POST { contact_id, pipeline_key }   pipeline_key is the pipeline's legacy key (its uuid is accepted too)
 //
 // Removal is not a loss: the deal row is deleted rather than marked lost, so Win Rate
 // and the other summary cards simply stop counting the card.
 //
-// contact_timeline: trg_pipeline_timeline writes the 'pipeline_changed' entry
-// ("Pipeline: X → None") when the stage changes. A card with no stage would get no
-// entry from the trigger, so this route writes one in the same shape.
+// contact_timeline: the hub_pipeline_remove RPC writes the history entry naming the
+// pipeline, so this route writes none.
+//
+// contacts.pipeline_id / pipeline_stage are legacy and are neither read nor written.
 //
 // Service role, so withStaff is the boundary. The org comes from the CONTACT.
 import { NextRequest, NextResponse } from 'next/server'
 import { withStaff, requireOrg, bad } from '@/lib/api-guard'
+import { findPipeline, loadPipelines, removeFromPipeline } from '@/lib/pipelines/positions'
 
 export const POST = withStaff(async (req: NextRequest, ctx) => {
   const body = await req.json().catch(() => null)
   const contactId = body?.contact_id
-  const pipelineKey = body?.pipeline_key
-  if (typeof contactId !== 'string' || typeof pipelineKey !== 'string' || !pipelineKey) {
+  const rawKey = body?.pipeline_key
+  if (typeof contactId !== 'string' || typeof rawKey !== 'string' || !rawKey) {
     return bad('contact_id and pipeline_key are required')
   }
 
   const { data: contact, error: cErr } = await ctx.db.from('contacts')
-    .select('id, org_id, pipeline_id, pipeline_stage').eq('id', contactId).maybeSingle()
+    .select('id, org_id').eq('id', contactId).maybeSingle()
   if (cErr) return NextResponse.json({ error: cErr.message }, { status: 500 })
   if (!contact) return NextResponse.json({ error: 'Contact not found.' }, { status: 404 })
   const orgId = requireOrg(ctx, contact.org_id)
   if (orgId instanceof Response) return orgId
-  if (contact.pipeline_id !== pipelineKey) {
-    return NextResponse.json({ error: 'This contact is no longer in that pipeline. Reload the board.' }, { status: 409 })
+
+  let pipeline
+  try {
+    pipeline = findPipeline(await loadPipelines(ctx.db, orgId), rawKey)
+  } catch (e) {
+    console.error(`[pipeline-deals/remove] pipelines org=${orgId} failed: ${(e as Error).message}`)
+    return NextResponse.json({ error: 'Pipelines could not be read. Try again.' }, { status: 500 })
   }
+  if (!pipeline) return bad('That pipeline does not exist in this organization.')
 
-  const { data: setting } = await ctx.db.from('org_settings').select('setting_value')
-    .eq('org_id', orgId).eq('setting_key', 'crm_pipelines').maybeSingle()
-  const pipelines: any[] = Array.isArray(setting?.setting_value?.pipelines) ? setting!.setting_value.pipelines : []
-  const pipelineName: string = pipelines.find(p => p?.id === pipelineKey)?.name || 'pipeline'
-
-  // Guarded on the placement read above, so a concurrent move is not undone.
-  const { data: cleared, error: uErr } = await ctx.db.from('contacts')
-    .update({ pipeline_id: null, pipeline_stage: null })
-    .eq('id', contactId).eq('pipeline_id', pipelineKey).select('id')
-  if (uErr) return NextResponse.json({ error: uErr.message }, { status: 500 })
-  if (!cleared?.length) {
+  let removed: boolean
+  try {
+    removed = await removeFromPipeline(ctx.db, contactId, pipeline.id, ctx.userId, 'board')
+  } catch (e) {
+    console.error(`[pipeline-deals/remove] contact=${contactId} failed: ${(e as Error).message}`)
+    return NextResponse.json({ error: 'The contact could not be removed from that pipeline. Try again.' }, { status: 500 })
+  }
+  if (!removed) {
     return NextResponse.json({ error: 'This contact is no longer in that pipeline. Reload the board.' }, { status: 409 })
   }
 
   const { error: dErr } = await ctx.db.from('hub_pipeline_deals')
-    .delete().eq('contact_id', contactId).eq('pipeline_key', pipelineKey)
+    .delete().eq('contact_id', contactId).eq('pipeline_key', pipeline.key)
   if (dErr) {
-    return NextResponse.json({ error: `Removed from ${pipelineName}, but its lead value could not be cleared: ${dErr.message}` }, { status: 500 })
-  }
-
-  if (!contact.pipeline_stage) {
-    await ctx.db.from('contact_timeline').insert({
-      org_id: orgId, contact_id: contactId, event_type: 'pipeline_changed',
-      title: `Removed from ${pipelineName}`,
-      metadata: { from: null, to: null, pipeline_key: pipelineKey },
-      occurred_at: new Date().toISOString(),
-    })
+    console.error(`[pipeline-deals/remove] deal contact=${contactId} failed: ${dErr.code ?? 'unknown'}`)
+    return NextResponse.json({ error: `Removed from ${pipeline.name}, but its lead value could not be cleared. Try again.` }, { status: 500 })
   }
 
   return NextResponse.json({ ok: true })

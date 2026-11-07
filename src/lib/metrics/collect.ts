@@ -10,6 +10,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { TestFilter } from './test-filter'
 import { nyDay, addDays, daysBetween, queryFrom, queryTo } from './dates'
+import { loadPositions, type Position } from '@/lib/pipelines/positions'
 
 export interface Rec { id: string; label: string; sub?: string; href?: string; amount?: number }
 export interface Item { metric: string; day: string; value: number; dims?: Record<string, string>; rec?: Rec }
@@ -515,12 +516,20 @@ const operationsLoader: Loader = async ctx => {
     const tasks = await all((a, b) => db.from('kanban_tasks').select('id, title, due_date').lt('due_date', ctx.today).is('completed_at', null).range(a, b), 'kanban_tasks')
     for (const t of tasks) items.push({ metric: 'tasks_overdue', day: ctx.today, value: 1, rec: { id: t.id, label: t.title || 'Task', sub: `due ${t.due_date}`, href: '/tasks' } })
     const deals = await all((a, b) => db.from('hub_pipeline_deals').select('contact_id, pipeline_key, value').is('won_at', null).is('lost_at', null).gt('value', 0).range(a, b), 'hub_pipeline_deals')
-    const dc = new Map((await inChunks(Array.from(new Set(deals.map(d => d.contact_id))), ch => db.from('contacts').select('id, first_name, last_name, email, phone, tags, pipeline_stage, merged_into_id').in('id', ch), 'contacts')).map(c => [c.id, c]))
+    const dc = new Map((await inChunks(Array.from(new Set(deals.map(d => d.contact_id))), ch => db.from('contacts').select('id, org_id, first_name, last_name, email, phone, tags, merged_into_id').in('id', ch), 'contacts')).map(c => [c.id, c]))
+    // A deal's stage is the contact's stage in that deal's pipeline (positions, keyed here by pipeline legacy key).
+    const byOrg = new Map<string, string[]>()
+    for (const c of Array.from(dc.values())) if (c.org_id) byOrg.set(c.org_id, [...(byOrg.get(c.org_id) ?? []), c.id])
+    const pos = new Map<string, Position>()
+    for (const [org, ids] of Array.from(byOrg)) {
+      for (const p of await loadPositions(db, org, { contactIds: ids })) pos.set(`${p.contact_id}|${p.pipeline_key}`, p)
+    }
     for (const d of deals) {
       const c = dc.get(d.contact_id)
       if (!c || c.merged_into_id || ctx.filter.isTestContact(c)) continue
-      items.push({ metric: 'pipeline_value', day: ctx.today, value: Number(d.value), dims: { stage: String(c.pipeline_stage || 'No stage').slice(0, 80) },
-        rec: { id: c.id, label: fullName(c.first_name, c.last_name) || c.email, sub: c.pipeline_stage ?? '', href: contactHref(c.id), amount: Number(d.value) } })
+      const p = pos.get(`${d.contact_id}|${d.pipeline_key}`)
+      items.push({ metric: 'pipeline_value', day: ctx.today, value: Number(d.value), dims: { stage: String(p?.stage_name || 'No stage').slice(0, 80) },
+        rec: { id: c.id, label: fullName(c.first_name, c.last_name) || c.email, sub: p ? `${p.pipeline_name} · ${p.stage_name}` : '', href: contactHref(c.id), amount: Number(d.value) } })
     }
     for (const m of ['inbox_waiting', 'tickets_open', 'tasks_overdue', 'pipeline_value']) {
       if (!items.some(i => i.metric === m)) items.push({ metric: m, day: ctx.today, value: 0 })

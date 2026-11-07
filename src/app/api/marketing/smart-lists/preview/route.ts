@@ -28,7 +28,7 @@ export const POST = withStaff(async (req, ctx) => {
     no_data_source: missingSources(check.definition),
     preview: m.slice(0, PREVIEW).map((f) => ({
       id: f.contact_id, name: [f.first_name, f.last_name].filter(Boolean).join(' ') || '(no name)', email: f.email,
-      pipeline: f.pipeline_name, stage: f.pipeline_stage, current_client: (f.client_reasons ?? []).length > 0,
+      pipelines: (f.pipelines ?? []).map((p) => `${p.pipeline_name} · ${p.stage}`), current_client: (f.client_reasons ?? []).length > 0,
       email_allowed: f.email_allowed, texting_allowed: f.texting_allowed,
     })),
   })

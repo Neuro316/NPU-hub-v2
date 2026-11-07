@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabase, createAdminSupabase } from '@/lib/supabase'
-import { authorizeAccountingWrite, enrolContact, NP_STAGE_PAID } from '@/lib/accounting-auth'
+import { authorizeAccountingWrite, enrolContact, NP_STAGE_PAID, NP_PIPELINE_ID } from '@/lib/accounting-auth'
+import { placeByName } from '@/lib/pipelines/positions'
 
 // ─── POST /api/accounting/payments ──────────────────────────────────────────
 // Records a payment and, on a Neuro Progeny client's FIRST payment, advances
@@ -111,24 +112,31 @@ export async function POST(request: NextRequest) {
           address_zip: client.address_zip,
         })
         if ('error' in res) warnings.push(res.error)
-        else contactId = res.contactId
+        else { contactId = res.contactId; if ('warning' in res && res.warning) warnings.push(res.warning) }
       }
 
       if (contactId) {
-        const { data: moved, error: moveErr } = await admin
-          .from('contacts')
-          .update({ pipeline_stage: NP_STAGE_PAID })
-          .eq('id', contactId)
-          .eq('org_id', auth.targetOrgId)
-          .select('id')
+        // The stage move is a position in the NP pipeline only (contact_pipeline_positions); the contact's other
+        // pipelines are untouched. The contact must be in the target org, checked first so a stale link is audible.
+        const { data: found, error: findErr } = await admin
+          .from('contacts').select('id').eq('id', contactId).eq('org_id', auth.targetOrgId).maybeSingle()
 
-        if (moveErr) {
-          warnings.push(`Payment saved, but the CRM stage move failed: ${moveErr.message}`)
-        } else if (!moved || moved.length === 0) {
+        if (findErr) {
+          warnings.push(`Payment saved, but the CRM stage move failed: ${findErr.message}`)
+        } else if (!found) {
           // The silent case, now audible.
           warnings.push(`Payment saved, but the CRM stage move matched 0 rows — contact ${contactId} was not found in that organization. The contact link may be stale.`)
         } else {
-          movedToPaid = true
+          try {
+            const r = await placeByName(admin, auth.targetOrgId, contactId, NP_PIPELINE_ID, NP_STAGE_PAID, false, 'accounting_payment')
+            if (r.placed) movedToPaid = true
+            else {
+              console.error(`[accounting/payments] place ${contactId}: ${r.reason ?? 'not_placed'}`)
+              warnings.push(`Payment saved, but the CRM stage move failed: ${r.reason ?? 'not placed'}`)
+            }
+          } catch (e: any) {
+            warnings.push(`Payment saved, but the CRM stage move failed: ${e?.message || 'unknown'}`)
+          }
         }
       }
     }

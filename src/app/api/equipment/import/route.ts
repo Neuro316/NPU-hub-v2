@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabase, createServerSupabase } from '@/lib/supabase'
+import { loadPipelines, firstStage, placeContact } from '@/lib/pipelines/positions'
 
 export async function POST(req: NextRequest) {
   try {
@@ -64,27 +65,13 @@ export async function POST(req: NextRequest) {
     }
 
     // Parse rows
-    // Look up the Enrolled pipeline ID so new contacts get assigned correctly
-    let enrolledPipelineId: string | null = null
-    let enrolledFirstStage: string | null = null
-    const { data: pipelineConfig } = await admin
-      .from('org_settings')
-      .select('setting_value')
-      .eq('org_id', org_id)
-      .eq('setting_key', 'crm_pipelines')
-      .maybeSingle()
-    if (pipelineConfig?.setting_value?.pipelines) {
-      const enrolledPipeline = pipelineConfig.setting_value.pipelines.find(
-        (p: any) => p.name?.toLowerCase().includes('enrolled') || p.stages?.some((s: any) => s.name?.toLowerCase() === 'enrolled')
-      )
-      if (enrolledPipeline) {
-        enrolledPipelineId = enrolledPipeline.id
-        // Use the first stage name from this pipeline instead of hardcoded 'Enrolled'
-        const stages = enrolledPipeline.stages || []
-        const sorted = [...stages].sort((a: any, b: any) => (a.position ?? 0) - (b.position ?? 0))
-        if (sorted.length > 0) enrolledFirstStage = sorted[0].name
-      }
-    }
+    // The Enrolled pipeline's first stage: new contacts are placed there (contact_pipeline_positions).
+    // The pipeline is the first (in display order) named like "enrolled" or having a stage named "Enrolled".
+    const pipelines = await loadPipelines(admin, org_id)
+    const enrolledPipeline = pipelines.find(
+      p => p.name.toLowerCase().includes('enrolled') || p.stages.some(s => s.name.toLowerCase() === 'enrolled')
+    ) ?? null
+    const enrolledFirstStage = firstStage(enrolledPipeline)
 
     const errors: string[] = []
     const warnings: string[] = []
@@ -131,8 +118,6 @@ export async function POST(req: NextRequest) {
             org_id,
             first_name: firstName,
             last_name: lastName,
-            pipeline_stage: enrolledFirstStage || 'Enrolled',
-            ...(enrolledPipelineId ? { pipeline_id: enrolledPipelineId } : {}),
           })
           .select('id, first_name, last_name')
           .single()
@@ -140,6 +125,14 @@ export async function POST(req: NextRequest) {
           contact = newContact
           contactList.push(newContact) // Add to local cache for subsequent rows
           contactsCreated++
+          if (enrolledFirstStage) {
+            try {
+              const r = await placeContact(admin, newContact.id, enrolledFirstStage.id, true, 'equipment_import')
+              if (!r.placed) console.error(`[equipment/import] place ${newContact.id}: ${r.reason ?? 'not_placed'}`)
+            } catch (e) { console.error(`[equipment/import] place ${newContact.id}: ${(e as Error).message}`) }
+          } else {
+            console.error(`[equipment/import] place ${newContact.id}: pipeline_unknown`)
+          }
           warnings.push(`Row ${i + 1}: created new contact "${assignedName}" (Enrolled pipeline)`)
         } else {
           warnings.push(`Row ${i + 1}: failed to create contact "${assignedName}" — ${contactErr?.message || 'unknown'}, imported as available`)

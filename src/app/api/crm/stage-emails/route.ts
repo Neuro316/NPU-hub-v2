@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabase, createAdminSupabase } from '@/lib/supabase';
 import { resolveMergeTags } from '@/lib/crm-server';
+import { findPipeline, loadPipelines } from '@/lib/pipelines/positions';
 
 // ─── POST /api/crm/stage-emails ───
 // Fires the emails configured on a pipeline stage. Called from the Pipelines
@@ -30,6 +31,14 @@ import { resolveMergeTags } from '@/lib/crm-server';
 // The claim is keyed on (contact_id, stage_id, email_id) — stable ids from the
 // pipeline JSON, never the stage's display name. Renaming a stage must not
 // re-arm every email on it.
+//
+// ── POSITION CHECK (hub_229) ───────────────────────────────────────────────
+// pipeline_id / stage_id are the pipeline's and stage's ids in crm_pipelines
+// (pipelines.legacy_key / pipeline_stages.legacy_key). Before anything sends, the
+// contact must actually be at that stage IN THAT pipeline
+// (contact_pipeline_positions). A contact can be in many pipelines; only the one
+// that changed counts. contacts.pipeline_id / pipeline_stage are legacy and are
+// not read. {{pipeline_stage}} resolves to the stage that was entered.
 //
 // A 'failed' claim does not block a retry (partial unique index covers only
 // 'sending' and 'sent'), so one transient webhook error can't permanently bar a
@@ -107,6 +116,27 @@ export async function POST(request: NextRequest) {
     .eq('org_id', org_id).eq('setting_key', 'crm_pipelines').single();
   const emails = stageEmailsFromConfig(pipelinesSetting?.setting_value, pipeline_id, stage_id);
   if (emails.length === 0) return NextResponse.json({ ok: true, sent: 0, results: [{ skip: 'no emails configured for this stage' }] });
+
+  // ── The contact must be at this stage in this pipeline ─────────────────────
+  let enteredStageName: string;
+  try {
+    const pipeline = findPipeline(await loadPipelines(admin, org_id), String(pipeline_id));
+    const stage = pipeline?.stages.find(s => s.key === String(stage_id)) ?? null;
+    if (!pipeline || !stage) return NextResponse.json({ ok: true, sent: 0, results: [{ skip: 'stage_unknown' }] });
+    const { data: pos, error: posErr } = await admin.from('contact_pipeline_positions').select('stage_id')
+      .eq('contact_id', contact_id).eq('pipeline_id', pipeline.id).maybeSingle();
+    if (posErr) {
+      console.error(`[stage-emails] position contact=${contact_id} failed: ${posErr.code ?? 'unknown'}`);
+      return NextResponse.json({ error: 'The stage could not be read. Try again.' }, { status: 500 });
+    }
+    if (!pos || (pos as any).stage_id !== stage.id) return NextResponse.json({ ok: true, sent: 0, results: [{ skip: 'not_in_stage' }] });
+    enteredStageName = stage.name;
+  } catch (e) {
+    console.error(`[stage-emails] pipelines org=${org_id} failed: ${(e as Error).message}`);
+    return NextResponse.json({ error: 'Pipelines could not be read. Try again.' }, { status: 500 });
+  }
+  // Merge tags see the stage that was entered, not the legacy column.
+  const mergeContact = { ...contact, stage_name: enteredStageName };
 
   // stage email script config (Apps Script URL + secret)
   const { data: setting } = await admin.from('org_settings').select('setting_value').eq('org_id', org_id).eq('setting_key', 'stage_email_script').single();
@@ -207,8 +237,8 @@ export async function POST(request: NextRequest) {
       }
 
       // ── Send ───────────────────────────────────────────────────────────────
-      const subject = resolveMergeTags(em.subject || '', contact, org?.name, assignedName);
-      const bodyHtml = resolveMergeTags(em.body || '', contact, org?.name, assignedName);
+      const subject = resolveMergeTags(em.subject || '', mergeContact, org?.name, assignedName);
+      const bodyHtml = resolveMergeTags(em.body || '', mergeContact, org?.name, assignedName);
 
       let result: any;
       try {

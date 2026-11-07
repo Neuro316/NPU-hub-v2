@@ -200,7 +200,7 @@ const FIELD_CONNECTIONS: Array<{
   description: string;
 }> = [
   { from: 'contacts', fromField: 'org_id', to: 'organizations', toField: 'id', type: 'foreign_key', description: 'Contact belongs to organization' },
-  { from: 'contacts', fromField: 'pipeline_id', to: 'org_settings(pipelines)', toField: 'id', type: 'jsonb_ref', description: 'Contact pipeline stage assignment' },
+  { from: 'contact_pipeline_positions', fromField: 'stage_id', to: 'pipeline_stages', toField: 'id', type: 'foreign_key', description: 'Contact stage in one pipeline (one row per pipeline)' },
   { from: 'contacts', fromField: 'custom_fields', to: 'org_settings(columns)', toField: 'column_config', type: 'jsonb_ref', description: 'Extended contact fields stored in JSONB' },
   { from: 'contacts', fromField: 'assigned_to', to: 'team_profiles', toField: 'id', type: 'lookup', description: 'Contact assigned to team member' },
   { from: 'contact_tags', fromField: 'tag_id', to: 'contact_tag_definitions', toField: 'id', type: 'foreign_key', description: 'Tag assignment references definition' },
@@ -293,7 +293,15 @@ export async function GET(req: NextRequest) {
 
   try {
     const { count: total } = await supabase.from('contacts').select('*', { count: 'exact', head: true })
-    const { count: inPipeline } = await supabase.from('contacts').select('*', { count: 'exact', head: true }).not('pipeline_id', 'is', null)
+    // In a pipeline = at least one row in contact_pipeline_positions (a contact can be in several)
+    const inPipelineIds = new Set<string>()
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await supabase.from('contact_pipeline_positions').select('contact_id').order('contact_id').range(from, from + 999)
+      if (error) throw error
+      for (const r of data ?? []) inPipelineIds.add((r as any).contact_id)
+      if (!data || data.length < 1000) break
+    }
+    const inPipeline = inPipelineIds.size
     integrity.push({ check: 'contacts pipeline coverage', status: 'ok', detail: `${inPipeline||0}/${total||0} in pipelines` })
   } catch { integrity.push({ check: 'contacts pipeline', status: 'skip', detail: 'N/A' }) }
 

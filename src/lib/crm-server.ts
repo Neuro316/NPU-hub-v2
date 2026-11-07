@@ -22,9 +22,13 @@ export async function isDNC(
 }
 
 // ─── Resolve Merge Tags ───
+// {{pipeline_stage}} is the stage the CALLER names in stage_name (a contact can be in several pipelines, so the
+// caller says which one, from contact_pipeline_positions). The legacy contacts.pipeline_stage column is not read.
+export type MergeContact = Contact & { stage_name?: string | null };
+
 export function resolveMergeTags(
   template: string,
-  contact: Contact,
+  contact: MergeContact,
   orgName?: string,
   assignedName?: string
 ): string {
@@ -35,7 +39,7 @@ export function resolveMergeTags(
     '{{phone}}': contact.phone || '',
     '{{org_name}}': orgName || '',
     '{{assigned_to_name}}': assignedName || '',
-    '{{pipeline_stage}}': contact.pipeline_stage || '',
+    '{{pipeline_stage}}': contact.stage_name || '',
   };
 
   let result = template;
@@ -298,10 +302,12 @@ export async function findContactByPhone(
 }
 
 // ─── Apply Auto-Assignment Rules ───
+// A pipeline_match rule matches a stage name in stage_names: the contact's stages from contact_pipeline_positions,
+// given by the caller. The legacy contacts.pipeline_stage column is not read. No stage names, no pipeline match.
 export async function applyAutoAssignment(
   supabase: SupabaseClient,
   orgId: string,
-  contact: Partial<Contact>
+  contact: Partial<Contact> & { stage_names?: string[] }
 ): Promise<string | null> {
   const { data: rules } = await supabase
     .from('auto_assignment_rules')
@@ -318,7 +324,7 @@ export async function applyAutoAssignment(
       return rule.assign_to;
     }
     // Pipeline match
-    if (rule.rule_type === 'pipeline_match' && contact.pipeline_stage === rule.match_value) {
+    if (rule.rule_type === 'pipeline_match' && (contact.stage_names ?? []).includes(rule.match_value)) {
       return rule.assign_to;
     }
     // Source match

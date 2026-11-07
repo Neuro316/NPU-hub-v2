@@ -23,6 +23,7 @@ const HARNESSES = [
   { file: 'scripts/marketing/smart-list-tamper.cjs', selectors: ['emptyall', 'missingyes', 'unknownyes', 'anyall', 'nonepass', 'activity', 'consent', 'nocheck', '1'] },
   { file: 'scripts/marketing/activity-log-tamper.cjs', selectors: ['rawcols', 'refraw', 'actorraw', 'readold', 'orderold', 'keepbody', '1'] },
   { file: 'scripts/marketing/lead-device-tamper.cjs', selectors: ['testwrites', 'notest', 'noreplay', 'truthy', 'optout', 'noresult', 'secretopen', 'anypreview', 'sameorigin', 'connect', 'nonce', 'hotall', 'factsall', 'logname', 'overwrite', 'nofill', 'nocas', 'nosuppress', 'checkopen', 'nonote', 'noother', '1'] },
+  { file: 'scripts/marketing/pipeline-positions-tamper.cjs', selectors: ['loosename', 'guess', 'keeparch', 'orgopen', 'actorbody', 'removeall', '1'] },
   { file: 'scripts/marketing/lead-origin-tamper.cjs', selectors: ['anyhost', 'hubhost', 'anypath', 'looseorg', 'keepcook', 'noapi', '1'] },
   { file: 'scripts/marketing/flags-off-parity.cjs', selectors: ['outside', 'untouched', '1'] },
   { file: 'scripts/agent/claims-tamper.cjs', selectors: ['emdash', 'certified', 'noboundary', 'stopline', 'program', 'version', '1'] },
@@ -55,7 +56,7 @@ report(gen.code === 0, `generated agent content is current${gen.code ? `\n${gen.
 
 const g = run(process.execPath, ['scripts/guards/run-guards.cjs'])
 report(g.code === 0, `guards${g.code ? `\n${g.out.split('\n').filter((l) => /FAIL|NEW|RED/.test(l)).join('\n')}` : ''}`)
-for (const t of ['G1', 'G2', 'G3', 'G4', 'G5', 'G6']) {
+for (const t of ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7']) {
   const r = run(process.execPath, ['scripts/guards/run-guards.cjs'], { TAMPER: t })
   report(r.code === 3, `guards TAMPER=${t} must exit 3 (got ${r.code})`)
 }
