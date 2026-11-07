@@ -110,6 +110,18 @@ select c.id, c.org_id, p.id, st.id, coalesce(c.updated_at, now()), null, 'legacy
  where c.merged_into_id is null
 on conflict (contact_id, pipeline_id) do nothing;
 
+-- Legacy values that do not map are left alone and logged, merged contacts included (read on 2026-11-07: 3 rows,
+-- 2fee9eb1 pipeline_archived, 787bd1c5 pipeline_unknown, ad0a94f9 stage_unknown).
+insert into public.hub_pipeline_legacy_unmapped (org_id, contact_id, pipeline_key, stage_name, reason, detail)
+select c.org_id, c.id, c.pipeline_id, c.pipeline_stage,
+       case when p.id is null then 'pipeline_unknown' when p.archived_at is not null then 'pipeline_archived' else 'stage_unknown' end,
+       'hub_229 backfill'
+  from public.contacts c
+  left join public.pipelines p on p.org_id = c.org_id and p.legacy_key = c.pipeline_id
+ where c.pipeline_id is not null and c.pipeline_stage is not null
+   and (p.id is null or p.archived_at is not null
+        or not exists (select 1 from public.pipeline_stages s where s.pipeline_id = p.id and s.name = c.pipeline_stage and s.archived_at is null));
+
 -- Cameron's ruling (2026-11-07): existing rows are kept, including the 51 circle_import_2026_11_07 Sales Pipeline
 -- rows. One exception: where the legacy columns point at the Sales Pipeline and disagree with the contact's Sales
 -- Pipeline row, the legacy stage wins, because until this change ships it is the newer write. Exact stage name
