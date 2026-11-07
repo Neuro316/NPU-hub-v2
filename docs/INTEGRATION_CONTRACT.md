@@ -54,7 +54,8 @@ Content-Type: application/json
 2. Validates `values` against the form definition (400 with per-field messages).
 3. Matches the contact in that org by email, or by phone when there is no email, or creates one.
 4. Fills the contact's phone from `values` only if it is blank; a number already there is never
-   overwritten. Then records each ticked consent, with three protections: it never reverses the person's
+   overwritten. When the number is already on another contact, both contact cards get a note naming and
+   linking the other; inbound texts keep routing as before. Then records each ticked consent, with three protections: it never reverses the person's
    own earlier opt-out, an SMS consent counts only when the phone in `values` is now the phone on the
    contact, and a number with an active suppression takes no SMS consent.
 5. Routes the form's source key into every active campaign that listens for it, with event id
@@ -191,7 +192,8 @@ Content-Type: application/json
    A new contact takes the device slug as its source. An existing contact keeps its source; the
    `lead_device` Smart List field covers attribution for both.
 4. Fills the contact's phone from the submission only if it is blank; a number already there is never
-   overwritten. Then records each consent as marketing consent with the text you sent. It never reverses
+   overwritten. When the number is already on another contact, both contact cards get a note naming and
+   linking the other; inbound texts keep routing as before. Then records each consent as marketing consent with the text you sent. It never reverses
    the person's own earlier opt-out, an SMS consent counts only when the phone sent is now the phone on the
    contact, and a number with an active suppression takes no SMS consent.
 5. Places the contact at New lead. A contact already on a pipeline keeps that place and is added to this

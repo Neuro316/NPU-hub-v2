@@ -138,9 +138,10 @@ export async function POST(req: NextRequest) {
   }
   // A public form can be filled in by anyone with someone else's details, so it may ADD a
   // consent but never reverse a person's own opt-out. A blank phone on the contact takes the
-  // number typed; a number already there is never overwritten, and an SMS consent counts only
-  // for the number on the contact (src/lib/marketing/submitted-phone.ts).
-  const settled = await settleSubmittedPhone(db, contactId, v.phone)
+  // number typed; a number already there is never overwritten, a number shared with another
+  // contact notes both cards, and an SMS consent counts only for the number on the contact
+  // (src/lib/marketing/submitted-phone.ts).
+  const settled = await settleSubmittedPhone(db, contactId, v.phone, `the form ${form.slug}`)
   const skipped: string[] = []
   for (const c of v.consents) {
     if (c.channel === 'sms') {

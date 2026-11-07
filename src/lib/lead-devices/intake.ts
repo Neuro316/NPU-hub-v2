@@ -213,7 +213,7 @@ export async function processSubmission(db: SupabaseClient, device: DeviceRow, i
   }
 
   await placeInPipeline(db, device, contactId as string)
-  const settled = await settleSubmittedPhone(db, contactId as string, input.phone)
+  const settled = await settleSubmittedPhone(db, contactId as string, input.phone, `the lead device ${device.slug}`)
   const consents = await recordConsents(db, device, contactId as string, input, id, settled)
 
   const { error: rErr } = await db.rpc('route_and_enroll', {

@@ -113,7 +113,7 @@ function stubDb(data = {}, handlers = {}) {
     from(table) {
       const ops = []
       const b = {}
-      for (const m of ['select', 'eq', 'neq', 'is', 'not', 'in', 'gte', 'order', 'insert', 'update', 'upsert', 'delete', 'limit']) {
+      for (const m of ['select', 'eq', 'neq', 'is', 'not', 'in', 'gte', 'like', 'order', 'insert', 'update', 'upsert', 'delete', 'limit']) {
         b[m] = (...args) => { ops.push([m, args]); return b }
       }
       const run = (mode) => {
