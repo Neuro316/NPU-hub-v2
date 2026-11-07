@@ -59,7 +59,7 @@ const TAMPERS = {
   factsall: [[L, "case 'lead_device': return asList(r.value).some((v) => (f.lead_devices ?? []).includes(v))", "case 'lead_device': return true"]],
   logname: [[I, 'console.error(`[lead-device] submission=${id} contact failed: ${cErr?.code ?? \'no id\'}`)', 'console.error(`[lead-device] ${input.email} contact failed`)']],
   overwrite: [[SP, "if (!submitted || String(current ?? '').trim()) return { phone: current, filled: false }", "if (!submitted) return { phone: current, filled: false }"]],
-  nofill: [[SP, "if (!submitted || String(current ?? '').trim()) return { phone: current, filled: false }", "return { phone: current, filled: false }"]],
+  nofill: [[I, "settleSubmittedPhone(db, contactId as string, input.phone)", "settleSubmittedPhone(db, contactId as string, null)"]],
   nocas: [[SP, "await (current === null ? update.is('phone', null) : update.eq('phone', current)).select('id')", "await update.select('id')"]],
   nosuppress: [[SP, "return (data ?? []).length ? 'number_suppressed' : null", "return null"]],
   checkopen: [[SP, "return 'check_failed'", "return null"]],
