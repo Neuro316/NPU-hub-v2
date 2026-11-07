@@ -6,6 +6,10 @@
 // that touched a contact would reach a list even with is_test set on its own row.
 //
 // Nothing here logs an answer, a name, an address or consent text: only ids and error codes.
+//
+// The submission row keeps what the person typed (first name, last name, email, phone; hub_230), service role only,
+// so a submission whose contact step failed can be retried and a test shows what was entered. A test row's details
+// are blanked 30 days after it was submitted (hub_purge_test_submission_identity, run by /api/cron/lead-identity-purge).
 import { createHash } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { toE164 } from '@/lib/phone'
@@ -30,6 +34,7 @@ export interface SubmissionInput {
   idempotencyKey: string
   email: string | null
   firstName: string
+  lastName?: string
   phone: string | null
   outcome: string | null
   answers: Record<string, unknown>
@@ -62,7 +67,7 @@ export function hostedConsents(device: Pick<DeviceRow, 'manifest'>, sent: any): 
 }
 
 /** Pure: the Hub lead form's rules. First name, email and the result box are required; phone is optional. */
-export function checkHostedLead(b: any): { ok: true; firstName: string; email: string; phone: string | null } | { ok: false; errors: Record<string, string> } {
+export function checkHostedLead(b: any): { ok: true; firstName: string; lastName: string; email: string; phone: string | null } | { ok: false; errors: Record<string, string> } {
   const errors: Record<string, string> = {}
   const firstName = typeof b?.first_name === 'string' ? b.first_name.trim().slice(0, 120) : ''
   const email = typeof b?.email === 'string' ? b.email.trim().toLowerCase() : ''
@@ -73,11 +78,12 @@ export function checkHostedLead(b: any): { ok: true; firstName: string; email: s
   if (rawPhone && !phone) errors.phone = 'Please enter a valid phone number, or leave it blank.'
   if (b?.consent?.result !== true) errors.result = 'Please tick this box so we can email your result.'
   if (b?.consent?.sms === true && !phone) errors.sms = 'Add a phone number to agree to text messages.'
-  return Object.keys(errors).length ? { ok: false, errors } : { ok: true, firstName, email, phone }
+  const lastName = typeof b?.last_name === 'string' ? b.last_name.trim().slice(0, 120) : ''
+  return Object.keys(errors).length ? { ok: false, errors } : { ok: true, firstName, lastName, email, phone }
 }
 
 /** Pure: an external submission as sent, or the fields that do not fit. */
-export function checkExternalSubmission(s: any): { ok: true; email: string | null; phone: string | null; firstName: string; consents: OfferedConsent[] } | { ok: false; errors: Record<string, string> } {
+export function checkExternalSubmission(s: any): { ok: true; email: string | null; phone: string | null; firstName: string; lastName: string; consents: OfferedConsent[] } | { ok: false; errors: Record<string, string> } {
   const errors: Record<string, string> = {}
   const email = typeof s?.email === 'string' && s.email.trim() ? s.email.trim().toLowerCase() : null
   const rawPhone = typeof s?.phone === 'string' ? s.phone.trim() : ''
@@ -97,7 +103,8 @@ export function checkExternalSubmission(s: any): { ok: true; email: string | nul
   add('email', s?.consent?.email, s?.consent?.email_text, email)
   add('sms', s?.consent?.sms, s?.consent?.sms_text, phone)
   if (Object.keys(errors).length) return { ok: false, errors }
-  return { ok: true, email, phone, firstName: typeof s?.first_name === 'string' ? s.first_name.trim().slice(0, 120) : '', consents }
+  const name = (v: unknown) => (typeof v === 'string' ? v.trim().slice(0, 120) : '')
+  return { ok: true, email, phone, firstName: name(s?.first_name), lastName: name(s?.last_name), consents }
 }
 
 /** Pure: answers must be a plain object of a sane size. Null means refuse. */
@@ -179,6 +186,7 @@ export async function processSubmission(db: SupabaseClient, device: DeviceRow, i
       idempotency_key: input.idempotencyKey, outcome: outcomeDef?.key ?? null, outcome_label: outcomeDef?.label ?? null,
       answers: input.answers, question_labels: labels,
       consents: input.consents, utm: input.utm, page_url: input.pageUrl, ip_hash: input.ipHash, is_test: test,
+      first_name: input.firstName || null, last_name: input.lastName || null, email: input.email, phone: input.phone,
       status: 'received', submitted_at: input.submittedAt ?? new Date().toISOString(),
     }).select('id').single()
     if (error?.code === '23505') {
@@ -197,7 +205,7 @@ export async function processSubmission(db: SupabaseClient, device: DeviceRow, i
   }
 
   const { data: contactId, error: cErr } = await db.rpc('hub_lead_device_contact', {
-    p_org: device.org_id, p_email: input.email, p_phone: input.phone, p_first: input.firstName, p_last: '',
+    p_org: device.org_id, p_email: input.email, p_phone: input.phone, p_first: input.firstName, p_last: input.lastName ?? '',
     p_slug: device.slug, p_utm: input.utm,
   })
   if (cErr || !contactId) {
@@ -235,4 +243,34 @@ export async function processSubmission(db: SupabaseClient, device: DeviceRow, i
   const { error: doneErr } = await db.from('lead_device_submissions').update({ status: 'accepted', contact_id: contactId, consents }).eq('id', id)
   if (doneErr) console.error(`[lead-device] submission=${id} finish failed: ${doneErr.code ?? 'unknown'}`)
   return { ok: true, id, duplicate: false, test: false }
+}
+
+const RETRY_COLUMNS = 'id, channel, idempotency_key, outcome, answers, consents, utm, page_url, ip_hash, version_id, submitted_at, is_test, status, first_name, last_name, email, phone'
+
+/**
+ * Runs the contact step again for a submission whose contact step failed, from the details stored on its row.
+ * Only a real (not test) submission, only while the device is live, and only one retry at a time: the row is claimed
+ * by moving contact_failed back to received, so a second click finds nothing to claim.
+ */
+export async function retrySubmission(db: SupabaseClient, device: DeviceRow, submissionId: string): Promise<SubmissionResult> {
+  if (device.status !== 'live') return { ok: false, status: 409, error: 'A submission can be retried only while its device is live.' }
+  const { data: row, error } = await db.from('lead_device_submissions').select(RETRY_COLUMNS).eq('id', submissionId).eq('device_id', device.id).maybeSingle()
+  if (error) return { ok: false, status: 500, error: 'The submission could not be read. Try again.' }
+  if (!row) return { ok: false, status: 404, error: 'That submission was not found.' }
+  const r = row as any
+  if (r.is_test || r.status !== 'contact_failed') return { ok: false, status: 409, error: 'Only a submission whose contact step failed can be retried.' }
+  if (!r.email && !r.phone) return { ok: false, status: 409, error: 'This submission has no email or phone stored, so it cannot be retried.' }
+  const { data: claimed, error: cErr } = await db.from('lead_device_submissions').update({ status: 'received' })
+    .eq('id', r.id).eq('status', 'contact_failed').select('id')
+  if (cErr) return { ok: false, status: 500, error: 'The retry could not start. Try again.' }
+  if (!(claimed ?? []).length) return { ok: false, status: 409, error: 'This submission is already being retried.' }
+  const consents: OfferedConsent[] = (Array.isArray(r.consents) ? r.consents : [])
+    .filter((c: any) => (c?.channel === 'email' || c?.channel === 'sms') && (c?.kind === 'marketing' || c?.kind === 'service') && typeof c?.text === 'string')
+    .map((c: any) => ({ channel: c.channel, kind: c.kind, granted: c.granted === true, text: c.text }))
+  console.info(`[lead-device] submission=${r.id} retry`)
+  return processSubmission(db, device, {
+    channel: r.channel, idempotencyKey: r.idempotency_key, email: r.email ?? null, firstName: r.first_name ?? '', lastName: r.last_name ?? '',
+    phone: r.phone ?? null, outcome: r.outcome ?? null, answers: r.answers ?? {}, consents, utm: r.utm ?? null, pageUrl: r.page_url ?? null,
+    submittedAt: r.submitted_at ?? null, ipHash: r.ip_hash ?? null, userAgent: null, versionId: r.version_id ?? null, preview: false,
+  })
 }

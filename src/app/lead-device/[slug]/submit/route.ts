@@ -59,7 +59,7 @@ export async function POST(req: Request, { params }: { params: { slug: string } 
   const result = await processSubmission(db, device, {
     channel: device.content === 'form' ? 'form' : 'hosted',
     idempotencyKey: b.idempotency_key,
-    email: lead.email, firstName: lead.firstName, phone: lead.phone,
+    email: lead.email, firstName: lead.firstName, lastName: lead.lastName, phone: lead.phone,
     outcome: typeof b.outcome === 'string' ? b.outcome : null,
     answers, consents: hostedConsents(device, b.consent),
     utm: cleanUtm(b.utm),

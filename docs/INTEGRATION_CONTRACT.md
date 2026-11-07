@@ -176,7 +176,7 @@ Content-Type: application/json
 | `device.*` (the rest) | no | Stored as the manifest when the device registers. A later change to the manifest is made in the Hub, not by a submission. |
 | `submission.idempotency_key` | yes | Your stable id for this submission, letters, numbers and `: _ . -`, at most 120 characters. **The call is idempotent on it**: a replay for the same device answers `200 { ok: true, duplicate: true }` and changes nothing. |
 | `submission.email` | yes, or `phone` | How the contact is matched. |
-| `submission.first_name`, `phone` | no | A new contact takes these. An existing contact takes `phone` only if theirs is blank. |
+| `submission.first_name`, `last_name`, `phone` | no | A new contact takes these. An existing contact takes `phone` only if theirs is blank. The submission keeps all of them, with the email, so a failed contact step can be retried in the Hub; a test submission's details are removed after 30 days. |
 | `submission.outcome` | no | An outcome key from the manifest. It sets the outcome tag, the lists and the campaign. |
 | `submission.answers` | no | An object of answers, keyed by question. |
 | `submission.consent` | yes | `email` and `sms` count only when they are exactly `true`, and each needs its exact text in `email_text` or `sms_text`. Send what the person actually ticked, with boxes unticked by default. |

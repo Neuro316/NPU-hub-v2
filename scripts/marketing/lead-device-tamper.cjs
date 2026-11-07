@@ -19,6 +19,9 @@
 //   D_HOT       the hot lead rule matches only what it names
 //   D_FACTS     lead_device and quiz_archetype read the facts and stay empty without them
 //   D_NOLOG     no lead device source logs a name, address, answer or consent text
+//   D_KEEP      every submission row keeps the first name, last name, email and phone typed, tests included
+//   D_RETRY     only a real contact_failed submission on a live device is retried, once, from its stored details
+//   D_PURGE     test details are blanked after 30 days, never sooner, and the purge runs daily
 //
 //   testwrites  a test submission goes on to make a contact  {D_TEST}
 //   notest      a device that is not live counts as real     {D_TEST}
@@ -34,6 +37,10 @@
 //   hotall      every submission is a hot lead               {D_HOT}
 //   factsall    lead_device matches everyone                 {D_FACTS}
 //   logname     the contact failure logs the email           {D_NOLOG}
+//   noidentity  the row does not keep the details typed      {D_KEEP}
+//   retrytest   a test submission can be retried             {D_RETRY}
+//   noclaim     two retries can run at once                  {D_RETRY}
+//   purgesoon   the purge runs after 7 days                  {D_PURGE}
 //   overwrite   a number already on the contact is replaced  {D_FILL,D_OPTOUT,D_SHARED}
 //   nofill      a blank phone stays blank                    {D_FILL,D_SHARED,D_SUPPRESS}
 //   nocas       the fill ignores a number saved meanwhile    {D_FILL}
@@ -61,6 +68,10 @@ const TAMPERS = {
   hotall: [[M, 'if (!rule) return false', 'if (!rule) return true']],
   factsall: [[L, "case 'lead_device': return asList(r.value).some((v) => (f.lead_devices ?? []).includes(v))", "case 'lead_device': return true"]],
   logname: [[I, 'console.error(`[lead-device] submission=${id} contact failed: ${cErr?.code ?? \'no id\'}`)', 'console.error(`[lead-device] ${input.email} contact failed`)']],
+  noidentity: [[I, '      first_name: input.firstName || null, last_name: input.lastName || null, email: input.email, phone: input.phone,\n', '']],
+  retrytest: [[I, "if (r.is_test || r.status !== 'contact_failed')", "if (r.status !== 'contact_failed')"]],
+  noclaim: [[I, "  if (!(claimed ?? []).length) return { ok: false, status: 409, error: 'This submission is already being retried.' }\n", '']],
+  purgesoon: [['app/api/cron/lead-identity-purge/route.ts', 'const TEST_IDENTITY_DAYS = 30', 'const TEST_IDENTITY_DAYS = 7']],
   overwrite: [[SP, "if (!submitted || String(current ?? '').trim()) return { phone: current, filled: false }", "if (!submitted) return { phone: current, filled: false }"]],
   nofill: [[I, "settleSubmittedPhone(db, contactId as string, input.phone,", "settleSubmittedPhone(db, contactId as string, null,"]],
   nocas: [[SP, "await (current === null ? update.is('phone', null) : update.eq('phone', current)).select('id')", "await update.select('id')"]],
@@ -72,13 +83,14 @@ const TAMPERS = {
 const RED_OF = {
   testwrites: ['D_TEST'], notest: ['D_TEST'], noreplay: ['D_REPLAY'], truthy: ['D_CONSENT'], optout: ['D_OPTOUT'], noresult: ['D_LEAD'], secretopen: ['D_SECRET'],
   anypreview: ['D_PREVIEW'], sameorigin: ['D_FILE'], connect: ['D_FILE'], nonce: ['D_PAGE'], hotall: ['D_HOT'], factsall: ['D_FACTS'], logname: ['D_NOLOG'],
+  noidentity: ['D_KEEP'], retrytest: ['D_RETRY'], noclaim: ['D_RETRY'], purgesoon: ['D_PURGE'],
   overwrite: ['D_FILL', 'D_OPTOUT', 'D_SHARED'], nofill: ['D_FILL', 'D_SHARED', 'D_SUPPRESS'], nocas: ['D_FILL'], nosuppress: ['D_SUPPRESS'], checkopen: ['D_SUPPRESS'],
   nonote: ['D_SHARED'], noother: ['D_SHARED'],
 }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-leaddev')
 const load = H.install(out)
-const { processSubmission, hostedConsents, checkHostedLead, checkExternalSubmission } = load(I)
+const { processSubmission, retrySubmission, hostedConsents, checkHostedLead, checkExternalSubmission } = load(I)
 const { hotLeadMatches, cleanManifest } = load(M)
 const { isLeadIntakeCaller } = load(E)
 const { mintPreview, readPreview } = load(PD)
@@ -254,6 +266,47 @@ const check = (id, ok, got) => rows.push({ id, ok: !!ok, got })
     .map((r) => path.join(__dirname, '..', '..', 'src', 'app', r))
   const leaks = [...files, ...routes].filter((f) => SENSITIVE.test(fs.readFileSync(f, 'utf8'))).map((f) => path.basename(f))
   check('D_NOLOG', leaks.length === 0, { leaks })
+
+  const inserted = (db) => db.calls.filter((c) => c.table === 'lead_device_submissions').flatMap((c) => c.ops.filter((o) => o[0] === 'insert').map((o) => o[1][0]))
+  const keptTest = dbFor(), keptLive = dbFor()
+  await processSubmission(keptTest, device('live'), input({ idempotencyKey: 'keep1', lastName: 'Lee', preview: true }))
+  await processSubmission(keptLive, device('live'), input({ idempotencyKey: 'keep2', lastName: 'Lee' }))
+  const same = (r) => r && r.first_name === 'Ana' && r.last_name === 'Lee' && r.email === 'a@example.com' && r.phone === '+18285550100'
+  const contactCall = keptLive.calls.find((c) => c.rpc === 'hub_lead_device_contact')
+  check('D_KEEP', same(inserted(keptTest)[0]) && inserted(keptTest)[0].is_test === true && same(inserted(keptLive)[0]) && contactCall && contactCall.args.p_last === 'Lee'
+    && checkExternalSubmission({ email: 'a@example.com', last_name: ' Lee ', idempotency_key: 'k', consent: {} }).lastName === 'Lee',
+    { test: inserted(keptTest)[0], live: inserted(keptLive)[0] })
+
+  const failedRow = (over = {}) => ({ id: 's9', device_id: 'd1', channel: 'hosted', idempotency_key: 'k9', outcome: 'holder', answers: { q1: 'yes' },
+    consents: hostedConsents({ manifest }, { result: true, email: true }), utm: null, page_url: null, ip_hash: 'h', version_id: 'v1', submitted_at: '2026-11-07T00:00:00Z',
+    is_test: false, status: 'contact_failed', first_name: 'Ana', last_name: 'Lee', email: 'a@example.com', phone: '+18285550100', ...over })
+  const retryDb = (row, claimed = true) => H.stubDb({ contacts: [{ id: 'c1', tags: [], email: 'a@example.com', phone: '+18285550100' }], lead_device_submissions: [row] }, {
+    rpc: (name) => (name === 'hub_lead_device_contact' ? { data: 'c1', error: null } : name === 'consent_state' ? { data: { reason: 'none' }, error: null } : { data: [], error: null }),
+    table: (table, ops) => {
+      const claim = table === 'lead_device_submissions' && ops.some((o) => o[0] === 'update' && o[1][0].status === 'received')
+      if (claim) return { data: claimed && ops.some((o) => o[0] === 'eq' && o[1][0] === 'status' && o[1][1] === 'contact_failed') ? [{ id: row.id }] : [], error: null }
+      return undefined
+    },
+  })
+  const okDb = retryDb(failedRow())
+  const ok = await retrySubmission(okDb, device('live'), 's9')
+  const made = okDb.calls.find((c) => c.rpc === 'hub_lead_device_contact')
+  const testDb = retryDb(failedRow({ is_test: true })), doneDb = retryDb(failedRow({ status: 'accepted' })), pausedDb = retryDb(failedRow()), raceDb = retryDb(failedRow(), false)
+  const asTest = await retrySubmission(testDb, device('live'), 's9')
+  const asDone = await retrySubmission(doneDb, device('live'), 's9')
+  const asPaused = await retrySubmission(pausedDb, device('paused'), 's9')
+  const asRace = await retrySubmission(raceDb, device('live'), 's9')
+  const reached = (db) => db.calls.some((c) => c.rpc === 'hub_lead_device_contact')
+  check('D_RETRY', ok.ok && made && made.args.p_email === 'a@example.com' && made.args.p_first === 'Ana' && made.args.p_last === 'Lee'
+    && !asTest.ok && !reached(testDb) && !asDone.ok && !reached(doneDb) && !asPaused.ok && !reached(pausedDb) && !asRace.ok && !reached(raceDb),
+    { ok, test: asTest.ok, done: asDone.ok, paused: asPaused.ok, race: asRace.ok })
+
+  const cronSrc = fs.readFileSync(path.join(out, 'app', 'api', 'cron', 'lead-identity-purge', 'route.js'), 'utf8')
+  const migration = fs.readFileSync(path.join(__dirname, '..', '..', 'supabase', 'migrations', 'hub_230_lead_submission_identity.sql'), 'utf8')
+  const vercel = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'vercel.json'), 'utf8'))
+  check('D_PURGE', /TEST_IDENTITY_DAYS = 30\b/.test(cronSrc) && /hub_purge_test_submission_identity/.test(cronSrc) && /cronAuthorized/.test(cronSrc)
+    && /if p_days is null or p_days < 30 then raise exception/.test(migration) && /where s\.is_test and s\.identity_purged_at is null/.test(migration)
+    && vercel.crons.some((c) => c.path === '/api/cron/lead-identity-purge'), 'purge wiring')
 
   H.report(rows, active, RED_OF, () => fs.rmSync(out, { recursive: true, force: true }))
 })().catch((e) => { console.error(e); process.exit(2) })

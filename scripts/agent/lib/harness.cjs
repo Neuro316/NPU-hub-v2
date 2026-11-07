@@ -9,7 +9,7 @@ const ROOT = path.resolve(__dirname, '..', '..', '..')
 const SRC = path.join(ROOT, 'src')
 
 /** Every module under these folders is compiled, so imports between them just work. */
-const DIRS = ['lib/agent', 'lib/marketing', 'lib/lead-devices', 'app/api/marketing/agent', 'app/api/marketing/pages', 'app/api/marketing/campaigns', 'app/api/marketing/sequences', 'app/api/sequences/enroll', 'lib/pipelines', 'app/api/crm/pipeline-positions']
+const DIRS = ['lib/agent', 'lib/marketing', 'lib/lead-devices', 'app/api/marketing/agent', 'app/api/marketing/pages', 'app/api/marketing/campaigns', 'app/api/marketing/sequences', 'app/api/sequences/enroll', 'lib/pipelines', 'app/api/crm/pipeline-positions', 'app/api/cron/lead-identity-purge']
 const EXTRA = ['lib/phone.ts', 'lib/sms-split.ts', 'lib/crm-server.ts', 'lib/activity-log.ts']
 
 function listTs(dir) {
