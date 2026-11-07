@@ -5,6 +5,7 @@ import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
 import ContactDetail from '@/components/crm/contact-detail'
 import { fetchContacts } from '@/lib/crm-client'
+import { loadPositions, positionsByContact } from '@/lib/pipelines/positions'
 import {
   ClipboardList, Plus, Search, Users, Calendar, Clock, Brain, Wand2, Send,
   ChevronDown, ChevronRight, Check, X, Save, AlertTriangle, History,
@@ -15,7 +16,9 @@ import {
 /* ═══ TYPES ═══ */
 interface EnrolledClient {
   id: string; first_name: string; last_name: string; email?: string; phone?: string
-  pipeline_stage?: string; pipeline_id?: string; tags: string[]; custom_fields?: Record<string, any>
+  tags: string[]; custom_fields?: Record<string, any>
+  /** From contact_pipeline_positions: "Pipeline · Stage" for each pipeline the person is in, joined. */
+  stage_label?: string
 }
 
 interface Protocol {
@@ -127,16 +130,31 @@ export default function SessionNotesPage() {
   /* ─── Load enrolled clients ─── */
   const loadClients = useCallback(async () => {
     if (!currentOrg) return
-    let query = supabase
-      .from('contacts')
-      .select('id, first_name, last_name, email, phone, pipeline_stage, pipeline_id, tags, custom_fields')
-      .eq('org_id', currentOrg.id)
+    const orgId = currentOrg.id
+    const cols = 'id, first_name, last_name, email, phone, tags, custom_fields'
+    let positions: Awaited<ReturnType<typeof loadPositions>> = []
+    try { positions = await loadPositions(supabase, orgId) } catch (e) { console.error(`[sessions] ${(e as Error).message}`) }
+    const byContact = positionsByContact(positions)
+    let rows: any[] = []
     if (clientFilter === 'pipeline') {
-      // Show anyone assigned to a pipeline (pipeline_id not null) OR matching stage keywords
-      query = query.or('pipeline_id.not.is.null,pipeline_stage.ilike.%enroll%,pipeline_stage.ilike.%active%,pipeline_stage.ilike.%program%,pipeline_stage.ilike.%deposit%,tags.cs.{enrolled}')
+      // Anyone in at least one pipeline (any stage, any pipeline), or tagged enrolled
+      const ids = Array.from(byContact.keys())
+      const parts = await Promise.all([
+        supabase.from('contacts').select(cols).eq('org_id', orgId).contains('tags', ['enrolled']),
+        ...Array.from({ length: Math.ceil(ids.length / 150) }, (_, i) =>
+          supabase.from('contacts').select(cols).eq('org_id', orgId).in('id', ids.slice(i * 150, i * 150 + 150))),
+      ])
+      const seen = new Map<string, any>()
+      for (const r of parts) for (const c of (r.data ?? []) as any[]) seen.set(c.id, c)
+      rows = Array.from(seen.values()).sort((a, b) => String(a.last_name ?? '').localeCompare(String(b.last_name ?? '')))
+    } else {
+      const { data } = await supabase.from('contacts').select(cols).eq('org_id', orgId).order('last_name', { ascending: true })
+      rows = data || []
     }
-    const { data } = await query.order('last_name', { ascending: true })
-    setClients(data || [])
+    setClients(rows.map(c => ({
+      ...c,
+      stage_label: (byContact.get(c.id) ?? []).map(p => `${p.pipeline_name} · ${p.stage_name}`).join(', '),
+    })))
   }, [currentOrg?.id, clientFilter])
 
   useEffect(() => { loadClients() }, [loadClients])
@@ -593,7 +611,7 @@ Keep responses concise. Use clinical but accessible language. No em dashes.`
                 className={`w-full text-left px-3 py-2.5 border-b border-gray-50 hover:bg-gray-50 transition-colors
                   ${selectedClient?.id === c.id ? 'bg-np-blue/5 border-l-2 border-l-np-blue' : ''}`}>
                 <p className="text-xs font-semibold text-np-dark">{c.last_name}, {c.first_name}</p>
-                <p className="text-[10px] text-gray-400 mt-0.5">{c.pipeline_stage || '--'}</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">{c.stage_label || '--'}</p>
               </button>
             ))
           )}
@@ -623,7 +641,7 @@ Keep responses concise. Use clinical but accessible language. No em dashes.`
                   {selectedClient.first_name} {selectedClient.last_name}
                   <ExternalLink className="w-3 h-3 inline ml-1 opacity-0 group-hover:opacity-100" />
                 </button>
-                <p className="text-[10px] text-gray-400">{selectedClient.email} · {selectedClient.pipeline_stage || 'Enrolled'}</p>
+                <p className="text-[10px] text-gray-400">{selectedClient.email} · {selectedClient.stage_label || 'No pipeline'}</p>
               </div>
               <div className="flex items-center gap-1">
                 {(['note', 'protocol', 'report', 'history'] as const).map(v => (

@@ -19,7 +19,7 @@ interface EligibleContact {
   first_name: string
   last_name: string
   phone: string | null
-  pipeline_stage: string
+  pipeline_label: string
 }
 
 export default function EquipmentPage() {
@@ -640,7 +640,7 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
                           className="w-full px-3 py-2.5 bg-gray-800 text-white text-sm rounded-lg border border-gray-700 mb-2">
                           <option value="">Select a contact...</option>
                           {filteredContacts.map(c => (
-                            <option key={c.id} value={c.id}>{c.first_name} {c.last_name} — {c.pipeline_stage}{c.phone ? ` (${c.phone})` : ''}</option>
+                            <option key={c.id} value={c.id}>{c.first_name} {c.last_name}{c.pipeline_label ? ` — ${c.pipeline_label}` : ''}{c.phone ? ` (${c.phone})` : ''}</option>
                           ))}
                         </select>
                         <input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="Purpose (optional)"
@@ -997,7 +997,7 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold text-np-dark">{c.first_name} {c.last_name}</p>
-                    <p className="text-[10px] text-gray-400">{c.pipeline_stage}{c.phone ? ` · ${c.phone}` : ''}</p>
+                    <p className="text-[10px] text-gray-400">{[c.pipeline_label, c.phone].filter(Boolean).join(' · ')}</p>
                   </div>
                 </button>
               ))}
@@ -1102,8 +1102,8 @@ NP-MQ0003,meta_quest,,,maintenance,,,,Missing serial stickers`
                               <div className="flex items-center gap-2 mb-1">
                                 <User className="w-3.5 h-3.5 text-gray-400" />
                                 <span className={`text-xs font-semibold ${isActive ? 'text-blue-700' : 'text-np-dark'}`}>{contactName}</span>
-                                {a.contacts?.pipeline_stage && (
-                                  <span className="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">{a.contacts.pipeline_stage}</span>
+                                {a.contacts?.pipeline_label && (
+                                  <span className="text-[9px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">{a.contacts.pipeline_label}</span>
                                 )}
                                 {isActive && <span className="text-[9px] font-bold text-blue-500 ml-auto">ACTIVE</span>}
                               </div>

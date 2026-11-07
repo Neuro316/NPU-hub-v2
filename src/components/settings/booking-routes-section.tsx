@@ -101,7 +101,7 @@ export function BookingRoutesSection({ orgId }: { orgId: string | undefined }) {
         <h3 className="text-sm font-bold text-np-dark">Booking routes</h3>
         <p className="text-xs text-gray-400 mt-1">
           When someone books one of these University appointment types, they are added to the pipeline stage you pick here,
-          with their answers on the contact card. Checked every 5 minutes.
+          with their answers on the contact card. Other pipelines they are in are not changed. Checked every 5 minutes.
         </p>
       </div>
 

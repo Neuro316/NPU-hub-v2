@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabase } from '@/lib/supabase'
+import { loadPositions, positionsByContact } from '@/lib/pipelines/positions'
 
 // GET /api/equipment/history?equipment_id=XXX
 export async function GET(req: NextRequest) {
@@ -30,10 +31,19 @@ export async function GET(req: NextRequest) {
     if (contactIds.length > 0) {
       const { data: contacts } = await admin
         .from('contacts')
-        .select('id, first_name, last_name, phone, pipeline_stage')
+        .select('id, org_id, first_name, last_name, phone')
         .in('id', contactIds)
       if (contacts) {
-        for (const c of contacts) contactMap[c.id] = c
+        // Pipelines with stages, per org, from contact_pipeline_positions
+        const byOrg = new Map<string, string[]>()
+        for (const c of contacts) if (c.org_id) byOrg.set(c.org_id, [...(byOrg.get(c.org_id) ?? []), c.id])
+        const labels = new Map<string, string>()
+        for (const [org, ids] of Array.from(byOrg)) {
+          for (const [id, ps] of Array.from(positionsByContact(await loadPositions(admin, org, { contactIds: ids })))) {
+            labels.set(id, ps.map(p => `${p.pipeline_name} · ${p.stage_name}`).join(', '))
+          }
+        }
+        for (const { org_id, ...c } of contacts) contactMap[c.id] = { ...c, pipeline_label: labels.get(c.id) || null }
       }
     }
 

@@ -203,7 +203,7 @@ export async function POST(request: NextRequest) {
       const client = new Anthropic({ apiKey })
 
       const nodeSummary = graphData.nodes.slice(0, 100).map((n: any) => ({
-        id: n.id, name: n.name, tags: n.tags, pipeline: n.pipeline_stage,
+        id: n.id, name: n.name, tags: n.tags, pipelines: n.pipeline_stages,
         connections: n.relationship_count, score: n.interaction_score,
         centrality: n.network_centrality, bridge: n.bridge_score, cluster: n.cluster_id,
       }))

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabase } from '@/lib/supabase'
+import { loadPositions, positionsByContact } from '@/lib/pipelines/positions'
 
 export const maxDuration = 60
 
@@ -26,8 +27,15 @@ export async function POST(req: NextRequest) {
 
   // 3. Contacts summary
   const { data: contacts } = await supabase
-    .from('contacts').select('full_name, email, company, pipeline_stage, source, tags, notes')
+    .from('contacts').select('id, full_name, email, company, source, tags, notes')
     .eq('org_id', org_id).limit(100)
+
+  // Each listed contact's pipelines with stages (contact_pipeline_positions)
+  let stageOf = new Map<string, string>()
+  try {
+    const byContact = positionsByContact(await loadPositions(supabase, org_id, { contactIds: (contacts || []).slice(0, 30).map(c => c.id) }))
+    stageOf = new Map(Array.from(byContact, ([id, ps]) => [id, ps.map(p => `${p.pipeline_name} · ${p.stage_name}`).join(', ')]))
+  } catch (e) { console.error(`[ids-analyzer] ${(e as Error).message}`) }
 
   // 4. Company library docs
   const { data: library } = await supabase
@@ -63,7 +71,7 @@ ${(tasks || []).map(t => `- [${t.priority}] ${t.title}${t.assignee ? ` (assigned
 ${(rocks || []).map(r => `- ${r.title} [${r.status}, ${r.progress_pct}%]${r.owner ? ` owner: ${r.owner}` : ''}${r.description ? ` — ${r.description.slice(0, 100)}` : ''}`).join('\n') || 'No rocks'}
 
 === CONTACTS / PIPELINE (${contacts?.length || 0}) ===
-${(contacts || []).slice(0, 30).map(c => `- ${c.full_name || 'Unknown'}${c.company ? ` @ ${c.company}` : ''} [${c.pipeline_stage || 'none'}]${c.source ? ` src: ${c.source}` : ''}${c.tags ? ` tags: ${c.tags}` : ''}`).join('\n') || 'No contacts'}
+${(contacts || []).slice(0, 30).map(c => `- ${c.full_name || 'Unknown'}${c.company ? ` @ ${c.company}` : ''} [${stageOf.get(c.id) || 'none'}]${c.source ? ` src: ${c.source}` : ''}${c.tags ? ` tags: ${c.tags}` : ''}`).join('\n') || 'No contacts'}
 
 === COMPANY LIBRARY (${library?.length || 0}) ===
 ${(library || []).map(l => `- ${l.title} [${l.category || 'uncategorized'}] (${l.file_type || 'doc'})`).join('\n') || 'No documents'}

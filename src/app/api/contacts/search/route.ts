@@ -9,7 +9,15 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const q = searchParams.get('q');
   const tags = searchParams.get('tags')?.split(',').filter(Boolean);
-  const pipeline_stage = searchParams.get('pipeline_stage');
+  // Pipeline membership is contact_pipeline_positions (hub_229): filter by pipelines.id and/or pipeline_stages.id.
+  // The legacy pipeline_stage parameter (contacts.pipeline_stage) is no longer read.
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const pipeline_id = searchParams.get('pipeline_id');
+  const stage_id = searchParams.get('stage_id');
+  if ((pipeline_id && !UUID.test(pipeline_id)) || (stage_id && !UUID.test(stage_id))) {
+    return NextResponse.json({ error: 'pipeline_id and stage_id must be ids' }, { status: 400 });
+  }
+  const byPosition = !!(pipeline_id || stage_id);
   const assigned_to = searchParams.get('assigned_to');
   const last_contacted_before = searchParams.get('last_contacted_before');
   const last_contacted_after = searchParams.get('last_contacted_after');
@@ -18,7 +26,9 @@ export async function GET(request: NextRequest) {
 
   let query = supabase
     .from('contacts')
-    .select('*, team_members!contacts_assigned_to_fkey(display_name)', { count: 'exact' })
+    .select(byPosition
+      ? '*, team_members!contacts_assigned_to_fkey(display_name), contact_pipeline_positions!inner(pipeline_id, stage_id)'
+      : '*, team_members!contacts_assigned_to_fkey(display_name)', { count: 'exact' })
     .is('merged_into_id', null)
     .order('updated_at', { ascending: false })
     .range(offset, offset + limit - 1);
@@ -32,8 +42,11 @@ export async function GET(request: NextRequest) {
   if (tags?.length) {
     query = query.overlaps('tags', tags);
   }
-  if (pipeline_stage) {
-    query = query.eq('pipeline_stage', pipeline_stage);
+  if (pipeline_id) {
+    query = query.eq('contact_pipeline_positions.pipeline_id', pipeline_id);
+  }
+  if (stage_id) {
+    query = query.eq('contact_pipeline_positions.stage_id', stage_id);
   }
   if (assigned_to) {
     query = query.eq('assigned_to', assigned_to);

@@ -4,12 +4,16 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronDown, ChevronRight, ExternalLink, Building2, Tag, Eye, Loader2 } from 'lucide-react'
 import type { CrmContact } from '@/types/crm'
+import { createClient } from '@/lib/supabase-browser'
+import { loadPositions, type Position } from '@/lib/pipelines/positions'
 
 interface CrossOrgContact extends CrmContact {
   _cross_org: true
   _source_org_id: string
   _source_org_name: string
   _matched_tags: string[]
+  /** Positions in the source org, from contact_pipeline_positions (hub_229). */
+  _positions?: Position[]
 }
 
 const STAGE_COLORS: Record<string, string> = {
@@ -34,7 +38,17 @@ export default function CrossOrgContactsPanel({ orgId }: { orgId: string }) {
       })
       if (!res.ok) { setLoading(false); return }
       const data = await res.json()
-      setContacts(data.contacts || [])
+      const list: CrossOrgContact[] = data.contacts || []
+      // Stages from positions in each source org (the viewer is a member there; the route checks it).
+      const sb = createClient()
+      const orgIds = Array.from(new Set(list.map(c => c._source_org_id)))
+      await Promise.all(orgIds.map(async src => {
+        try {
+          const pos = await loadPositions(sb, src, { contactIds: list.filter(c => c._source_org_id === src).map(c => c.id) })
+          for (const c of list) if (c._source_org_id === src) c._positions = pos.filter(p => p.contact_id === c.id)
+        } catch (e) { console.warn('Cross-org positions skipped:', (e as Error)?.message) }
+      }))
+      setContacts(list)
       setHasRules((data.rules || []).some((r: any) => r.enabled && r.tags?.length > 0))
     } catch (e) { console.error('Cross-org error:', e) }
     setLoading(false)
@@ -105,7 +119,6 @@ export default function CrossOrgContactsPanel({ orgId }: { orgId: string }) {
                   {group.contacts.map(c => {
                     const name = `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'Unknown'
                     const initials = `${c.first_name?.[0] || ''}${c.last_name?.[0] || ''}`.toUpperCase() || '??'
-                    const stageColor = STAGE_COLORS[c.pipeline_stage || ''] || '#9CA3AF'
                     return (
                       <tr key={c.id} className="border-t border-gray-50 hover:bg-purple-50/20 transition-colors group">
                         <td className="px-5 py-2.5">
@@ -121,8 +134,13 @@ export default function CrossOrgContactsPanel({ orgId }: { orgId: string }) {
                         <td className="px-3 py-2.5 text-[10px] text-gray-600">{c.phone || '—'}</td>
                         <td className="px-3 py-2.5 text-[10px] text-gray-600">{c.occupation || '—'}</td>
                         <td className="px-3 py-2.5">
-                          {c.pipeline_stage ? (
-                            <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: stageColor + '15', color: stageColor }}>{c.pipeline_stage}</span>
+                          {c._positions?.length ? (
+                            <div className="flex flex-wrap gap-1">
+                              {c._positions.map(p => {
+                                const stageColor = p.stage_color || STAGE_COLORS[p.stage_name] || '#9CA3AF'
+                                return <span key={p.pipeline_id} className="px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: stageColor + '15', color: stageColor }}>{p.pipeline_name} · {p.stage_name}</span>
+                              })}
+                            </div>
                           ) : <span className="text-[10px] text-gray-300">—</span>}
                         </td>
                         <td className="px-3 py-2.5">

@@ -16,7 +16,8 @@ export interface Equipment {
   contact_first_name?: string
   contact_last_name?: string
   contact_phone?: string
-  contact_pipeline_stage?: string
+  /** "Pipeline · Stage" for each pipeline the contact is in, joined (contact_pipeline_positions) */
+  contact_pipeline_label?: string
 }
 
 export interface EquipmentAssignment {

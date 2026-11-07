@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminSupabase } from '@/lib/supabase';
 import { verifyCronSecret, isDNC, sendEmailViaWebhook, resolveMergeTags, logActivity, getOrCreateConversation, updateLastContacted } from '@/lib/crm-server';
 import { sendSms } from '@/lib/twilio';
+import { mergeStageFor } from '@/lib/pipelines/positions';
 import type { CrmContact as Contact, EmailWebhookPayload } from '@/types/crm';
 
 export async function GET(request: NextRequest) {
@@ -31,6 +32,7 @@ export async function GET(request: NextRequest) {
   let processed = 0;
 
   for (const enrollment of enrollments) {
+    // {{pipeline_stage}} comes from contact_pipeline_positions, not the legacy column.
     const contact = (enrollment as any).contacts as Contact;
     const sequence = (enrollment as any).sequences;
     const orgId = sequence.org_id;
@@ -68,7 +70,8 @@ export async function GET(request: NextRequest) {
       .eq('id', orgId)
       .single();
 
-    const resolvedBody = resolveMergeTags(step.body, contact, org?.name);
+    const mergeContact = { ...contact, stage_name: await mergeStageFor(supabase, orgId, contact.id) };
+    const resolvedBody = resolveMergeTags(step.body, mergeContact, org?.name);
     let success = false;
 
     // Send based on channel
@@ -110,7 +113,7 @@ export async function GET(request: NextRequest) {
 
         if (config?.webhook_url) {
           const resolvedSubject = step.subject
-            ? resolveMergeTags(step.subject, contact, org?.name)
+            ? resolveMergeTags(step.subject, mergeContact, org?.name)
             : `Message from ${org?.name || 'us'}`;
 
           const payload: EmailWebhookPayload = {

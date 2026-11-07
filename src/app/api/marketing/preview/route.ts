@@ -1,9 +1,12 @@
 // POST /api/marketing/preview   (staff)
 // Renders one step exactly as the engine would, for a sample person or a chosen
-// contact. Writes nothing. { org_id, channel, kind, subject, body, contact_id?, with_asset? }
+// contact. Writes nothing. { org_id, channel, kind, subject, body, contact_id?, entry_pipeline_id?, with_asset? }
+// {{pipeline_stage}} for a chosen contact is their stage in entry_pipeline_id (the campaign's entry pipeline), else
+// their only pipeline's stage, from contact_pipeline_positions; empty when that is not one stage.
 import { NextResponse } from 'next/server'
 import { withStaff, requireOrg, bad } from '@/lib/api-guard'
-import { renderStep } from '@/lib/marketing/render'
+import { mergeStage, renderStep } from '@/lib/marketing/render'
+import { loadPositions } from '@/lib/pipelines/positions'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,10 +15,13 @@ export const POST = withStaff(async (req, ctx) => {
   const org = requireOrg(ctx, b?.org_id)
   if (typeof org !== 'string') return org
   if (!['email', 'sms'].includes(b.channel)) return bad('Choose email or text message.')
-  let contact: any = { first_name: 'Alex', last_name: 'Rivera', email: 'alex@example.com', phone: '+15555550123', pipeline_stage: 'New Lead' }
+  let contact: any = { first_name: 'Alex', last_name: 'Rivera', email: 'alex@example.com', phone: '+15555550123', stage_name: 'New Lead' }
   if (b.contact_id) {
-    const { data } = await ctx.db.from('contacts').select('first_name, last_name, email, phone, pipeline_stage').eq('id', b.contact_id).eq('org_id', org).maybeSingle()
-    if (data) contact = data
+    const { data } = await ctx.db.from('contacts').select('id, first_name, last_name, email, phone').eq('id', b.contact_id).eq('org_id', org).maybeSingle()
+    if (data) {
+      const positions = await loadPositions(ctx.db, org, { contactIds: [data.id] }).catch(() => [])
+      contact = { ...data, stage_name: mergeStage(positions, typeof b.entry_pipeline_id === 'string' ? b.entry_pipeline_id : null) }
+    }
   }
   const { data: o } = await ctx.db.from('organizations').select('name').eq('id', org).maybeSingle()
   const r = renderStep({

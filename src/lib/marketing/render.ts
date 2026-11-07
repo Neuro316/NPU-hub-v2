@@ -2,7 +2,7 @@
 // Pure rendering of one campaign step for one contact. No I/O, so the harness can
 // assert exactly what a person would receive, and a dry run stores the same text a
 // live send would have used.
-import { resolveMergeTags } from '@/lib/crm-server'
+import { resolveMergeTags, type MergeContact } from '@/lib/crm-server'
 import type { CrmContact } from '@/types/crm'
 
 export interface RenderInput {
@@ -10,7 +10,8 @@ export interface RenderInput {
   kind: 'marketing' | 'service'
   subject: string | null
   body: string
-  contact: Pick<CrmContact, 'first_name' | 'last_name' | 'email' | 'phone' | 'pipeline_stage'>
+  /** stage_name: the person's stage for {{pipeline_stage}}, from contact_pipeline_positions (see mergeStage) */
+  contact: Pick<CrmContact, 'first_name' | 'last_name' | 'email' | 'phone'> & { stage_name?: string | null }
   orgName: string
   unsubscribeUrl: string | null
   assetUrl: string | null
@@ -28,6 +29,15 @@ export function htmlToText(html: string): string {
 
 export const SMS_STOP_LINE = 'Reply STOP to opt out.'
 
+/**
+ * Pure: the stage {{pipeline_stage}} names. The person's stage in the given pipeline (a campaign's entry pipeline);
+ * with no pipeline given, their stage when they are in exactly one pipeline. Otherwise empty: nothing is guessed.
+ */
+export function mergeStage(positions: Array<{ pipeline_id: string; stage_name: string }>, pipelineId: string | null | undefined): string {
+  if (pipelineId) return positions.find((p) => p.pipeline_id === pipelineId)?.stage_name ?? ''
+  return positions.length === 1 ? positions[0].stage_name : ''
+}
+
 export function renderStep(i: RenderInput): Rendered {
   // asset link first, so a template that names it gets it in place and one that
   // does not gets it appended
@@ -38,7 +48,7 @@ export function renderStep(i: RenderInput): Rendered {
   if (i.assetUrl) {
     template = template.includes('{{asset_link}}') ? template.split('{{asset_link}}').join(i.assetUrl) : `${template}\n\n${i.assetUrl}`
   }
-  const c = i.contact as CrmContact
+  const c = i.contact as MergeContact
   const plain = resolveMergeTags(template, c, i.orgName)
   const subject = resolveMergeTags(i.subject || '', c, i.orgName).trim()
 
@@ -51,8 +61,8 @@ export function renderStep(i: RenderInput): Rendered {
   const looksHtml = /<[a-z][\s\S]*>/i.test(template)
   const escaped = {
     first_name: escapeHtml(c.first_name || ''), last_name: escapeHtml(c.last_name || ''), email: escapeHtml(c.email || ''),
-    phone: escapeHtml(c.phone || ''), pipeline_stage: escapeHtml(c.pipeline_stage || ''),
-  } as CrmContact
+    phone: escapeHtml(c.phone || ''), stage_name: escapeHtml(c.stage_name || ''),
+  } as MergeContact
   let html = looksHtml
     ? resolveMergeTags(template, escaped, escapeHtml(i.orgName))
     : plain.split(/\n{2,}/).map((p) => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`).join('')

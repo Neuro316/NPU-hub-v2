@@ -12,6 +12,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { loadPipelines, loadPositions, findPipeline, placeContact, positionsByContact } from '@/lib/pipelines/positions'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -20,6 +21,11 @@ const supabase = createClient(
 
 // Neuro Progeny org ID
 const NP_ORG_ID = '00000000-0000-0000-0000-000000000001'
+// The Enrolled pipeline (legacy key) and the stage a new NeuroReport contact is placed at, in that pipeline only.
+const NP_PIPELINE_KEY = 'pipeline-1771530511407'
+// "Signed up" is the Enrolled pipeline's first stage, named by its key because its name is long and editable
+// (Cameron, 2026-11-07). The translation trigger maps a legacy 'Signed up' write to the same stage.
+const NEW_CONTACT_STAGE_KEY = 'stage-1772022700334'
 
 interface SyncParticipant {
   first_name: string
@@ -229,8 +235,6 @@ export async function POST(req: NextRequest) {
               last_name: p.last_name,
               email: p.email || null,
               phone: p.phone || null,
-              pipeline_id: 'pipeline-1771530511407',
-              pipeline_stage: 'Signed up',
               tags: [],
               auto_tags: [],
               neuroreport_linked: true,
@@ -244,6 +248,16 @@ export async function POST(req: NextRequest) {
             .single()
 
           if (insertErr) throw insertErr
+
+          try {
+            const stage = findPipeline(await loadPipelines(supabase, NP_ORG_ID), NP_PIPELINE_KEY)?.stages.find(s => s.key === NEW_CONTACT_STAGE_KEY)
+            const placed = stage
+              ? await placeContact(supabase, newContact.id, stage.id, true, 'neuroreport_sync')
+              : { placed: false, reason: 'stage_unknown' }
+            if (!placed.placed) console.error(`[neuroreport-sync] contact=${newContact.id} not placed: ${placed.reason ?? 'unknown'}`)
+          } catch (e: any) {
+            console.error(`[neuroreport-sync] contact=${newContact.id} placement failed: ${String(e?.message ?? 'error').slice(0, 60)}`)
+          }
 
           results.push({
             email: p.email,
@@ -323,7 +337,7 @@ export async function GET(req: NextRequest) {
   // Return all NeuroReport-linked contacts
   const { data: linkedContacts, error } = await supabase
     .from('contacts')
-    .select('id, first_name, last_name, email, neuroreport_patient_id, neuroreport_program, neuroreport_linked_at, pipeline_stage, tags, enrollment_type')
+    .select('id, first_name, last_name, email, neuroreport_patient_id, neuroreport_program, neuroreport_linked_at, tags, enrollment_type')
     .eq('org_id', NP_ORG_ID)
     .eq('neuroreport_linked', true)
     .order('neuroreport_linked_at', { ascending: false })
@@ -332,8 +346,25 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
+  // pipeline_stage is the contact's stage in the Enrolled pipeline, from contact_pipeline_positions (null when not in it);
+  // pipelines lists every pipeline the contact is in.
+  let byContact = new Map<string, Awaited<ReturnType<typeof loadPositions>>>()
+  try {
+    byContact = positionsByContact(await loadPositions(supabase, NP_ORG_ID, { contactIds: (linkedContacts || []).map(c => c.id) }))
+  } catch {
+    return NextResponse.json({ error: 'Pipeline positions could not be loaded.' }, { status: 500 })
+  }
+  const withStages = (linkedContacts || []).map(c => {
+    const mine = byContact.get(c.id) ?? []
+    return {
+      ...c,
+      pipeline_stage: mine.find(x => x.pipeline_key === NP_PIPELINE_KEY)?.stage_name ?? null,
+      pipelines: mine.map(x => ({ pipeline_key: x.pipeline_key, pipeline_name: x.pipeline_name, stage: x.stage_name })),
+    }
+  })
+
   return NextResponse.json({
-    linked_contacts: linkedContacts || [],
-    count: linkedContacts?.length || 0,
+    linked_contacts: withStages,
+    count: withStages.length,
   })
 }

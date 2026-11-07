@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
+import { loadPositions } from '@/lib/pipelines/positions'
 import {
   Loader2, Trash2, Clock, FileSpreadsheet, CheckCircle2, AlertTriangle,
   Undo2, ChevronDown, ChevronRight, Users, Upload
@@ -49,11 +50,19 @@ export default function ImportHistoryPage() {
     setExpandedBatch(batchId)
     const sb = createClient()
     const { data } = await sb.from('contacts')
-      .select('id,first_name,last_name,email,phone,pipeline_stage,contact_type,created_at')
+      .select('id,first_name,last_name,email,phone,contact_type,created_at')
       .eq('import_batch_id', batchId)
       .order('created_at', { ascending: true })
       .limit(100)
-    setBatchContacts(data || [])
+    const rows = (data || []) as any[]
+    // Pipeline stages from contact_pipeline_positions (hub_229); contacts.pipeline_stage is legacy.
+    if (rows.length && currentOrg) {
+      try {
+        const positions = await loadPositions(sb, currentOrg.id, { contactIds: rows.map(r => r.id) })
+        for (const r of rows) r.stages = positions.filter(p => p.contact_id === r.id).map(p => `${p.pipeline_name} · ${p.stage_name}`)
+      } catch (e) { console.warn('Import history positions skipped:', (e as Error)?.message) }
+    }
+    setBatchContacts(rows)
   }
 
   const undoBatch = async (batchId: string) => {
@@ -191,7 +200,7 @@ export default function ImportHistoryPage() {
                                   </span>
                                 )}
                               </td>
-                              <td className="py-1 text-gray-500">{c.pipeline_stage || '-'}</td>
+                              <td className="py-1 text-gray-500">{c.stages?.length ? c.stages.join(', ') : '-'}</td>
                               <td className="py-1 text-gray-400">{new Date(c.created_at).toLocaleDateString()}</td>
                             </tr>
                           ))}

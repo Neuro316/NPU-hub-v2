@@ -355,8 +355,8 @@ export async function linkContactToMastermind(params: {
     actor_type: 'system',
   })
 
-  // 6. Update pipeline stage
-  await sb.from('contacts').update({ pipeline_stage: 'Enrolled' }).eq('id', params.contactId)
+  // No pipeline stage write: contacts.pipeline_stage is legacy (positions are the only source, hub_229), and an
+  // enrollment names no pipeline, so none is guessed. mastermind_status above records the enrollment.
 
   return identity
 }

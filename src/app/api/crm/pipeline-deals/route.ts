@@ -7,19 +7,21 @@
 // POST { contact_id, pipeline_key, value?, touch?, entered_pipeline? }
 //   value             number >= 0, or null to clear. Omit to leave it as is.
 //   touch             the card just changed stage: stamp stage_changed_at and set
-//                     won_at / lost_at from the stage's flags in the stored config
+//                     won_at / lost_at from the flags of the contact's stage IN THIS
+//                     pipeline (contact_pipeline_positions, hub_229)
 //   entered_pipeline  the card just came into this pipeline: entered_at = now
 //
 // Writes are service role only (the table grants authenticated SELECT and nothing
 // else), so withStaff is the boundary. The org comes from the CONTACT, never the
-// body, and won/lost comes from the stored stage config, never the client.
+// body, and won/lost comes from the contact's position in this pipeline and that
+// stage's flags, never the client. contacts.pipeline_id / pipeline_stage are legacy
+// and are not read.
 import { NextRequest, NextResponse } from 'next/server'
 import { withStaff, requireOrg, bad } from '@/lib/api-guard'
+import { findPipeline, loadPipelines, type PipelineRef } from '@/lib/pipelines/positions'
 
 const MAX_VALUE = 9_999_999_999.99
 const COLS = 'contact_id, pipeline_key, value, entered_at, stage_changed_at, won_at, lost_at'
-
-const norm = (s: unknown) => String(s ?? '').trim().toLowerCase()
 
 export const GET = withStaff(async (req: NextRequest, ctx) => {
   const sp = req.nextUrl.searchParams
@@ -37,8 +39,8 @@ export const GET = withStaff(async (req: NextRequest, ctx) => {
 export const POST = withStaff(async (req: NextRequest, ctx) => {
   const body = await req.json().catch(() => null)
   const contactId = body?.contact_id
-  const pipelineKey = body?.pipeline_key
-  if (typeof contactId !== 'string' || typeof pipelineKey !== 'string' || !pipelineKey) {
+  const rawKey = body?.pipeline_key
+  if (typeof contactId !== 'string' || typeof rawKey !== 'string' || !rawKey) {
     return bad('contact_id and pipeline_key are required')
   }
 
@@ -56,17 +58,21 @@ export const POST = withStaff(async (req: NextRequest, ctx) => {
   const enteredPipeline = body?.entered_pipeline === true
 
   const { data: contact, error: cErr } = await ctx.db.from('contacts')
-    .select('id, org_id, pipeline_id, pipeline_stage, created_at').eq('id', contactId).maybeSingle()
+    .select('id, org_id, created_at').eq('id', contactId).maybeSingle()
   if (cErr) return NextResponse.json({ error: cErr.message }, { status: 500 })
   if (!contact) return NextResponse.json({ error: 'Contact not found.' }, { status: 404 })
   const orgId = requireOrg(ctx, contact.org_id)
   if (orgId instanceof Response) return orgId
 
-  const { data: setting } = await ctx.db.from('org_settings').select('setting_value')
-    .eq('org_id', orgId).eq('setting_key', 'crm_pipelines').maybeSingle()
-  const pipelines: any[] = Array.isArray(setting?.setting_value?.pipelines) ? setting!.setting_value.pipelines : []
-  const pipeline = pipelines.find(p => p?.id === pipelineKey)
+  let pipelines: PipelineRef[]
+  try { pipelines = await loadPipelines(ctx.db, orgId) } catch (e) {
+    console.error(`[pipeline-deals] pipelines org=${orgId} failed: ${(e as Error).message}`)
+    return NextResponse.json({ error: 'Pipelines could not be read. Try again.' }, { status: 500 })
+  }
+  const pipeline = findPipeline(pipelines, rawKey)
   if (!pipeline) return bad('That pipeline does not exist in this organization.')
+  // Deals stay keyed by the pipeline's legacy key, even if the caller sent the uuid.
+  const pipelineKey = pipeline.key
 
   const { data: existing } = await ctx.db.from('hub_pipeline_deals').select(COLS)
     .eq('contact_id', contactId).eq('pipeline_key', pipelineKey).maybeSingle()
@@ -81,11 +87,14 @@ export const POST = withStaff(async (req: NextRequest, ctx) => {
   else if (!existing) row.entered_at = contact.created_at || now
 
   if (touch || !existing) {
-    // Only the contact's current placement has a stage to read.
-    const inThisPipeline = contact.pipeline_id === pipelineKey
-    const stage = inThisPipeline
-      ? (pipeline.stages || []).find((s: any) => norm(s?.name) === norm(contact.pipeline_stage))
-      : null
+    // The contact's stage in THIS pipeline. Their places in other pipelines don't count.
+    const { data: pos, error: pErr } = await ctx.db.from('contact_pipeline_positions').select('stage_id')
+      .eq('contact_id', contactId).eq('pipeline_id', pipeline.id).maybeSingle()
+    if (pErr) {
+      console.error(`[pipeline-deals] position contact=${contactId} failed: ${pErr.code ?? 'unknown'}`)
+      return NextResponse.json({ error: 'The stage could not be read. Try again.' }, { status: 500 })
+    }
+    const stage = pos ? pipeline.stages.find(s => s.id === (pos as any).stage_id) ?? null : null
     const won = !!stage?.is_closed_won
     const lost = !won && !!stage?.is_closed_lost
     if (touch) row.stage_changed_at = now

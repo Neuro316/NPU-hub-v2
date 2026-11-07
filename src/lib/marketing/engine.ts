@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto'
 import { SMS_PART_MAX } from '@/lib/sms-split'
 import { getFlags, type Flags } from './flags'
 import { getSendPolicy, senderProblem } from './policy'
-import { renderStep } from './render'
+import { mergeStage, renderStep } from './render'
 import { mintUnsubscribeToken, newAssetToken, byteaHex } from './tokens'
 import type { EmailProvider, SmsProvider } from './providers/types'
 
@@ -57,6 +57,26 @@ async function one(q: PromiseLike<{ data: any; error: any }>, what: string): Pro
   const { data, error } = await q
   const n = Array.isArray(data) ? data.length : data ? 1 : 0
   if (error || n !== 1) throw new Error(`${what}: ${error ? `error ${error.code ?? 'unknown'}` : `matched ${n} rows`}`)
+}
+
+/**
+ * {{pipeline_stage}} for one person: their stage from contact_pipeline_positions, in the campaign's entry pipeline
+ * (see mergeStage). Read here rather than through src/lib/pipelines/positions.ts because this module is compiled
+ * on its own by scripts/marketing/pure-tamper.cjs. Archived stages and pipelines name nothing. A read error throws.
+ */
+async function stageForMerge(db: SupabaseClient, orgId: string, contactId: string, pipelineId: string | null): Promise<string> {
+  const { data: rows, error } = await db.from('contact_pipeline_positions').select('pipeline_id, stage_id').eq('org_id', orgId).eq('contact_id', contactId)
+  if (error) throw new Error(`positions read: ${error.code ?? 'unknown'}`)
+  if (!rows?.length) return ''
+  const [{ data: st, error: sErr }, { data: ps, error: pErr }] = await Promise.all([
+    db.from('pipeline_stages').select('id, name').in('id', rows.map((r: any) => r.stage_id)).is('archived_at', null),
+    db.from('pipelines').select('id').in('id', rows.map((r: any) => r.pipeline_id)).is('archived_at', null),
+  ])
+  if (sErr || pErr) throw new Error(`stages read: ${(sErr ?? pErr)?.code ?? 'unknown'}`)
+  const names = new Map((st ?? []).map((s: any) => [s.id as string, s.name as string]))
+  const live = new Set((ps ?? []).map((p: any) => p.id as string))
+  return mergeStage(rows.filter((r: any) => names.has(r.stage_id) && live.has(r.pipeline_id))
+    .map((r: any) => ({ pipeline_id: r.pipeline_id, stage_name: names.get(r.stage_id)! })), pipelineId)
 }
 
 async function advance(db: SupabaseClient, enr: any, now: Date): Promise<'advanced' | 'completed'> {
@@ -118,7 +138,7 @@ async function runOne(deps: EngineDeps, enr: any, now: Date, flagCache: Map<stri
   const { db } = deps
   const base = { enrollment: enr.id, step: enr.current_step as number }
   const { data: ce } = await db.from('campaign_enrollments').select('id, status, campaign_id, org_id').eq('id', enr.campaign_enrollment_id).maybeSingle()
-  const { data: camp } = ce ? await db.from('funnel_campaigns').select('id, status, name').eq('id', ce.campaign_id).maybeSingle() : { data: null }
+  const { data: camp } = ce ? await db.from('funnel_campaigns').select('id, status, name, entry_pipeline_id').eq('id', ce.campaign_id).maybeSingle() : { data: null }
   if (!ce || !camp || ce.status !== 'active') {
     await one(db.from('sequence_enrollments').update({ status: 'completed', completed_at: now.toISOString(), next_step_at: null }).eq('id', enr.id).select('id'), 'end enrollment')
     return { ...base, outcome: 'campaign_enrollment_ended' }
@@ -185,7 +205,12 @@ async function runOne(deps: EngineDeps, enr: any, now: Date, flagCache: Map<stri
   // row 'sending' and the reaper records it as outcome_unknown, so it is never resent.
   let providerCalled = false
   try {
-    const { data: contact } = await db.from('contacts').select('first_name, last_name, email, phone, pipeline_stage').eq('id', contactId).maybeSingle()
+    const { data: contact } = await db.from('contacts').select('first_name, last_name, email, phone').eq('id', contactId).maybeSingle()
+    // {{pipeline_stage}}: the person's stage in the campaign's entry pipeline, from contact_pipeline_positions.
+    // Read only when the step names it; a read failure fails the step before the provider call, so it is retried.
+    const stageName = /\{\{pipeline_stage\}\}/.test(`${step.subject ?? ''} ${step.body ?? ''}`)
+      ? await stageForMerge(db, orgId, contactId, (camp as any).entry_pipeline_id ?? null)
+      : ''
     const { data: org } = await db.from('organizations').select('name').eq('id', orgId).maybeSingle()
     const token = channel === 'email' && kind === 'marketing' ? mintUnsubscribeToken(sid) : null
     const unsubscribeUrl = token ? `${deps.appUrl.replace(/\/+$/, '')}/api/email/unsubscribe?t=${token}` : null
@@ -201,7 +226,7 @@ async function runOne(deps: EngineDeps, enr: any, now: Date, flagCache: Map<stri
       assetUrl = assetLink(deps.appUrl, t.token)
     }
     const r = renderStep({
-      channel, kind, subject: step.subject, body: step.body || '', contact: contact ?? ({} as any),
+      channel, kind, subject: step.subject, body: step.body || '', contact: { ...(contact ?? ({} as any)), stage_name: stageName },
       orgName: org?.name ?? '', unsubscribeUrl, assetUrl,
     })
     await one(db.from('message_sends').update({ subject: r.subject || null, rendered_body: channel === 'email' ? r.html : r.text })

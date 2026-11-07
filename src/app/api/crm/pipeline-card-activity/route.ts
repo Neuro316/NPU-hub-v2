@@ -2,7 +2,8 @@
 // Recent notes and open tasks for the cards on one pipeline board, in ONE request
 // for the whole board (or one contact, to refresh a single card).
 //
-// GET ?org_id=&pipeline_key=            every contact placed in that pipeline
+// GET ?org_id=&pipeline_key=            every contact with a position in that pipeline
+//                                        (contact_pipeline_positions, hub_229; the legacy key or the uuid)
 // GET ?org_id=&pipeline_key=&contact_id= one card, after a note or task changed
 //
 // Returns { activity: { [contact_id]: { notes, notes_total, tasks, tasks_total } } }
@@ -15,6 +16,7 @@
 // another org returns nothing.
 import { NextRequest, NextResponse } from 'next/server'
 import { withStaff, requireOrg, bad } from '@/lib/api-guard'
+import { findPipeline, loadPipelines } from '@/lib/pipelines/positions'
 
 const SHOWN = 3
 const CHUNK = 150
@@ -36,11 +38,30 @@ export const GET = withStaff(async (req: NextRequest, ctx) => {
   if (!pipelineKey) return bad('pipeline_key is required')
   const one = sp.get('contact_id')
 
-  let q = ctx.db.from('contacts').select('id').eq('org_id', orgId).eq('pipeline_id', pipelineKey).is('merged_into_id', null)
-  if (one) q = q.eq('id', one)
-  const { data: contacts, error: cErr } = await q.limit(MAX_CONTACTS)
-  if (cErr) return NextResponse.json({ error: cErr.message }, { status: 500 })
-  const ids = (contacts ?? []).map(c => c.id as string)
+  let pipeline
+  try { pipeline = findPipeline(await loadPipelines(ctx.db, orgId), pipelineKey) } catch (e) {
+    console.error(`[pipeline-card-activity] pipelines org=${orgId} failed: ${(e as Error).message}`)
+    return NextResponse.json({ error: 'Pipelines could not be read. Try again.' }, { status: 500 })
+  }
+  if (!pipeline) return NextResponse.json({ activity: {} })
+
+  // Members of THIS pipeline only. contacts.pipeline_id is legacy and not read.
+  let pq = ctx.db.from('contact_pipeline_positions').select('contact_id')
+    .eq('org_id', orgId).eq('pipeline_id', pipeline.id)
+  if (one) pq = pq.eq('contact_id', one)
+  const { data: positions, error: pErr } = await pq.limit(MAX_CONTACTS)
+  if (pErr) return NextResponse.json({ error: pErr.message }, { status: 500 })
+  const placed = (positions ?? []).map(p => p.contact_id as string)
+  if (!placed.length) return NextResponse.json({ activity: {} })
+
+  // Merged-away contacts stay off the board.
+  const ids: string[] = []
+  for (const g of chunks(placed, CHUNK)) {
+    const { data: live, error: cErr } = await ctx.db.from('contacts').select('id')
+      .eq('org_id', orgId).in('id', g).is('merged_into_id', null)
+    if (cErr) return NextResponse.json({ error: cErr.message }, { status: 500 })
+    for (const c of live ?? []) ids.push(c.id as string)
+  }
   if (!ids.length) return NextResponse.json({ activity: {} })
 
   const groups = chunks(ids, CHUNK)

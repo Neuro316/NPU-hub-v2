@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabase, createAdminSupabase } from '@/lib/supabase';
-import { getOrgTwilioConfig, sendOrgSms, findOrgNumber } from '@/lib/twilio-org';
+import { getOrgTwilioConfig, sendOrgSms, findOrgNumber, CLIENT_STAGES } from '@/lib/twilio-org';
+import { loadPositions } from '@/lib/pipelines/positions';
 import { toE164 } from '@/lib/phone';
 import {
   isDNC, logActivity, emitWebhookEvent,
@@ -61,10 +62,18 @@ export async function POST(request: NextRequest) {
       fromLine = toE164(line.phone);
     }
 
+    // Number routing reads the contact's stages (contact_pipeline_positions): a client stage in ANY pipeline
+    // routes as a client message; otherwise any stage routes as outreach; no pipeline at all uses the general line.
+    let routeStage: string | null = null;
+    try {
+      const stages = (await loadPositions(admin, contact.org_id, { contactIds: [contact.id] })).map(p => p.stage_name);
+      routeStage = stages.find(s => CLIENT_STAGES.includes(s)) ?? stages[0] ?? null;
+    } catch (e: any) { console.warn(`[sms/send] positions read skipped: ${e.message}`); }
+
     let twilioMsg;
     try {
       twilioMsg = await sendOrgSms(
-        twilioConfig, contact.phone, msgBody, 'manual', contact.pipeline_stage,
+        twilioConfig, contact.phone, msgBody, 'manual', routeStage,
         { from: fromLine || undefined }
       );
     } catch (e: any) {

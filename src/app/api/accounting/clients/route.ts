@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
     if (auth.targetOrgId) {
       const res = await enrolContact(admin, client.id, auth.targetOrgId, fields)
       if ('error' in res) warnings.push(res.error)
-      else enrolledContactId = res.contactId
+      else { enrolledContactId = res.contactId; if ('warning' in res && res.warning) warnings.push(res.warning) }
     }
 
     return NextResponse.json({

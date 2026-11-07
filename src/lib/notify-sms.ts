@@ -117,7 +117,7 @@ export async function sendNotifySms(input: { user_id: unknown; body: unknown; or
   //    do-not-contact list. A read error sends nothing, never a pass. ──
   const { data: contacts, error: cErr } = await admin
     .from('contacts')
-    .select('id, sms_consent, do_not_contact, pipeline_stage')
+    .select('id, sms_consent, do_not_contact')
     .eq('org_id', orgId)
     .ilike('email', escapeLike(String(profile.email).trim().toLowerCase()))
     .is('merged_into_id', null)
@@ -157,7 +157,8 @@ export async function sendNotifySms(input: { user_id: unknown; body: unknown; or
   for (let i = 0; i < n; i++) {
     let msg: any
     try {
-      msg = await sendOrgSms(config, to, parts[i], 'client_message', contact.pipeline_stage ?? null, { from: primary })
+      // no stage: the context is fixed and the Primary line is pinned, so a stage would choose nothing
+      msg = await sendOrgSms(config, to, parts[i], 'client_message', null, { from: primary })
     } catch (e: any) {
       const { permanent, error, code } = classify(e)
       console.error(`[notify/sms] user=${userId} part ${i + 1}/${n} failed status=${Number(e?.status) || 'network'} code=${e?.code ?? '-'} permanent=${permanent} sent_parts=${i}`)

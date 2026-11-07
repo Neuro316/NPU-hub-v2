@@ -151,7 +151,12 @@ const active = sel === '1' ? Object.keys(RED_OF) : sel ? sel.split(',') : []
 for (const t of active) if (!RED_OF[t]) { console.error(`unknown selector ${t}`); process.exit(2) }
 
 const norm = (s) => s.replace(/\r\n/g, '\n')
+// The multi-pipeline build (hub_229) moved these files' pipeline reads and writes to contact_pipeline_positions
+// on purpose, so each is compared with that commit instead of its earlier pin.
+const MULTI_PIPELINE_BASE = process.env.MULTI_PIPELINE_BASE || '10e9a8b'
+const MULTI_PIPELINE_FILES = new Set(['src/lib/crm-server.ts', 'src/app/(dashboard)/crm/conversations/page.tsx', 'src/app/api/sms/send/route.ts', 'src/lib/notify-sms.ts'])
 const base = (f, ref = BASE) => {
+  if (MULTI_PIPELINE_FILES.has(f)) ref = MULTI_PIPELINE_BASE
   try { return norm(execFileSync('git', ['show', `${ref}:${f}`], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })) }
   catch (e) { console.error(`git show ${ref}:${f} failed (is the history fetched?)`); process.exit(2) }
 }
@@ -178,7 +183,8 @@ for (const [k, f] of Object.entries(MARKED)) {
   let now = work(f)
   if (active.includes('outside') && k === 'conversations') now = swap(now, '.limit(100)', '.limit(101)')
   const s = stripMarked(now)
-  const same = s.text === base(f)
+  // a re-pinned base already carries the marked blocks, so its own blocks are stripped too
+  const same = s.text === (MULTI_PIPELINE_FILES.has(f) ? stripMarked(base(f)).text : base(f))
   rows.push({ id: `M_${k}`, ok: same && s.blocks > 0 && !s.unclosed, got: `${s.blocks} marked block(s)${s.unclosed ? ', unclosed' : ''}, ${same ? 'identical outside them' : 'differs outside them'}` })
 }
 for (const [k, f] of Object.entries(SINCE_C2C)) {

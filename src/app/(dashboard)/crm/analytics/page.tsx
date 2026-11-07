@@ -9,8 +9,9 @@ import {
 } from 'lucide-react'
 import { fetchContacts, fetchCallLogs, fetchCampaigns, fetchTasks } from '@/lib/crm-client'
 import type { CrmContact, EmailCampaign, CrmTask } from '@/types/crm'
-import { PIPELINE_STAGES, STAGE_COLORS } from '@/types/crm'
 import { useWorkspace } from '@/lib/workspace-context'
+import { createClient } from '@/lib/supabase-browser'
+import { loadPipelines, loadPositions, positionsByContact, type PipelineRef, type Position } from '@/lib/pipelines/positions'
 
 function MetricCard({ label, value, sub, icon: Icon, color, trend }: {
   label: string; value: string | number; sub?: string; icon: any; color: string; trend?: number | null
@@ -73,14 +74,23 @@ export default function AnalyticsPage() {
   const [calls, setCalls] = useState<any[]>([])
   const [campaigns, setCampaigns] = useState<EmailCampaign[]>([])
   const [tasks, setTasks] = useState<CrmTask[]>([])
+  const [pipelines, setPipelines] = useState<PipelineRef[]>([])
+  const [positions, setPositions] = useState<Position[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function load() {
       try {
-        const [cRes, clRes, cpRes, tRes] = await Promise.allSettled([
+        // Pipeline membership and stage come from contact_pipeline_positions: a contact can be in many pipelines.
+        const orgId = currentOrg?.id
+        const pipelinesP = orgId ? loadPipelines(createClient(), orgId) : Promise.resolve([] as PipelineRef[])
+        const positionsP = orgId ? pipelinesP.then(ps => loadPositions(createClient(), orgId, { pipelines: ps })) : Promise.resolve([] as Position[])
+        const [cRes, clRes, cpRes, tRes, plRes, poRes] = await Promise.allSettled([
           fetchContacts({ org_id: currentOrg?.id, limit: 2000 }), fetchCallLogs(undefined, 200), fetchCampaigns(), fetchTasks(),
+          pipelinesP, positionsP,
         ])
+        if (plRes.status === 'fulfilled') setPipelines(plRes.value)
+        if (poRes.status === 'fulfilled') setPositions(poRes.value)
         if (cRes.status === 'fulfilled') setContacts(cRes.value.contacts)
         if (clRes.status === 'fulfilled') setCalls(clRes.value)
         if (cpRes.status === 'fulfilled') setCampaigns(cpRes.value)
@@ -89,7 +99,7 @@ export default function AnalyticsPage() {
       finally { setLoading(false) }
     }
     load()
-  }, [])
+  }, [currentOrg?.id])
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 rounded-lg bg-np-blue/20 animate-pulse" /></div>
 
@@ -101,10 +111,19 @@ export default function AnalyticsPage() {
   const lastMonth = contacts.filter(c => { const d = now - new Date(c.created_at).getTime(); return d >= month && d < 2*month })
 
   // ── Pipeline metrics ──
-  const wonContacts = contacts.filter(c => c.pipeline_stage === 'Won')
-  const lostContacts = contacts.filter(c => c.pipeline_stage === 'Lost')
-  const closedTotal = wonContacts.length + lostContacts.length
-  const winRate = closedTotal > 0 ? ((wonContacts.length/closedTotal)*100).toFixed(1) : '--'
+  // Won and lost are the stage's closed-won / closed-lost flags, per pipeline position. Win rate counts positions,
+  // so a contact won in two pipelines counts in each. Contact-level figures count a contact once.
+  const contactIds = new Set(contacts.map(c => c.id))
+  const livePositions = positions.filter(p => contactIds.has(p.contact_id))
+  const posByContact = positionsByContact(livePositions)
+  const wonPositions = livePositions.filter(p => p.is_closed_won)
+  const lostPositions = livePositions.filter(p => p.is_closed_lost)
+  const isWon = (c: CrmContact) => (posByContact.get(c.id) ?? []).some(p => p.is_closed_won)
+  const isOpen = (c: CrmContact) => (posByContact.get(c.id) ?? []).some(p => !p.is_closed_won && !p.is_closed_lost)
+  const wonContacts = contacts.filter(isWon)
+  const openCount = contacts.filter(isOpen).length // opportunities: at least one position not closed
+  const closedTotal = wonPositions.length + lostPositions.length
+  const winRate = closedTotal > 0 ? ((wonPositions.length/closedTotal)*100).toFixed(1) : '--'
 
   // ── Revenue metrics ──
   const totalRevenue = wonContacts.reduce((s,c) => s + ((c.custom_fields?.value as number)||0), 0)
@@ -148,13 +167,16 @@ export default function AnalyticsPage() {
   const avgResponseTime = responseTimes.length > 0 ? Math.round(responseTimes.reduce((a,b)=>a+b,0)/responseTimes.length) : null
 
   // ── Stale / Health ──
-  const stale14d = contacts.filter(c => c.pipeline_stage !== 'Won' && c.pipeline_stage !== 'Lost' && c.last_contacted_at && now - new Date(c.last_contacted_at).getTime() > 14*86400000).length
-  const neverContacted = contacts.filter(c => !c.last_contacted_at && c.pipeline_stage !== 'Won' && c.pipeline_stage !== 'Lost').length
+  // open = at least one pipeline position that is not closed
+  const stale14d = contacts.filter(c => isOpen(c) && c.last_contacted_at && now - new Date(c.last_contacted_at).getTime() > 14*86400000).length
+  const neverContacted = contacts.filter(c => !c.last_contacted_at && isOpen(c)).length
 
-  // ── Pipeline distribution ──
-  const pipelineCounts: Record<string,number> = {}
-  const pipelineValues: Record<string,number> = {}
-  contacts.forEach(c => { const s = c.pipeline_stage || 'Unassigned'; pipelineCounts[s] = (pipelineCounts[s]||0)+1; pipelineValues[s] = (pipelineValues[s]||0)+((c.custom_fields?.value as number)||0) })
+  // ── Pipeline distribution: per pipeline, per stage (a contact in two pipelines counts in each) ──
+  const contactValue = new Map(contacts.map(c => [c.id, (c.custom_fields?.value as number) || 0]))
+  const stageCounts: Record<string,number> = {}
+  const stageValues: Record<string,number> = {}
+  livePositions.forEach(p => { stageCounts[p.stage_id] = (stageCounts[p.stage_id]||0)+1; stageValues[p.stage_id] = (stageValues[p.stage_id]||0)+(contactValue.get(p.contact_id)||0) })
+  const funnelPipelines = pipelines.filter(p => p.stages.length > 0)
 
   // ── Source distribution ──
   const sourceCounts: Record<string,number> = {}; const sourceWon: Record<string,number> = {}
@@ -190,7 +212,7 @@ export default function AnalyticsPage() {
       <div>
         <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Sales Performance</h3>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          <MetricCard label="Win Rate" value={`${winRate}%`} icon={Percent} color="#34D399" sub={`${wonContacts.length}W / ${lostContacts.length}L`} />
+          <MetricCard label="Win Rate" value={`${winRate}%`} icon={Percent} color="#34D399" sub={`${wonPositions.length}W / ${lostPositions.length}L`} />
           <MetricCard label="Avg Close Time" value={avgCloseTime ? `${avgCloseTime}d` : '--'} icon={Clock} color="#228DC4" sub={medianCloseTime ? `Median: ${Math.round(medianCloseTime)}d` : ''} />
           <MetricCard label="Lead Response" value={avgResponseTime ? `${avgResponseTime}h` : '--'} icon={Zap} color="#FBBF24" sub="avg first contact" />
           <MetricCard label="New This Week" value={thisWeek.length} icon={UserPlus} color="#3DB5A6" trend={monthGrowth} />
@@ -215,12 +237,20 @@ export default function AnalyticsPage() {
         <div className="rounded-xl border border-gray-100 bg-white p-4">
           <h3 className="text-sm font-semibold text-np-dark mb-4 flex items-center gap-2"><Target size={14} className="text-np-blue" /> Pipeline Funnel</h3>
           <div className="space-y-3">
-            {PIPELINE_STAGES.map((stage, i) => {
-              const count = pipelineCounts[stage] || 0
-              const value = pipelineValues[stage] || 0
-              const prevCount = i > 0 ? (pipelineCounts[PIPELINE_STAGES[i-1]]||0) : count
-              const maxCount = Math.max(...PIPELINE_STAGES.map(s => pipelineCounts[s]||0), 1)
-              return <FunnelStage key={stage} name={stage} count={count} prevCount={prevCount} value={value} color={STAGE_COLORS[stage]||'#94a3b8'} maxCount={maxCount} />
+            {funnelPipelines.length === 0 && <p className="text-[11px] text-gray-400">No pipelines yet.</p>}
+            {funnelPipelines.map(pl => {
+              const maxCount = Math.max(...pl.stages.map(s => stageCounts[s.id]||0), 1)
+              return (
+                <div key={pl.id} className="space-y-3">
+                  {funnelPipelines.length > 1 && <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{pl.name}</p>}
+                  {pl.stages.map((stage, i) => {
+                    const count = stageCounts[stage.id] || 0
+                    const value = stageValues[stage.id] || 0
+                    const prevCount = i > 0 ? (stageCounts[pl.stages[i-1].id]||0) : count
+                    return <FunnelStage key={stage.id} name={stage.name} count={count} prevCount={prevCount} value={value} color={stage.color||'#94a3b8'} maxCount={maxCount} />
+                  })}
+                </div>
+              )
             })}
           </div>
         </div>
@@ -259,7 +289,7 @@ export default function AnalyticsPage() {
               const monthEnd = new Date(now - ((i-1)*month))
               const label = monthStart.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
               const cohort = contacts.filter(c => { const d = new Date(c.created_at); return d >= monthStart && d < monthEnd })
-              const cohortWon = cohort.filter(c => c.pipeline_stage === 'Won').length
+              const cohortWon = cohort.filter(isWon).length
               const cohortConv = cohort.length > 0 ? ((cohortWon/cohort.length)*100).toFixed(0) : '0'
               return (
                 <div key={i} className="flex items-center gap-3">
@@ -292,7 +322,7 @@ export default function AnalyticsPage() {
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <div className="text-center p-3 rounded-lg bg-gray-50">
             <p className="text-[10px] text-gray-400 uppercase">Opportunities</p>
-            <p className="text-xl font-bold text-np-dark">{contacts.length - wonContacts.length - lostContacts.length}</p>
+            <p className="text-xl font-bold text-np-dark">{openCount}</p>
           </div>
           <div className="text-center p-3 rounded-lg bg-gray-50">
             <p className="text-[10px] text-gray-400 uppercase">Win Rate</p>
@@ -310,7 +340,7 @@ export default function AnalyticsPage() {
             <p className="text-[10px] text-np-blue uppercase font-semibold">Velocity</p>
             <p className="text-xl font-bold text-np-blue">
               {avgCloseTime && avgDealSize > 0 && winRate !== '--'
-                ? `$${(((contacts.length - wonContacts.length - lostContacts.length) * (parseFloat(winRate as string)/100) * avgDealSize) / avgCloseTime / 1000).toFixed(1)}k/day`
+                ? `$${(((openCount) * (parseFloat(winRate as string)/100) * avgDealSize) / avgCloseTime / 1000).toFixed(1)}k/day`
                 : '--'}
             </p>
           </div>

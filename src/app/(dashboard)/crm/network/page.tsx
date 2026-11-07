@@ -815,7 +815,7 @@ export default function NetworkPage() {
                     <div className="min-w-0 flex-1">
                       <p className="text-[10px] font-semibold text-np-dark truncate">{node.name}</p>
                       <p className="text-[8px] text-gray-400 truncate">
-                        {node.pipeline_stage || 'No stage'}
+                        {node.pipeline_stages?.length ? node.pipeline_stages.join(', ') : 'No stage'}
                         {node.relationship_count > 0 && ` \u00B7 ${node.relationship_count} conn.`}
                       </p>
                     </div>
@@ -1012,7 +1012,7 @@ export default function NetworkPage() {
                         <span className="font-semibold text-np-dark">{node.name}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-2.5 text-gray-500">{node.pipeline_stage || '-'}</td>
+                    <td className="px-4 py-2.5 text-gray-500">{node.pipeline_stages?.length ? node.pipeline_stages.join(', ') : '-'}</td>
                     <td className="px-4 py-2.5">
                       <div className="flex flex-wrap gap-0.5">
                         {node.tags.slice(0, 3).map(t => (
@@ -1049,7 +1049,7 @@ export default function NetworkPage() {
                   <h3 className="text-sm font-bold text-np-dark">{selectedNodeData.name}</h3>
                   <p className="text-[9px] text-gray-400">
                     {selectedNodeData.preferred_name ? `"${selectedNodeData.preferred_name}" · ` : ''}
-                    {selectedNodeData.pipeline_stage || 'No stage'}
+                    {selectedNodeData.pipeline_stages?.length ? selectedNodeData.pipeline_stages.join(', ') : 'No stage'}
                   </p>
                 </div>
               </div>

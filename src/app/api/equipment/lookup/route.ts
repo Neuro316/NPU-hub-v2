@@ -1,5 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabase, createServerSupabase } from '@/lib/supabase'
+import { loadPositions, positionsByContact } from '@/lib/pipelines/positions'
+
+/** "Pipeline · Stage" for each pipeline a contact is in, joined (contact_pipeline_positions). */
+async function pipelineLabels(db: ReturnType<typeof createAdminSupabase>, orgId: string, contactIds: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  if (contactIds.length === 0) return out
+  const byContact = positionsByContact(await loadPositions(db, orgId, { contactIds }))
+  for (const [id, ps] of Array.from(byContact)) out.set(id, ps.map(p => `${p.pipeline_name} · ${p.stage_name}`).join(', '))
+  return out
+}
 
 // GET /api/equipment/lookup?serial=XXX&org_id=YYY
 export async function GET(req: NextRequest) {
@@ -17,7 +27,7 @@ export async function GET(req: NextRequest) {
     const admin = createAdminSupabase()
     const { data, error } = await admin
       .from('equipment')
-      .select('*, contacts!assigned_to(first_name, last_name, phone, pipeline_stage)')
+      .select('*, contacts!assigned_to(first_name, last_name, phone)')
       .eq('org_id', orgId)
       .or(`bundle_serial.eq.${serial},headset_serial.eq.${serial}`)
       .maybeSingle()
@@ -26,12 +36,13 @@ export async function GET(req: NextRequest) {
     if (!data) return NextResponse.json({ equipment: null })
 
     // Flatten joined contact
+    const labels = await pipelineLabels(admin, orgId, (data as any).assigned_to ? [(data as any).assigned_to] : [])
     const equipment = {
       ...data,
       contact_first_name: (data as any).contacts?.first_name || null,
       contact_last_name: (data as any).contacts?.last_name || null,
       contact_phone: (data as any).contacts?.phone || null,
-      contact_pipeline_stage: (data as any).contacts?.pipeline_stage || null,
+      contact_pipeline_label: (data as any).assigned_to ? labels.get((data as any).assigned_to) || null : null,
       contacts: undefined,
     }
 
