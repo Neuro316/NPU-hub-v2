@@ -204,6 +204,11 @@ const TEMPLATES: Record<string, PipelineStageConfig[]> = {
   ],
 }
 
+// A board column's key. Some pipelines (Mastermind, Subscribed) store their stages with no id, so the id alone
+// cannot tell columns apart: undefined === undefined would put every card in the first column. The fallback is the
+// same 'name:<stage>' form sync_pipelines_from_settings gives those stages as their legacy key.
+const colKey = (s: { id?: string | null; name: string }): string => s.id || `name:${s.name}`
+
 // A card shows the contact's place in THIS board's pipeline only (contact_pipeline_positions).
 // contacts.pipeline_id / pipeline_stage are legacy and are not read.
 function ContactCard({ contact, position, currentStageId, stages, pipelines, activePipelineId, customFields, dealValue, onSaveValue, onMove, onAddToPipeline, loadMemberships, onRemovePipeline, onOpenContact, activity, showNotes, showTasks }: {
@@ -342,10 +347,10 @@ function ContactCard({ contact, position, currentStageId, stages, pipelines, act
             {/* Capped + internally scrollable so a long stage list never overflows the viewport. */}
             <div className="max-h-60 overflow-y-auto">
               {stages.map(s => (
-                <button key={s.id} onClick={() => { onMove(s); closeMenu() }}
-                  className={`w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50 flex items-center gap-2 ${currentStageId === s.id ? 'font-semibold text-np-blue' : ''}`}>
+                <button key={colKey(s)} onClick={() => { onMove(s); closeMenu() }}
+                  className={`w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50 flex items-center gap-2 ${currentStageId === colKey(s) ? 'font-semibold text-np-blue' : ''}`}>
                   <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: s.color }} />{s.name}
-                  {currentStageId === s.id && <span className="ml-auto text-[9px] text-gray-300 flex-shrink-0">current</span>}
+                  {currentStageId === colKey(s) && <span className="ml-auto text-[9px] text-gray-300 flex-shrink-0">current</span>}
                 </button>
               ))}
             </div>
@@ -1396,10 +1401,10 @@ export default function PipelinesPage() {
   const onBoard = new Set(Object.keys(positions))
   const pipelineContacts = contacts.filter(c => !!positions[c.id])
   const mappedStageIds = new Set(columns.map(c => c.ref?.id).filter(Boolean) as string[])
-  const firstColumnId = activePipeline.stages[0]?.id
+  const firstColumnKey = activePipeline.stages[0] ? colKey(activePipeline.stages[0]) : null
   const stageContacts = (cfg: PipelineStageConfig) => {
-    const sr = columns.find(c => c.cfg.id === cfg.id)?.ref
-    const isFirst = cfg.id === firstColumnId
+    const sr = columns.find(c => colKey(c.cfg) === colKey(cfg))?.ref
+    const isFirst = colKey(cfg) === firstColumnKey
     return pipelineContacts.filter(c => {
       const p = positions[c.id]
       if (sr && p.stage_id === sr.id) return true
@@ -1410,7 +1415,7 @@ export default function PipelinesPage() {
   const columnOf = (contactId: string): string | null => {
     const p = positions[contactId]
     const c = p ? columns.find(x => x.ref?.id === p.stage_id) : undefined
-    return c ? c.cfg.id : null
+    return c ? colKey(c.cfg) : null
   }
   // null when no card in the stage has a value, so the header shows nothing rather than $0
   const stageValue = (cfg: PipelineStageConfig) => {
@@ -1464,7 +1469,7 @@ export default function PipelinesPage() {
         {activePipeline.stages.map(stage => {
           const sc = stageContacts(stage); const sv = stageValue(stage)
           return (
-            <div key={stage.id} className="flex-shrink-0 w-64 flex flex-col h-full">
+            <div key={colKey(stage)} className="flex-shrink-0 w-64 flex flex-col h-full">
               <div className="flex items-center gap-2 mb-3 px-1">
                 <div className="w-2.5 h-2.5 rounded-full" style={{ background: stage.color }} />
                 <span className="text-xs font-semibold text-np-dark">{stage.name}</span>
