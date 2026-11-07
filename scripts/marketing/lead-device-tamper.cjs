@@ -7,6 +7,10 @@
 //   D_REPLAY    a repeated idempotency key changes nothing
 //   D_CONSENT   only exactly true counts as ticked, and the Hub form's text comes from the manifest
 //   D_OPTOUT    a person's own opt-out is never reversed, and SMS consent needs the same phone
+//   D_FILL      a blank phone is filled and takes the SMS consent; a number already there is never overwritten
+//   D_SUPPRESS  a number with an active suppression takes no SMS consent, and a failed check refuses
+//   D_FORM      form intake uses the same phone rule as lead devices
+//   D_SHARED    a filled number already on another contact notes both cards, with name and link, and nothing else changes
 //   D_LEAD      first name, email and the result box are required on the Hub form; phone is optional
 //   D_SECRET    the intake secret refuses when unset, short or wrong
 //   D_PREVIEW   a forged or expired preview token is refused, and a draft device needs one
@@ -30,11 +34,18 @@
 //   hotall      every submission is a hot lead               {D_HOT}
 //   factsall    lead_device matches everyone                 {D_FACTS}
 //   logname     the contact failure logs the email           {D_NOLOG}
+//   overwrite   a number already on the contact is replaced  {D_FILL,D_OPTOUT,D_SHARED}
+//   nofill      a blank phone stays blank                    {D_FILL,D_SHARED,D_SUPPRESS}
+//   nocas       the fill ignores a number saved meanwhile    {D_FILL}
+//   nosuppress  a suppressed number takes the consent        {D_SUPPRESS}
+//   checkopen   a failed suppression check allows the consent {D_SUPPRESS}
+//   nonote      a shared number writes no note                {D_SHARED}
+//   noother     the other contact gets no note                {D_SHARED}
 // TAMPER=1 reddens the union.
 const fs = require('fs'), path = require('path')
 const H = require('../agent/lib/harness.cjs')
 
-const I = 'lib/lead-devices/intake.ts', M = 'lib/lead-devices/manifest.ts', C = 'lib/lead-devices/contract.ts', P = 'lib/lead-devices/player.ts', PD = 'lib/lead-devices/public-device.ts', E = 'lib/lead-devices/external.ts', L = 'lib/marketing/smart-lists/match.ts'
+const I = 'lib/lead-devices/intake.ts', M = 'lib/lead-devices/manifest.ts', C = 'lib/lead-devices/contract.ts', P = 'lib/lead-devices/player.ts', PD = 'lib/lead-devices/public-device.ts', E = 'lib/lead-devices/external.ts', L = 'lib/marketing/smart-lists/match.ts', SP = 'lib/marketing/submitted-phone.ts'
 const TAMPERS = {
   testwrites: [[I, "  if (test) {\n    const { error } = await db.from('lead_device_submissions').update({ status: 'accepted' })", "  if (false) {\n    const { error } = await db.from('lead_device_submissions').update({ status: 'accepted' })"]],
   notest: [[M, "return preview || status !== 'live'", 'return preview']],
@@ -50,10 +61,19 @@ const TAMPERS = {
   hotall: [[M, 'if (!rule) return false', 'if (!rule) return true']],
   factsall: [[L, "case 'lead_device': return asList(r.value).some((v) => (f.lead_devices ?? []).includes(v))", "case 'lead_device': return true"]],
   logname: [[I, 'console.error(`[lead-device] submission=${id} contact failed: ${cErr?.code ?? \'no id\'}`)', 'console.error(`[lead-device] ${input.email} contact failed`)']],
+  overwrite: [[SP, "if (!submitted || String(current ?? '').trim()) return { phone: current, filled: false }", "if (!submitted) return { phone: current, filled: false }"]],
+  nofill: [[I, "settleSubmittedPhone(db, contactId as string, input.phone,", "settleSubmittedPhone(db, contactId as string, null,"]],
+  nocas: [[SP, "await (current === null ? update.is('phone', null) : update.eq('phone', current)).select('id')", "await update.select('id')"]],
+  nosuppress: [[SP, "return (data ?? []).length ? 'number_suppressed' : null", "return null"]],
+  checkopen: [[SP, "return 'check_failed'", "return null"]],
+  nonote: [[SP, "  if (!others.length) return\n", "  if (others.length) return\n"]],
+  noother: [[SP, "    ...others.map((o) => ({", "    ...[].map((o: PhoneHolder) => ({"]],
 }
 const RED_OF = {
   testwrites: ['D_TEST'], notest: ['D_TEST'], noreplay: ['D_REPLAY'], truthy: ['D_CONSENT'], optout: ['D_OPTOUT'], noresult: ['D_LEAD'], secretopen: ['D_SECRET'],
   anypreview: ['D_PREVIEW'], sameorigin: ['D_FILE'], connect: ['D_FILE'], nonce: ['D_PAGE'], hotall: ['D_HOT'], factsall: ['D_FACTS'], logname: ['D_NOLOG'],
+  overwrite: ['D_FILL', 'D_OPTOUT', 'D_SHARED'], nofill: ['D_FILL', 'D_SHARED', 'D_SUPPRESS'], nocas: ['D_FILL'], nosuppress: ['D_SUPPRESS'], checkopen: ['D_SUPPRESS'],
+  nonote: ['D_SHARED'], noother: ['D_SHARED'],
 }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-leaddev')
@@ -119,6 +139,77 @@ const check = (id, ok, got) => rows.push({ id, ok: !!ok, got })
   await processSubmission(otherPhone, device('live'), input({ phone: '+18285559999' }))
   const consentCount = (db) => db.calls.filter((c) => c.rpc === 'record_consent').length
   check('D_OPTOUT', consentCount(out1) === 0 && consentCount(otherPhone) === 2, { revoked: consentCount(out1), otherPhone: consentCount(otherPhone) })
+
+  // The real contact row, a conditional update that honours the filter, and a suppression table.
+  const phoneDb = (phone, opts = {}) => H.stubDb({ contacts: [{ id: 'c1', org_id: 'o1', tags: [], email: 'a@example.com', phone, first_name: 'Ana', created_at: '2026-11-01' }, ...(opts.others ?? [])], suppressions: opts.suppressions ?? [] }, {
+    rpc: (name) => {
+      if (name === 'hub_lead_device_contact') return { data: 'c1', error: null }
+      if (name === 'consent_state') return { data: { reason: 'none' }, error: null }
+      return { data: [], error: null }
+    },
+    table: (table, ops) => {
+      if (table === 'suppressions' && opts.suppressionError) return { data: null, error: { code: 'XX' } }
+      const set = ops.find((o) => o[0] === 'update' && 'phone' in o[1][0])
+      if (table !== 'contacts' || !set) return undefined
+      if (opts.savedMeanwhile) return { data: [], error: null }
+      const guarded = ops.some((o) => (o[0] === 'is' && o[1][0] === 'phone') || (o[0] === 'eq' && o[1][0] === 'phone'))
+      return { data: guarded ? [{ id: 'c1' }] : [{ id: 'c1', unguarded: true }], error: null }
+    },
+  })
+  const phoneWrites = (db) => db.calls.filter((c) => c.table === 'contacts' && c.ops.some((o) => o[0] === 'update' && 'phone' in o[1][0]))
+  const unguarded = (db) => phoneWrites(db).some((c) => !c.ops.some((o) => (o[0] === 'is' && o[1][0] === 'phone') || (o[0] === 'eq' && o[1][0] === 'phone')))
+  const smsConsents = (db) => db.calls.filter((c) => c.rpc === 'record_consent' && c.args.p_channel === 'sms')
+  const run = async (phone, over = {}, opts = {}) => { const db = phoneDb(phone, opts); await processSubmission(db, device('live'), input({ idempotencyKey: `fill-${Math.random()}`, ...over })); return db }
+
+  const blank = await run(null)
+  const spaces = await run('   ')
+  const other = await run('+18285559999')
+  const sameFormatted = await run('(828) 555-0100')
+  const noPhone = await run(null, { phone: null, consents: hostedConsents({ manifest }, { result: true, email: true }) })
+  const raced = await run(null, {}, { savedMeanwhile: true })
+  const filledNoTick = await run(null, { consents: hostedConsents({ manifest }, { result: true }) })
+  check('D_FILL',
+    phoneWrites(blank).length === 1 && !unguarded(blank) && smsConsents(blank).length === 1 && smsConsents(blank)[0].args.p_evidence.phone_filled === true
+    && phoneWrites(spaces).length === 1 && !unguarded(spaces) && smsConsents(spaces).length === 1
+    && phoneWrites(other).length === 0 && smsConsents(other).length === 0
+    && phoneWrites(sameFormatted).length === 0 && smsConsents(sameFormatted).length === 1 && smsConsents(sameFormatted)[0].args.p_evidence.phone_filled === undefined
+    && phoneWrites(noPhone).length === 0 && smsConsents(noPhone).length === 0
+    && phoneWrites(raced).length === 1 && smsConsents(raced).length === 0
+    && phoneWrites(filledNoTick).length === 1 && smsConsents(filledNoTick).length === 0,
+    { blank: smsConsents(blank).length, other: phoneWrites(other).length, raced: smsConsents(raced).length, unguarded: unguarded(blank) })
+
+  const stopped = [{ id: 'sp1', org_id: 'o1', channel: 'sms', address: '+18285550100', lifted_at: null }]
+  const suppressedFill = await run(null, {}, { suppressions: stopped })
+  const suppressedSame = await run('+18285550100', {}, { suppressions: stopped })
+  const lifted = await run('+18285550100', {}, { suppressions: [{ ...stopped[0], lifted_at: 'x' }] })
+  const checkDown = await run('+18285550100', {}, { suppressionError: true })
+  check('D_SUPPRESS', smsConsents(suppressedFill).length === 0 && phoneWrites(suppressedFill).length === 1 && smsConsents(suppressedSame).length === 0
+    && smsConsents(lifted).length === 1 && smsConsents(checkDown).length === 0,
+    { suppressedFill: smsConsents(suppressedFill).length, suppressedSame: smsConsents(suppressedSame).length, lifted: smsConsents(lifted).length, checkDown: smsConsents(checkDown).length })
+
+  const others = [
+    { id: 'c2', org_id: 'o1', first_name: 'Bo', last_name: 'Lee', phone: '(828) 555-0100', created_at: '2025-01-01', merged_into_id: null },
+    { id: 'c3', org_id: 'o1', first_name: 'Cy', phone: '+18285559999', created_at: '2025-01-01', merged_into_id: null },
+    { id: 'c4', org_id: 'o1', first_name: 'Di', phone: '+18285550100', created_at: '2025-01-01', merged_into_id: 'c2' },
+    { id: 'c5', org_id: 'o2', first_name: 'Ed', phone: '+18285550100', created_at: '2025-01-01', merged_into_id: null },
+  ]
+  const noteRows = (db) => db.calls.filter((c) => c.table === 'contact_notes').flatMap((c) => c.ops.filter((o) => o[0] === 'insert').flatMap((o) => o[1][0]))
+  const shared = await run(null, {}, { others })
+  const sharedPresent = await run('+18285550100', {}, { others })
+  const alone = await run(null)
+  const sn = noteRows(shared)
+  const onC1 = sn.find((n) => n.contact_id === 'c1'), onC2 = sn.find((n) => n.contact_id === 'c2')
+  check('D_SHARED', sn.length === 2 && !!onC1 && !!onC2 && sn.every((n) => n.type === 'system' && n.org_id === 'o1' && n.author_id === null)
+    && onC1.body.includes('Bo Lee') && onC1.body.includes('https://hub.neuroprogeny.com/crm/contacts?id=c2') && onC1.body.includes('go to Bo Lee')
+    && onC2.body.includes('Ana') && onC2.body.includes('https://hub.neuroprogeny.com/crm/contacts?id=c1') && onC2.body.includes('go to this contact')
+    && !sn.some((n) => /c3|c4|c5|answers|yes/.test(n.body.replace(/crm\/contacts\?id=c[12]/g, '')))
+    && phoneWrites(shared).length === 1 && smsConsents(shared).length === 1
+    && noteRows(sharedPresent).length === 0 && noteRows(alone).length === 0,
+    { notes: sn.map((n) => n.contact_id), present: noteRows(sharedPresent).length, alone: noteRows(alone).length })
+
+  const formRoute = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'app', 'api', 'intake', 'route.ts'), 'utf8')
+  check('D_FORM', /settleSubmittedPhone\(db, contactId, v\.phone, /.test(formRoute) && /smsConsentBlock\(db, form\.org_id, settled, v\.phone\)/.test(formRoute) && !/toE164/.test(formRoute)
+    && formRoute.indexOf('settleSubmittedPhone(db') < formRoute.indexOf("db.rpc('record_consent'"), 'form route uses the shared rule')
 
   const good = { first_name: 'Ana', email: 'a@example.com', consent: { result: true } }
   const leadOk = checkHostedLead(good).ok && checkHostedLead({ ...good, phone: '' }).ok
