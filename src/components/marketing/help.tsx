@@ -5,7 +5,7 @@ import { InfoTip } from './info-tip'
 export const HELP = {
   section: 'Each part of this page describes one piece of the campaign. Change it here and save; the change applies to people who enter from now on.',
   status: 'Draft campaigns do nothing. Active campaigns take in new people and run their steps. Paused campaigns hold everyone where they are, and archived campaigns are put away.',
-  pipeline: 'The pipeline this campaign places people in, so you can see where they are on your board.',
+  pipeline: 'The pipeline this campaign places people in, so you can see where they are on your board. Other pipelines they are in do not change.',
   entry: 'The stage a person is placed in the moment they enter the campaign.',
   goal: 'When a person reaches this stage, the campaign has done its job, so it stops sending them its messages.',
   startsFrom: 'The events that bring a person into this campaign, such as submitting a form. One person is only ever entered once for the same event.',

@@ -6,6 +6,7 @@
 import { createClient } from '@/lib/supabase-browser'
 import { contactForNumber, type NumberContact } from '@/lib/call-new-number'
 import { loadActivity } from '@/lib/activity-log'
+import { loadPositions } from '@/lib/pipelines/positions'
 import type {
   CrmContact, Conversation, Message, CallLog, EmailCampaign,
   CrmTask, ContactNote, LifecycleEvent, ActivityLogEntry,
@@ -22,9 +23,13 @@ const supabase = () => createClient()
 
 export async function fetchContacts(params: ContactSearchParams = {}) {
   const sb = supabase()
+  // Pipeline and stage filters read contact_pipeline_positions (hub_229) through an inner join, so a contact
+  // matches when it has a position in that pipeline (or at that stage), and the count and paging stay exact.
+  // contacts.pipeline_id / pipeline_stage are legacy and are not read.
+  const byPosition = !!(params.position_pipeline_id || params.position_stage_id)
   let query = sb
     .from('contacts')
-    .select('*', { count: 'exact' })
+    .select(byPosition ? '*, contact_pipeline_positions!inner(pipeline_id, stage_id)' : '*', { count: 'exact' })
     .is('merged_into_id', null)
 
   // Dynamic sorting (default: updated_at desc)
@@ -40,7 +45,8 @@ export async function fetchContacts(params: ContactSearchParams = {}) {
     query = query.or(`first_name.ilike.%${params.q}%,last_name.ilike.%${params.q}%,email.ilike.%${params.q}%,phone.ilike.%${params.q}%`)
   }
   if (params.tags?.length) query = query.overlaps('tags', params.tags)
-  if (params.pipeline_stage) query = query.eq('pipeline_stage', params.pipeline_stage)
+  if (params.position_pipeline_id) query = query.eq('contact_pipeline_positions.pipeline_id', params.position_pipeline_id)
+  if (params.position_stage_id) query = query.eq('contact_pipeline_positions.stage_id', params.position_stage_id)
   if (params.assigned_to) query = query.eq('assigned_to', params.assigned_to)
   if (params.last_contacted_before) query = query.lte('last_contacted_at', params.last_contacted_before)
   if (params.last_contacted_after) query = query.gte('last_contacted_at', params.last_contacted_after)
@@ -51,7 +57,12 @@ export async function fetchContacts(params: ContactSearchParams = {}) {
 
   const { data, count, error } = await query
   if (error) throw error
-  return { contacts: (data || []) as CrmContact[], total: count || 0 }
+  const rows = ((data || []) as any[]).map(r => {
+    if (!byPosition) return r
+    const { contact_pipeline_positions: _joined, ...rest } = r
+    return rest
+  })
+  return { contacts: rows as CrmContact[], total: count || 0 }
 }
 
 export async function fetchContact(id: string) {
@@ -85,7 +96,11 @@ export async function updateContact(id: string, updates: Partial<CrmContact>) {
   return data as CrmContact
 }
 
-// Clears the placement and deletes the deal row server side; the contact is kept.
+/**
+ * @deprecated Legacy single-pipeline removal (/api/crm/pipeline-deals/remove, keyed by pipeline legacy key).
+ * New code removes one position with apiRemoveFromPipeline (src/lib/pipelines/client.ts), which leaves the
+ * contact's other pipelines untouched.
+ */
 export async function removeFromPipeline(contactId: string, pipelineKey: string) {
   const res = await fetch('/api/crm/pipeline-deals/remove', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -108,7 +123,7 @@ export async function deleteContact(id: string) {
 export async function fetchConversations(channel?: string) {
   let query = supabase()
     .from('conversations')
-    .select('*, contacts!inner(first_name, last_name, phone, email, tags, pipeline_stage)')
+    .select('*, contacts!inner(first_name, last_name, phone, email, tags)')
     .order('last_message_at', { ascending: false })
 
   if (channel) query = query.eq('channel', channel)
@@ -519,7 +534,7 @@ export async function removeContactTag(contactId: string, tagDefinitionId: strin
 export async function fetchContactRelationships(contactId: string) {
   const { data, error } = await supabase()
     .from('contact_relationships')
-    .select('*, from_contact:contacts!contact_relationships_from_contact_id_fkey(id,first_name,last_name,tags,pipeline_stage,email,phone), to_contact:contacts!contact_relationships_to_contact_id_fkey(id,first_name,last_name,tags,pipeline_stage,email,phone)')
+    .select('*, from_contact:contacts!contact_relationships_from_contact_id_fkey(id,first_name,last_name,tags,email,phone), to_contact:contacts!contact_relationships_to_contact_id_fkey(id,first_name,last_name,tags,email,phone)')
     .or(`from_contact_id.eq.${contactId},to_contact_id.eq.${contactId}`)
   if (error) throw error
   return data as ContactRelationship[]
@@ -562,12 +577,16 @@ export async function fetchRelationshipTypes(orgId?: string) {
 
 export async function fetchNetworkGraph(orgId: string): Promise<NetworkGraphData> {
   const sb = supabase()
-  const [contactsRes, relsRes, scoresRes, typesRes] = await Promise.all([
-    sb.from('contacts').select('id,first_name,last_name,tags,pipeline_stage,last_contacted_at,phone,email,address_city,address_state,preferred_name,reason_for_contact,occupation,instagram_handle,linkedin_url').eq('org_id', orgId).is('merged_into_id', null),
+  const [contactsRes, relsRes, scoresRes, typesRes, positions] = await Promise.all([
+    sb.from('contacts').select('id,first_name,last_name,tags,last_contacted_at,phone,email,address_city,address_state,preferred_name,reason_for_contact,occupation,instagram_handle,linkedin_url').eq('org_id', orgId).is('merged_into_id', null),
     sb.from('contact_relationships').select('*').eq('org_id', orgId),
     sb.from('contact_interaction_score').select('*').eq('org_id', orgId),
     sb.from('relationship_types').select('*').eq('org_id', orgId),
+    // Pipelines and stages from contact_pipeline_positions; a failed read shows no stages rather than failing the graph.
+    loadPositions(sb, orgId).catch((e) => { console.warn('Network positions skipped:', (e as Error).message); return [] }),
   ])
+  const stagesByContact = new Map<string, string[]>()
+  for (const p of positions) stagesByContact.set(p.contact_id, [...(stagesByContact.get(p.contact_id) ?? []), `${p.pipeline_name} · ${p.stage_name}`])
 
   const scoreMap = new Map((scoresRes.data || []).map((s: any) => [s.contact_id, s]))
   const typeMap = new Map((typesRes.data || []).map((t: any) => [t.name, t]))
@@ -579,7 +598,7 @@ export async function fetchNetworkGraph(orgId: string): Promise<NetworkGraphData
       name: `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'Unknown',
       avatar: `${c.first_name?.[0] || ''}${c.last_name?.[0] || ''}`.toUpperCase(),
       tags: c.tags || [],
-      pipeline_stage: c.pipeline_stage,
+      pipeline_stages: stagesByContact.get(c.id) ?? [],
       relationship_count: score?.relationship_count || 0,
       interaction_score: score?.interaction_score || 0,
       network_centrality: score?.network_centrality || 0,

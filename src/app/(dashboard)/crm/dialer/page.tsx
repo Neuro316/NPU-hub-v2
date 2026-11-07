@@ -12,6 +12,7 @@ import {
   Delete, ArrowUpRight, ArrowDownLeft, Voicemail, PhoneMissed, Brain, FileText
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase-browser'
+import { loadPositions } from '@/lib/pipelines/positions'
 import { fetchCallLogs, resolveCallContact } from '@/lib/crm-client'
 import { isFullNumber } from '@/lib/call-new-number'
 import { toE164 } from '@/lib/phone'
@@ -79,6 +80,8 @@ export default function DialerPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [contacts, setContacts] = useState<CrmContact[]>([])
   const [selectedContact, setSelectedContact] = useState<CrmContact | null>(null)
+  // 'Pipeline · Stage' for the selected contact, from contact_pipeline_positions (hub_229).
+  const [selectedStages, setSelectedStages] = useState<string[]>([])
   const [recentCalls, setRecentCalls] = useState<any[]>([])
   const [activeTab, setActiveTab] = useState<'keypad' | 'contacts' | 'recent'>('keypad')
   const [activeCall, setActiveCall] = useState<any>(null)
@@ -102,7 +105,7 @@ export default function DialerPage() {
       setLoading(true)
       const { data } = await supabase
         .from('contacts')
-        .select('id, first_name, last_name, phone, email, company, tags, pipeline_stage')
+        .select('id, org_id, first_name, last_name, phone, email, company, tags')
         .or(`first_name.ilike.%${searchQuery}%,last_name.ilike.%${searchQuery}%,phone.ilike.%${searchQuery}%,email.ilike.%${searchQuery}%`)
         .is('merged_into_id', null)
         .is('do_not_contact', false)
@@ -112,6 +115,17 @@ export default function DialerPage() {
     }, 300)
     return () => clearTimeout(t)
   }, [searchQuery])
+
+  useEffect(() => {
+    setSelectedStages([])
+    const orgId = selectedContact?.org_id || currentOrg?.id
+    if (!selectedContact?.id || !orgId) return
+    let live = true
+    loadPositions(supabase, orgId, { contactIds: [selectedContact.id] })
+      .then(pos => { if (live) setSelectedStages(pos.map(p => `${p.pipeline_name} · ${p.stage_name}`)) })
+      .catch(e => console.warn('Dialer positions skipped:', (e as Error)?.message))
+    return () => { live = false }
+  }, [selectedContact?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Timer: from the provider's connect time, so it is right after navigating back.
   const [now, setNow] = useState(() => Date.now())
@@ -258,7 +272,7 @@ export default function DialerPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-semibold text-np-dark truncate">{selectedContact.first_name} {selectedContact.last_name}</p>
-                  {selectedContact.pipeline_stage && <p className="text-[9px] text-gray-400">{selectedContact.pipeline_stage}</p>}
+                  {selectedStages.length > 0 && <p className="text-[9px] text-gray-400 truncate">{selectedStages.join(', ')}</p>}
                 </div>
                 <button onClick={() => { setSelectedContact(null); setDialString('') }} className="p-1 hover:bg-gray-50 rounded">
                   <X size={12} className="text-gray-400" />
@@ -458,7 +472,7 @@ export default function DialerPage() {
                 </h3>
                 <p className="text-xs text-gray-400">
                   {selectedContact?.phone ? fmtPhone(selectedContact.phone) : activeCall?.contacts?.phone || ''}
-                  {selectedContact?.pipeline_stage ? ` · ${selectedContact.pipeline_stage}` : ''}
+                  {selectedContact && selectedStages.length ? ` · ${selectedStages.join(', ')}` : ''}
                 </p>
               </div>
               {/* Comm stats */}

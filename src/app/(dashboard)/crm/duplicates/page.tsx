@@ -21,7 +21,8 @@ interface Member {
   last_name: string | null
   email: string | null
   phone: string | null
-  pipeline_stage: string | null
+  /** 'Pipeline · Stage' per pipeline, from contact_pipeline_positions. */
+  pipelines?: string[]
   source: string | null
   tags: string[] | null
   created_at: string
@@ -46,7 +47,8 @@ const FIELDS: { key: keyof Member; label: string; pick: boolean }[] = [
   { key: 'last_name', label: 'Last name', pick: true },
   { key: 'email', label: 'Email', pick: true },
   { key: 'phone', label: 'Phone', pick: true },
-  { key: 'pipeline_stage', label: 'Pipeline stage', pick: true },
+  // Not pickable: a merge keeps the survivor's stage where both are in a pipeline and moves the rest over.
+  { key: 'pipelines', label: 'Pipelines', pick: false },
   { key: 'source', label: 'Source', pick: false },
   { key: 'total_calls', label: 'Calls', pick: false },
   { key: 'last_contacted_at', label: 'Last contacted', pick: false },
@@ -55,6 +57,7 @@ const FIELDS: { key: keyof Member; label: string; pick: boolean }[] = [
 
 const fmt = (v: any) => {
   if (v === null || v === undefined || v === '') return '—'
+  if (Array.isArray(v)) return v.length ? v.join(', ') : '—'
   if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v)) return new Date(v).toLocaleDateString()
   return String(v)
 }

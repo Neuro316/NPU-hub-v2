@@ -18,7 +18,12 @@ export interface CrmContact {
   email_unsubscribed_at?: string | null
   do_not_contact: boolean
   tags: string[]
+  /**
+   * @deprecated Legacy single-pipeline stage name. Membership and stage live in contact_pipeline_positions
+   * (hub_229, one row per pipeline): read them with loadPositions / fetchContactPositions. The Hub never writes this.
+   */
   pipeline_stage?: string | null
+  /** @deprecated Legacy single-pipeline key. See pipeline_stage; use contact_pipeline_positions. Never written by the Hub. */
   pipeline_id?: string | null
   assigned_to?: string | null
   source?: string | null
@@ -614,7 +619,8 @@ export interface EmailWebhookPayload {
 
 export interface BulkActionRequest {
   contact_ids: string[]
-  action: 'add_tags' | 'remove_tags' | 'set_pipeline_stage' | 'assign_to' | 'enroll_sequence' | 'add_to_dnc' | 'remove_from_dnc'
+  /** set_pipeline_stage / set_pipeline take { stage_id }; remove_from_pipeline takes { pipeline_id }. Positions only. */
+  action: 'add_tags' | 'remove_tags' | 'set_pipeline_stage' | 'set_pipeline' | 'remove_from_pipeline' | 'assign_to' | 'enroll_sequence' | 'add_to_dnc' | 'remove_from_dnc'
   params: Record<string, unknown>
 }
 
@@ -622,7 +628,10 @@ export interface ContactSearchParams {
   org_id?: string
   q?: string
   tags?: string[]
-  pipeline_stage?: string
+  /** Contacts with a position in this pipeline (pipelines.id). */
+  position_pipeline_id?: string
+  /** Contacts with a position at this stage (pipeline_stages.id). */
+  position_stage_id?: string
   assigned_to?: string
   last_contacted_before?: string
   last_contacted_after?: string
@@ -689,7 +698,8 @@ export interface NetworkGraphData {
 
 export interface NetworkNode {
   id: string; name: string; avatar: string; tags: string[]
-  pipeline_stage?: string; relationship_count: number
+  /** 'Pipeline · Stage' for each pipeline the contact is in, from contact_pipeline_positions. */
+  pipeline_stages?: string[]; relationship_count: number
   interaction_score: number; network_centrality: number
   bridge_score: number; cluster_id?: number
   x?: number; y?: number
@@ -714,3 +724,6 @@ export interface NetworkInsight {
   title: string; description: string; contact_ids: string[]
   confidence: number; action?: string; priority: 'high' | 'medium' | 'low'
 }
+
+// Pipeline positions (hub_229): the only source of pipeline membership and stage.
+export type { Position as PipelinePosition, PipelineRef, StageRef } from '@/lib/pipelines/positions'

@@ -15,6 +15,8 @@ import {
 import { fetchContacts, fetchCallLogs, fetchCampaigns, fetchTasks, fetchNetworkGraph, seedNetworkIntelligence } from '@/lib/crm-client'
 import type { CrmContact, CallLog, EmailCampaign, CrmTask, NetworkGraphData } from '@/types/crm'
 import { useWorkspace } from '@/lib/workspace-context'
+import { createClient } from '@/lib/supabase-browser'
+import { loadPositions, type Position } from '@/lib/pipelines/positions'
 
 function StatCard({ label, value, icon: Icon, trend, color, href }: {
   label: string; value: string | number; icon: any; trend?: number; color: string; href?: string
@@ -74,18 +76,22 @@ export default function CrmDashboard() {
   const [campaigns, setCampaigns] = useState<EmailCampaign[]>([])
   const [tasks, setTasks] = useState<CrmTask[]>([])
   const [networkData, setNetworkData] = useState<NetworkGraphData | null>(null)
+  // Every pipeline position in the org (contact_pipeline_positions). contacts.pipeline_stage is legacy.
+  const [positions, setPositions] = useState<Position[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function load() {
       try {
-        const [cRes, clRes, cpRes, tRes] = await Promise.allSettled([
+        const [cRes, clRes, cpRes, tRes, pRes] = await Promise.allSettled([
           fetchContacts({ org_id: currentOrg?.id, limit: 1000 }),
           fetchCallLogs(undefined, 50),
           fetchCampaigns(),
           fetchTasks(),
+          currentOrg ? loadPositions(createClient(), currentOrg.id) : Promise.resolve([] as Position[]),
         ])
         if (cRes.status === 'fulfilled') setContacts(cRes.value.contacts)
+        if (pRes.status === 'fulfilled') setPositions(pRes.value)
         if (clRes.status === 'fulfilled') setCalls(clRes.value)
         if (cpRes.status === 'fulfilled') setCampaigns(cpRes.value)
         if (tRes.status === 'fulfilled') setTasks(tRes.value)
@@ -120,12 +126,13 @@ export default function CrmDashboard() {
   const openTasks = tasks.filter(t => t.status === 'todo' || t.status === 'in_progress')
   const activeCampaigns = campaigns.filter(c => c.status === 'sending' || c.status === 'scheduled')
 
-  // Pipeline distribution
+  // Pipeline distribution, by stage name across every pipeline. A contact in two
+  // pipelines counts once in each. Unassigned is a loaded contact in no pipeline.
   const stageGroups: Record<string, number> = {}
-  contacts.forEach(c => {
-    const s = c.pipeline_stage || 'Unassigned'
-    stageGroups[s] = (stageGroups[s] || 0) + 1
-  })
+  positions.forEach(p => { stageGroups[p.stage_name] = (stageGroups[p.stage_name] || 0) + 1 })
+  const placed = new Set(positions.map(p => p.contact_id))
+  const unassigned = contacts.filter(c => !placed.has(c.id)).length
+  if (unassigned) stageGroups['Unassigned'] = unassigned
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">

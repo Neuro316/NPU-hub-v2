@@ -3,6 +3,8 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
+import { loadPipelines, loadPositions, positionsByContact } from '@/lib/pipelines/positions'
+import { apiSetStage } from '@/lib/pipelines/client'
 import {
   HeartPulse, Activity, Brain, Users, ExternalLink, Search,
   ChevronRight, Eye, X, AlertCircle,
@@ -57,7 +59,9 @@ const STAGE_COLORS: Record<string, string> = {
 // ─── Types ───────────────────────────────────────────────────
 interface EcrClient {
   id: string; first_name: string; last_name: string; email: string; phone: string
-  tags: string[]; pipeline_stage: string; pipeline_id: string
+  tags: string[]
+  /** From contact_pipeline_positions: every stage name the person holds, one per pipeline, and the joined label. */
+  stages: string[]; stage_label: string; stage_color: string | null
   source: string; created_at: string; notes: string
   subscription_status: string; subscription_plan: string
   date_of_birth: string; preferred_name: string
@@ -137,45 +141,32 @@ export default function EcrPage() {
     const orgId = currentOrg.id
 
     try {
-      // Load pipeline configs from org_settings (same source as CRM pipelines page)
+      // Pipelines and positions: membership and stage come only from contact_pipeline_positions.
+      const pipelines = await loadPipelines(supabase, orgId)
+      const positions = await loadPositions(supabase, orgId, { pipelines })
+      const byContact = positionsByContact(positions)
+
       let pipelineStages: string[] = []
       if (isNP) {
-        // First try dynamic from org_settings
-        const { data: plConfig } = await supabase
-          .from('org_settings')
-          .select('setting_value')
-          .eq('org_id', orgId)
-          .eq('setting_key', 'crm_pipelines')
-          .maybeSingle()
-
-        if (plConfig?.setting_value?.pipelines?.length > 0) {
-          // Use stages from all configured pipelines
-          pipelineStages = plConfig!.setting_value.pipelines
-            .flatMap((p: any) => (p.stages || []).map((s: any) => typeof s === 'string' ? s : s.name))
-            .filter(Boolean)
-        }
-
-        // Fallback: merge hardcoded NP stages if no config or empty
-        if (pipelineStages.length === 0) {
-          pipelineStages = NP_PIPELINES.flatMap(p => p.stages)
-        } else {
-          // Also include hardcoded stages that might not be in config
-          const hardcoded = NP_PIPELINES.flatMap(p => p.stages)
-          pipelineStages = Array.from(new Set([...pipelineStages, ...hardcoded]))
-        }
+        // Stage names from all live pipelines, plus the hardcoded NP stages the tabs group by
+        pipelineStages = Array.from(new Set([...pipelines.flatMap(p => p.stages.map(s => s.name)), ...NP_PIPELINES.flatMap(p => p.stages)]))
       }
 
-      // Load clients
-      let clientQuery = supabase
-        .from('contacts')
-        .select('*')
-        .eq('org_id', orgId)
-        .order('created_at', { ascending: false })
-        .limit(500)
-
-      if (isNP && pipelineStages.length > 0) {
-        clientQuery = clientQuery.in('pipeline_stage', pipelineStages)
-      }
+      // Load clients. NP: people with a position whose stage name is one of those stages, in any pipeline.
+      const clientQuery = (async () => {
+        if (!isNP) {
+          return supabase.from('contacts').select('*').eq('org_id', orgId).order('created_at', { ascending: false }).limit(500)
+        }
+        const ids = Array.from(new Set(positions.filter(p => pipelineStages.includes(p.stage_name)).map(p => p.contact_id)))
+        const rows: any[] = []
+        for (let i = 0; i < ids.length; i += 150) {
+          const { data, error } = await supabase.from('contacts').select('*').eq('org_id', orgId).in('id', ids.slice(i, i + 150))
+          if (error) return { data: null, error }
+          rows.push(...(data ?? []))
+        }
+        rows.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+        return { data: rows.slice(0, 500), error: null }
+      })()
 
       const [cR, sR, nR, aR, cpR] = await Promise.all([
         clientQuery,
@@ -185,7 +176,15 @@ export default function EcrPage() {
         supabase.from('ecr_care_plans').select('*').eq('org_id', orgId).order('created_at', { ascending: false }),
       ])
 
-      setClients(cR.data || [])
+      setClients(((cR.data || []) as any[]).map(c => {
+        const ps = byContact.get(c.id) ?? []
+        return {
+          ...c,
+          stages: ps.map(p => p.stage_name),
+          stage_label: ps.map(p => `${p.pipeline_name} · ${p.stage_name}`).join(', '),
+          stage_color: ps[0]?.stage_color ?? null,
+        } as EcrClient
+      }))
       setServices(sR.data || [])
       setNotes(nR.data || [])
       setAssessments(aR.data || [])
@@ -223,11 +222,11 @@ export default function EcrPage() {
       const pl = NP_PIPELINES.find(p => p.id === activePipeline)
       if (pl) {
         const stages = pl.stages
-        list = list.filter(c => stages.includes(c.pipeline_stage))
+        list = list.filter(c => c.stages.some(s => stages.includes(s)))
       }
     }
     if (stageFilter !== 'all') {
-      list = list.filter(c => c.pipeline_stage === stageFilter)
+      list = list.filter(c => c.stages.includes(stageFilter))
     }
     return list
   }, [clients, search, activePipeline, stageFilter, isNP])
@@ -245,7 +244,7 @@ export default function EcrPage() {
     const stats: Record<string, number> = { all: clients.length }
     NP_PIPELINES.forEach(pl => {
       const stages = pl.stages
-      stats[pl.id] = clients.filter(c => stages.includes(c.pipeline_stage)).length
+      stats[pl.id] = clients.filter(c => c.stages.some(s => stages.includes(s))).length
     })
     return stats
   }, [clients, isNP])
@@ -256,7 +255,7 @@ export default function EcrPage() {
     const pl = NP_PIPELINES.find(p => p.id === activePipeline)
     if (!pl) return counts
     const stages = pl.stages
-    stages.forEach(s => { counts[s] = clients.filter(c => c.pipeline_stage === s).length })
+    stages.forEach(s => { counts[s] = clients.filter(c => c.stages.includes(s)).length })
     return counts
   }, [clients, activePipeline])
 
@@ -419,39 +418,29 @@ export default function EcrPage() {
   }
 
   // ─── Add Client Manually ───────────────────────────────────
-  const [clientForm, setClientForm] = useState({ first_name: '', last_name: '', email: '', phone: '', pipeline_stage: 'Enrolled' })
+  const [clientForm, setClientForm] = useState({ first_name: '', last_name: '', email: '', phone: '', stage: 'Enrolled' })
 
   const saveNewClient = async () => {
     if (!currentOrg || !clientForm.first_name) return
-    // Determine pipeline_id from stage
-    let pipelineId = ''
-    const { data: settingsData } = await supabase
-      .from('org_settings').select('setting_value')
-      .eq('org_id', currentOrg.id).eq('setting_key', 'crm_pipelines').maybeSingle()
-
-    if (settingsData?.setting_value?.pipelines) {
-      for (const pl of settingsData.setting_value.pipelines) {
-        const stages = (pl.stages || []).map((s: any) => s.name)
-        if (stages.includes(clientForm.pipeline_stage)) {
-          pipelineId = pl.id
-          break
-        }
-      }
-    }
-
-    await supabase.from('contacts').insert({
+    const { data: created, error } = await supabase.from('contacts').insert({
       org_id: currentOrg.id,
       first_name: clientForm.first_name,
       last_name: clientForm.last_name,
       email: clientForm.email || null,
       phone: clientForm.phone || null,
-      pipeline_stage: clientForm.pipeline_stage,
-      pipeline_id: pipelineId || null,
       source: 'manual_ecr',
       tags: [],
-    })
+    }).select('id').single()
+    if (error || !created) { console.error(`[ecr] add client failed: ${error?.code ?? 'unknown'}`); return }
+    // Place them at the chosen stage: the first live pipeline (in display order) that has a stage of that name.
+    try {
+      const pipelines = await loadPipelines(supabase, currentOrg.id)
+      const stage = pipelines.flatMap(p => p.stages).find(s => s.name === clientForm.stage)
+      if (stage) await apiSetStage(created.id, stage.id, 'manual_ecr')
+      else console.error(`[ecr] add client ${created.id}: stage_unknown`)
+    } catch (e) { console.error(`[ecr] place ${created.id} failed: ${(e as Error).message}`) }
     setShowAddClient(false)
-    setClientForm({ first_name: '', last_name: '', email: '', phone: '', pipeline_stage: 'Enrolled' })
+    setClientForm({ first_name: '', last_name: '', email: '', phone: '', stage: 'Enrolled' })
     loadData()
   }
 
@@ -562,7 +551,7 @@ export default function EcrPage() {
                 </div>
               ) : filtered.map(c => {
                 const name = `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.email
-                const sc = STAGE_COLORS[c.pipeline_stage] || '#94a3b8'
+                const sc = STAGE_COLORS[c.stages[0]] || c.stage_color || '#94a3b8'
                 const svcCount = clientServices(c.id).length
                 const noteCount = clientNotes(c.id).length
                 const assessCount = clientAssessments(c.id).length
@@ -576,10 +565,12 @@ export default function EcrPage() {
                         <p className="text-sm font-medium text-np-dark truncate">{name}</p>
                         <p className="text-xs text-gray-400 truncate">{c.email}</p>
                       </div>
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full ml-2 flex-shrink-0"
-                        style={{ background: sc + '18', color: sc }}>
-                        {c.pipeline_stage}
-                      </span>
+                      {c.stage_label && (
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full ml-2 min-w-0 max-w-[50%] truncate"
+                          style={{ background: sc + '18', color: sc }} title={c.stage_label}>
+                          {c.stage_label}
+                        </span>
+                      )}
                     </div>
                     {(svcCount > 0 || noteCount > 0 || assessCount > 0) && (
                       <div className="flex gap-3 mt-1.5">
@@ -611,10 +602,15 @@ export default function EcrPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full"
-                    style={{ background: (STAGE_COLORS[selected.pipeline_stage] || '#94a3b8') + '18', color: STAGE_COLORS[selected.pipeline_stage] || '#94a3b8' }}>
-                    {selected.pipeline_stage}
-                  </span>
+                  {selected.stage_label && (() => {
+                    const sc = STAGE_COLORS[selected.stages[0]] || selected.stage_color || '#94a3b8'
+                    return (
+                      <span className="text-xs font-semibold px-2.5 py-1 rounded-full max-w-[220px] truncate" title={selected.stage_label}
+                        style={{ background: sc + '18', color: sc }}>
+                        {selected.stage_label}
+                      </span>
+                    )
+                  })()}
                   <button onClick={() => setSelectedClient(null)} className="p-1.5 rounded-lg hover:bg-gray-100">
                     <X className="w-4 h-4 text-gray-400" />
                   </button>
@@ -698,7 +694,7 @@ export default function EcrPage() {
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       {[
                         ['Source', selected.source || 'Unknown'],
-                        ['Pipeline', selected.pipeline_stage],
+                        ['Pipeline', selected.stage_label || 'None'],
                         ['Created', new Date(selected.created_at).toLocaleDateString()],
                         ['DOB', selected.date_of_birth ? new Date(selected.date_of_birth).toLocaleDateString() : 'Not set'],
                         ['Emergency', selected.emergency_contact_name || 'Not set'],
@@ -1111,7 +1107,7 @@ export default function EcrPage() {
               </div>
               <div>
                 <label className="text-[10px] font-semibold text-gray-400 uppercase mb-1 block">Pipeline Stage</label>
-                <select value={clientForm.pipeline_stage} onChange={e => setClientForm(p => ({ ...p, pipeline_stage: e.target.value }))}
+                <select value={clientForm.stage} onChange={e => setClientForm(p => ({ ...p, stage: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
                   {isNP ? (
                     <>

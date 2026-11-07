@@ -1,11 +1,18 @@
 // src/lib/bookings/placement.ts
 // The booking sync's pure rules (no imports, so scripts/bookings/placement-check.mjs can
-// run them directly): where a contact goes, and the answers as shown on the card.
+// run them directly): which stage a route points at, what a placement did, and the answers
+// as shown on the card.
+//
+// Membership and stage live in contact_pipeline_positions. A booking places the guest in the
+// route's pipeline only (hub_pipeline_place decides "never backward" against the guest's
+// position in that pipeline); every other pipeline the guest is in is left as it is.
 
 interface Question { key: string; label?: string }
-export interface Stage { name: string; is_closed_won?: boolean; is_closed_lost?: boolean }
-export interface Pipeline { id: string; name: string; stages?: Stage[] }
+export interface Stage { id: string; name: string }
+/** A live pipeline: id is the uuid, key the legacy key that nr_booking_pipeline_routes.pipeline_id stores. */
+export interface Pipeline { id: string; key: string; name: string; stages: Stage[] }
 
+/** As hub_booking_syncs.placement records it. 'other_pipeline' is kept for older rows; it is no longer produced. */
 export type Placement = 'moved' | 'entered' | 'kept' | 'other_pipeline' | 'none'
 
 const norm = (s: unknown) => String(s ?? '').trim().toLowerCase()
@@ -21,23 +28,25 @@ export function answerList(questions: unknown, answers: Record<string, unknown> 
 }
 
 /**
- * Where the contact should go. Never backward when the route says so, and a contact
- * already on another live pipeline's board is left there (moving would take it off).
+ * The stage a route points at: its pipeline by legacy key (or uuid), then the stage by exact
+ * name, else the single stage whose name matches ignoring case and outer spaces (routes saved
+ * before names were checked exactly). Two such matches, or none, is unknown: nothing is guessed.
  */
-export function decidePlacement(
-  pipelines: Pipeline[], route: { pipeline_id: string; stage_name: string; move_earlier_stages_only: boolean },
-  contact: { pipeline_id: string | null; pipeline_stage: string | null },
-): { placement: Placement; stage?: string } {
-  const pipeline = pipelines.find(p => p.id === route.pipeline_id)
-  const stages = pipeline?.stages ?? []
-  const target = stages.findIndex(s => norm(s.name) === norm(route.stage_name))
-  if (!pipeline || target < 0) return { placement: 'none' }
-  const stage = stages[target].name
-  if (contact.pipeline_id && contact.pipeline_id !== route.pipeline_id && pipelines.some(p => p.id === contact.pipeline_id)) {
-    return { placement: 'other_pipeline' }
-  }
-  if (contact.pipeline_id !== route.pipeline_id) return { placement: 'entered', stage }
-  const current = stages.findIndex(s => norm(s.name) === norm(contact.pipeline_stage))
-  if (current === target || (route.move_earlier_stages_only && current > target)) return { placement: 'kept' }
-  return { placement: 'moved', stage }
+export function routeStage(
+  pipelines: Pipeline[], route: { pipeline_id: string; stage_name: string },
+): { ok: true; pipeline: Pipeline; stage: Stage } | { ok: false; reason: 'pipeline_unknown' | 'stage_unknown' } {
+  const pipeline = pipelines.find(p => p.id === route.pipeline_id) ?? pipelines.find(p => p.key === route.pipeline_id)
+  if (!pipeline) return { ok: false, reason: 'pipeline_unknown' }
+  const exact = pipeline.stages.find(s => s.name === route.stage_name)
+  if (exact) return { ok: true, pipeline, stage: exact }
+  const loose = pipeline.stages.filter(s => norm(s.name) === norm(route.stage_name))
+  if (loose.length !== 1) return { ok: false, reason: 'stage_unknown' }
+  return { ok: true, pipeline, stage: loose[0] }
+}
+
+/** What hub_pipeline_place did, in the sync's words. */
+export function placementOf(result: { placed: boolean; moved?: boolean; reason?: string }): Placement {
+  if (result.placed) return result.moved ? 'moved' : 'entered'
+  if (result.reason === 'already_there' || result.reason === 'already_further') return 'kept'
+  return 'none'
 }

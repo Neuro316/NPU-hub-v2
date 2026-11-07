@@ -5,6 +5,7 @@ import {
   getOrCreateConversation, sendEmailViaWebhook, resolveMergeTags
 } from '@/lib/crm-server';
 import type { EmailWebhookPayload } from '@/types/crm';
+import { mergeStageFor } from '@/lib/pipelines/positions';
 
 export async function POST(request: NextRequest) {
   const supabase = createServerSupabase();
@@ -46,8 +47,10 @@ export async function POST(request: NextRequest) {
     .eq('id', org_id)
     .single();
 
-  const resolvedSubject = resolveMergeTags(subject, contact, org?.name);
-  const resolvedBody = resolveMergeTags(body_html, contact, org?.name);
+  // {{pipeline_stage}} comes from contact_pipeline_positions, not the legacy column.
+  const mergeContact = { ...contact, stage_name: await mergeStageFor(supabase, org_id, contact_id) };
+  const resolvedSubject = resolveMergeTags(subject, mergeContact, org?.name);
+  const resolvedBody = resolveMergeTags(body_html, mergeContact, org?.name);
 
   // Create email_sends record
   const { data: emailSend } = await supabase

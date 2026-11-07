@@ -8,6 +8,7 @@ import {
 import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
 import type { CrmContact } from '@/types/crm'
+import { fetchContactPositions } from '@/lib/pipelines/client'
 
 interface PipelineResource {
   id: string
@@ -49,6 +50,19 @@ export default function EmailComposer({
   const [aiDrafting, setAiDrafting] = useState(false)
   const [aiContext, setAiContext] = useState('')
   const [showAiPanel, setShowAiPanel] = useState(false)
+  // The contact's stage in each pipeline they are in (contact_pipeline_positions).
+  // contacts.pipeline_stage is legacy and not read.
+  const [stageNames, setStageNames] = useState<string[]>([])
+
+  useEffect(() => {
+    if (!currentOrg) return
+    let cancelled = false
+    fetchContactPositions(currentOrg.id, contact.id)
+      .then(ps => { if (!cancelled) setStageNames(Array.from(new Set(ps.map(p => p.stage_name)))) })
+      .catch(() => { if (!cancelled) setStageNames([]) })
+    return () => { cancelled = true }
+  }, [currentOrg?.id, contact.id])
+  const stageLabel = stageNames.join(', ')
 
   // Load email config + pipeline resources
   useEffect(() => {
@@ -86,12 +100,12 @@ export default function EmailComposer({
     { tag: '{{last_name}}', label: 'Last Name', preview: contact.last_name },
     { tag: '{{email}}', label: 'Email', preview: contact.email },
     { tag: '{{phone}}', label: 'Phone', preview: contact.phone },
-    { tag: '{{pipeline_stage}}', label: 'Pipeline Stage', preview: contact.pipeline_stage },
+    { tag: '{{pipeline_stage}}', label: 'Pipeline Stage', preview: stageLabel },
     { tag: '{{org_name}}', label: 'Org Name', preview: currentOrg?.name },
   ]
 
-  const stageResources = resources.filter(r => r.pipeline_stage === contact.pipeline_stage)
-  const allOtherResources = resources.filter(r => r.pipeline_stage !== contact.pipeline_stage)
+  const stageResources = resources.filter(r => stageNames.includes(r.pipeline_stage))
+  const allOtherResources = resources.filter(r => !stageNames.includes(r.pipeline_stage))
 
   const execCommand = (cmd: string, value?: string) => {
     document.execCommand(cmd, false, value)
@@ -129,7 +143,7 @@ export default function EmailComposer({
           contact_id: contact.id,
           org_id: currentOrg.id,
           context: aiContext || undefined,
-          pipeline_stage: contact.pipeline_stage,
+          pipeline_stage: stageLabel || undefined,
           attached_resources: attachedResources.map(r => r.name),
         }),
       })
@@ -289,7 +303,7 @@ export default function EmailComposer({
                 {stageResources.length > 0 && (
                   <>
                     <div className="px-3 py-1.5 text-[8px] font-bold text-np-blue uppercase tracking-wider bg-np-blue/5">
-                      {contact.pipeline_stage} Resources
+                      {stageLabel} resources
                     </div>
                     {stageResources.map(r => (
                       <button key={r.id} onClick={() => insertResourceLink(r)}

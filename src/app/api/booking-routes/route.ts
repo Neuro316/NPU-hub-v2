@@ -6,10 +6,12 @@
 // Settings › Booking routes (Build 1). Superadmin only, and only inside an org the caller
 // is a member of. nr_booking_pipeline_routes is the platform's shared "booking link to Hub
 // pipeline" config; the Hub writes its rows (ruled 2026-11-02), never its schema, and
-// leaves tag_on_submit and custom_field_map as they are. pipeline_id is the board's id
-// from org_settings.crm_pipelines, the value contacts.pipeline_id holds.
+// leaves tag_on_submit and custom_field_map as they are. pipeline_id is the pipeline's
+// legacy key (pipelines.legacy_key) and stage_name a stage name, both checked against the
+// live pipelines and stages. A booking places the guest in this pipeline only.
 import { NextRequest, NextResponse } from 'next/server'
 import { withStaff, requireOrg, forbidden, bad, type StaffContext } from '@/lib/api-guard'
+import { loadPipelines } from '@/lib/pipelines/positions'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,18 +19,15 @@ const ROUTE_COLS = 'id, appointment_type_id, pipeline_id, pipeline_name, stage_n
 const ONLY_SUPERADMIN = 'Booking routes are managed by superadmins.'
 const isUuid = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f-]{36}$/i.test(v)
 
+/** Live pipelines and stages (pipelines / pipeline_stages). A route stores the pipeline's legacy key and a stage name,
+ *  because nr_booking_pipeline_routes is shared with other apps; the sync resolves them to a stage at run time. */
 async function pipelinesFor(ctx: StaffContext, orgId: string) {
-  const { data, error } = await ctx.db.from('org_settings').select('setting_value')
-    .eq('org_id', orgId).eq('setting_key', 'crm_pipelines').maybeSingle()
-  if (error) return null
-  const list = (data?.setting_value as any)?.pipelines
-  return (Array.isArray(list) ? list : [])
-    .filter((p: any) => p && typeof p.id === 'string')
-    .map((p: any) => ({
-      id: p.id as string,
-      name: String(p.name ?? p.id),
-      stages: (Array.isArray(p.stages) ? p.stages : []).map((s: any) => String(s?.name ?? '')).filter(Boolean) as string[],
-    }))
+  try {
+    const list = await loadPipelines(ctx.db, orgId)
+    return list.map(p => ({ id: p.key, name: p.name, stages: p.stages.map(s => s.name) }))
+  } catch {
+    return null
+  }
 }
 
 export const GET = withStaff(async (req: NextRequest, ctx) => {

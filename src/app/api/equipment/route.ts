@@ -1,5 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabase, createServerSupabase } from '@/lib/supabase'
+import { loadPositions, positionsByContact } from '@/lib/pipelines/positions'
+
+/** "Pipeline · Stage" for each pipeline a contact is in, joined (contact_pipeline_positions). */
+async function pipelineLabels(db: ReturnType<typeof createAdminSupabase>, orgId: string, contactIds: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  if (contactIds.length === 0) return out
+  const byContact = positionsByContact(await loadPositions(db, orgId, { contactIds }))
+  for (const [id, ps] of Array.from(byContact)) out.set(id, ps.map(p => `${p.pipeline_name} · ${p.stage_name}`).join(', '))
+  return out
+}
 
 // GET /api/equipment — list all equipment for org
 export async function GET(req: NextRequest) {
@@ -26,19 +36,20 @@ export async function GET(req: NextRequest) {
     if (assignedIds.length > 0) {
       const { data: contacts } = await admin
         .from('contacts')
-        .select('id, first_name, last_name, phone, pipeline_stage')
+        .select('id, first_name, last_name, phone')
         .in('id', assignedIds)
       if (contacts) {
         for (const c of contacts) contactMap[c.id] = c
       }
     }
 
+    const labels = await pipelineLabels(admin, orgId, Object.keys(contactMap))
     const equipment = items.map(e => ({
       ...e,
       contact_first_name: e.assigned_to ? contactMap[e.assigned_to]?.first_name || null : null,
       contact_last_name: e.assigned_to ? contactMap[e.assigned_to]?.last_name || null : null,
       contact_phone: e.assigned_to ? contactMap[e.assigned_to]?.phone || null : null,
-      contact_pipeline_stage: e.assigned_to ? contactMap[e.assigned_to]?.pipeline_stage || null : null,
+      contact_pipeline_label: e.assigned_to ? labels.get(e.assigned_to) || null : null,
     }))
 
     return NextResponse.json({ equipment })

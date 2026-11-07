@@ -5,7 +5,8 @@
 // once, keyed on the booking id (hub_booking_syncs):
 //   first sight  find the contact by email, then phone (the duplicate sweep's rules),
 //                or create it (source university_booking) when the route allows; place it
-//                at the route's stage, never backward; store the answers; timeline entry
+//                at the route's stage in the route's pipeline only (contact_pipeline_positions),
+//                never backward when the route says so; store the answers; timeline entry
 //   later runs   a new time (reschedule) or a cancellation rewrites the stored booking
 //                and adds a timeline entry. The stage is never moved again.
 // Platform tables are read only. Logs and run details carry ids, counts and codes, never
@@ -13,7 +14,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { findContactByPhoneNormalized } from '@/lib/crm-server'
 import { isUsableEmail } from '@/lib/contacts/match'
-import { answerList, decidePlacement, type Pipeline } from './placement'
+import { loadPipelines, placeContact } from '@/lib/pipelines/positions'
+import { answerList, placementOf, routeStage, type Pipeline, type Placement } from './placement'
 
 /** Bookings changed within this window are looked at on each run. */
 const LOOKBACK_DAYS = 30
@@ -74,7 +76,7 @@ async function guestFor(db: SupabaseClient, b: Booking) {
   return null
 }
 
-const CONTACT_COLS = 'id, org_id, pipeline_id, pipeline_stage, merged_into_id'
+const CONTACT_COLS = 'id, org_id, merged_into_id'
 
 async function findContact(db: SupabaseClient, orgId: string, email: string | null, phone: string | null) {
   if (email && isUsableEmail(email)) {
@@ -85,7 +87,7 @@ async function findContact(db: SupabaseClient, orgId: string, email: string | nu
   }
   if (phone && phone.replace(/\D/g, '').length >= 10) {
     const c = await findContactByPhoneNormalized(db, orgId, phone)
-    if (c && !c.merged_into_id) return { id: c.id, org_id: c.org_id, pipeline_id: c.pipeline_id, pipeline_stage: c.pipeline_stage, merged_into_id: null }
+    if (c && !c.merged_into_id) return { id: c.id, org_id: c.org_id, merged_into_id: null }
   }
   return null
 }
@@ -111,15 +113,21 @@ async function timeline(db: SupabaseClient, orgId: string, contactId: string, ev
   if (error) console.error(`[booking-sync] timeline ${event_type} failed: ${error.code ?? 'unknown'}`)
 }
 
-/** Moves the contact (the pipeline_changed timeline entry comes from trg_pipeline_timeline) and its deal row. */
-async function place(db: SupabaseClient, orgId: string, contactId: string, pipelineId: string, stage: string, entered: boolean) {
-  const { error } = await db.from('contacts').update({ pipeline_id: pipelineId, pipeline_stage: stage }).eq('id', contactId)
-  if (error) throw new Error(`place ${error.code ?? 'unknown'}`)
+/**
+ * Places the contact at the route's stage in that pipeline only (hub_pipeline_place writes the timeline history),
+ * then its deal row, keyed on the pipeline's legacy key. Other pipelines the contact is in are untouched.
+ */
+async function place(db: SupabaseClient, orgId: string, contactId: string, pipeline: Pipeline, stageId: string, route: Route): Promise<Placement> {
+  const result = await placeContact(db, contactId, stageId, route.move_earlier_stages_only, `booking_route:${route.id}`)
+  const placement = placementOf(result)
+  if (placement === 'none') console.warn(`[booking-sync] route ${route.id} placed nothing: ${result.reason ?? 'unknown'}`)
+  if (placement !== 'entered' && placement !== 'moved') return placement
   const now = new Date().toISOString()
-  const row: Record<string, unknown> = { org_id: orgId, contact_id: contactId, pipeline_key: pipelineId, stage_changed_at: now, won_at: null, lost_at: null, updated_at: now }
-  if (entered) row.entered_at = now
+  const row: Record<string, unknown> = { org_id: orgId, contact_id: contactId, pipeline_key: pipeline.key, stage_changed_at: now, won_at: null, lost_at: null, updated_at: now }
+  if (placement === 'entered') row.entered_at = now
   const { error: dErr } = await db.from('hub_pipeline_deals').upsert(row, { onConflict: 'contact_id,pipeline_key' })
   if (dErr) console.error(`[booking-sync] deal row failed: ${dErr.code ?? 'unknown'}`)
+  return placement
 }
 
 export interface SyncCounts {
@@ -158,9 +166,8 @@ export async function runBookingSync(db: SupabaseClient, deadline: number): Prom
   const pipelinesByOrg = new Map<string, Pipeline[]>()
   const pipelinesFor = async (orgId: string) => {
     if (!pipelinesByOrg.has(orgId)) {
-      const { data } = await db.from('org_settings').select('setting_value').eq('org_id', orgId).eq('setting_key', 'crm_pipelines').maybeSingle()
-      const list = (data?.setting_value as any)?.pipelines
-      pipelinesByOrg.set(orgId, Array.isArray(list) ? list : [])
+      const list = await loadPipelines(db, orgId)
+      pipelinesByOrg.set(orgId, list.map(p => ({ id: p.id, key: p.key, name: p.name, stages: p.stages.map(s => ({ id: s.id, name: s.name })) })))
     }
     return pipelinesByOrg.get(orgId)!
   }
@@ -214,30 +221,32 @@ export async function runBookingSync(db: SupabaseClient, deadline: number): Prom
         counts.created_contacts++
       }
 
-      const decision = decidePlacement(await pipelinesFor(b.org_id), route, contact)
-      if (decision.stage && (decision.placement === 'entered' || decision.placement === 'moved')) {
-        await place(db, b.org_id, contact.id, route.pipeline_id, decision.stage, decision.placement === 'entered')
-      }
+      const target = routeStage(await pipelinesFor(b.org_id), route)
+      let placement: Placement = 'none'
+      if (target.ok) placement = await place(db, b.org_id, contact.id, target.pipeline, target.stage.id, route)
+      else console.warn(`[booking-sync] route ${route.id} placed nothing: ${target.reason}`)
+      const pipelineName = (target.ok ? target.pipeline.name : null) ?? route.pipeline_name ?? 'the pipeline'
+      const stageName = target.ok ? target.stage.name : route.stage_name
 
       const { error: iErr } = await db.from('hub_booking_syncs').insert({
         booking_id: b.id, org_id: b.org_id, contact_id: contact.id, route_id: route.id,
         appointment_type_id: b.appointment_type_id, appointment_type: type.name,
         starts_at: b.starts_at, ends_at: b.ends_at, status: b.status,
-        answers: answerList(type.intake_questions, b.intake_answers), placement: decision.placement,
+        answers: answerList(type.intake_questions, b.intake_answers), placement,
       })
       if (iErr && iErr.code !== '23505') throw new Error(`record ${iErr.code ?? 'unknown'}`)
       if (iErr) continue
       counts.synced++
       const placed = {
-        entered: `Added to ${route.pipeline_name ?? 'the pipeline'} at ${decision.stage}.`,
-        moved: `Moved to ${decision.stage} in ${route.pipeline_name ?? 'the pipeline'}.`,
-        kept: 'Stage kept: the contact was already at or past the booking stage.',
+        entered: `Added to ${pipelineName} at ${stageName}.`,
+        moved: `Moved to ${stageName} in ${pipelineName}.`,
+        kept: `Stage kept: the contact was already at or past the booking stage in ${pipelineName}.`,
         other_pipeline: 'Stage not changed: the contact is on another pipeline.',
         none: 'Stage not changed: the route\'s pipeline or stage no longer exists.',
-      }[decision.placement]
+      }[placement]
       await timeline(db, b.org_id, contact.id, 'booking_created', `Booked: ${type.name}`,
         `${when(b.starts_at, b.timezone_booked)}. ${placed}`,
-        { booking_id: b.id, appointment_type_id: b.appointment_type_id, route_id: route.id, starts_at: b.starts_at, placement: decision.placement })
+        { booking_id: b.id, appointment_type_id: b.appointment_type_id, route_id: route.id, starts_at: b.starts_at, placement })
     } catch (e: any) {
       counts.failed++
       console.error(`[booking-sync] booking ${b.id} failed: ${String(e?.message ?? 'error').slice(0, 60)}`)

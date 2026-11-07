@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabase } from '@/lib/supabase'
+import { loadPositions } from '@/lib/pipelines/positions'
 
 // ═══════════════════════════════════════════════════════════════
 // POST /api/identity/resolve
@@ -78,7 +79,8 @@ export async function POST(req: NextRequest) {
           email,
           phone: phone || null,
           source: 'mastermind_enrollment',
-          pipeline_stage: 'Enrolled',
+          // No pipeline placement here: the legacy pipeline_stage column is no longer written by the Hub, and an
+          // enrollment names no pipeline, so none is guessed. mastermind_status records the enrollment.
           identity_id: identityId,
           mastermind_user_id: user_id,
           mastermind_status: 'enrolled',
@@ -95,7 +97,6 @@ export async function POST(req: NextRequest) {
         identity_id: identityId,
         mastermind_user_id: user_id || null,
         mastermind_status: 'enrolled',
-        pipeline_stage: 'Enrolled',
         last_contacted_at: new Date().toISOString(),
       }).eq('id', contactId)
 
@@ -185,10 +186,19 @@ export async function GET(req: NextRequest) {
   let contact = null
   if (identity.contact_id) {
     const { data } = await sb.from('contacts')
-      .select('id, first_name, last_name, phone, tags, pipeline_stage, health_score, health_tier, mastermind_status, acquisition_source, acquisition_campaign')
+      .select('id, first_name, last_name, phone, tags, health_score, health_tier, mastermind_status, acquisition_source, acquisition_campaign')
       .eq('id', identity.contact_id)
       .single()
     contact = data
+    // Pipelines and stages from contact_pipeline_positions (hub_229), in place of the legacy pipeline_stage.
+    if (contact) {
+      try {
+        const positions = await loadPositions(sb, orgId, { contactIds: [identity.contact_id] })
+        contact = { ...contact, pipelines: positions.map(p => ({ pipeline_id: p.pipeline_id, pipeline_key: p.pipeline_key, pipeline_name: p.pipeline_name, stage_id: p.stage_id, stage: p.stage_name })) }
+      } catch (e) {
+        console.warn(`[identity/resolve] positions contact=${identity.contact_id} skipped: ${(e as Error).message}`)
+      }
+    }
   }
 
   // Fetch recent funnel events

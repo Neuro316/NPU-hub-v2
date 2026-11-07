@@ -8,7 +8,9 @@ import {
   X, DollarSign, Trash2, Settings, BarChart3,
   Clock, TrendingUp, Target, Percent, Save, User, ArrowRightLeft, LayoutGrid, Sliders, Mail
 } from 'lucide-react'
-import { fetchContacts, updateContact, createContact, removeFromPipeline as removeFromPipelineApi } from '@/lib/crm-client'
+import { fetchContacts, createContact, removeFromPipeline as removeFromPipelineApi } from '@/lib/crm-client'
+import { findPipeline, firstStage, loadPipelines, loadPositions, type PipelineRef, type Position, type StageRef } from '@/lib/pipelines/positions'
+import { apiSetStage, fetchContactPositions } from '@/lib/pipelines/client'
 import { useToast } from '@/components/ui/toast'
 import type { CrmContact } from '@/types/crm'
 import { PIPELINE_STAGES, STAGE_COLORS } from '@/types/crm'
@@ -202,16 +204,23 @@ const TEMPLATES: Record<string, PipelineStageConfig[]> = {
   ],
 }
 
-function ContactCard({ contact, stages, pipelines, activePipelineId, customFields, dealValue, onSaveValue, onMove, onMovePipeline, onRemovePipeline, onOpenContact, activity, showNotes, showTasks }: { 
+// A card shows the contact's place in THIS board's pipeline only (contact_pipeline_positions).
+// contacts.pipeline_id / pipeline_stage are legacy and are not read.
+function ContactCard({ contact, position, currentStageId, stages, pipelines, activePipelineId, customFields, dealValue, onSaveValue, onMove, onAddToPipeline, loadMemberships, onRemovePipeline, onOpenContact, activity, showNotes, showTasks }: {
   contact: CrmContact
+  position: Position | undefined
+  /** the config id of the column the card sits in */
+  currentStageId: string | null
   dealValue: number | null
   onSaveValue: (value: number | null) => Promise<void>
   stages: PipelineStageConfig[]
   pipelines: PipelineConfig[]
   activePipelineId: string
   customFields: PipelineCustomField[]
-  onMove: (stage: string) => void
-  onMovePipeline: (pipelineId: string, firstStage: string) => void
+  onMove: (stage: PipelineStageConfig) => void
+  onAddToPipeline: (pipelineKey: string) => void
+  /** legacy keys of every pipeline the contact is in */
+  loadMemberships: () => Promise<string[]>
   onRemovePipeline: () => void
   onOpenContact: (id: string) => void
   activity?: CardActivity
@@ -220,6 +229,13 @@ function ContactCard({ contact, stages, pipelines, activePipelineId, customField
 }) {
   const [showMenu, setShowMenu] = useState(false)
   const [menuSection, setMenuSection] = useState<'main'|'stage'|'pipeline'>('main')
+  // Pipelines the contact is already in, read when the add menu opens. null while loading.
+  const [memberKeys, setMemberKeys] = useState<string[] | null>(null)
+  const openPipelineMenu = () => {
+    setMenuSection('pipeline')
+    setMemberKeys(null)
+    loadMemberships().then(setMemberKeys).catch(() => setMemberKeys([activePipelineId]))
+  }
   // The menu is rendered in a portal at fixed coords so it escapes the column's
   // overflow-y-auto — otherwise a tall stage submenu on a lower card is clipped
   // and its stage buttons become unclickable.
@@ -281,7 +297,7 @@ function ContactCard({ contact, stages, pipelines, activePipelineId, customField
         <button ref={btnRef} onClick={e => { e.stopPropagation(); showMenu ? closeMenu() : openMenu() }} className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-gray-50 transition-all"><MoreHorizontal size={12} className="text-gray-400" /></button>
       </div>
       <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-        {contact.pipeline_stage && <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full bg-teal/10 text-teal">{contact.pipeline_stage}</span>}
+        {position && <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full bg-teal/10 text-teal">{position.stage_name}</span>}
         {contact.tags?.slice(0,2).map(t => <span key={t} className="text-[8px] font-semibold px-1 py-0.5 rounded-full bg-np-blue/8 text-np-blue">{t}</span>)}
         
         {/* Custom field badges */}
@@ -316,7 +332,7 @@ function ContactCard({ contact, stages, pipelines, activePipelineId, customField
           {menuSection === 'main' && <>
             <button onClick={() => { onOpenContact(contact.id); closeMenu() }} className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50 flex items-center gap-2"><User size={11} className="text-gray-400" /> View Details</button>
             <button onClick={() => setMenuSection('stage')} className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50 flex items-center gap-2"><ArrowRightLeft size={11} className="text-gray-400" /> Move to Stage <ChevronDown size={9} className="ml-auto text-gray-300 -rotate-90" /></button>
-            <button onClick={() => setMenuSection('pipeline')} className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50 flex items-center gap-2"><Target size={11} className="text-gray-400" /> Change Pipeline <ChevronDown size={9} className="ml-auto text-gray-300 -rotate-90" /></button>
+            <button onClick={openPipelineMenu} className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50 flex items-center gap-2"><Target size={11} className="text-gray-400" /> Add to pipeline <ChevronDown size={9} className="ml-auto text-gray-300 -rotate-90" /></button>
             <div className="border-t border-gray-100 my-1" />
             <button onClick={() => { onRemovePipeline(); closeMenu() }} className="w-full text-left px-3 py-1.5 text-[11px] text-red-500 hover:bg-red-50 flex items-center gap-2"><X size={11} /> Remove from Pipeline</button>
           </>}
@@ -326,25 +342,30 @@ function ContactCard({ contact, stages, pipelines, activePipelineId, customField
             {/* Capped + internally scrollable so a long stage list never overflows the viewport. */}
             <div className="max-h-60 overflow-y-auto">
               {stages.map(s => (
-                <button key={s.id} onClick={() => { onMove(s.name); closeMenu() }}
-                  className={`w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50 flex items-center gap-2 ${contact.pipeline_stage === s.name ? 'font-semibold text-np-blue' : ''}`}>
+                <button key={s.id} onClick={() => { onMove(s); closeMenu() }}
+                  className={`w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50 flex items-center gap-2 ${currentStageId === s.id ? 'font-semibold text-np-blue' : ''}`}>
                   <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: s.color }} />{s.name}
-                  {contact.pipeline_stage === s.name && <span className="ml-auto text-[9px] text-gray-300 flex-shrink-0">current</span>}
+                  {currentStageId === s.id && <span className="ml-auto text-[9px] text-gray-300 flex-shrink-0">current</span>}
                 </button>
               ))}
             </div>
           </>}
           {menuSection === 'pipeline' && <>
             <button onClick={() => setMenuSection('main')} className="w-full text-left px-3 py-1.5 text-[10px] text-gray-400 hover:bg-gray-50 flex items-center gap-1"><ChevronDown size={9} className="rotate-90" /> Back</button>
-            <p className="px-3 py-1 text-[9px] font-semibold uppercase tracking-wider text-gray-400">Move to Pipeline</p>
+            <p className="px-3 py-1 text-[9px] font-semibold uppercase tracking-wider text-gray-400">Add to pipeline</p>
+            <p className="px-3 pb-1 text-[9px] text-gray-400">Adds at the first stage. This pipeline is kept.</p>
             <div className="max-h-60 overflow-y-auto">
-              {pipelines.map(p => (
-                <button key={p.id} onClick={() => { onMovePipeline(p.id, p.stages[0]?.name || 'New Lead'); closeMenu() }}
-                  className={`w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50 flex items-center gap-2 ${p.id === activePipelineId ? 'font-semibold text-np-blue' : ''}`}>
-                  {p.name}
-                  <span className="ml-auto text-[9px] text-gray-300 flex-shrink-0">{p.stages.length} stages</span>
-                </button>
-              ))}
+              {pipelines.map(p => {
+                const isIn = p.id === activePipelineId || !!memberKeys?.includes(p.id)
+                const disabled = memberKeys === null || isIn
+                return (
+                  <button key={p.id} disabled={disabled} onClick={() => { onAddToPipeline(p.id); closeMenu() }}
+                    className={`w-full text-left px-3 py-1.5 text-[11px] flex items-center gap-2 ${disabled ? 'text-gray-400 cursor-default' : 'hover:bg-gray-50'} ${p.id === activePipelineId ? 'font-semibold' : ''}`}>
+                    <span className="truncate">{p.name}</span>
+                    <span className="ml-auto text-[9px] text-gray-300 flex-shrink-0">{memberKeys === null ? '...' : isIn ? 'In it' : `${p.stages.length} stages`}</span>
+                  </button>
+                )
+              })}
             </div>
           </>}
         </div>,
@@ -354,21 +375,26 @@ function ContactCard({ contact, stages, pipelines, activePipelineId, customField
   )
 }
 
-// Stage type comes from the existing Won / Lost flags on each stage. A pipeline can
-// flag more than one stage as won or lost, so every flagged stage counts.
+// Stage type comes from the Won / Lost flags on the stage the contact holds in this
+// pipeline. A pipeline can flag more than one stage as won or lost, so every flagged stage counts.
 type StageType = 'open' | 'won' | 'lost'
-function stageTypeOf(stages: PipelineStageConfig[], stageName: string | null | undefined): StageType {
-  const n = (stageName || '').trim().toLowerCase()
-  const st = stages.find(s => s.name.trim().toLowerCase() === n)
+function stageTypeOf(st: { is_closed_won: boolean; is_closed_lost: boolean } | null | undefined): StageType {
   if (st?.is_closed_won) return 'won'
   if (st?.is_closed_lost) return 'lost'
   return 'open'
 }
 
+// The local shape of a position just set, until the server's row comes back.
+const makePosition = (contactId: string, p: PipelineRef, s: StageRef): Position => ({
+  contact_id: contactId, pipeline_id: p.id, pipeline_key: p.key, pipeline_name: p.name,
+  stage_id: s.id, stage_name: s.name, stage_color: s.color, stage_position: s.position,
+  is_closed_won: s.is_closed_won, is_closed_lost: s.is_closed_lost, moved_at: new Date().toISOString(), source: 'board',
+})
+
 const DAY = 86400000
 
-function PipelineMetrics({ contacts, stages, deals }: { contacts: CrmContact[]; stages: PipelineStageConfig[]; deals: Record<string, PipelineDeal> }) {
-  const typed = contacts.map(c => ({ c, d: deals[c.id] as PipelineDeal | undefined, t: stageTypeOf(stages, c.pipeline_stage) }))
+function PipelineMetrics({ contacts, positions, deals }: { contacts: CrmContact[]; positions: Record<string, Position>; deals: Record<string, PipelineDeal> }) {
+  const typed = contacts.map(c => ({ c, d: deals[c.id] as PipelineDeal | undefined, t: stageTypeOf(positions[c.id]) }))
   const open = typed.filter(x => x.t === 'open')
   const won = typed.filter(x => x.t === 'won')
   const lost = typed.filter(x => x.t === 'lost')
@@ -850,101 +876,167 @@ function NewPipelineModal({ onSave, onClose }: { onSave: (p: PipelineConfig) => 
   )
 }
 
-function NewContactModal({ pipeline, firstStage, onSave, onClose }: { pipeline: PipelineConfig; firstStage: string; onSave: (contact: CrmContact) => void; onClose: () => void }) {
+// Adds a person to THIS pipeline at the chosen stage (first by default): a new contact, or one
+// already in Contacts. It creates a position in this pipeline and touches no other pipeline.
+function AddContactModal({ pipeline, stages, onBoard, onAdded, onClose }: {
+  pipeline: PipelineConfig
+  /** this pipeline's columns that can take a card, in order */
+  stages: { cfg: PipelineStageConfig; ref: StageRef }[]
+  onBoard: Set<string>
+  onAdded: (contact: CrmContact, positions: Position[], stage: StageRef) => void
+  onClose: () => void
+}) {
   const { currentOrg } = useWorkspace()
+  const [mode, setMode] = useState<'new' | 'existing'>('new')
+  const [stageId, setStageId] = useState(stages[0]?.ref.id || '')
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
+  const [q, setQ] = useState('')
+  const [results, setResults] = useState<CrmContact[]>([])
+  const [searching, setSearching] = useState(false)
+  const [picked, setPicked] = useState<CrmContact | null>(null)
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const stage = stages.find(s => s.ref.id === stageId)?.ref || null
 
-  const handleCreate = async () => {
-    if (!firstName.trim() || !currentOrg) return
-    setSaving(true)
+  useEffect(() => {
+    if (mode !== 'existing' || !currentOrg) return
+    const term = q.trim()
+    if (term.length < 2) { setResults([]); return }
+    let cancelled = false
+    setSearching(true)
+    const t = setTimeout(() => {
+      fetchContacts({ org_id: currentOrg.id, q: term, limit: 8 })
+        .then(r => { if (!cancelled) setResults(r.contacts) })
+        .catch(() => { if (!cancelled) setResults([]) })
+        .finally(() => { if (!cancelled) setSearching(false) })
+    }, 250)
+    return () => { cancelled = true; clearTimeout(t) }
+  }, [q, mode, currentOrg?.id])
+
+  const canSave = !!stage && !saving && (mode === 'new' ? !!firstName.trim() : !!picked && !onBoard.has(picked.id))
+
+  const handleAdd = async () => {
+    if (!canSave || !stage || !currentOrg) return
+    setSaving(true); setError('')
+    let contact: CrmContact | null = picked
     try {
-      const newContact = await createContact({
-        org_id: currentOrg.id,
-        first_name: firstName.trim(),
-        last_name: lastName.trim() || undefined,
-        email: email.trim() || undefined,
-        phone: phone.trim() || undefined,
-        pipeline_id: pipeline.id,
-        pipeline_stage: firstStage,
-      })
-      onSave(newContact)
-      onClose()
+      if (mode === 'new') {
+        contact = await createContact({
+          org_id: currentOrg.id,
+          first_name: firstName.trim(),
+          last_name: lastName.trim() || undefined,
+          email: email.trim() || undefined,
+          phone: phone.trim() || undefined,
+        })
+      }
     } catch (e) {
-      console.error(e)
-      alert('Failed to create contact')
+      console.error('[Pipelines] create contact failed')
+      setError('The contact could not be created. Try again.')
+      setSaving(false)
+      return
     }
-    setSaving(false)
+    if (!contact) { setSaving(false); return }
+    try {
+      const positions = await apiSetStage(contact.id, stage.id, 'board')
+      onAdded(contact, positions, stage)
+      onClose()
+    } catch (e: any) {
+      setError(mode === 'new'
+        ? `The contact was created but not added to ${pipeline.name}. Find them in Contacts and add them again.`
+        : (e?.message || 'Could not add to this pipeline. Try again.'))
+      setSaving(false)
+    }
   }
 
+  const input = 'w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30'
+  const label = 'text-[10px] font-semibold uppercase tracking-wider text-gray-400'
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-full max-w-md bg-white rounded-xl shadow-2xl border border-gray-100 p-5 animate-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200 p-4">
+      <div className="w-full max-w-md bg-white rounded-xl shadow-2xl border border-gray-100 p-5 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-base font-bold text-np-dark">New Contact</h3>
-            <p className="text-[10px] text-gray-400 mt-0.5">Add to <span className="font-semibold text-np-blue">{pipeline.name}</span> → {firstStage}</p>
+          <div className="min-w-0">
+            <h3 className="text-base font-bold text-np-dark">Add to pipeline</h3>
+            <p className="text-[10px] text-gray-400 mt-0.5 truncate">Adds to <span className="font-semibold text-np-blue">{pipeline.name}</span>. Other pipelines are not changed.</p>
           </div>
           <button onClick={onClose} className="p-1 rounded hover:bg-gray-50"><X size={14} /></button>
         </div>
 
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">First Name *</label>
-              <input
-                value={firstName}
-                onChange={e => setFirstName(e.target.value)}
-                placeholder="John"
-                className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30"
-                autoFocus
-              />
+        {stages.length === 0 ? (
+          <p className="text-xs text-gray-500">This pipeline has no stages ready yet. Save its stages, then reload the page.</p>
+        ) : (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-1.5">
+              {([['new', 'New contact'], ['existing', 'Existing contact']] as const).map(([k, l]) => (
+                <button key={k} onClick={() => { setMode(k); setError('') }}
+                  className={`px-3 py-2 text-xs rounded-lg border transition-all ${mode === k ? 'border-np-blue bg-np-blue/5 text-np-blue font-medium' : 'border-gray-100 text-gray-500'}`}>{l}</button>
+              ))}
             </div>
+
             <div>
-              <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Last Name</label>
-              <input
-                value={lastName}
-                onChange={e => setLastName(e.target.value)}
-                placeholder="Doe"
-                className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30"
-              />
+              <label className={label}>Stage</label>
+              <select value={stageId} onChange={e => setStageId(e.target.value)} className={input + ' bg-white'}>
+                {stages.map(s => <option key={s.ref.id} value={s.ref.id}>{s.cfg.name}</option>)}
+              </select>
             </div>
-          </div>
 
-          <div>
-            <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="john@example.com"
-              className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30"
-            />
+            {mode === 'new' ? <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label className={label}>First name *</label>
+                  <input value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="John" className={input} autoFocus />
+                </div>
+                <div>
+                  <label className={label}>Last name</label>
+                  <input value={lastName} onChange={e => setLastName(e.target.value)} placeholder="Doe" className={input} />
+                </div>
+              </div>
+              <div>
+                <label className={label}>Email</label>
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="john@example.com" className={input} />
+              </div>
+              <div>
+                <label className={label}>Phone</label>
+                <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+1 (555) 123-4567" className={input} />
+              </div>
+            </> : <>
+              <div>
+                <label className={label}>Find a contact</label>
+                <input value={q} onChange={e => { setQ(e.target.value); setPicked(null) }} placeholder="Name, email or phone" className={input} autoFocus />
+              </div>
+              <div className="max-h-56 overflow-y-auto rounded-lg border border-gray-100 divide-y divide-gray-50">
+                {q.trim().length < 2 && <p className="px-3 py-3 text-[11px] text-gray-400">Type at least 2 letters.</p>}
+                {q.trim().length >= 2 && searching && <p className="px-3 py-3 text-[11px] text-gray-400">Searching...</p>}
+                {q.trim().length >= 2 && !searching && results.length === 0 && <p className="px-3 py-3 text-[11px] text-gray-400">No contacts found.</p>}
+                {!searching && results.map(c => {
+                  const already = onBoard.has(c.id)
+                  const name = `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'No name'
+                  return (
+                    <button key={c.id} disabled={already} onClick={() => setPicked(c)}
+                      className={`w-full text-left px-3 py-2 flex items-center gap-2 ${picked?.id === c.id ? 'bg-np-blue/5' : already ? '' : 'hover:bg-gray-50'}`}>
+                      <div className="min-w-0 flex-1">
+                        <p className={`text-xs truncate ${already ? 'text-gray-400' : 'text-np-dark font-medium'}`}>{name}</p>
+                        {c.email && <p className="text-[10px] text-gray-400 truncate">{c.email}</p>}
+                      </div>
+                      {already && <span className="text-[9px] text-gray-400 flex-shrink-0">On this board</span>}
+                      {picked?.id === c.id && <span className="text-[9px] text-np-blue font-semibold flex-shrink-0">Selected</span>}
+                    </button>
+                  )
+                })}
+              </div>
+            </>}
+            {error && <p className="text-[11px] text-red-500">{error}</p>}
           </div>
-
-          <div>
-            <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Phone</label>
-            <input
-              type="tel"
-              value={phone}
-              onChange={e => setPhone(e.target.value)}
-              placeholder="+1 (555) 123-4567"
-              className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal/30"
-            />
-          </div>
-        </div>
+        )}
 
         <div className="flex justify-end gap-2 mt-5">
           <button onClick={onClose} className="px-3 py-2 text-xs text-gray-400">Cancel</button>
-          <button
-            onClick={handleCreate}
-            disabled={!firstName.trim() || saving}
-            className="px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark disabled:opacity-40 transition-colors"
-          >
-            {saving ? 'Creating...' : 'Create Contact'}
+          <button onClick={handleAdd} disabled={!canSave}
+            className="px-4 py-2 bg-np-blue text-white text-xs font-medium rounded-lg hover:bg-np-dark disabled:opacity-40 transition-colors">
+            {saving ? 'Adding...' : mode === 'new' ? 'Create and add' : 'Add'}
           </button>
         </div>
       </div>
@@ -952,13 +1044,30 @@ function NewContactModal({ pipeline, firstStage, onSave, onClose }: { pipeline: 
   )
 }
 
+const CONTACT_CHUNK = 150
+
+// Board membership and stage come ONLY from contact_pipeline_positions (hub_229): a contact is on
+// every board of a pipeline they hold a position in, in the column of their stage in THAT pipeline.
+// A move, add or removal here changes that one pipeline's position and no other.
+// contacts.pipeline_id / pipeline_stage are legacy: this page neither reads nor writes them.
+// Pipeline definitions still come from org_settings crm_pipelines (the editor saves there and a
+// trigger syncs the pipelines / pipeline_stages tables); positions use the tables' uuids, matched
+// to the config by legacy key.
 export default function PipelinesPage() {
   const { currentOrg } = useWorkspace()
+  // Contacts on the active board, and their position in the active pipeline, keyed by contact id.
   const [contacts, setContacts] = useState<CrmContact[]>([])
+  const [positions, setPositions] = useState<Record<string, Position>>({})
   const [team, setTeam] = useState<{id:string;display_name:string;email:string|null}[]>([])
   const [loading, setLoading] = useState(true)
+  const [boardError, setBoardError] = useState('')
   const [pipelines, setPipelines] = useState<PipelineConfig[]>([DEFAULT_PIPELINE])
   const [activePipelineId, setActivePipelineId] = useState('default')
+  // The pipelines / pipeline_stages tables (uuids), reloaded after the config is saved.
+  const [refs, setRefs] = useState<PipelineRef[]>([])
+  const [refsLoaded, setRefsLoaded] = useState(false)
+  const [refsVersion, setRefsVersion] = useState(0)
+  const [boardVersion, setBoardVersion] = useState(0)
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null)
   const [showDropdown, setShowDropdown] = useState(false)
   const [showStageEditor, setShowStageEditor] = useState(false)
@@ -974,7 +1083,18 @@ export default function PipelinesPage() {
   const [deals, setDeals] = useState<Record<string, PipelineDeal>>({})
   // Recent notes and open tasks for the active pipeline's cards, keyed by contact id.
   const [activity, setActivity] = useState<Record<string, CardActivity>>({})
+  // The open contact's positions in every pipeline, so a change made in the detail view can be
+  // told apart per pipeline.
+  const detailBefore = useRef<Position[] | null>(null)
+  const shownBoard = useRef<string | null>(null)
   const activePipeline = pipelines.find(p => p.id === activePipelineId) || pipelines[0]
+  const activeRef = findPipeline(refs, activePipeline?.id)
+
+  // A config column's stage in the tables: by its legacy key, else by its exact name.
+  const stageRefFor = (cfg: PipelineStageConfig, ref: PipelineRef | null = activeRef): StageRef | null =>
+    ref ? (ref.stages.find(s => s.key === cfg.id) ?? ref.stages.find(s => s.name === cfg.name) ?? null) : null
+  const columns = activePipeline.stages.map(cfg => ({ cfg, ref: stageRefFor(cfg) }))
+  const addableStages = columns.filter((c): c is { cfg: PipelineStageConfig; ref: StageRef } => !!c.ref)
 
   useEffect(() => {
     if (!currentOrg) return
@@ -999,17 +1119,59 @@ export default function PipelinesPage() {
     load()
   }, [currentOrg?.id])
 
+  useEffect(() => {
+    if (!currentOrg) return
+    let cancelled = false
+    loadPipelines(createClient(), currentOrg.id)
+      .then(r => { if (!cancelled) setRefs(r) })
+      .catch(e => console.error(`[Pipelines] pipelines read failed: ${(e as Error).message}`))
+      .finally(() => { if (!cancelled) setRefsLoaded(true) })
+    return () => { cancelled = true }
+  }, [currentOrg?.id, refsVersion])
+
   const savePipelines = async (updated: PipelineConfig[], activeId?: string) => {
     setPipelines(updated); if (activeId) setActivePipelineId(activeId); if (!currentOrg) return
     try {
       await createClient().from('org_settings').upsert({ org_id: currentOrg.id, setting_key: 'crm_pipelines', setting_value: { pipelines: updated, active: activeId || activePipelineId } }, { onConflict: 'org_id,setting_key' })
+      // The tables follow the config by trigger; read them again for the new uuids.
+      setRefsVersion(v => v + 1)
     } catch (e) { console.error(e) }
   }
 
+  // The active board: its positions, then the contacts they belong to.
+  const activeRefId = activeRef?.id
   useEffect(() => {
-    if (!currentOrg) return
-    fetchContacts({ org_id: currentOrg.id, limit: 500 }).then(r => setContacts(r.contacts)).catch(console.error).finally(() => setLoading(false))
-  }, [currentOrg?.id])
+    if (!currentOrg || !refsLoaded) return
+    let cancelled = false
+    const ref = findPipeline(refs, activePipeline?.id)
+    // A different pipeline: drop the last board's cards rather than show them in the wrong columns.
+    if (shownBoard.current !== (ref?.id ?? null)) { setPositions({}); setContacts([]); shownBoard.current = ref?.id ?? null }
+    if (!ref) { setLoading(false); return }
+    const load = async () => {
+      const db = createClient()
+      const ps = await loadPositions(db, currentOrg.id, { pipelineId: ref.id, pipelines: refs })
+      const ids = ps.map(p => p.contact_id)
+      const rows: CrmContact[] = []
+      for (let i = 0; i < ids.length; i += CONTACT_CHUNK) {
+        const { data, error } = await db.from('contacts').select('*')
+          .eq('org_id', currentOrg.id).in('id', ids.slice(i, i + CONTACT_CHUNK))
+          .is('merged_into_id', null).is('archived_at', null)
+        if (error) throw new Error(`contacts read: ${error.code ?? 'unknown'}`)
+        rows.push(...((data ?? []) as CrmContact[]))
+      }
+      if (cancelled) return
+      rows.sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')))
+      const map: Record<string, Position> = {}
+      for (const p of ps) map[p.contact_id] = p
+      setPositions(map)
+      setContacts(rows)
+      setBoardError('')
+    }
+    load()
+      .catch(e => { if (!cancelled) { console.error(`[Pipelines] board read failed: ${(e as Error).message}`); setBoardError('The board could not be loaded. Reload the page.') } })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [currentOrg?.id, refsLoaded, activeRefId, boardVersion])
 
   useEffect(() => {
     if (!currentOrg || !activePipeline?.id) return
@@ -1039,7 +1201,7 @@ export default function PipelinesPage() {
       .then(j => { if (!cancelled && j?.activity) setActivity(j.activity) })
       .catch(e => console.error('[Pipelines] card activity load error:', e))
     return () => { cancelled = true }
-  }, [currentOrg?.id, activePipeline?.id, cardSectionsOn])
+  }, [currentOrg?.id, activePipeline?.id, cardSectionsOn, boardVersion])
 
   // One card, after a note or task changed in the contact detail view.
   const refreshCardActivity = (contactId: string) => {
@@ -1076,11 +1238,10 @@ export default function PipelinesPage() {
     }
   }
 
-  // After a stage move: stamp the stage change and won/lost locally so the summary
-  // updates at once, then take the server's row (it reads the authoritative flags).
-  const touchDeal = (contactId: string, pipelineKey: string, stage: string, enteredPipeline: boolean) => {
-    const pipeline = pipelines.find(p => p.id === pipelineKey)
-    const t = pipeline ? stageTypeOf(pipeline.stages, stage) : 'open'
+  // After a stage move or add in ONE pipeline (by legacy key): stamp the stage change and
+  // won/lost locally so the summary updates at once, then take the server's row (it reads the
+  // contact's position in that pipeline and the stage's flags).
+  const touchDeal = (contactId: string, pipelineKey: string, t: StageType, enteredPipeline: boolean) => {
     const nowIso = new Date().toISOString()
     if (pipelineKey === activePipelineId) {
       setDeals(d => {
@@ -1104,68 +1265,91 @@ export default function PipelinesPage() {
     createClient().from('team_profiles').select('id,display_name,email').eq('org_id', currentOrg.id).order('display_name').then(({data})=>setTeam(data||[]))
   }, [currentOrg?.id])
 
-  const fireStageEmails = async (contactId: string, stageName: string) => {
+  // Stage emails for the stage entered in THIS pipeline: config ids (pipeline legacy key + stage
+  // id), which are what the route's content lookup, its position check and the send guard (077) key on.
+  const fireStageEmails = async (contactId: string, pipelineKey: string, stageCfgId: string) => {
     try {
-      const stage = activePipeline.stages.find(s => s.name === stageName)
-      if (!stage?.id) return
-      // The route reads the stage's email CONTENT server-side from the
-      // authoritative pipeline config (by pipeline_id + stage_id) and ignores
-      // anything the client sends — so we no longer POST subject/body/recipient.
-      // stage_id / pipeline_id are also what the send guard (077) keys on.
       await fetch('/api/crm/stage-emails', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contact_id: contactId,
-          pipeline_id: activePipelineId,
-          stage_id: stage.id,
-        }),
+        body: JSON.stringify({ contact_id: contactId, pipeline_id: pipelineKey, stage_id: stageCfgId }),
       })
     } catch (e) { console.error('fireStageEmails failed', e) }
   }
 
-  const moveContact = async (id: string, stage: string) => {
-    // Optimistic UI, but surface persistence failures. A swallowed error here
-    // (RLS reject, bad field) makes a stage move look successful while the DB
-    // never changed — the silent-failure class that has bitten repeatedly.
-    const prevContacts = contacts
-    const before = contacts.find(c => c.id === id)
-    const enteredPipeline = !!before && before.pipeline_id !== activePipelineId
-    setContacts(prev => prev.map(c => c.id === id ? { ...c, pipeline_stage: stage, pipeline_id: activePipelineId } : c))
+  // Keeps the board's copy of the active pipeline's position in step with the server's.
+  const takePositions = (contactId: string, after: Position[]) => {
+    const mine = activeRef ? after.find(p => p.pipeline_id === activeRef.id) : undefined
+    setPositions(prev => { const n = { ...prev }; if (mine) n[contactId] = mine; else delete n[contactId]; return n })
+  }
+
+  const moveContact = async (id: string, cfg: PipelineStageConfig) => {
+    const ref = activeRef, sr = stageRefFor(cfg)
+    if (!ref || !sr) { toast.show('This stage is not ready yet. Reload the page and try again.', 'error'); return }
+    const before = positions[id]
+    if (before?.stage_id === sr.id) return
+    // Optimistic UI, but surface persistence failures: a swallowed error makes a move look
+    // successful while the database never changed.
+    const prevPositions = positions
+    setPositions(prev => ({ ...prev, [id]: makePosition(id, ref, sr) }))
     try {
-      await updateContact(id, { pipeline_stage: stage, pipeline_id: activePipelineId } as any)
-      if (!before || before.pipeline_stage !== stage || enteredPipeline) touchDeal(id, activePipelineId, stage, enteredPipeline)
-      fireStageEmails(id, stage)
+      const after = await apiSetStage(id, sr.id, 'board')
+      takePositions(id, after)
+      touchDeal(id, ref.key, stageTypeOf(sr), !before)
+      fireStageEmails(id, ref.key, cfg.id)
     } catch (e: any) {
-      console.error('moveContact failed', e)
-      setContacts(prevContacts) // roll back the optimistic move
-      alert(`Could not move to "${stage}": ${e?.message || e}`)
+      console.error(`[Pipelines] move contact=${id} failed`)
+      setPositions(prevPositions) // roll back the optimistic move
+      toast.show(`Could not move to ${cfg.name}. ${e?.message || ''}`.trim(), 'error')
     }
   }
 
-  const moveToPipeline = async (id: string, pipelineId: string, firstStage: string) => {
+  // Adds the contact to another pipeline at its first stage. This board's position is kept.
+  const addToPipeline = async (id: string, pipelineKey: string) => {
+    const ref = findPipeline(refs, pipelineKey)
+    const target = pipelines.find(p => p.id === pipelineKey)
+    const cfgFirst = target?.stages[0]
+    const sr = (cfgFirst ? stageRefFor(cfgFirst, ref) : null) ?? firstStage(ref)
+    if (!ref || !sr) { toast.show('That pipeline has no stages ready yet.', 'error'); return }
     try {
-      await updateContact(id, { pipeline_id: pipelineId, pipeline_stage: firstStage } as any)
-      setContacts(prev => prev.map(c => c.id === id ? { ...c, pipeline_id: pipelineId, pipeline_stage: firstStage } : c))
-      if (pipelineId !== activePipelineId) touchDeal(id, pipelineId, firstStage, true)
-    } catch (e) { console.error(e) }
+      const after = await apiSetStage(id, sr.id, 'board')
+      takePositions(id, after)
+      touchDeal(id, ref.key, stageTypeOf(sr), true)
+      toast.show(`Added to ${ref.name}`)
+    } catch (e: any) {
+      console.error(`[Pipelines] add contact=${id} failed`)
+      toast.show(`Could not add to ${ref.name}. ${e?.message || ''}`.trim(), 'error')
+    }
+  }
+
+  const loadMemberships = async (id: string): Promise<string[]> => {
+    if (!currentOrg) return []
+    const ps = await fetchContactPositions(currentOrg.id, id)
+    return ps.map(p => p.pipeline_key)
   }
 
   // Optimistic: the card, stage counts, totals and summary cards drop it at once.
-  // Rolled back with the error shown if the server refuses.
+  // Rolled back with the error shown if the server refuses. The route removes the position in
+  // THIS pipeline only, and its deal row; the contact's other pipelines are untouched.
   const removeFromPipeline = async (contact: CrmContact) => {
     const id = contact.id, pipelineKey = activePipelineId
-    const prevContacts = contacts, prevDeals = deals
+    const prevPositions = positions, prevDeals = deals
     setRemoving(true)
-    setContacts(prev => prev.map(c => c.id === id ? { ...c, pipeline_id: null as any, pipeline_stage: null as any } : c))
+    setPositions(prev => { const n = { ...prev }; delete n[id]; return n })
     setDeals(d => { const n = { ...d }; delete n[id]; return n })
     try {
-      await removeFromPipelineApi(id, pipelineKey)
+      const res = await fetch('/api/crm/pipeline-deals/remove', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contact_id: id, pipeline_key: pipelineKey }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(j?.error || 'Something went wrong. Try again.')
+      setContacts(prev => prev.filter(c => c.id !== id))
       setRemoveTarget(null)
       toast.show(`Removed from ${activePipeline.name}`)
     } catch (e: any) {
-      console.error('removeFromPipeline failed', e)
-      setContacts(prevContacts)
+      console.error(`[Pipelines] remove contact=${id} failed`)
+      setPositions(prevPositions)
       setDeals(prevDeals)
       setRemoveTarget(null)
       toast.show(`Could not remove from ${activePipeline.name}: ${e?.message || e}`, 'error')
@@ -1174,32 +1358,63 @@ export default function PipelinesPage() {
     }
   }
 
-  const handleNewContact = (newContact: CrmContact) => {
-    setContacts(prev => [newContact, ...prev])
+  const handleAdded = (contact: CrmContact, after: Position[], stage: StageRef) => {
+    setContacts(prev => [contact, ...prev.filter(c => c.id !== contact.id)])
+    takePositions(contact.id, after)
+    if (activeRef) touchDeal(contact.id, activeRef.key, stageTypeOf(stage), true)
   }
 
-  const activePipelineStageNames = activePipeline.stages.map(s => s.name.toLowerCase())
-  // Only contacts explicitly placed in this pipeline. A contact with no pipeline is on
-  // no board, the default one included, so "Remove from pipeline" really removes it.
-  const pipelineContacts = contacts.filter(c => c.pipeline_id === activePipelineId)
-  const norm = (s: string | null | undefined) => (s || '').trim().toLowerCase()
-  const firstStageName = activePipeline.stages[0]?.name || 'New Lead'
-  const stageContacts = (name: string) => {
-    const isFirst = name === firstStageName
+  // The open contact's positions, so a change in the detail view can be compared per pipeline.
+  useEffect(() => {
+    detailBefore.current = null
+    if (!currentOrg || !selectedContactId) return
+    let cancelled = false
+    fetchContactPositions(currentOrg.id, selectedContactId)
+      .then(ps => { if (!cancelled) detailBefore.current = ps })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [currentOrg?.id, selectedContactId])
+
+  // A stage or pipeline change made in the detail view counts as a move too, in each pipeline
+  // where it happened.
+  const afterDetailUpdate = async (contactId: string) => {
+    if (!currentOrg) return
+    refreshCardActivity(contactId)
+    setBoardVersion(v => v + 1)
+    const before = detailBefore.current
+    if (!before) return
+    try {
+      const after = await fetchContactPositions(currentOrg.id, contactId)
+      detailBefore.current = after
+      for (const a of after) {
+        const b = before.find(x => x.pipeline_id === a.pipeline_id)
+        if (!b || b.stage_id !== a.stage_id) touchDeal(contactId, a.pipeline_key, stageTypeOf(a), !b)
+      }
+    } catch { /* the board reload still shows the truth */ }
+  }
+
+  const onBoard = new Set(Object.keys(positions))
+  const pipelineContacts = contacts.filter(c => !!positions[c.id])
+  const mappedStageIds = new Set(columns.map(c => c.ref?.id).filter(Boolean) as string[])
+  const firstColumnId = activePipeline.stages[0]?.id
+  const stageContacts = (cfg: PipelineStageConfig) => {
+    const sr = columns.find(c => c.cfg.id === cfg.id)?.ref
+    const isFirst = cfg.id === firstColumnId
     return pipelineContacts.filter(c => {
-      const cs = norm(c.pipeline_stage)
-      if (!cs) return isFirst  // no stage -> first column
-      // exact (normalized) match to THIS column
-      if (cs === norm(name)) return true
-      // if the contact's stage matches NO column in this pipeline, park it in the first column so it never disappears
-      const matchesAnyColumn = activePipeline.stages.some(s => norm(s.name) === cs)
-      if (!matchesAnyColumn && isFirst) return true
-      return false
+      const p = positions[c.id]
+      if (sr && p.stage_id === sr.id) return true
+      // A stage with no column here (not yet in the config) parks in the first column so the card never disappears.
+      return isFirst && !mappedStageIds.has(p.stage_id)
     })
   }
+  const columnOf = (contactId: string): string | null => {
+    const p = positions[contactId]
+    const c = p ? columns.find(x => x.ref?.id === p.stage_id) : undefined
+    return c ? c.cfg.id : null
+  }
   // null when no card in the stage has a value, so the header shows nothing rather than $0
-  const stageValue = (name: string) => {
-    const vals = stageContacts(name).map(c => deals[c.id]?.value ?? null).filter((v): v is number => v !== null)
+  const stageValue = (cfg: PipelineStageConfig) => {
+    const vals = stageContacts(cfg).map(c => deals[c.id]?.value ?? null).filter((v): v is number => v !== null)
     return vals.length ? vals.reduce((s, v) => s + v, 0) : null
   }
 
@@ -1229,7 +1444,7 @@ export default function PipelinesPage() {
           </div>
           <p className="text-[11px] text-gray-400">{pipelineContacts.length} contacts</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button onClick={() => setShowMetrics(!showMetrics)} className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg transition-colors ${showMetrics ? 'bg-np-blue/10 text-np-blue' : 'bg-gray-50 text-gray-400'}`}><BarChart3 size={13} /> Metrics</button>
           <button onClick={() => setShowCustomFieldEditor(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-50 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-100 transition-colors"><Sliders size={13} /> Custom Fields</button>
           <button onClick={() => setShowCardConfig(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-50 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-100 transition-colors"><LayoutGrid size={13} /> Card Fields</button>
@@ -1238,11 +1453,16 @@ export default function PipelinesPage() {
         </div>
       </div>
 
-      {showMetrics && <PipelineMetrics contacts={pipelineContacts} stages={activePipeline.stages} deals={deals} />}
+      {boardError && <p className="text-xs text-red-500">{boardError}</p>}
+      {refsLoaded && !activeRef && !boardError && (
+        <p className="text-xs text-gray-500">This pipeline is not ready yet. Save its stages, then reload the page.</p>
+      )}
+
+      {showMetrics && <PipelineMetrics contacts={pipelineContacts} positions={positions} deals={deals} />}
 
       <div data-help-id="pipelines.board" className="flex gap-3 overflow-x-auto overflow-y-hidden pb-2" style={{ height: 'calc(100vh - 300px)' }}>
         {activePipeline.stages.map(stage => {
-          const sc = stageContacts(stage.name); const sv = stageValue(stage.name)
+          const sc = stageContacts(stage); const sv = stageValue(stage)
           return (
             <div key={stage.id} className="flex-shrink-0 w-64 flex flex-col h-full">
               <div className="flex items-center gap-2 mb-3 px-1">
@@ -1255,9 +1475,9 @@ export default function PipelinesPage() {
                 className="space-y-2 flex-1 overflow-y-auto rounded-xl bg-gray-50/50 p-2 border-2 border-dashed border-gray-100/50 transition-all duration-200"
                 onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; e.currentTarget.classList.add('bg-np-blue/10', 'border-np-blue/40', 'scale-[1.01]'); e.currentTarget.classList.remove('bg-gray-50/50', 'border-gray-100/50') }}
                 onDragLeave={e => { e.currentTarget.classList.remove('bg-np-blue/10', 'border-np-blue/40', 'scale-[1.01]'); e.currentTarget.classList.add('bg-gray-50/50', 'border-gray-100/50') }}
-                onDrop={e => { e.preventDefault(); e.currentTarget.classList.remove('bg-np-blue/10', 'border-np-blue/40', 'scale-[1.01]'); e.currentTarget.classList.add('bg-gray-50/50', 'border-gray-100/50'); const cid = e.dataTransfer.getData('contactId'); if (cid) moveContact(cid, stage.name) }}
+                onDrop={e => { e.preventDefault(); e.currentTarget.classList.remove('bg-np-blue/10', 'border-np-blue/40', 'scale-[1.01]'); e.currentTarget.classList.add('bg-gray-50/50', 'border-gray-100/50'); const cid = e.dataTransfer.getData('contactId'); if (cid && positions[cid]) moveContact(cid, stage) }}
               >
-                {sc.map(c => <ContactCard key={c.id} contact={c} stages={activePipeline.stages} pipelines={pipelines} activePipelineId={activePipelineId} customFields={activePipeline.custom_fields || []} dealValue={deals[c.id]?.value ?? null} onSaveValue={v => saveDealValue(c.id, v)} onMove={s => moveContact(c.id, s)} onMovePipeline={(pid, fs) => moveToPipeline(c.id, pid, fs)} onRemovePipeline={() => setRemoveTarget(c)} onOpenContact={setSelectedContactId} activity={activity[c.id]} showNotes={boardSectionOn(activePipeline.card_config, 'recent_notes')} showTasks={boardSectionOn(activePipeline.card_config, 'open_tasks')} />)}
+                {sc.map(c => <ContactCard key={c.id} contact={c} position={positions[c.id]} currentStageId={columnOf(c.id)} stages={activePipeline.stages} pipelines={pipelines} activePipelineId={activePipelineId} customFields={activePipeline.custom_fields || []} dealValue={deals[c.id]?.value ?? null} onSaveValue={v => saveDealValue(c.id, v)} onMove={s => moveContact(c.id, s)} onAddToPipeline={key => addToPipeline(c.id, key)} loadMemberships={() => loadMemberships(c.id)} onRemovePipeline={() => setRemoveTarget(c)} onOpenContact={setSelectedContactId} activity={activity[c.id]} showNotes={boardSectionOn(activePipeline.card_config, 'recent_notes')} showTasks={boardSectionOn(activePipeline.card_config, 'open_tasks')} />)}
                 {sc.length === 0 && <div className="text-center py-8 text-[10px] text-gray-400">No contacts</div>}
               </div>
             </div>
@@ -1270,25 +1490,12 @@ export default function PipelinesPage() {
       {showNewPipeline && <NewPipelineModal onSave={p => { savePipelines([...pipelines, p], p.id); setShowNewPipeline(false) }} onClose={() => setShowNewPipeline(false)} />}
       {showCardConfig && <CardConfigEditor pipeline={activePipeline} onSave={cfg => { savePipelines(pipelines.map(p => p.id===activePipelineId ? { ...p, card_config:cfg } : p)); setShowCardConfig(false) }} onClose={() => setShowCardConfig(false)} />}
       {showCustomFieldEditor && <CustomFieldEditor pipeline={activePipeline} onSave={fields => { savePipelines(pipelines.map(p => p.id===activePipelineId ? { ...p, custom_fields:fields } : p)); setShowCustomFieldEditor(false) }} onClose={() => setShowCustomFieldEditor(false)} />}
-      {showNewContact && <NewContactModal pipeline={activePipeline} firstStage={activePipeline.stages[0]?.name || 'New Lead'} onSave={handleNewContact} onClose={() => setShowNewContact(false)} />}
+      {showNewContact && <AddContactModal pipeline={activePipeline} stages={addableStages} onBoard={onBoard} onAdded={handleAdded} onClose={() => setShowNewContact(false)} />}
       {selectedContactId && <ContactDetail contactId={selectedContactId} cardConfig={activePipeline.card_config} pipelineCustomFields={activePipeline.custom_fields}
         leadValue={{ pipelineName: activePipeline.name, value: deals[selectedContactId]?.value ?? null, onSave: v => saveDealValue(selectedContactId, v) }}
         onClose={() => setSelectedContactId(null)}
         onActivityChange={() => refreshCardActivity(selectedContactId)}
-        onUpdate={() => {
-        if (!currentOrg) return
-        refreshCardActivity(selectedContactId)
-        const before = contacts.find(c => c.id === selectedContactId)
-        fetchContacts({ org_id: currentOrg.id, limit: 500 }).then(r => {
-          setContacts(r.contacts)
-          // A stage or pipeline change made in the detail view counts as a move too.
-          const after = r.contacts.find(c => c.id === selectedContactId)
-          if (before && after && after.pipeline_id && (before.pipeline_id !== after.pipeline_id || before.pipeline_stage !== after.pipeline_stage)) {
-            const entered = before.pipeline_id !== after.pipeline_id
-            touchDeal(after.id, after.pipeline_id, after.pipeline_stage || '', entered)
-          }
-        }).catch(console.error)
-      }} />}
+        onUpdate={() => { afterDetailUpdate(selectedContactId) }} />}
     </div>
   )
 }

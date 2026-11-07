@@ -5,6 +5,7 @@ import { withStaff, requireOrg } from '@/lib/api-guard'
 import { getFlags } from '@/lib/marketing/flags'
 import { getSendPolicy, senderProblem } from '@/lib/marketing/policy'
 import { buildSourceStatus } from '@/lib/marketing/ui-logic'
+import { loadPositions } from '@/lib/pipelines/positions'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,7 +26,8 @@ export const GET = withStaff(async (req, ctx) => {
     db.from('campaign_test_contacts').select('id, email, phone, label').eq('org_id', org),
     getFlags(db, org),
     getSendPolicy(db, org),
-    db.from('contact_pipeline_positions').select('stage_id').eq('org_id', org),
+    // every position, paged (a plain select stops at 1000 rows and would undercount)
+    loadPositions(db, org).then((data) => ({ data, error: null }), () => ({ data: null, error: 'positions' })),
     db.rpc('entry_source_status'),
     db.from('org_settings').select('setting_value').eq('org_id', org).eq('setting_key', 'crm_twilio').maybeSingle(),
     // the Campaign Builder's follow-up tasks and landing pages (hub_213)

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabase, createAdminSupabase } from '@/lib/supabase';
 import { summariseBulkStageMove } from '@/lib/marketing/entry-events';
+import { loadPipelines, findPipeline, resolveStage, firstStage, setStage, removeFromPipeline, type PipelineRef } from '@/lib/pipelines/positions';
 
 export async function POST(request: NextRequest) {
   // Auth check with user-context client
@@ -85,30 +86,58 @@ export async function POST(request: NextRequest) {
       break;
     }
 
-    case 'set_pipeline_stage': {
-      const { data, error: err } = await supabase
-        .from('contacts')
-        .update({ pipeline_stage: params.pipeline_stage, updated_at: new Date().toISOString() })
-        .in('id', validIds)
-        .select('id');
-      error = err;
-      affected = data?.length || 0;
-      if (!err && affected) campaignNote = (await summariseBulkStageMove(supabase, orgId, stageMoveStarted, affected, user.id)).note;
+    // Pipeline membership lives in contact_pipeline_positions (hub_229), one row per pipeline. A bulk move sets
+    // the stage in the chosen stage's pipeline only; the contacts' other pipelines are untouched. The legacy
+    // contacts.pipeline_id / pipeline_stage columns are not written.
+    //
+    // params: { stage_id } (uuid). Older callers may send { pipeline_id: <legacy key or uuid>, pipeline_stage?:
+    // <stage name> }; that is resolved exactly (no stage name means the first stage), never guessed. A stage name
+    // with no pipeline is refused, because the same name can exist in several pipelines.
+    case 'set_pipeline_stage':
+    case 'set_pipeline': {
+      let pipelines: PipelineRef[];
+      try { pipelines = await loadPipelines(supabase, orgId); }
+      catch (e) {
+        console.error(`[bulk-action] ${action} org=${orgId} pipelines read failed: ${(e as Error).message}`);
+        return NextResponse.json({ success: false, affected: 0, error: 'Pipelines could not be read. Try again.' }, { status: 500 });
+      }
+      let stageId: string | null = null;
+      if (typeof params?.stage_id === 'string') {
+        stageId = pipelines.flatMap(p => p.stages).find(s => s.id === params.stage_id)?.id ?? null;
+      } else if (typeof params?.pipeline_id === 'string' && params.pipeline_id) {
+        stageId = typeof params?.pipeline_stage === 'string' && params.pipeline_stage
+          ? resolveStage(pipelines, params.pipeline_id, params.pipeline_stage)?.id ?? null
+          : firstStage(findPipeline(pipelines, params.pipeline_id))?.id ?? null;
+      }
+      if (!stageId) {
+        return NextResponse.json({ success: false, affected: 0, error: 'Choose a pipeline and a stage.' }, { status: 400 });
+      }
+      let failed = 0;
+      for (const id of validIds) {
+        try { await setStage(supabase, id, stageId, user.id, 'bulk'); affected++; }
+        catch (e) { failed++; console.error(`[bulk-action] set stage contact=${id} failed: ${(e as Error).message}`); }
+      }
+      if (failed) error = { message: `${failed} contact${failed === 1 ? '' : 's'} could not be moved. Try again.` };
+      if (affected) campaignNote = (await summariseBulkStageMove(supabase, orgId, stageMoveStarted, affected, user.id)).note;
       break;
     }
 
-    case 'set_pipeline': {
-      const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
-      if (params.pipeline_id !== undefined) updates.pipeline_id = params.pipeline_id;
-      if (params.pipeline_stage !== undefined) updates.pipeline_stage = params.pipeline_stage;
-      const { data, error: err } = await supabase
-        .from('contacts')
-        .update(updates)
-        .in('id', validIds)
-        .select('id');
-      error = err;
-      affected = data?.length || 0;
-      if (!err && affected && params.pipeline_stage) campaignNote = (await summariseBulkStageMove(supabase, orgId, stageMoveStarted, affected, user.id)).note;
+    // params: { pipeline_id } (uuid or legacy key). Removes the contacts from that one pipeline only.
+    case 'remove_from_pipeline': {
+      let pipelines: PipelineRef[];
+      try { pipelines = await loadPipelines(supabase, orgId); }
+      catch (e) {
+        console.error(`[bulk-action] remove org=${orgId} pipelines read failed: ${(e as Error).message}`);
+        return NextResponse.json({ success: false, affected: 0, error: 'Pipelines could not be read. Try again.' }, { status: 500 });
+      }
+      const pl = findPipeline(pipelines, typeof params?.pipeline_id === 'string' ? params.pipeline_id : null);
+      if (!pl) return NextResponse.json({ success: false, affected: 0, error: 'Choose a pipeline.' }, { status: 400 });
+      let failed = 0;
+      for (const id of validIds) {
+        try { if (await removeFromPipeline(supabase, id, pl.id, user.id, 'bulk')) affected++; }
+        catch (e) { failed++; console.error(`[bulk-action] remove contact=${id} failed: ${(e as Error).message}`); }
+      }
+      if (failed) error = { message: `${failed} contact${failed === 1 ? '' : 's'} could not be removed. Try again.` };
       break;
     }
 

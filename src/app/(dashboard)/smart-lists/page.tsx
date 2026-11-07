@@ -18,7 +18,7 @@ type Option = string | { value: string; label: string }
 type Options = Record<string, Option[]>
 interface Preview {
   count: number; email_allowed: number; texting_allowed: number; no_data_source: string[]
-  preview: { id: string; name: string; email: string | null; pipeline: string | null; stage: string | null; current_client: boolean; email_allowed: boolean; texting_allowed: boolean }[]
+  preview: { id: string; name: string; email: string | null; pipelines: string[]; current_client: boolean; email_allowed: boolean; texting_allowed: boolean }[]
 }
 interface Draft { id?: string; name: string; description: string; brand: string; definition: Definition }
 
@@ -265,7 +265,7 @@ export default function SmartListsPage() {
                     <li key={m.id} className="py-1.5 flex flex-wrap items-center gap-x-2 text-[11px]">
                       <span className="font-medium text-np-dark">{m.name}</span>
                       <span className="text-gray-400 truncate max-w-[200px]">{m.email}</span>
-                      <span className="text-gray-400 truncate max-w-[200px]">{[m.pipeline, m.stage].filter(Boolean).join(': ')}</span>
+                      <span className="text-gray-400 truncate max-w-[200px]">{(m.pipelines ?? []).join(', ')}</span>
                       <span className="sm:ml-auto flex gap-1 text-[10px]">
                         {m.current_client && <span className="px-1.5 bg-green-50 text-green-800 rounded">Client</span>}
                         {m.email_allowed && <span className="px-1.5 bg-gray-100 text-gray-600 rounded">Email</span>}

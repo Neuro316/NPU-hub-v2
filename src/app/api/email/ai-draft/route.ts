@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabase } from '@/lib/supabase'
+import { loadPositions } from '@/lib/pipelines/positions'
 
 export async function POST(request: NextRequest) {
   const supabase = createServerSupabase()
@@ -12,6 +13,15 @@ export async function POST(request: NextRequest) {
   const { data: contact } = await supabase
     .from('contacts').select('*').eq('id', contact_id).single()
   if (!contact) return NextResponse.json({ error: 'Contact not found' }, { status: 404 })
+
+  // The contact's pipelines with stages (contact_pipeline_positions), when the caller did not name a stage
+  let stageLabel = ''
+  if (!pipeline_stage && contact.org_id) {
+    try {
+      stageLabel = (await loadPositions(supabase, contact.org_id, { contactIds: [contact.id] }))
+        .map(p => `${p.pipeline_name} · ${p.stage_name}`).join(', ')
+    } catch (e) { console.error(`[ai-draft] ${(e as Error).message}`) }
+  }
 
   // Get org info
   const { data: org } = await supabase
@@ -54,7 +64,7 @@ export async function POST(request: NextRequest) {
 Recipient:
 - Name: ${contact.first_name} ${contact.last_name}
 - Email: ${contact.email}
-- Pipeline Stage: ${pipeline_stage || contact.pipeline_stage || 'Unknown'}
+- Pipeline Stage: ${pipeline_stage || stageLabel || 'Unknown'}
 - Tags: ${(contact.tags || []).join(', ') || 'None'}
 
 Recent Activity:

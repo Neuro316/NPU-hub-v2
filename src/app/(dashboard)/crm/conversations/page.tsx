@@ -123,7 +123,7 @@ export default function ConversationsPage() {
     setLoading(true)
     let query = supabase
       .from('conversations')
-      .select('*, contacts!inner(first_name, last_name, phone, email, tags, pipeline_stage)')
+      .select('*, contacts!inner(first_name, last_name, phone, email, tags)')
       // Hide threads removed from Conversations. status='closed' is what the
       // archive action sets; the row and all its records stay in the CRM, and
       // bumpConversation flips it back to 'open' if that number contacts again.

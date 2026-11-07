@@ -41,8 +41,12 @@ const { POST } = load('app/api/marketing/agent/route.ts')
 const norm = (s) => s.replace(/\r\n/g, '\n')
 // The Lead Device Kit added the external intake to this route on purpose, so it is compared with that commit.
 const INTAKE_BASE = process.env.INTAKE_BASE || 'f018c92'
+// The multi-pipeline build (hub_229) moved these files' pipeline reads and writes to contact_pipeline_positions
+// on purpose, so each is compared with that commit instead of its earlier pin.
+const MULTI_PIPELINE_BASE = process.env.MULTI_PIPELINE_BASE || '10e9a8b'
+const MULTI_PIPELINE_FILES = new Set(['src/lib/marketing/engine.ts', 'src/app/api/sequences/process-step/route.ts', 'src/lib/marketing/render.ts'])
 const base = (f) => {
-  const ref = f === 'src/app/api/intake/route.ts' ? INTAKE_BASE : BASE
+  const ref = MULTI_PIPELINE_FILES.has(f) ? MULTI_PIPELINE_BASE : f === 'src/app/api/intake/route.ts' ? INTAKE_BASE : BASE
   try { return norm(execFileSync('git', ['show', `${ref}:${f}`], { cwd: H.ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })) }
   catch { console.error(`git show ${ref}:${f} failed (is the history fetched?)`); process.exit(2) }
 }

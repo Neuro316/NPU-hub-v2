@@ -15,9 +15,10 @@ import {
   fetchCallLogs, fetchConversations, fetchMessages,
   fetchContactRelationships, createRelationship, deleteRelationship,
   fetchRelationshipTypes, fetchContacts,
-  fetchTagCategories, addContactTag, removeContactTag, fetchContactStructuredTags,
-  removeFromPipeline
+  fetchTagCategories, addContactTag, removeContactTag, fetchContactStructuredTags
 } from '@/lib/crm-client'
+import { loadPipelines, firstStage, type PipelineRef, type Position } from '@/lib/pipelines/positions'
+import { fetchContactPositions, apiSetStage, apiRemoveFromPipeline } from '@/lib/pipelines/client'
 import type { CrmContact, ContactNote, CrmTask, CallLog, ActivityLogEntry, TeamMember, ContactRelationship, RelationshipType, ContactTagCategory } from '@/types/crm'
 import { ContactCommsButtons } from '@/components/crm/twilio-comms'
 import { CrmTaskCard, CrmTaskDetail } from '@/components/crm/crm-task-card'
@@ -91,8 +92,10 @@ const MASTERMIND_STATUS: Record<string, { color: string; label: string }> = {
 
 const PODCAST_DRIVE_FOLDER = 'https://drive.google.com/drive/u/0/folders/13a4Pn8vLyaWwtfJEU935Z_Q40jxsM4_p'
 
-function ContactDriveSection({ contact, updateContact, load }: {
+function ContactDriveSection({ contact, updateContact, load, inPodcastPipeline }: {
   contact: CrmContact
+  /** In a pipeline whose name mentions podcasts (from contact_pipeline_positions). */
+  inPodcastPipeline: boolean
   updateContact: (id: string, updates: Partial<CrmContact>) => Promise<any>
   load: () => void
 }) {
@@ -131,9 +134,7 @@ function ContactDriveSection({ contact, updateContact, load }: {
   }
 
   const effectiveDriveFolder = (contact.custom_fields?.drive_folder as string) ||
-    (contact.pipeline_stage && ['Podcasts', 'Podcast'].some(p =>
-      (contact as any).pipeline_name?.toLowerCase().includes(p.toLowerCase())
-    ) ? PODCAST_DRIVE_FOLDER : '')
+    (inPodcastPipeline ? PODCAST_DRIVE_FOLDER : '')
 
   useEffect(() => {
     setDriveFolder((contact.custom_fields?.drive_folder as string) || '')
@@ -377,6 +378,120 @@ function writeErrorMessage(e: any, label: string): string {
     : `${label} failed: ${e?.message || 'unknown error'}. Nothing was saved.`
 }
 
+/**
+ * Every pipeline this person is in, one row each, from contact_pipeline_positions (hub_229). A change in one row
+ * (stage, remove) never touches the person's other pipelines. Writes go through /api/crm/pipeline-positions and
+ * the positions it returns replace the list; nothing is assumed before the server confirms it.
+ */
+function ContactPipelines({ contactId, pipelines, positions, loadError, onPositions }: {
+  contactId: string
+  pipelines: PipelineRef[]
+  positions: Position[]
+  loadError: string
+  onPositions: (next: Position[]) => void
+}) {
+  const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState('')
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null)
+  const [adding, setAdding] = useState(false)
+  const [addPipelineId, setAddPipelineId] = useState('')
+  const [addStageId, setAddStageId] = useState('')
+
+  const inIds = new Set(positions.map(p => p.pipeline_id))
+  const available = pipelines.filter(p => !inIds.has(p.id))
+  const addPipeline = pipelines.find(p => p.id === addPipelineId) ?? null
+
+  const run = async (key: string, fn: () => Promise<Position[]>) => {
+    setBusy(key); setError('')
+    try { onPositions(await fn()); return true }
+    catch (e: any) { setError(e?.message || 'Something went wrong. Try again.'); return false }
+    finally { setBusy(null) }
+  }
+
+  const selectCls = 'w-full min-h-[40px] px-2.5 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 bg-white disabled:opacity-60'
+
+  return (
+    <div className="space-y-2">
+      {loadError && <p className="text-[10px] text-red-600">{loadError}</p>}
+      {!loadError && positions.length === 0 && <p className="text-[10px] text-gray-400">Not in any pipeline.</p>}
+
+      {positions.map(pos => {
+        const pl = pipelines.find(p => p.id === pos.pipeline_id)
+        const removing = confirmRemove === pos.pipeline_id
+        return (
+          <div key={pos.pipeline_id} className="rounded-lg border border-gray-100 p-2 space-y-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-1">
+              <span className="text-[11px] font-semibold text-np-dark break-words min-w-0">{pos.pipeline_name}</span>
+              {!removing && (
+                <button type="button" disabled={!!busy} onClick={() => { setConfirmRemove(pos.pipeline_id); setError('') }}
+                  className="min-h-[40px] px-2 text-[10px] text-gray-400 hover:text-red-600 disabled:opacity-50">
+                  Remove from pipeline
+                </button>
+              )}
+            </div>
+            {removing ? (
+              <div className="rounded-md bg-red-50 border border-red-100 p-2 space-y-1.5">
+                <p className="text-[10px] text-red-700">Remove from {pos.pipeline_name}? Their other pipelines stay as they are.</p>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" disabled={!!busy}
+                    onClick={async () => { if (await run(`rm:${pos.pipeline_id}`, () => apiRemoveFromPipeline(contactId, pos.pipeline_id))) setConfirmRemove(null) }}
+                    className="min-h-[40px] px-3 text-[11px] font-semibold text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-60">
+                    {busy === `rm:${pos.pipeline_id}` ? 'Removing...' : 'Remove'}
+                  </button>
+                  <button type="button" disabled={!!busy} onClick={() => setConfirmRemove(null)}
+                    className="min-h-[40px] px-3 text-[11px] text-gray-500 rounded-md hover:bg-white">Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <select aria-label={`Stage in ${pos.pipeline_name}`} value={pos.stage_id} disabled={!!busy}
+                onChange={e => { const id = e.target.value; if (id && id !== pos.stage_id) run(`st:${pos.pipeline_id}`, () => apiSetStage(contactId, id)) }}
+                className={selectCls}>
+                {(pl?.stages ?? []).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            )}
+          </div>
+        )
+      })}
+
+      {adding ? (
+        <div className="rounded-lg border border-dashed border-gray-200 p-2 space-y-1.5">
+          <select aria-label="Pipeline to add" value={addPipelineId} disabled={!!busy}
+            onChange={e => { const p = pipelines.find(x => x.id === e.target.value); setAddPipelineId(e.target.value); setAddStageId(firstStage(p)?.id ?? '') }}
+            className={selectCls}>
+            <option value="">Choose a pipeline</option>
+            {available.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          {addPipeline && (
+            <select aria-label="Starting stage" value={addStageId} disabled={!!busy} onChange={e => setAddStageId(e.target.value)} className={selectCls}>
+              {addPipeline.stages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <button type="button" disabled={!!busy || !addStageId}
+              onClick={async () => {
+                if (await run('add', () => apiSetStage(contactId, addStageId))) { setAdding(false); setAddPipelineId(''); setAddStageId('') }
+              }}
+              className="min-h-[40px] px-3 text-[11px] font-semibold text-white bg-np-blue rounded-md hover:bg-np-dark disabled:opacity-50">
+              {busy === 'add' ? 'Adding...' : 'Add'}
+            </button>
+            <button type="button" disabled={!!busy} onClick={() => { setAdding(false); setAddPipelineId(''); setAddStageId('') }}
+              className="min-h-[40px] px-3 text-[11px] text-gray-500 rounded-md hover:bg-gray-50">Cancel</button>
+          </div>
+        </div>
+      ) : (
+        !loadError && available.length > 0 && (
+          <button type="button" disabled={!!busy} onClick={() => { setAdding(true); setError('') }}
+            className="min-h-[40px] w-full flex items-center justify-center gap-1 text-[11px] font-medium text-np-blue border border-dashed border-np-blue/30 rounded-lg hover:bg-np-blue/5 disabled:opacity-50">
+            <Plus className="w-3 h-3" /> Add to pipeline
+          </button>
+        )
+      )}
+
+      {error && <p className="text-[10px] text-red-600" role="alert">{error}</p>}
+    </div>
+  )
+}
+
 export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig, pipelineCustomFields, leadValue, onActivityChange }: ContactDetailProps) {
   const show = (key: keyof NonNullable<CardConfig>['sections']) =>
     !cardConfig || cardConfig.sections[key] !== false
@@ -427,7 +542,9 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
   const [showSeqEnroll, setShowSeqEnroll] = useState(false)
   const [availableSequences, setAvailableSequences] = useState<{ id: string; name: string }[]>([])
   const [enrollingSeq, setEnrollingSeq] = useState(false)
-  const [pipelineConfigs, setPipelineConfigs] = useState<{ id: string; name: string; stages: { name: string; color: string }[]; is_default?: boolean }[]>([])
+  const [pipelines, setPipelines] = useState<PipelineRef[]>([])
+  const [positions, setPositions] = useState<Position[]>([])
+  const [positionsError, setPositionsError] = useState('')
   const [infoForm, setInfoForm] = useState({
     source: '', address_street: '', address_city: '', address_state: '', address_zip: '',
     reason_for_contact: '', date_of_birth: '', preferred_name: '', timezone: 'America/New_York',
@@ -480,11 +597,10 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
         setContactTagIds(new Set(tags.map((t: any) => t.tag_definition_id)))
       }).catch(e => console.warn('Structured tags load skipped:', e))
 
-      supabase.from('org_settings').select('setting_value')
-        .eq('org_id', c.org_id).eq('setting_key', 'crm_pipelines').maybeSingle()
-        .then(({ data }) => {
-          if (data?.setting_value?.pipelines) setPipelineConfigs(data.setting_value.pipelines)
-        })
+      // Pipeline membership: contact_pipeline_positions only (hub_229), never contacts.pipeline_id/pipeline_stage.
+      Promise.all([loadPipelines(supabase, c.org_id), fetchContactPositions(c.org_id, contactId)])
+        .then(([pls, pos]) => { setPipelines(pls); setPositions(pos); setPositionsError('') })
+        .catch(e => { console.warn('Pipelines load skipped:', (e as Error)?.message); setPositionsError('Pipelines could not be loaded. Try again.') })
       fetchContactRelationships(contactId).then(setRelationships).catch(e => console.warn('Relationships load skipped:', e))
       fetchRelationshipTypes(c.org_id).then(setRelTypes).catch(e => console.warn('RelTypes load skipped:', e))
       fetchContacts({ org_id: c.org_id, limit: 200 }).then(res => setAllContacts(res.contacts.filter(ct => ct.id !== contactId))).catch(e => console.warn('Contacts load skipped:', e))
@@ -528,6 +644,14 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
   }, [contactId])
 
   useEffect(() => { load() }, [load])
+
+  // After a pipeline write: the RPC writes the timeline entry, so read it back without reloading the whole panel.
+  const reloadTimeline = () => {
+    if (!contactId) return
+    Promise.resolve(supabase.from('contact_timeline').select('*').eq('contact_id', contactId)
+      .order('occurred_at', { ascending: false }).limit(50))
+      .then(({ data }) => { if (data) setTimeline(data) }).catch(() => {})
+  }
 
   useEffect(() => {
     if (!contactId) return
@@ -846,10 +970,12 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                         <AddNamePrompt contactId={contact.id} className="mt-1" onSaved={async () => { await load(); onUpdate?.() }} />
                       )}
                       {(contact as any).company && <p className="text-[10px] text-gray-400">{(contact as any).company}</p>}
-                      <div className="flex items-center gap-2 mt-0.5">
-                        {contact.pipeline_stage && (
-                          <span className="text-[9px] font-bold bg-np-blue/10 text-np-blue px-1.5 py-0.5 rounded">{contact.pipeline_stage}</span>
-                        )}
+                      <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                        {positions.map(p => (
+                          <span key={p.pipeline_id} className="text-[9px] font-bold bg-np-blue/10 text-np-blue px-1.5 py-0.5 rounded break-words">
+                            {p.pipeline_name} · {p.stage_name}
+                          </span>
+                        ))}
                         {mastermind && (
                           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: mastermind.color + '18', color: mastermind.color }}>
                             {mastermind.label}
@@ -1700,56 +1826,8 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                     <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
                       <Target className="w-3 h-3" /> Pipeline
                     </h4>
-                    <div className="grid grid-cols-2 gap-2">
-                      <select
-                        value={contact.pipeline_id || ''}
-                        onChange={async (e) => {
-                          const pid = e.target.value
-                          if (!pid) {
-                            // Server side, so the pipeline's deal row goes with the placement.
-                            if (!contact.pipeline_id) return
-                            setWriteError('')
-                            setSaving(true)
-                            try {
-                              await removeFromPipeline(contact.id, contact.pipeline_id)
-                              await load()
-                              onUpdate?.()
-                            } catch (err: any) {
-                              console.error('[contact-detail] Pipeline change failed:', err)
-                              setWriteError(writeErrorMessage(err, 'Pipeline change'))
-                            } finally {
-                              setSaving(false)
-                            }
-                          } else {
-                            const pipeline = pipelineConfigs.find(p => p.id === pid)
-                            const firstStage = pipeline?.stages?.[0]?.name || 'New Lead'
-                            await applyUpdate({ pipeline_id: pid, pipeline_stage: firstStage } as any, 'Pipeline change')
-                          }
-                        }}
-                        className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 bg-white"
-                      >
-                        <option value="">No pipeline</option>
-                        {pipelineConfigs.map(p => (
-                          <option key={p.id} value={p.id}>{p.name}</option>
-                        ))}
-                      </select>
-                      <select
-                        value={contact.pipeline_stage || ''}
-                        disabled={!contact.pipeline_id}
-                        onChange={async (e) => {
-                          await applyUpdate({ pipeline_stage: e.target.value } as any, 'Pipeline stage change')
-                        }}
-                        className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-np-blue/30 bg-white"
-                      >
-                        <option value="">No stage</option>
-                        {(() => {
-                          const contactPipeline = pipelineConfigs.find(p => p.id === contact.pipeline_id)
-                          return (contactPipeline?.stages || []).map(s => (
-                            <option key={s.name} value={s.name}>{s.name}</option>
-                          ))
-                        })()}
-                      </select>
-                    </div>
+                    <ContactPipelines contactId={contact.id} pipelines={pipelines} positions={positions} loadError={positionsError}
+                      onPositions={next => { setPositions(next); onUpdate?.(); reloadTimeline() }} />
                     {leadValue && (
                       <div>
                         <label className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Lead value in {leadValue.pipelineName}</label>
@@ -1760,7 +1838,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                     )}
                   </div>
 
-                  <ContactDriveSection contact={contact} updateContact={updateContact} load={load} />
+                  <ContactDriveSection contact={contact} updateContact={updateContact} load={load} inPodcastPipeline={positions.some(p => /podcast/i.test(p.pipeline_name))} />
 
                   <div className="space-y-2">
                     <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
