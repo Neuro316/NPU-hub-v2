@@ -23,7 +23,7 @@ const HARNESSES = [
   { file: 'scripts/marketing/smart-list-tamper.cjs', selectors: ['emptyall', 'missingyes', 'unknownyes', 'anyall', 'nonepass', 'activity', 'consent', 'nocheck', '1'] },
   { file: 'scripts/marketing/activity-log-tamper.cjs', selectors: ['rawcols', 'refraw', 'actorraw', 'readold', 'orderold', 'keepbody', '1'] },
   { file: 'scripts/marketing/lead-device-tamper.cjs', selectors: ['testwrites', 'notest', 'noreplay', 'truthy', 'optout', 'noresult', 'secretopen', 'anypreview', 'sameorigin', 'connect', 'nonce', 'hotall', 'factsall', 'logname', 'overwrite', 'nofill', 'nocas', 'nosuppress', 'checkopen', 'nonote', 'noother', 'noidentity', 'retrytest', 'noclaim', 'purgesoon', '1'] },
-  { file: 'scripts/marketing/pipeline-positions-tamper.cjs', selectors: ['loosename', 'guess', 'keeparch', 'orgopen', 'actorbody', 'removeall', '1'] },
+  { file: 'scripts/marketing/pipeline-positions-tamper.cjs', selectors: ['loosename', 'guess', 'keeparch', 'orgopen', 'actorbody', 'removeall', 'nowarn', 'payfail', 'mirrorloop', 'mirrorall', 'nosignedup', '1'] },
   { file: 'scripts/marketing/lead-origin-tamper.cjs', selectors: ['anyhost', 'hubhost', 'anypath', 'looseorg', 'keepcook', 'noapi', '1'] },
   { file: 'scripts/marketing/flags-off-parity.cjs', selectors: ['outside', 'untouched', '1'] },
   { file: 'scripts/agent/claims-tamper.cjs', selectors: ['emdash', 'certified', 'noboundary', 'stopline', 'program', 'version', '1'] },

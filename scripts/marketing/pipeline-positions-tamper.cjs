@@ -8,6 +8,11 @@
 //   P_PLACE    a route placement with an unknown pipeline or stage places nothing; a known one places by stage uuid
 //   P_API      the API takes the org from the contact, refuses another org, and the actor is the caller
 //   P_ONE      a removal names exactly one pipeline, and touches no other pipeline's row
+//   P_PAY      a failed placement on a payment path is logged, returned as a warning, noted on the contact card, and
+//              never thrown (accounting payments and enrolment, Stripe auto-tagger)
+//   P_MIRROR   hub_229 mirrors to the legacy columns only for the pipeline contacts.pipeline_id names (or an empty
+//              one), and the mirror and the translation trigger each skip the other's write
+//   P_SIGNED   NeuroReport's 'Signed up' is the Enrolled pipeline's first stage, by key, in the sync and the trigger
 //
 //   loosename  stage names match case-insensitively       {P_EXACT}
 //   guess      an unknown stage falls back to the first   {P_PLACE}
@@ -15,6 +20,11 @@
 //   orgopen    the contact's org is not checked            {P_API}
 //   actorbody  the actor comes from the request body       {P_API}
 //   removeall  a removal drops every pipeline              {P_ONE}
+//   nowarn     the payment warning is dropped              {P_PAY}
+//   payfail    a placement error is rethrown               {P_PAY}
+//   mirrorloop translation ignores the mirror's guard      {P_MIRROR}
+//   mirrorall  the mirror writes for any pipeline          {P_MIRROR}
+//   nosignedup the sync places at the name 'Signed up'     {P_SIGNED}
 // TAMPER=1 reddens the union.
 const fs = require('fs')
 const H = require('../agent/lib/harness.cjs')
@@ -28,9 +38,30 @@ const TAMPERS = {
   actorbody: [[R, 'await setStage(ctx.db, contactId, stageId, ctx.userId,', 'await setStage(ctx.db, contactId, stageId, body?.actor ?? null,']],
   removeall: [[P, '{ p_contact: contactId, p_pipeline: pipelineId, p_actor: actor, p_source: source }', '{ p_contact: contactId, p_pipeline: null, p_actor: actor, p_source: source }']],
 }
-const RED_OF = { loosename: ['P_EXACT'], guess: ['P_PLACE'], keeparch: ['P_ENRICH'], orgopen: ['P_API'], actorbody: ['P_API'], removeall: ['P_ONE'] }
-const active = H.selectors(TAMPERS)
-const out = H.compile(TAMPERS, active, 'hub-positions')
+// Source-level checks on files the harness does not compile (an API route outside its folders, and the SQL).
+const PAY = 'src/app/api/accounting/payments/route.ts', SQL = 'supabase/migrations/hub_229_pipeline_positions.sql'
+const SYNC = 'src/app/api/integrations/neuroreport/sync/route.ts'
+const STATIC = {
+  nowarn: [[PAY, "            warnings.push(`Payment saved, but the CRM stage move failed: ${reason}`)\n", '']],
+  payfail: [[PAY, "            reason = String(e?.message || 'unknown').slice(0, 60)\n", '            throw e\n']],
+  mirrorloop: [[SQL, "  if coalesce(current_setting('app.hub_legacy_mirroring', true), '') = 'on' then return null; end if;\n", '']],
+  mirrorall: [[SQL, "         and (nullif(c.pipeline_id, '') is null or c.pipeline_id = v_key)\n", '']],
+  nosignedup: [[SYNC, "?.stages.find(s => s.key === NEW_CONTACT_STAGE_KEY)", "?.stages.find(s => s.name === 'Signed up')"]],
+}
+const RED_OF = { loosename: ['P_EXACT'], guess: ['P_PLACE'], keeparch: ['P_ENRICH'], orgopen: ['P_API'], actorbody: ['P_API'], removeall: ['P_ONE'],
+  nowarn: ['P_PAY'], payfail: ['P_PAY'], mirrorloop: ['P_MIRROR'], mirrorall: ['P_MIRROR'], nosignedup: ['P_SIGNED'] }
+const active = H.selectors({ ...TAMPERS, ...STATIC })
+const read = (rel) => {
+  let src = fs.readFileSync(require('path').join(H.ROOT, rel), 'utf8').replace(/\r\n/g, '\n')
+  for (const t of active) for (const [file, from, to] of STATIC[t] ?? []) {
+    if (file !== rel) continue
+    if (!src.includes(from)) { console.error(`dead anchor: ${t} in ${file}`); process.exit(2) }
+    src = src.split(from).join(to)
+  }
+  return src
+}
+const fnBody = (sql, name) => { const i = sql.indexOf(`create function public.${name}(`); return i < 0 ? '' : sql.slice(i, sql.indexOf('$function$;', i)) }
+const out = H.compile(TAMPERS, active.filter((t) => TAMPERS[t]), 'hub-positions')
 const load = H.install(out)
 const { enrichPositions, resolveStage, findPipeline, placeByName } = load(P)
 const route = load(R)
@@ -91,6 +122,32 @@ const check = (id, ok, got) => rows.push({ id, ok: !!ok, got })
   const rm = del.calls.filter((c) => c.rpc === 'hub_pipeline_remove')
   check('P_ONE', rm.length === 1 && rm[0].args.p_pipeline === PIPE && rm[0].args.p_actor === 'u1'
     && !del.calls.some((c) => c.ops && c.ops.some((o) => ['update', 'delete', 'insert', 'upsert'].includes(o[0]))), rm.map((c) => c.args))
+
+  // P_PAY: every payment-path placement failure is logged, surfaced, noted, and swallowed
+  const pay = read(PAY)
+  const payBlock = pay.slice(pay.indexOf('let reason: string | null = null'), pay.indexOf('await notePlacementFailure(admin, auth.targetOrgId'))
+  const enrol = read('src/lib/accounting-auth.ts'), tagger = read('src/lib/stripe-auto-tagger.ts')
+  const taggerBlock = tagger.slice(tagger.indexOf('const failures: string[] = []'), tagger.indexOf("notePlacementFailure(supabase, orgId, contact.id, 'Stripe enrolment'"))
+  check('P_PAY', payBlock.length > 0 && payBlock.includes('warnings.push(') && payBlock.includes('console.error(') && !/\bthrow\b/.test(payBlock)
+    && enrol.includes("notePlacementFailure(admin as any, targetOrgId, contact.id, 'accounting enrolment', reason)") && enrol.includes('warning: `Contact')
+    && taggerBlock.length > 0 && !/\bthrow\b/.test(taggerBlock) && taggerBlock.includes('failures.push('), { pay: payBlock.length, tagger: taggerBlock.length })
+
+  // P_MIRROR: the mirror is scoped to the legacy-named pipeline and the two triggers cannot feed each other
+  const sql = read(SQL)
+  const mirror = fnBody(sql, 'hub_pipeline_legacy_mirror'), translate = fnBody(sql, 'hub_contacts_legacy_pipeline_write'), changed = fnBody(sql, 'hub_positions_changed')
+  check('P_MIRROR', mirror.includes("if coalesce(current_setting('app.hub_legacy_translating', true), '') = 'on' then return; end if;")
+    && mirror.includes("set_config('app.hub_legacy_mirroring', 'on', true)") && mirror.includes("and (nullif(c.pipeline_id, '') is null or c.pipeline_id = v_key)")
+    && mirror.includes('where c.id = p_contact and c.merged_into_id is null and c.pipeline_id = v_key;')
+    && translate.includes("if coalesce(current_setting('app.hub_legacy_mirroring', true), '') = 'on' then return null; end if;")
+    && translate.includes("set_config('app.hub_legacy_translating', 'on', true)")
+    && changed.includes('perform public.hub_pipeline_legacy_mirror(new.contact_id, new.pipeline_id, new.stage_id);')
+    && changed.includes('perform public.hub_pipeline_legacy_mirror(old.contact_id, old.pipeline_id, null);'), { mirror: mirror.length, translate: translate.length })
+
+  // P_SIGNED: one named mapping, by the stage's key, in both places
+  const sync = read(SYNC)
+  check('P_SIGNED', sync.includes("const NEW_CONTACT_STAGE_KEY = 'stage-1772022700334'") && sync.includes('?.stages.find(s => s.key === NEW_CONTACT_STAGE_KEY)')
+    && !/['"]Signed up['"]/.test(sync.replace(/\/\/.*$/gm, ''))
+    && translate.includes("new.pipeline_id = 'pipeline-1771530511407' and new.pipeline_stage = 'Signed up'") && translate.includes("s.legacy_key = 'stage-1772022700334'"), 'signed up')
 
   H.report(rows, active, RED_OF, () => fs.rmSync(out, { recursive: true, force: true }))
 })().catch((e) => { console.error(e); process.exit(2) })

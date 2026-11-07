@@ -22,8 +22,12 @@
 --      auto-tagger, promo codes) and NeuroReport quiz sync. On Cameron's ruling those writes are TRANSLATED, not
 --      blocked: hub_contacts_legacy_pipeline_write turns a write into a move in that pipeline only, keeps the
 --      column value as written, and logs a value that does not map. It never fails the other app's write.
---      The columns are NOT dropped and keep their values; the Hub treats them as read-only until Cameron
---      confirms nothing reads them.
+--      The one named mapping: the NeuroReport sync's 'Signed up' in the Enrolled pipeline is that pipeline's
+--      first stage (stage-1772022700334).
+--      The columns are NOT dropped and keep their values. Hub app code never writes them (guard G7), but the
+--      database mirrors back to them (hub_pipeline_legacy_mirror) when a position is added, moved or removed in
+--      the pipeline contacts.pipeline_id already names, or pipeline_id is empty, so NeuroReport's participant
+--      list and the University auto-tagger read current values exactly as today. Other pipelines never touch them.
 --   6. Hub RPCs for every Hub write: hub_pipeline_set_stage, hub_pipeline_remove, hub_pipeline_place.
 --   7. hub_contact_facts returns a pipelines array in place of the single pipeline_id / pipeline_name /
 --      pipeline_stage. brand is wnw when any of the contact's pipelines is a Waynesville pipeline.
@@ -41,6 +45,7 @@
 --   drop function public.hub_contacts_legacy_pipeline_write();
 --   drop trigger hub_positions_changed on public.contact_pipeline_positions;
 --   drop function public.hub_positions_changed();
+--   drop function public.hub_pipeline_legacy_mirror(uuid, uuid, uuid);
 --   drop function public.hub_pipeline_set_stage(uuid, uuid, uuid, text);
 --   drop function public.hub_pipeline_remove(uuid, uuid, uuid, text);
 --   drop function public.hub_pipeline_place(uuid, uuid, boolean, text);
@@ -64,7 +69,7 @@ create table public.hub_pipeline_legacy_unmapped (
   contact_id   uuid not null,
   pipeline_key text,
   stage_name   text,
-  reason       text not null check (reason in ('pipeline_unknown', 'pipeline_archived', 'stage_unknown', 'error')),
+  reason       text not null check (reason in ('pipeline_unknown', 'pipeline_archived', 'stage_unknown', 'error', 'mirror_error')),
   detail       text,
   occurred_at  timestamptz not null default now()
 );
@@ -120,6 +125,50 @@ update public.contact_pipeline_positions x
  where x.contact_id = c.id and x.pipeline_id = p.id and c.merged_into_id is null and x.stage_id <> st.id;
 
 -- 4 ─────────────────────────────────────────────────────────────────────────────────────────────────────
+-- The legacy mirror (Cameron, 2026-11-07), so NeuroReport's participant list and the University's auto-tagger keep
+-- reading current values from contacts.pipeline_id / pipeline_stage, exactly as they do today:
+--   * a position added or moved in the pipeline contacts.pipeline_id already names, or for a contact whose
+--     pipeline_id is empty, writes pipeline_id (the pipeline's legacy key) and pipeline_stage (the stage name);
+--   * a removal from the pipeline contacts.pipeline_id names clears both, as the Hub's remove did before;
+--   * a position in any other pipeline never touches the legacy columns.
+-- Recursion: the mirror's write sets app.hub_legacy_mirroring, which the translation trigger skips, and a
+-- translated write sets app.hub_legacy_translating, which the mirror skips (the columns already hold it).
+-- It never fails the move: an error is logged to hub_pipeline_legacy_unmapped as 'mirror_error'.
+-- The mirror lives in the database only; Hub app code still never writes the legacy columns (guard G7).
+create function public.hub_pipeline_legacy_mirror(p_contact uuid, p_pipeline uuid, p_stage uuid)
+ returns void
+ language plpgsql
+ security definer
+ set search_path to ''
+as $function$
+declare v_key text; v_stage text; v_org uuid;
+begin
+  if coalesce(current_setting('app.hub_legacy_translating', true), '') = 'on' then return; end if;
+  begin
+    select p.legacy_key, p.org_id into v_key, v_org from public.pipelines p where p.id = p_pipeline;
+    if v_key is null then return; end if;
+    perform set_config('app.hub_legacy_mirroring', 'on', true);
+    if p_stage is null then
+      update public.contacts c set pipeline_id = null, pipeline_stage = null
+       where c.id = p_contact and c.merged_into_id is null and c.pipeline_id = v_key;
+    else
+      select s.name into v_stage from public.pipeline_stages s where s.id = p_stage;
+      update public.contacts c set pipeline_id = v_key, pipeline_stage = v_stage
+       where c.id = p_contact and c.merged_into_id is null
+         and (nullif(c.pipeline_id, '') is null or c.pipeline_id = v_key)
+         and (c.pipeline_id is distinct from v_key or c.pipeline_stage is distinct from v_stage);
+    end if;
+    perform set_config('app.hub_legacy_mirroring', '', true);
+  exception when others then
+    perform set_config('app.hub_legacy_mirroring', '', true);
+    begin
+      insert into public.hub_pipeline_legacy_unmapped (org_id, contact_id, pipeline_key, stage_name, reason, detail)
+      values (v_org, p_contact, v_key, v_stage, 'mirror_error', sqlstate);
+    exception when others then null;
+    end;
+  end;
+end $function$;
+
 create function public.hub_positions_changed()
  returns trigger
  language plpgsql
@@ -133,6 +182,9 @@ begin
   if tg_op = 'UPDATE' and new.stage_id = old.stage_id and new.pipeline_id = old.pipeline_id then return null; end if;
 
   if tg_op = 'DELETE' then
+    -- a contact delete cascades here: no history for a contact that no longer exists
+    if not exists (select 1 from public.contacts c where c.id = old.contact_id) then return null; end if;
+    perform public.hub_pipeline_legacy_mirror(old.contact_id, old.pipeline_id, null);
     select p.name into v_pipe from public.pipelines p where p.id = old.pipeline_id;
     select s.name into v_from from public.pipeline_stages s where s.id = old.stage_id;
     v_actor := nullif(current_setting('app.hub_pipeline_actor', true), '')::uuid;
@@ -145,6 +197,7 @@ begin
     return null;
   end if;
 
+  perform public.hub_pipeline_legacy_mirror(new.contact_id, new.pipeline_id, new.stage_id);
   select p.name into v_pipe from public.pipelines p where p.id = new.pipeline_id;
   select s.name into v_to from public.pipeline_stages s where s.id = new.stage_id;
   if tg_op = 'UPDATE' then select s.name into v_from from public.pipeline_stages s where s.id = old.stage_id; end if;
@@ -225,6 +278,8 @@ create function public.hub_contacts_legacy_pipeline_write()
 as $function$
 declare v_pipe uuid; v_arch timestamptz; v_stage uuid;
 begin
+  -- the Hub's own mirror wrote this; translating it back would loop
+  if coalesce(current_setting('app.hub_legacy_mirroring', true), '') = 'on' then return null; end if;
   if new.merged_into_id is not null or coalesce(current_setting('app.hub_merging', true), '') = 'on' then return null; end if;
   if tg_op = 'UPDATE' and new.pipeline_id is not distinct from old.pipeline_id
      and new.pipeline_stage is not distinct from old.pipeline_stage then return null; end if;
@@ -241,17 +296,26 @@ begin
     end if;
     select s.id into v_stage from public.pipeline_stages s
      where s.pipeline_id = v_pipe and s.name = new.pipeline_stage and s.archived_at is null order by s.position limit 1;
+    -- Cameron, 2026-11-07: the NeuroReport sync's 'Signed up' is the Enrolled pipeline's first stage. This one
+    -- value in this one pipeline, by the stage's key; nothing else is mapped by likeness.
+    if v_stage is null and new.pipeline_id = 'pipeline-1771530511407' and new.pipeline_stage = 'Signed up' then
+      select s.id into v_stage from public.pipeline_stages s
+       where s.pipeline_id = v_pipe and s.legacy_key = 'stage-1772022700334' and s.archived_at is null;
+    end if;
     if v_stage is null then
       insert into public.hub_pipeline_legacy_unmapped (org_id, contact_id, pipeline_key, stage_name, reason)
       values (new.org_id, new.id, new.pipeline_id, new.pipeline_stage, 'stage_unknown');
       return null;
     end if;
+    perform set_config('app.hub_legacy_translating', 'on', true);
     insert into public.contact_pipeline_positions (contact_id, org_id, pipeline_id, stage_id, moved_at, moved_by, source)
     values (new.id, new.org_id, v_pipe, v_stage, now(), null, 'legacy_write')
     on conflict (contact_id, pipeline_id) do update
       set stage_id = excluded.stage_id, moved_at = excluded.moved_at, moved_by = null, source = excluded.source
       where public.contact_pipeline_positions.stage_id <> excluded.stage_id;
+    perform set_config('app.hub_legacy_translating', '', true);
   exception when others then
+    perform set_config('app.hub_legacy_translating', '', true);
     -- never fail the other app's write
     begin
       insert into public.hub_pipeline_legacy_unmapped (org_id, contact_id, pipeline_key, stage_name, reason, detail)
@@ -385,6 +449,7 @@ revoke all on function public.hub_pipeline_remove(uuid, uuid, uuid, text) from p
 revoke all on function public.hub_pipeline_place(uuid, uuid, boolean, text) from public, anon, authenticated;
 revoke all on function public.hub_positions_changed() from public, anon, authenticated;
 revoke all on function public.hub_contacts_legacy_pipeline_write() from public, anon, authenticated;
+revoke all on function public.hub_pipeline_legacy_mirror(uuid, uuid, uuid) from public, anon, authenticated;
 grant execute on function public.hub_pipeline_set_stage(uuid, uuid, uuid, text) to service_role;
 grant execute on function public.hub_pipeline_remove(uuid, uuid, uuid, text) to service_role;
 grant execute on function public.hub_pipeline_place(uuid, uuid, boolean, text) to service_role;
@@ -625,3 +690,11 @@ commit;
 --   from public.contacts c left join public.pipelines p on p.org_id = c.org_id and p.legacy_key = c.pipeline_id
 --  where c.pipeline_id is not null and c.pipeline_stage is not null
 --    and not exists (select 1 from public.pipeline_stages s where s.pipeline_id = p.id and s.name = c.pipeline_stage and s.archived_at is null and p.archived_at is null);
+-- Mirror check: a contact whose legacy columns name a pipeline must hold the same stage there (expect 0 rows,
+-- apart from the unmapped values above and the 3 Enrolled rows kept on purpose).
+-- select c.id, c.pipeline_stage as legacy_stage, s.name as position_stage
+--   from public.contacts c
+--   join public.pipelines p on p.org_id = c.org_id and p.legacy_key = c.pipeline_id
+--   join public.contact_pipeline_positions x on x.contact_id = c.id and x.pipeline_id = p.id
+--   join public.pipeline_stages s on s.id = x.stage_id
+--  where c.merged_into_id is null and c.pipeline_stage is distinct from s.name;

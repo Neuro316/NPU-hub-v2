@@ -1,5 +1,5 @@
 import type { createAdminSupabase } from '@/lib/supabase'
-import { placeByName } from '@/lib/pipelines/positions'
+import { placeByName, notePlacementFailure } from '@/lib/pipelines/positions'
 
 // ─── Authorisation boundary for accounting writes ───────────────────────────
 //
@@ -244,6 +244,7 @@ export async function enrolContact(
   }
   if (reason) {
     console.error(`[accounting] contact=${contact.id} not placed: ${reason}`)
+    await notePlacementFailure(admin as any, targetOrgId, contact.id, 'accounting enrolment', reason)
     return { contactId: contact.id, warning: `Contact ${contact.id} was created and linked, but could not be added to the pipeline (${reason}).` }
   }
   return { contactId: contact.id }

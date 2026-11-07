@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabase, createAdminSupabase } from '@/lib/supabase'
 import { authorizeAccountingWrite, enrolContact, NP_STAGE_PAID, NP_PIPELINE_ID } from '@/lib/accounting-auth'
-import { placeByName } from '@/lib/pipelines/positions'
+import { placeByName, notePlacementFailure } from '@/lib/pipelines/positions'
 
 // ─── POST /api/accounting/payments ──────────────────────────────────────────
 // Records a payment and, on a Neuro Progeny client's FIRST payment, advances
@@ -127,15 +127,20 @@ export async function POST(request: NextRequest) {
           // The silent case, now audible.
           warnings.push(`Payment saved, but the CRM stage move matched 0 rows — contact ${contactId} was not found in that organization. The contact link may be stale.`)
         } else {
+          // A failed placement never fails the payment: it is logged, returned as a warning (shown on save) and noted
+          // on the contact card.
+          let reason: string | null = null
           try {
             const r = await placeByName(admin, auth.targetOrgId, contactId, NP_PIPELINE_ID, NP_STAGE_PAID, false, 'accounting_payment')
             if (r.placed) movedToPaid = true
-            else {
-              console.error(`[accounting/payments] place ${contactId}: ${r.reason ?? 'not_placed'}`)
-              warnings.push(`Payment saved, but the CRM stage move failed: ${r.reason ?? 'not placed'}`)
-            }
+            else reason = r.reason ?? 'not placed'
           } catch (e: any) {
-            warnings.push(`Payment saved, but the CRM stage move failed: ${e?.message || 'unknown'}`)
+            reason = String(e?.message || 'unknown').slice(0, 60)
+          }
+          if (reason) {
+            console.error(`[accounting/payments] contact=${contactId} not placed: ${reason}`)
+            warnings.push(`Payment saved, but the CRM stage move failed: ${reason}`)
+            await notePlacementFailure(admin, auth.targetOrgId, contactId, 'accounting payment', reason)
           }
         }
       }

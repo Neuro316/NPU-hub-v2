@@ -12,7 +12,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { loadPositions, placeByName, positionsByContact } from '@/lib/pipelines/positions'
+import { loadPipelines, loadPositions, findPipeline, placeContact, positionsByContact } from '@/lib/pipelines/positions'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -23,7 +23,9 @@ const supabase = createClient(
 const NP_ORG_ID = '00000000-0000-0000-0000-000000000001'
 // The Enrolled pipeline (legacy key) and the stage a new NeuroReport contact is placed at, in that pipeline only.
 const NP_PIPELINE_KEY = 'pipeline-1771530511407'
-const NEW_CONTACT_STAGE = 'Signed up'
+// "Signed up" is the Enrolled pipeline's first stage, named by its key because its name is long and editable
+// (Cameron, 2026-11-07). The translation trigger maps a legacy 'Signed up' write to the same stage.
+const NEW_CONTACT_STAGE_KEY = 'stage-1772022700334'
 
 interface SyncParticipant {
   first_name: string
@@ -248,7 +250,10 @@ export async function POST(req: NextRequest) {
           if (insertErr) throw insertErr
 
           try {
-            const placed = await placeByName(supabase, NP_ORG_ID, newContact.id, NP_PIPELINE_KEY, NEW_CONTACT_STAGE, true, 'neuroreport_sync')
+            const stage = findPipeline(await loadPipelines(supabase, NP_ORG_ID), NP_PIPELINE_KEY)?.stages.find(s => s.key === NEW_CONTACT_STAGE_KEY)
+            const placed = stage
+              ? await placeContact(supabase, newContact.id, stage.id, true, 'neuroreport_sync')
+              : { placed: false, reason: 'stage_unknown' }
             if (!placed.placed) console.error(`[neuroreport-sync] contact=${newContact.id} not placed: ${placed.reason ?? 'unknown'}`)
           } catch (e: any) {
             console.error(`[neuroreport-sync] contact=${newContact.id} placement failed: ${String(e?.message ?? 'error').slice(0, 60)}`)

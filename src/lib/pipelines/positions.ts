@@ -184,6 +184,23 @@ export async function placeContact(db: SupabaseClient, contactId: string, stageI
 }
 
 /**
+ * A placement that failed on a payment or enrolment path, made visible to staff: a system note on the contact card
+ * (pipeline and reason only, no payment details). Never throws, so it can never block or fail the payment; a note
+ * that cannot be written is logged by code.
+ */
+export async function notePlacementFailure(db: SupabaseClient, orgId: string, contactId: string, where: string, reason: string): Promise<void> {
+  try {
+    const { error } = await db.from('contact_notes').insert({
+      org_id: orgId, contact_id: contactId, author_id: null, type: 'system', pinned: false,
+      body: `Pipeline placement failed (${where}): ${reason}. The payment or record was saved; set the stage on this card by hand.`,
+    })
+    if (error) console.error(`[pipelines] contact=${contactId} placement note failed: ${error.code ?? 'unknown'}`)
+  } catch {
+    console.error(`[pipelines] contact=${contactId} placement note failed`)
+  }
+}
+
+/**
  * A placement named the old way, by pipeline legacy key (or uuid) and stage name, as booking and quiz routes store it.
  * An unknown pipeline or stage places nothing and says why; nothing is guessed.
  */
