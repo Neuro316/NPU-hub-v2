@@ -14,6 +14,7 @@ import { getFlags, type Flags } from './flags'
 import { getSendPolicy, senderProblem } from './policy'
 import { mergeStage, renderStep } from './render'
 import { mintUnsubscribeToken, newAssetToken, byteaHex } from './tokens'
+import { endAsExited, exitReason, parseExitRules } from './exits'
 import type { EmailProvider, SmsProvider } from './providers/types'
 
 export const STEP_LEASE_MINUTES = 10
@@ -21,6 +22,8 @@ export const RETRY_MINUTES = 15
 export const MAX_SEND_ATTEMPTS = 3
 export const ASSET_LINK_DAYS = 14
 export const UNIVERSITY_ORIGIN = 'https://university.neuroprogeny.com'
+/** A step whose rendered subject or body still holds a [[placeholder]] is never sent: staff must fill it first. */
+export const PLACEHOLDER = /\[\[[^\]\n]{1,200}\]\]/
 
 export interface EngineDeps {
   db: SupabaseClient
@@ -137,8 +140,8 @@ export async function processCampaignSteps(deps: EngineDeps, limit = 25): Promis
 async function runOne(deps: EngineDeps, enr: any, now: Date, flagCache: Map<string, Flags>): Promise<StepOutcome> {
   const { db } = deps
   const base = { enrollment: enr.id, step: enr.current_step as number }
-  const { data: ce } = await db.from('campaign_enrollments').select('id, status, campaign_id, org_id').eq('id', enr.campaign_enrollment_id).maybeSingle()
-  const { data: camp } = ce ? await db.from('funnel_campaigns').select('id, status, name, entry_pipeline_id').eq('id', ce.campaign_id).maybeSingle() : { data: null }
+  const { data: ce } = await db.from('campaign_enrollments').select('id, status, campaign_id, org_id, enrolled_at').eq('id', enr.campaign_enrollment_id).maybeSingle()
+  const { data: camp } = ce ? await db.from('funnel_campaigns').select('id, status, name, entry_pipeline_id, entry_stage_id, goal').eq('id', ce.campaign_id).maybeSingle() : { data: null }
   if (!ce || !camp || ce.status !== 'active') {
     await one(db.from('sequence_enrollments').update({ status: 'completed', completed_at: now.toISOString(), next_step_at: null }).eq('id', enr.id).select('id'), 'end enrollment')
     return { ...base, outcome: 'campaign_enrollment_ended' }
@@ -153,6 +156,15 @@ async function runOne(deps: EngineDeps, enr: any, now: Date, flagCache: Map<stri
   if (!flags.engine) {
     await db.from('sequence_enrollments').update({ next_step_at: minutes(now, 60) }).eq('id', enr.id)
     return { ...base, outcome: 'engine_off' }
+  }
+
+  // ── exit rules (src/lib/marketing/exits.ts): checked before every step, so a person who paid, replied, moved on
+  //    or cancelled is never sent another one. A read error throws and the step is retried, never sent. ──
+  const exit = await exitReason(db, { orgId, contactId: enr.contact_id, enrolledAt: ce.enrolled_at,
+    entryPipelineId: (camp as any).entry_pipeline_id ?? null, entryStageId: (camp as any).entry_stage_id ?? null }, parseExitRules((camp as any).goal))
+  if (exit) {
+    await endAsExited(db, ce.id, exit, now)
+    return { ...base, outcome: `exited_${exit}` }
   }
 
   const { data: step } = await db.from('sequence_steps').select('*')
@@ -231,6 +243,12 @@ async function runOne(deps: EngineDeps, enr: any, now: Date, flagCache: Map<stri
     })
     await one(db.from('message_sends').update({ subject: r.subject || null, rendered_body: channel === 'email' ? r.html : r.text })
       .eq('id', sid).select('id'), 'store rendered message')
+
+    // an unfilled [[placeholder]] is never sent, live or dry run, so a dry run shows the same refusal
+    if (PLACEHOLDER.test(`${r.subject}\n${r.text}`)) {
+      await one(db.from('message_sends').update({ status: 'skipped', skip_reason: 'unfilled_placeholder' }).eq('id', sid).select('id'), 'mark placeholder')
+      return { ...base, outcome: `skipped_unfilled_placeholder_${await advance(db, enr, now)}`, mode: g.mode, send: sid }
+    }
 
     // checked after merge tags and the STOP line, so a dry run shows what a live send would hit
     if (channel === 'sms' && r.text.length > SMS_PART_MAX) {

@@ -12,6 +12,7 @@ import { createAdminSupabase } from '@/lib/supabase'
 import { cronAuthorized } from '@/lib/cron-auth'
 import { withJobRun } from '@/lib/marketing/job-runs'
 import { processCampaignSteps } from '@/lib/marketing/engine'
+import { sweepCampaignExits } from '@/lib/marketing/exits'
 import { resendProvider } from '@/lib/marketing/providers/resend'
 import { twilioSmsProvider } from '@/lib/marketing/providers/twilio-sms'
 
@@ -30,6 +31,9 @@ export async function GET(req: NextRequest) {
       const outcomes = await processCampaignSteps({ db, email: resendProvider, sms: twilioSmsProvider, now: () => new Date(), appUrl })
       const counts: Record<string, number> = {}
       for (const o of outcomes) counts[o.outcome] = (counts[o.outcome] ?? 0) + 1
+      // exit rules between steps, so an exited person's status is current within one run (the step check stops any send)
+      const exits = await sweepCampaignExits(db, new Date())
+      for (const [k, v] of Object.entries(exits)) counts[`swept_${k}`] = v
       return { rows: outcomes.length, detail: { counts } }
     })
     return NextResponse.json({ processed: r.rows, counts: r.detail?.counts ?? {} })
