@@ -73,6 +73,7 @@ export default function LeadDevicesPage() {
   const [note, setNote] = useState('')
   const [openId, setOpenId] = useState<string | null>(null)
   const [replaceFile, setReplaceFile] = useState<File | null>(null)
+  const [subs, setSubs] = useState<Record<string, any[] | 'loading' | 'error'>>({})
 
   const load = useCallback(async () => {
     if (!org) return
@@ -82,6 +83,18 @@ export default function LeadDevicesPage() {
     setError(''); setData(j)
   }, [org])
   useEffect(() => { load() }, [load])
+
+  const loadSubs = async (id: string) => {
+    setSubs((p) => ({ ...p, [id]: 'loading' }))
+    const r = await fetch(`/api/marketing/lead-devices?org_id=${org}&device_id=${id}`)
+    const j = await r.json().catch(() => ({}))
+    setSubs((p) => ({ ...p, [id]: r.ok ? (j.submissions ?? []) : 'error' }))
+  }
+
+  const retry = async (deviceId: string, submissionId: string) => {
+    const j = await act(deviceId, 'retry_submission', { submission_id: submissionId })
+    if (j) await loadSubs(deviceId)
+  }
 
   const act = async (id: string, action: string, extra: Record<string, unknown> = {}) => {
     setBusy(`${id}:${action}`); setError('')
@@ -272,6 +285,41 @@ export default function LeadDevicesPage() {
                       ))}
                     </div>
                     {!data.builder && <p className="text-[11px] text-gray-400">These are starter emails. The Campaign Builder can redraft them when it is switched on for this organization.</p>}
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Submissions</h3>
+                      <button type="button" className={button} onClick={() => loadSubs(d.id)}>{subs[d.id] && subs[d.id] !== 'error' ? 'Refresh' : 'Show submissions'}</button>
+                    </div>
+                    {subs[d.id] === 'loading' && <p className="text-[11px] text-gray-400">Loading...</p>}
+                    {subs[d.id] === 'error' && <p className="text-[11px] text-red-600">The submissions could not be loaded.</p>}
+                    {Array.isArray(subs[d.id]) && !(subs[d.id] as any[]).length && <p className="text-[11px] text-gray-400">No submissions yet.</p>}
+                    {Array.isArray(subs[d.id]) && (subs[d.id] as any[]).map((s: any) => {
+                      const name = [s.first_name, s.last_name].filter(Boolean).join(' ')
+                      return (
+                        <div key={s.id} className="text-xs border border-gray-100 rounded-lg p-2 space-y-0.5 break-words">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-[10px] text-gray-400">{new Date(s.submitted_at).toLocaleString()}</span>
+                            {s.is_test && <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">Test</span>}
+                            {s.status === 'contact_failed' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-700">Contact not created</span>}
+                            {s.status === 'received' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">In progress</span>}
+                            {s.outcome_label && <span className="text-[10px] text-gray-500">{s.outcome_label}</span>}
+                          </div>
+                          {s.identity_purged_at ? (
+                            <p className="text-[11px] text-gray-400">Details removed 30 days after this test.</p>
+                          ) : (
+                            <p>{name || 'No name'}{s.email ? ` · ${s.email}` : ''}{s.phone ? ` · ${s.phone}` : ''}</p>
+                          )}
+                          <div className="flex flex-wrap items-center gap-2">
+                            {s.contact_id && <a className="text-[11px] text-np-blue underline" href={`/crm/contacts?id=${s.contact_id}`}>Open contact</a>}
+                            {s.status === 'contact_failed' && data.can_edit && (
+                              <button type="button" className={button} disabled={busy === `${d.id}:retry_submission`} onClick={() => retry(d.id, s.id)}>Retry</button>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                    {Array.isArray(subs[d.id]) && <p className="text-[11px] text-gray-400">Test submissions create no contact. Their details are removed after 30 days.</p>}
                   </div>
                   {d.hosting === 'hub' && d.content === 'html' && (
                     <div className="space-y-1.5">

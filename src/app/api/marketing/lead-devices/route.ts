@@ -1,6 +1,7 @@
 // /api/marketing/lead-devices   (staff to read, org admin to change, Cameron alone to go live)
 // GET  ?org_id=      every device with its numbers, versions, lists, campaigns, readiness and links
 // GET  ?org_id=&contact_id=  the Device answers section of a contact card
+// GET  ?org_id=&device_id=   the device's latest submissions with the details typed (tests labelled)
 // POST { org_id, action, id, ... }
 //   create             a form-only device, or an external one awaiting its first submission
 //   update_manifest    edit name, manifest and pipeline
@@ -12,17 +13,20 @@
 //   go_live            Cameron only
 //   pause              any org admin, so a device can always be stopped
 //   link_builder_run   after a Campaign Builder redraft, route the campaign to the new draft
+//   retry_submission   run the contact step again for a real submission whose contact step failed
 import { NextResponse } from 'next/server'
 import { withStaff, requireOrg, isOrgAdmin, forbidden, bad } from '@/lib/api-guard'
 import { getFlags } from '@/lib/marketing/flags'
 import { unreviewedAiStepCount } from '@/lib/marketing/ai-review'
 import { BRANDS, DEVICE_COLUMNS, TYPES, UTM_CHANNELS, cleanManifest, readiness, slugProblem, sourceKey, type DeviceRow } from '@/lib/lead-devices/manifest'
-import { CAMERON_USER_ID } from '@/lib/lead-devices/intake'
+import { CAMERON_USER_ID, retrySubmission } from '@/lib/lead-devices/intake'
 import { builderPrompt, provisionDevice } from '@/lib/lead-devices/provision'
 import { mintPreview } from '@/lib/lead-devices/public-device'
 import { LEAD_DEVICE_ORIGIN } from '@/lib/lead-devices/public-origin'
 
 export const dynamic = 'force-dynamic'
+
+const SUBMISSIONS_SHOWN = 100
 
 const links = (slug: string) => {
   const url = `${LEAD_DEVICE_ORIGIN}/${slug}`
@@ -51,6 +55,18 @@ export const GET = withStaff(async (req, ctx) => {
   const org = requireOrg(ctx, url.searchParams.get('org_id'))
   if (typeof org !== 'string') return org
   const db = ctx.db
+
+  const deviceId = url.searchParams.get('device_id')
+  if (deviceId) {
+    // The details typed are shown to staff of the device's org only; nothing here logs them.
+    const { data: dev } = await db.from('lead_devices').select('id').eq('id', deviceId).eq('org_id', org).maybeSingle()
+    if (!dev) return NextResponse.json({ error: 'That device was not found.' }, { status: 404 })
+    const { data, error } = await db.from('lead_device_submissions')
+      .select('id, status, is_test, channel, outcome, outcome_label, contact_id, submitted_at, first_name, last_name, email, phone, identity_purged_at')
+      .eq('device_id', deviceId).eq('org_id', org).order('submitted_at', { ascending: false }).limit(SUBMISSIONS_SHOWN)
+    if (error) return NextResponse.json({ error: 'The submissions could not be loaded.' }, { status: 500 })
+    return NextResponse.json({ submissions: data ?? [] })
+  }
   const admin = isOrgAdmin(ctx, org)
   const { data: rows, error } = await db.from('lead_devices').select(`${DEVICE_COLUMNS}, created_at`).eq('org_id', org).order('created_at', { ascending: false })
   if (error) return NextResponse.json({ error: 'The devices could not be loaded.' }, { status: 500 })
@@ -191,6 +207,12 @@ export const POST = withStaff(async (req, ctx) => {
       }
       console.info(`[lead-device] device=${d.id} paused by=${ctx.userId}`)
       return (await save({ status: 'paused' })) ? NextResponse.json({ ok: true }) : failed('device')
+    }
+    case 'retry_submission': {
+      if (typeof b.submission_id !== 'string') return bad('Say which submission.')
+      const r = await retrySubmission(db, d, b.submission_id)
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.status })
+      return NextResponse.json({ ok: true, id: r.id })
     }
     case 'builder_prompt': {
       const outcome = d.manifest.outcomes.find((o) => o.key === b.outcome) ?? null
