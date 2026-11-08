@@ -70,6 +70,24 @@ export function pickPaywall(holds: Hold[], paywalls: PaywallRow[], enrolledAt: s
   return { ok: true, slug: matches[0].slug }
 }
 
+export interface CheckoutEvent { event_target: string | null; created_at: string }
+
+/**
+ * Pure: the paywall named by the person's most recent University 'checkout_opened' event (activity_events, logged when
+ * the Stripe session is created; event_target = paywall slug). Same window as a seat hold, and the slug has to be an
+ * active paywall. null means "no usable event", and the caller falls back to the seat hold.
+ */
+export function pickCheckoutEvent(events: CheckoutEvent[], activeSlugs: string[], enrolledAt: string | null, now: Date): string | null {
+  const entry = enrolledAt ? Date.parse(enrolledAt) : NaN
+  const latest = events.filter((e) => !Number.isNaN(Date.parse(e.created_at)))
+    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0]
+  if (!latest || Number.isNaN(entry)) return null
+  const at = Date.parse(latest.created_at)
+  if (at < entry - HOLD_WINDOW_HOURS * 3600_000 || at > now.getTime()) return null
+  const slug = latest.event_target
+  return slug && checkoutUrl(slug) && activeSlugs.includes(slug) ? slug : null
+}
+
 /** Pure: does this subject or body use the token. */
 export function usesToken(token: string, ...parts: Array<string | null | undefined>): boolean {
   return parts.some((p) => typeof p === 'string' && p.includes(token))

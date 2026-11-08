@@ -28,6 +28,7 @@
 //   guesslink   an ambiguous cohort picks the first paywall     {K_LINKS}
 //   openlimit   an empty entry limit admits every paywall       {K_LINKS}
 //   linklive    an unresolved link can be sent                  {K_LINKS}
+//   anyslug     a checkout_opened slug needn't be an active paywall {K_LINKS}
 // TAMPER=1 reddens the union (8).
 const fs = require('fs'), path = require('path')
 const H = require('../agent/lib/harness.cjs')
@@ -46,10 +47,11 @@ const TAMPERS = {
   guesslink: [[LK, "  if (matches.length > 1) return { ok: false, reason: 'ambiguous_paywall' }\n", '']],
   openlimit: [[LK, "  if (!limit) return true\n", "  if (!limit || (!limit.slugs.length && !limit.slugContains.length)) return true\n"]],
   linklive: [[ENG, '    if (linkProblem) {\n', '    if (false) {\n']],
+  anyslug: [[LK, '  return slug && checkoutUrl(slug) && activeSlugs.includes(slug) ? slug : null\n', '  return slug && checkoutUrl(slug) ? slug : null\n']],
 }
 const RED_OF = { quietoff: ['L_QUIET'], urgentall: ['L_QUIET'], noescape: ['L_TEXT'], truthy: ['L_CONFIG'], resend: ['L_ONCE'], logname: ['L_LOGS'],
   widen: ['E_PARSE'], noexit: ['E_ENGINE'], placelive: ['E_ENGINE'],
-  guesslink: ['K_LINKS'], openlimit: ['K_LINKS'], linklive: ['K_LINKS'] }
+  guesslink: ['K_LINKS'], openlimit: ['K_LINKS'], linklive: ['K_LINKS'], anyslug: ['K_LINKS'] }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-speedtolead')
 const load = H.install(out)
@@ -198,6 +200,12 @@ const iso = (d) => d.toISOString()
       links.parseBookingUrl({ url: 'https://example.com/book?a=1' }) === 'https://example.com/book?a=1' && links.parseBookingUrl({ url: 'http://x.y' }) === null
         && links.parseBookingUrl('https://x.y') === null && links.parseBookingUrl({ url: 'https://x.y/"onmouseover' }) === null,
       links.applyLinks('<a href="{{checkout_link}}">go</a>', { '{{checkout_link}}': 'https://a.b/c?x=1&y=2' }) === '<a href="https://a.b/c?x=1&amp;y=2">go</a>',
+      // checkout_opened: the latest event decides, inside the window, and only for an active paywall
+      links.pickCheckoutEvent([{ event_target: 'four-30-minute-coaching-sessions', created_at: '2026-11-08T09:00:00Z' }, { event_target: 'capacity-protocol', created_at: '2026-11-07T09:00:00Z' }],
+        ['capacity-protocol', 'four-30-minute-coaching-sessions'], entry, now) === 'four-30-minute-coaching-sessions',
+      links.pickCheckoutEvent([{ event_target: 'capacity-protocol', created_at: '2026-11-05T09:00:00Z' }], ['capacity-protocol'], entry, now) === null,
+      links.pickCheckoutEvent([{ event_target: 'clarity-protocol', created_at: '2026-11-08T09:00:00Z' }], ['capacity-protocol'], entry, now) === null,
+      links.pickCheckoutEvent([{ event_target: '../x', created_at: '2026-11-08T09:00:00Z' }], ['../x'], entry, now) === null,
     ]
     const linkAt = eng.indexOf('    if (linkProblem) {\n')
     check('K_LINKS', cases.every(Boolean) && linkAt > 0 && dryAt > linkAt && eng.indexOf("db.rpc('gate_check'") > eng.indexOf('resolveCheckoutPaywall(db'),
