@@ -25,6 +25,7 @@ const HARNESSES = [
   { file: 'scripts/marketing/lead-device-tamper.cjs', selectors: ['testwrites', 'notest', 'noreplay', 'truthy', 'optout', 'noresult', 'secretopen', 'anypreview', 'sameorigin', 'connect', 'nonce', 'hotall', 'factsall', 'logname', 'overwrite', 'nofill', 'nocas', 'nosuppress', 'checkopen', 'nonote', 'noother', 'noidentity', 'retrytest', 'noclaim', 'purgesoon', '1'] },
   { file: 'scripts/marketing/pipeline-positions-tamper.cjs', selectors: ['loosename', 'guess', 'keeparch', 'orgopen', 'actorbody', 'removeall', 'nowarn', 'payfail', 'mirrorloop', 'mirrorall', 'nosignedup', 'viewopts', 'idcols', '1'] },
   { file: 'scripts/marketing/lead-origin-tamper.cjs', selectors: ['anyhost', 'hubhost', 'anypath', 'looseorg', 'keepcook', 'noapi', '1'] },
+  { file: 'scripts/marketing/speed-to-lead-tamper.cjs', selectors: ['quietoff', 'urgentall', 'noescape', 'truthy', 'resend', 'logname', 'widen', 'noexit', 'placelive', '1'] },
   { file: 'scripts/marketing/flags-off-parity.cjs', selectors: ['outside', 'untouched', '1'] },
   { file: 'scripts/agent/claims-tamper.cjs', selectors: ['emdash', 'certified', 'noboundary', 'stopline', 'program', 'version', '1'] },
   { file: 'scripts/agent/validator-parity.cjs', selectors: ['message', 'delay', 'lower', 'slug', '1'] },

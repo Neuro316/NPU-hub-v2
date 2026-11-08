@@ -9,7 +9,7 @@ const ROOT = path.resolve(__dirname, '..', '..', '..')
 const SRC = path.join(ROOT, 'src')
 
 /** Every module under these folders is compiled, so imports between them just work. */
-const DIRS = ['lib/agent', 'lib/marketing', 'lib/lead-devices', 'app/api/marketing/agent', 'app/api/marketing/pages', 'app/api/marketing/campaigns', 'app/api/marketing/sequences', 'app/api/sequences/enroll', 'lib/pipelines', 'app/api/crm/pipeline-positions', 'app/api/cron/lead-identity-purge']
+const DIRS = ['lib/agent', 'lib/marketing', 'lib/lead-devices', 'app/api/marketing/agent', 'app/api/marketing/pages', 'app/api/marketing/campaigns', 'app/api/marketing/sequences', 'app/api/sequences/enroll', 'lib/pipelines', 'app/api/crm/pipeline-positions', 'app/api/cron/lead-identity-purge', 'lib/lead-alerts']
 const EXTRA = ['lib/phone.ts', 'lib/sms-split.ts', 'lib/crm-server.ts', 'lib/activity-log.ts']
 
 function listTs(dir) {
@@ -113,7 +113,7 @@ function stubDb(data = {}, handlers = {}) {
     from(table) {
       const ops = []
       const b = {}
-      for (const m of ['select', 'eq', 'neq', 'is', 'not', 'in', 'gte', 'like', 'order', 'insert', 'update', 'upsert', 'delete', 'limit']) {
+      for (const m of ['select', 'eq', 'neq', 'is', 'not', 'in', 'gte', 'gt', 'lte', 'lt', 'like', 'ilike', 'or', 'order', 'insert', 'update', 'upsert', 'delete', 'limit']) {
         b[m] = (...args) => { ops.push([m, args]); return b }
       }
       const run = (mode) => {
