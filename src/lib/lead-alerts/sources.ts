@@ -6,6 +6,7 @@
 // error messages carry table names and codes only.
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { LeadFacts, LeadSource } from './compose'
+import { answerList } from '../bookings/placement'
 
 export interface Candidate {
   source: LeadSource
@@ -120,11 +121,11 @@ export async function loadFacts(db: SupabaseClient, a: { org_id: string; source:
     contactId = (s as any).contact_id ?? contactId
     facts = { source: a.source, name: null, label: (form as any)?.name ?? null, outcome: null, email: null, phone: null, startsAt: null, contactId }
   } else if (a.source === 'booking') {
-    const { data: b, error } = await db.from('nr_bookings').select('appointment_type_id, lead_id, participant_id, starts_at, status').eq('id', a.source_id).maybeSingle()
+    const { data: b, error } = await db.from('nr_bookings').select('appointment_type_id, lead_id, participant_id, starts_at, status, intake_answers').eq('id', a.source_id).maybeSingle()
     if (error) throw fail('nr_bookings', error)
     if (!b) return null
     const [{ data: type }, { data: lead }, { data: prof }, { data: sync }] = await Promise.all([
-      db.from('nr_appointment_types').select('name').eq('id', (b as any).appointment_type_id).maybeSingle(),
+      db.from('nr_appointment_types').select('name, intake_questions').eq('id', (b as any).appointment_type_id).maybeSingle(),
       (b as any).lead_id ? db.from('nr_booking_leads').select('name, email, phone').eq('id', (b as any).lead_id).maybeSingle() : Promise.resolve({ data: null }),
       (b as any).participant_id ? db.from('profiles').select('full_name, email, phone').eq('id', (b as any).participant_id).maybeSingle() : Promise.resolve({ data: null }),
       db.from('hub_booking_syncs').select('contact_id').eq('booking_id', a.source_id).maybeSingle(),
@@ -132,7 +133,8 @@ export async function loadFacts(db: SupabaseClient, a: { org_id: string; source:
     const who: any = lead ?? (prof ? { name: (prof as any).full_name, email: (prof as any).email, phone: (prof as any).phone } : null)
     contactId = (sync as any)?.contact_id ?? contactId ?? await contactByEmail(db, a.org_id, who?.email ?? null)
     facts = { source: a.source, name: who?.name ?? null, label: (type as any)?.name ?? null, outcome: null, email: who?.email ?? null, phone: who?.phone ?? null,
-      startsAt: (b as any).starts_at ?? a.starts_at, contactId }
+      startsAt: (b as any).starts_at ?? a.starts_at, contactId,
+      answers: answerList((type as any)?.intake_questions, (b as any).intake_answers ?? null).filter((x) => x.answer).map(({ label, answer }) => ({ label, answer })) }
   } else if (a.source === 'university_signup') {
     const { data: p, error } = await db.from('profiles').select('full_name, email, phone').eq('id', a.source_id).maybeSingle()
     if (error) throw fail('profiles', error)

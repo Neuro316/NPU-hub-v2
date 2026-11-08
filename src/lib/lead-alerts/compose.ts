@@ -5,7 +5,8 @@
 // booking that starts within the next 24 hours, which is due at once.
 //
 // The message carries only what the person submitted: their name, the source, what they did, their phone and
-// email when known, and a link to the contact card. No answers, no notes, nothing inferred.
+// email when known, a booking's intake answers (question and answer, as worded on the appointment type), and a link
+// to the contact card. No notes, nothing inferred.
 
 export type LeadSource = 'lead_device' | 'form' | 'booking' | 'university_signup' | 'test'
 
@@ -26,7 +27,12 @@ export interface LeadFacts {
   /** a booking's start (ISO) */
   startsAt: string | null
   contactId: string | null
+  /** a booking's intake answers, in the type's order */
+  answers?: Array<{ label: string; answer: string }>
 }
+
+/** At most this many answers ride in an alert; the card has the rest. */
+export const ALERT_MAX_ANSWERS = 8
 
 function wall(d: Date, tz = ALERT_TZ): { y: number; m: number; d: number; h: number; mi: number } {
   const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', hourCycle: 'h23' })
@@ -115,6 +121,10 @@ export function composeAlert(f: LeadFacts, appUrl: string): string {
   const phone = clean(f.phone, 30), email = clean(f.email, 120)
   if (phone) lines.push(`Phone: ${phone}`)
   if (email) lines.push(`Email: ${email}`)
+  for (const a of (f.answers ?? []).slice(0, ALERT_MAX_ANSWERS)) {
+    const q = clean(a.label, 80), said = clean(a.answer, 200)
+    if (q && said) lines.push(`${q}${/[?:]$/.test(q) ? ' ' : ': '}${said}`)
+  }
   const link = contactLink(appUrl, f.contactId)
   lines.push(link ? `Card: ${link}` : 'Card: not created yet')
   return lines.join('\n')

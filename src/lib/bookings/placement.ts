@@ -50,3 +50,39 @@ export function placementOf(result: { placed: boolean; moved?: boolean; reason?:
   if (result.reason === 'already_there' || result.reason === 'already_further') return 'kept'
   return 'none'
 }
+
+/**
+ * The contact fields a booking's answers can fill: phone and how they heard about us. A question maps by its label
+ * (or key) as asked. A field is filled only where the contact's is blank, never overwritten. A phone needs at least
+ * 10 digits to count.
+ */
+export function answerFill(
+  questions: unknown, answers: Record<string, unknown> | null, contact: { phone?: string | null; how_heard_about_us?: string | null },
+): { phone?: string; how_heard_about_us?: string } {
+  const out: { phone?: string; how_heard_about_us?: string } = {}
+  const blank = (v: unknown) => v == null || String(v).trim() === ''
+  for (const a of answerList(questions, answers)) {
+    const said = a.answer.trim().slice(0, 200)
+    if (!said) continue
+    const asked = norm(`${a.label} ${a.key}`)
+    if (!out.phone && blank(contact.phone) && /phone/.test(asked) && said.replace(/\D/g, '').length >= 10) out.phone = said.slice(0, 40)
+    else if (!out.how_heard_about_us && blank(contact.how_heard_about_us) && /hear(d)?[ _]+about/.test(asked)) out.how_heard_about_us = said
+  }
+  return out
+}
+
+/** Statuses a booking can be in once its time has passed and it counts as held. */
+const HELD = ['confirmed', 'arrived']
+
+/** A booking is complete when its end time has passed and it was not cancelled, released, failed or a no-show. */
+export function bookingComplete(b: { status: string; ends_at: string | null; starts_at: string }, now: Date): boolean {
+  const end = Date.parse(b.ends_at ?? b.starts_at)
+  return HELD.includes(b.status) && !Number.isNaN(end) && end <= now.getTime()
+}
+
+/** org_settings 'booking_completed_stages' = { "<appointment type id>": "<stage name in the route's pipeline>" }. */
+export function completedStageFor(raw: unknown, appointmentTypeId: string): string | null {
+  const m = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
+  const v = m[appointmentTypeId]
+  return typeof v === 'string' && v.trim() ? v : null
+}

@@ -4,7 +4,7 @@
 // Speed-to-lead alerts (src/lib/lead-alerts) and campaign exit rules (src/lib/marketing/exits.ts). Checks:
 //   L_QUIET   8 PM to 8 AM Eastern queues to the next 8 AM (across the DST change too); daytime is now; a booking
 //             starting within 24 hours is now even at night, and one starting later waits
-//   L_TEXT    the SMS carries name, source, what they did, phone, email and the card link, and nothing else; untrusted
+//   L_TEXT    the SMS carries name, source, what they did, phone, email, a booking's answers and the card link, and nothing else; untrusted
 //             text is one capped line; the Slack text escapes < > &
 //   L_CONFIG  only enabled 'on' with a recipient turns alerts on; leads before `since` or the lookback never alert
 //   L_ONCE    a channel that already went out is never sent again; a refused SMS is final, not retried
@@ -93,8 +93,12 @@ const iso = (d) => d.toISOString()
   const slack = compose.composeSlack(f, app)
   const long = compose.clean('x'.repeat(500), 80)
   const noCard = compose.composeAlert({ ...f, contactId: 'not-a-uuid', phone: null, email: '  ' }, app)
+  // a booking's answers ride between the contact lines and the card, one per line, cleaned, empty ones dropped
+  const booked = compose.composeAlert({ ...f, source: 'booking', label: 'Discovery Call', outcome: null, answers: [
+    { label: 'How did you hear about us?', answer: 'Pod\ncast' }, { label: 'Areas', answer: 'Sleep' }, { label: 'Blank', answer: '  ' }] }, app)
+  const bookedWant = 'Phone: +15555550100\nEmail: jane@example.com\nHow did you hear about us? Pod cast\nAreas: Sleep\nCard: '
   check('L_TEXT', sms === want && slack.includes('Sleep &lt;quiz&gt;') && !slack.includes('<quiz>') && long.length === 80
-    && noCard.endsWith('Card: not created yet') && !/Phone|Email/.test(noCard), { sms, slack })
+    && noCard.endsWith('Card: not created yet') && !/Phone|Email/.test(noCard) && booked.includes(bookedWant) && !booked.includes('Blank'), { sms, slack, booked })
 }
 
 // ── L_CONFIG ──

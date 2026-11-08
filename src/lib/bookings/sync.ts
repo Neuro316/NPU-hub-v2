@@ -8,14 +8,21 @@
 //                at the route's stage in the route's pipeline only (contact_pipeline_positions),
 //                never backward when the route says so; store the answers; timeline entry
 //   later runs   a new time (reschedule) or a cancellation rewrites the stored booking
-//                and adds a timeline entry. The stage is never moved again.
+//                and adds a timeline entry. A cancellation never moves the stage.
+//   completed    once the call's end has passed and it was held (confirmed or arrived), the
+//                contact moves forward to the type's completed stage in the same pipeline
+//                (org_settings 'booking_completed_stages'), once, with a timeline entry
+//   answers      phone and "how did you hear about us" fill the contact's field only where
+//                it is blank, never overwrite
+//   old rows     a row recorded as other_pipeline (before multi-pipeline placement) is placed
+//                once more in the route's pipeline
 // Platform tables are read only. Logs and run details carry ids, counts and codes, never
 // names, addresses or answers.
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { findContactByPhoneNormalized } from '@/lib/crm-server'
 import { isUsableEmail } from '@/lib/contacts/match'
 import { loadPipelines, placeContact } from '@/lib/pipelines/positions'
-import { answerList, placementOf, routeStage, type Pipeline, type Placement } from './placement'
+import { answerFill, answerList, bookingComplete, completedStageFor, placementOf, routeStage, type Pipeline, type Placement } from './placement'
 
 /** Bookings changed within this window are looked at on each run. */
 const LOOKBACK_DAYS = 30
@@ -130,13 +137,29 @@ async function place(db: SupabaseClient, orgId: string, contactId: string, pipel
   return placement
 }
 
+/** Fills the contact's blank phone and how-heard fields from the answers. Each write is guarded on the field still
+ *  being blank, so a value typed meanwhile is never overwritten. Returns the fields filled (names only). */
+async function fillBlanks(db: SupabaseClient, contactId: string, questions: unknown, answers: Record<string, unknown> | null): Promise<string[]> {
+  const { data: c } = await db.from('contacts').select('phone, how_heard_about_us').eq('id', contactId).maybeSingle()
+  if (!c) return []
+  const patch = answerFill(questions, answers, c as any)
+  const filled: string[] = []
+  for (const [field, value] of Object.entries(patch)) {
+    const { data, error } = await db.from('contacts').update({ [field]: value, updated_at: new Date().toISOString() })
+      .eq('id', contactId).or(`${field}.is.null,${field}.eq.`).select('id')
+    if (error) console.error(`[booking-sync] fill ${field} failed: ${error.code ?? 'unknown'}`)
+    else if (data?.length) filled.push(field)
+  }
+  return filled
+}
+
 export interface SyncCounts {
   routes: number; seen: number; created_contacts: number; matched_contacts: number
-  synced: number; rescheduled: number; cancelled: number; skipped: number; failed: number
+  synced: number; rescheduled: number; cancelled: number; completed: number; replaced: number; skipped: number; failed: number
 }
 
 export async function runBookingSync(db: SupabaseClient, deadline: number): Promise<SyncCounts> {
-  const counts: SyncCounts = { routes: 0, seen: 0, created_contacts: 0, matched_contacts: 0, synced: 0, rescheduled: 0, cancelled: 0, skipped: 0, failed: 0 }
+  const counts: SyncCounts = { routes: 0, seen: 0, created_contacts: 0, matched_contacts: 0, synced: 0, rescheduled: 0, cancelled: 0, completed: 0, replaced: 0, skipped: 0, failed: 0 }
 
   const { data: routes, error: rErr } = await db.from('nr_booking_pipeline_routes')
     .select('id, appointment_type_id, org_id, pipeline_id, pipeline_name, stage_name, move_earlier_stages_only, create_contact_if_missing')
@@ -159,7 +182,7 @@ export async function runBookingSync(db: SupabaseClient, deadline: number): Prom
   if (!bookings?.length) return counts
 
   const { data: syncs, error: sErr } = await db.from('hub_booking_syncs')
-    .select('booking_id, contact_id, starts_at, status').in('booking_id', bookings.map(b => b.id))
+    .select('booking_id, contact_id, starts_at, status, placement').in('booking_id', bookings.map(b => b.id))
   if (sErr) throw new Error(`syncs ${sErr.code ?? 'unknown'}`)
   const syncById = new Map((syncs ?? []).map((s: any) => [s.booking_id, s]))
 
@@ -172,6 +195,17 @@ export async function runBookingSync(db: SupabaseClient, deadline: number): Prom
     return pipelinesByOrg.get(orgId)!
   }
 
+  const completedByOrg = new Map<string, unknown>()
+  const completedFor = async (orgId: string) => {
+    if (!completedByOrg.has(orgId)) {
+      const { data, error } = await db.from('org_settings').select('setting_value').eq('org_id', orgId).eq('setting_key', 'booking_completed_stages').maybeSingle()
+      if (error) throw new Error(`completed stages ${error.code ?? 'unknown'}`)
+      completedByOrg.set(orgId, (data as any)?.setting_value ?? null)
+    }
+    return completedByOrg.get(orgId)
+  }
+  const now = new Date()
+
   for (const b of bookings as Booking[]) {
     if (Date.now() > deadline) break
     counts.seen++
@@ -183,8 +217,45 @@ export async function runBookingSync(db: SupabaseClient, deadline: number): Prom
       if (prior) {
         const moved = new Date(prior.starts_at).getTime() !== new Date(b.starts_at).getTime()
         const cancelledNow = b.status === 'cancelled' && prior.status !== 'cancelled'
-        if (!moved && prior.status === b.status) continue
         const contactId = prior.contact_id ? await liveContact(db, prior.contact_id) : null
+
+        // a row from before multi-pipeline placement: place it once in the route's pipeline
+        if (prior.placement === 'other_pipeline' && contactId && b.status !== 'cancelled') {
+          const target = routeStage(await pipelinesFor(b.org_id), route)
+          const placement: Placement = target.ok ? await place(db, b.org_id, contactId, target.pipeline, target.stage.id, route) : 'none'
+          const { error } = await db.from('hub_booking_syncs').update({ placement, last_synced_at: new Date().toISOString() }).eq('booking_id', b.id)
+          if (error) throw new Error(`replace ${error.code ?? 'unknown'}`)
+          counts.replaced++
+          if (target.ok && (placement === 'entered' || placement === 'moved')) {
+            await timeline(db, b.org_id, contactId, 'booking_created', `Booked: ${type.name}`,
+              `${when(b.starts_at, b.timezone_booked)}. Placed again: ${placement === 'entered' ? 'added to' : 'moved to'} ${target.stage.name} in ${target.pipeline.name}.`,
+              { booking_id: b.id, appointment_type_id: b.appointment_type_id, route_id: route.id, starts_at: b.starts_at, placement })
+          }
+        }
+
+        // the call has been held: forward to the type's completed stage, once
+        const doneStage = completedStageFor(await completedFor(b.org_id), b.appointment_type_id)
+        if (doneStage && contactId && bookingComplete(b, now)) {
+          const { data: seen, error: tErr } = await db.from('contact_timeline').select('id')
+            .eq('contact_id', contactId).eq('event_type', 'booking_completed').eq('source_id', b.id).limit(1)
+          if (tErr) throw new Error(`completed check ${tErr.code ?? 'unknown'}`)
+          if (!seen?.length) {
+            const target = routeStage(await pipelinesFor(b.org_id), { pipeline_id: route.pipeline_id, stage_name: doneStage })
+            const placement: Placement = target.ok
+              ? await place(db, b.org_id, contactId, target.pipeline, target.stage.id, { ...route, move_earlier_stages_only: true })
+              : 'none'
+            if (!target.ok) console.warn(`[booking-sync] route ${route.id} completed stage: ${target.reason}`)
+            counts.completed++
+            const said: Record<Placement, string> = {
+              entered: `Added to ${doneStage}.`, moved: `Moved to ${doneStage}.`, kept: `Stage kept: already at or past ${doneStage}.`,
+              other_pipeline: '', none: `Stage not changed: ${doneStage} was not found in the route's pipeline.`,
+            }
+            await timeline(db, b.org_id, contactId, 'booking_completed', `Call held: ${type.name}`, `${when(b.starts_at, b.timezone_booked)}. ${said[placement]}`,
+              { booking_id: b.id, appointment_type_id: b.appointment_type_id, route_id: route.id, starts_at: b.starts_at, placement })
+          }
+        }
+
+        if (!moved && prior.status === b.status) continue
         const { error } = await db.from('hub_booking_syncs')
           .update({ starts_at: b.starts_at, ends_at: b.ends_at, status: b.status, contact_id: contactId, last_synced_at: new Date().toISOString() })
           .eq('booking_id', b.id)
@@ -214,12 +285,14 @@ export async function runBookingSync(db: SupabaseClient, deadline: number): Prom
         const { data, error } = await db.from('contacts').insert({
           org_id: b.org_id, ...splitName(guest.name),
           email: guest.email && isUsableEmail(guest.email) ? guest.email.trim() : null,
-          phone: guest.phone || null, source: 'university_booking',
+          phone: guest.phone || answerFill(type.intake_questions, b.intake_answers, {}).phone || null, source: 'university_booking',
         }).select(CONTACT_COLS).single()
         if (error || !data) throw new Error(`create ${error?.code ?? 'unknown'}`)
         contact = data
         counts.created_contacts++
       }
+
+      const filled = await fillBlanks(db, contact.id, type.intake_questions, b.intake_answers)
 
       const target = routeStage(await pipelinesFor(b.org_id), route)
       let placement: Placement = 'none'
@@ -246,7 +319,7 @@ export async function runBookingSync(db: SupabaseClient, deadline: number): Prom
       }[placement]
       await timeline(db, b.org_id, contact.id, 'booking_created', `Booked: ${type.name}`,
         `${when(b.starts_at, b.timezone_booked)}. ${placed}`,
-        { booking_id: b.id, appointment_type_id: b.appointment_type_id, route_id: route.id, starts_at: b.starts_at, placement })
+        { booking_id: b.id, appointment_type_id: b.appointment_type_id, route_id: route.id, starts_at: b.starts_at, placement, filled })
     } catch (e: any) {
       counts.failed++
       console.error(`[booking-sync] booking ${b.id} failed: ${String(e?.message ?? 'error').slice(0, 60)}`)
