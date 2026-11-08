@@ -12,6 +12,9 @@
 //   E_PARSE   exit rules keep only well-formed values: a bad stage id or an unknown payment mode is dropped, never widened
 //   E_ENGINE  the engine checks exit rules before the send gate on every step, and skips an unfilled [[placeholder]]
 //             before a dry run or a live send can use it
+//   K_LINKS   {{checkout_link}} resolves only from a seat hold made within 48 h of entry whose cohort has exactly one
+//             active paywall; an entry limit admits only listed paywalls (an empty one admits none); the booking URL
+//             must be https; the engine skips an unresolved link before a dry run or a live send
 //
 //   quietoff    quiet hours are ignored                         {L_QUIET}
 //   urgentall   every night booking counts as urgent            {L_QUIET}
@@ -22,11 +25,14 @@
 //   widen       any string counts as an exit stage              {E_PARSE}
 //   noexit      the engine skips the exit check                 {E_ENGINE}
 //   placelive   an unfilled placeholder can be sent             {E_ENGINE}
-// TAMPER=1 reddens the union (7).
+//   guesslink   an ambiguous cohort picks the first paywall     {K_LINKS}
+//   openlimit   an empty entry limit admits every paywall       {K_LINKS}
+//   linklive    an unresolved link can be sent                  {K_LINKS}
+// TAMPER=1 reddens the union (8).
 const fs = require('fs'), path = require('path')
 const H = require('../agent/lib/harness.cjs')
 
-const C = 'lib/lead-alerts/compose.ts', R = 'lib/lead-alerts/run.ts', X = 'lib/marketing/exits.ts', ENG = 'lib/marketing/engine.ts'
+const C = 'lib/lead-alerts/compose.ts', R = 'lib/lead-alerts/run.ts', X = 'lib/marketing/exits.ts', ENG = 'lib/marketing/engine.ts', LK = 'lib/marketing/links.ts'
 const TAMPERS = {
   quietoff: [[C, '  if (!inQuietHours(now)) return now\n', '  return now\n']],
   urgentall: [[C, "if (source === 'booking' && startsAt && startsAt.getTime() - now.getTime() <= BOOKING_URGENT_MS) return now", "if (source === 'booking') return now"]],
@@ -37,9 +43,13 @@ const TAMPERS = {
   widen: [[X, "e.stages.filter((x: unknown) => typeof x === 'string' && UUID.test(x))", "e.stages.filter((x: unknown) => typeof x === 'string')"]],
   noexit: [[ENG, "  if (exit) {\n    await endAsExited(db, ce.id, exit, now)\n    return { ...base, outcome: `exited_${exit}` }\n  }\n", '']],
   placelive: [[ENG, "    if (PLACEHOLDER.test(`${r.subject}\\n${r.text}`)) {", '    if (false) {']],
+  guesslink: [[LK, "  if (matches.length > 1) return { ok: false, reason: 'ambiguous_paywall' }\n", '']],
+  openlimit: [[LK, "  if (!limit) return true\n", "  if (!limit || (!limit.slugs.length && !limit.slugContains.length)) return true\n"]],
+  linklive: [[ENG, '    if (linkProblem) {\n', '    if (false) {\n']],
 }
 const RED_OF = { quietoff: ['L_QUIET'], urgentall: ['L_QUIET'], noescape: ['L_TEXT'], truthy: ['L_CONFIG'], resend: ['L_ONCE'], logname: ['L_LOGS'],
-  widen: ['E_PARSE'], noexit: ['E_ENGINE'], placelive: ['E_ENGINE'] }
+  widen: ['E_PARSE'], noexit: ['E_ENGINE'], placelive: ['E_ENGINE'],
+  guesslink: ['K_LINKS'], openlimit: ['K_LINKS'], linklive: ['K_LINKS'] }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-speedtolead')
 const load = H.install(out)
@@ -47,6 +57,7 @@ const compose = load(C)
 const run = load(R)
 const exits = load(X)
 const engine = load(ENG)
+const links = load(LK)
 
 const rows = []
 const check = (id, ok, got) => rows.push({ id, ok: !!ok, got })
@@ -160,6 +171,34 @@ const iso = (d) => d.toISOString()
   const P = engine.PLACEHOLDER
   check('E_ENGINE', exitAt > 0 && gateAt > exitAt && placeAt > 0 && dryAt > placeAt
     && P.test('Hi\n[[RECAP: two lines]]\nbye') && !P.test('see [link] and [[ ]') && !P.test('[[\n]]'), { exitAt, gateAt, placeAt, dryAt })
+
+  // ── K_LINKS ──
+  {
+    const now = new Date('2026-11-08T12:00:00Z'), entry = '2026-11-08T10:00:00Z'
+    const pw = [{ slug: 'capacity-protocol', cohort_id: 'c1', is_active: true }, { slug: 'clarity-protocol', cohort_id: 'c1', is_active: false },
+      { slug: 'capacity-protocol-phase-2', cohort_id: 'c2', is_active: true }, { slug: 'capacity-protocol-phases-2-3', cohort_id: 'c2', is_active: true }]
+    const pick = (holds) => JSON.stringify(links.pickPaywall(holds, pw, entry, now))
+    const lim = links.parseEntryPaywalls({ entry_paywalls: { slugs: ['capacity-protocol', 'x y'], slug_contains: ['coaching'] } })
+    const empty = links.parseEntryPaywalls({ entry_paywalls: {} })
+    const cases = [
+      pick([{ cohort_id: 'c1', created_at: '2026-11-08T09:59:00Z' }]) === JSON.stringify({ ok: true, slug: 'capacity-protocol' }),
+      // the latest hold decides, even when an older one would resolve
+      pick([{ cohort_id: 'c1', created_at: '2026-11-07T09:00:00Z' }, { cohort_id: 'c2', created_at: '2026-11-08T09:00:00Z' }]) === JSON.stringify({ ok: false, reason: 'ambiguous_paywall' }),
+      pick([{ cohort_id: 'c1', created_at: '2026-11-05T09:00:00Z' }]) === JSON.stringify({ ok: false, reason: 'stale_hold' }),
+      pick([]) === JSON.stringify({ ok: false, reason: 'no_hold' }),
+      pick([{ cohort_id: 'c9', created_at: '2026-11-08T09:00:00Z' }]) === JSON.stringify({ ok: false, reason: 'no_paywall' }),
+      JSON.stringify(lim) === JSON.stringify({ slugs: ['capacity-protocol'], slugContains: ['coaching'] }),
+      links.paywallEligible('capacity-protocol', lim) && links.paywallEligible('60-minute-coaching-5', lim) && !links.paywallEligible('limbic-loop', lim),
+      !links.paywallEligible('capacity-protocol', empty) && links.paywallEligible('limbic-loop', null) && links.parseEntryPaywalls({}) === null,
+      links.checkoutUrl('capacity-protocol') === 'https://university.neuroprogeny.com/checkout/capacity-protocol' && links.checkoutUrl('../x') === null,
+      links.parseBookingUrl({ url: 'https://example.com/book?a=1' }) === 'https://example.com/book?a=1' && links.parseBookingUrl({ url: 'http://x.y' }) === null
+        && links.parseBookingUrl('https://x.y') === null && links.parseBookingUrl({ url: 'https://x.y/"onmouseover' }) === null,
+      links.applyLinks('<a href="{{checkout_link}}">go</a>', { '{{checkout_link}}': 'https://a.b/c?x=1&y=2' }) === '<a href="https://a.b/c?x=1&amp;y=2">go</a>',
+    ]
+    const linkAt = eng.indexOf('    if (linkProblem) {\n')
+    check('K_LINKS', cases.every(Boolean) && linkAt > 0 && dryAt > linkAt && eng.indexOf("db.rpc('gate_check'") > eng.indexOf('resolveCheckoutPaywall(db'),
+      { cases: cases.map((x) => (x ? 1 : 0)).join(''), linkAt })
+  }
 
   H.report(rows, active, RED_OF, () => fs.rmSync(out, { recursive: true, force: true }))
 })()

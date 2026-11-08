@@ -32,7 +32,7 @@ const ROOT = path.resolve(__dirname, '..', '..')
 const SRC = path.join(ROOT, 'src')
 const MODULES = ['lib/marketing/flags.ts', 'lib/marketing/policy.ts', 'lib/marketing/tokens.ts', 'lib/marketing/svix.ts',
   'lib/marketing/university.ts', 'lib/marketing/engine.ts', 'lib/marketing/render.ts', 'lib/marketing/watchdog.ts',
-  'lib/marketing/intake.ts', 'lib/marketing/providers/resend.ts', 'lib/marketing/providers/types.ts', 'lib/crm-server.ts', 'lib/activity-log.ts', 'lib/phone.ts', 'lib/sms-split.ts', 'lib/marketing/ui-logic.ts', 'lib/marketing/db-errors.ts', 'lib/marketing/entry-events.ts', 'lib/marketing/job-runs.ts', 'lib/marketing/exits.ts']
+  'lib/marketing/intake.ts', 'lib/marketing/providers/resend.ts', 'lib/marketing/providers/types.ts', 'lib/crm-server.ts', 'lib/activity-log.ts', 'lib/phone.ts', 'lib/sms-split.ts', 'lib/marketing/ui-logic.ts', 'lib/marketing/db-errors.ts', 'lib/marketing/entry-events.ts', 'lib/marketing/job-runs.ts', 'lib/marketing/exits.ts', 'lib/marketing/links.ts', 'lib/marketing/checkout-link.ts']
 
 const TAMPERS = {
   flagson: [['lib/marketing/flags.ts', "out[k] = (raw as Record<string, unknown>)[k] === 'on'", 'out[k] = Boolean((raw as Record<string, unknown>)[k])']],

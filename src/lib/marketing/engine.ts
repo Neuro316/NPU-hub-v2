@@ -15,6 +15,8 @@ import { getSendPolicy, senderProblem } from './policy'
 import { mergeStage, renderStep } from './render'
 import { mintUnsubscribeToken, newAssetToken, byteaHex } from './tokens'
 import { endAsExited, exitReason, parseExitRules } from './exits'
+import { BOOKING_TOKEN, CHECKOUT_TOKEN, applyLinks, checkoutUrl, parseEntryPaywalls, paywallEligible, usesToken } from './links'
+import { discoveryBookingUrl, resolveCheckoutPaywall } from './checkout-link'
 import type { EmailProvider, SmsProvider } from './providers/types'
 
 export const STEP_LEASE_MINUTES = 10
@@ -172,6 +174,30 @@ async function runOne(deps: EngineDeps, enr: any, now: Date, flagCache: Map<stri
   if (!step) return { ...base, outcome: await advance(db, enr, now) }
   if (step.channel === 'wait' || step.channel === 'task') return { ...base, outcome: `${step.channel}_${await advance(db, enr, now)}` }
 
+  // ── links (src/lib/marketing/links.ts). {{checkout_link}} and a campaign's entry paywall limit resolve from the
+  //    person's most recent University seat hold; {{discovery_booking_url}} from one org setting. Nothing is guessed:
+  //    an ineligible paywall ends the enrollment, an unresolved link skips the step (recorded below). ──
+  const entryLimit = parseEntryPaywalls((camp as any).goal)
+  const wantsCheckout = usesToken(CHECKOUT_TOKEN, step.subject, step.body)
+  const links: Record<string, string> = {}
+  let linkProblem: string | null = null
+  if (entryLimit || wantsCheckout) {
+    const { data: who, error: wErr } = await db.from('contacts').select('email').eq('id', enr.contact_id).maybeSingle()
+    if (wErr) throw new Error(`checkout link contact read: ${wErr.code ?? 'unknown'}`)
+    const pick = await resolveCheckoutPaywall(db, (who as any)?.email, ce.enrolled_at ?? null, now)
+    if (pick.ok && !paywallEligible(pick.slug, entryLimit)) {
+      await endAsExited(db, ce.id, 'paywall_not_eligible', now)
+      return { ...base, outcome: 'exited_paywall_not_eligible' }
+    }
+    if (pick.ok) links[CHECKOUT_TOKEN] = checkoutUrl(pick.slug)!
+    else linkProblem = `checkout_link_${pick.reason}`
+  }
+  if (usesToken(BOOKING_TOKEN, step.subject, step.body)) {
+    const url = await discoveryBookingUrl(db, orgId)
+    if (url) links[BOOKING_TOKEN] = url
+    else linkProblem = linkProblem ?? 'booking_url_unset'
+  }
+
   const channel = step.channel as 'email' | 'sms'
   const kind = (step.kind as 'marketing' | 'service' | null) ?? 'marketing'   // unlabelled steps are treated as marketing, the stricter rule
   const { data: gate, error: gErr } = await db.rpc('gate_check', {
@@ -238,11 +264,18 @@ async function runOne(deps: EngineDeps, enr: any, now: Date, flagCache: Map<stri
       assetUrl = assetLink(deps.appUrl, t.token)
     }
     const r = renderStep({
-      channel, kind, subject: step.subject, body: step.body || '', contact: { ...(contact ?? ({} as any)), stage_name: stageName },
+      channel, kind, subject: applyLinks(step.subject ?? '', links) || null, body: applyLinks(step.body || '', links), contact: { ...(contact ?? ({} as any)), stage_name: stageName },
       orgName: org?.name ?? '', unsubscribeUrl, assetUrl,
     })
     await one(db.from('message_sends').update({ subject: r.subject || null, rendered_body: channel === 'email' ? r.html : r.text })
       .eq('id', sid).select('id'), 'store rendered message')
+
+    // a link that could not be resolved is never sent with a fallback, live or dry run
+    if (linkProblem) {
+      console.warn(`[engine] send=${sid} campaign=${camp.id} skipped: ${linkProblem}`)
+      await one(db.from('message_sends').update({ status: 'skipped', skip_reason: linkProblem }).eq('id', sid).select('id'), 'mark link unresolved')
+      return { ...base, outcome: `skipped_${linkProblem}_${await advance(db, enr, now)}`, mode: g.mode, send: sid }
+    }
 
     // an unfilled [[placeholder]] is never sent, live or dry run, so a dry run shows the same refusal
     if (PLACEHOLDER.test(`${r.subject}\n${r.text}`)) {

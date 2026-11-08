@@ -28,8 +28,14 @@
 -- (enroll() starts every enrollment at step 0, and the engine advances from the missing step 0 to step 1 with
 -- that step's delay).
 --
--- C's first email holds [[RECAP: ...]]. The engine never sends a step whose rendered text still holds a [[...]]
--- placeholder (it is skipped as unfilled_placeholder), so it cannot go out until it is edited.
+-- Links (src/lib/marketing/links.ts), never guessed:
+--   * A's buttons are {{checkout_link}}: the checkout page of the paywall the person most recently started, read from
+--     their latest University seat hold (read-only). Unresolved means the step is skipped as checkout_link_<reason>.
+--     A's goal.entry_paywalls limits it to the Capacity Protocol paywalls and coaching packages; a resolved paywall
+--     outside that list ends the enrollment as exit_paywall_not_eligible.
+--   * Every booking button is {{discovery_booking_url}}, from the org setting this fix creates (the LeadConnector
+--     link for now). Change it in one place: org_settings 'discovery_booking_url' = {"url": "..."}.
+--   * C and D enroll buttons are https://university.neuroprogeny.com/checkout/capacity-protocol.
 --
 -- ROLLBACK:
 --   begin;
@@ -41,6 +47,7 @@
 --     where org_id = '00000000-0000-0000-0000-000000000001' and description like '%[launch-2026-11-07]%');
 --   delete from public.funnel_campaigns where org_id = '00000000-0000-0000-0000-000000000001'
 --     and description like '%[launch-2026-11-07]%';
+--   delete from public.org_settings where org_id = '00000000-0000-0000-0000-000000000001' and setting_key = 'discovery_booking_url';
 --   commit;
 
 begin;
@@ -57,6 +64,7 @@ declare
   v_quoted   constant uuid := 'ac06b5d8-38de-494d-b853-a96262dc3fc9';  -- Sales / Price quoted
   v_clarity1 constant uuid := '64be93a2-feed-418d-a2d1-9849473d7e2d';  -- Sales / Clarity Phase 1
   c_tag      constant text := ' [launch-2026-11-07]';
+  -- the copy, generated from one source so the em dash and banned-word check ran on every subject and body
   -- the copy, generated from one source so the em dash and banned-word check ran on every subject and body
   def jsonb;
   c jsonb;
@@ -76,14 +84,32 @@ begin
   if exists (select 1 from public.funnel_campaigns where org_id = v_org and description like '%' || btrim(c_tag) || '%') then
     raise exception 'launch drafts: already created';
   end if;
+  if exists (select 1 from public.org_settings where org_id = v_org and setting_key = 'discovery_booking_url') then
+    raise exception 'launch drafts: discovery_booking_url already set; stop and look';
+  end if;
+
+  -- the one place the discovery booking link lives
+  insert into public.org_settings (org_id, setting_key, setting_value)
+  values (v_org, 'discovery_booking_url', jsonb_build_object('url', 'https://api.leadconnectorhq.com/widget/bookings/cameron-allen-personal-calendar-nznqif3gc'));
 
   def := $copy$[
  {
+  "entry_paywalls": {
+   "slugs": [
+    "capacity-protocol",
+    "capacity-protocol-phases-1-2-3",
+    "capacity-protocol-phases-2-3",
+    "capacity-protocol-phase-3"
+   ],
+   "slug_contains": [
+    "coaching"
+   ]
+  },
   "name": "Checkout recovery",
   "source": "stage:a623ec21-0bae-45b7-80da-b22d944f03bf",
   "pipeline": "51cab093-2b0a-4652-a9c0-9fb10ccf282d",
   "stage": "a623ec21-0bae-45b7-80da-b22d944f03bf",
-  "description": "Someone reached Checkout started in Enrolled and has not paid. Three emails, each pointing to finishing enrollment.",
+  "description": "Someone reached Checkout started in Enrolled and has not paid. Capacity Protocol and coaching paywalls only. Three emails, each linking to the checkout page they started.",
   "exit": {
    "left_entry_stage": true,
    "payment": "since_entry"
@@ -92,21 +118,22 @@ begin
    {
     "delay": 60,
     "subject": "Your spot is still open",
-    "body": "<p>Hi {{first_name}},</p><p>I noticed you started enrolling earlier and didn't quite finish. That happens, and your spot is still here.</p><p>The people who join us usually want the same thing: more good days. Waking up with energy, staying steady when life gets loud, and having more of yourself left for the people you love at the end of the day.</p><p>If you're ready, you can pick up right where you left off.</p><p><a href=\"https://university.neuroprogeny.com/checkout/capacity-protocol\">Finish enrolling</a></p><p>Cameron</p>"
+    "body": "<p>Hi {{first_name}},</p><p>I noticed you started enrolling earlier and didn't quite finish. That happens, and your spot is still here.</p><p>The people who join us usually want the same thing: more good days. Waking up with energy, staying steady when life gets loud, and having more of yourself left for the people you love at the end of the day.</p><p>If you're ready, you can pick up right where you left off.</p><p><a href=\"{{checkout_link}}\">Finish enrolling</a></p><p>Cameron</p>"
    },
    {
     "delay": 1380,
     "subject": "Still thinking it over?",
-    "body": "<p>Hi {{first_name}},</p><p>Most people who pause at checkout are weighing one thing: will this really fit into my life?</p><p>This training is built around small daily practices that fit into a normal day. Picture a calmer morning, an easier conversation, a better night. That's the kind of ordinary moment we're training for.</p><p>Your enrollment is saved and waiting for you.</p><p><a href=\"https://university.neuroprogeny.com/checkout/capacity-protocol\">Finish enrolling</a></p><p>Cameron</p>"
+    "body": "<p>Hi {{first_name}},</p><p>Most people who pause at checkout are weighing one thing: will this really fit into my life?</p><p>This training is built around small daily practices that fit into a normal day. Picture a calmer morning, an easier conversation, a better night. That's the kind of ordinary moment we're training for.</p><p>Your enrollment is saved and waiting for you.</p><p><a href=\"{{checkout_link}}\">Finish enrolling</a></p><p>Cameron</p>"
    },
    {
     "delay": 2880,
     "subject": "My last note about your enrollment",
-    "body": "<p>Hi {{first_name}},</p><p>I don't want to crowd your inbox, so this is my last note about finishing your enrollment.</p><p>Picture a few months from now: more energy at the end of the day, more patience when things get busy, and a body that feels like it's on your side. That's what this training is for.</p><p>If that sounds like the life you want, your spot is here.</p><p><a href=\"https://university.neuroprogeny.com/checkout/capacity-protocol\">Finish enrolling</a></p><p>Cameron</p>"
+    "body": "<p>Hi {{first_name}},</p><p>I don't want to crowd your inbox, so this is my last note about finishing your enrollment.</p><p>Picture a few months from now: more energy at the end of the day, more patience when things get busy, and a body that feels like it's on your side. That's what this training is for.</p><p>If that sounds like the life you want, your spot is here.</p><p><a href=\"{{checkout_link}}\">Finish enrolling</a></p><p>Cameron</p>"
    }
   ]
  },
  {
+  "entry_paywalls": null,
   "name": "Discovery booked",
   "source": "stage:22675e26-60f7-4aa0-8915-730bc23ba038",
   "pipeline": "d2aa430f-84fb-45e1-be3c-95958403d4d6",
@@ -120,16 +147,17 @@ begin
    {
     "delay": 0,
     "subject": "Looking forward to our call",
-    "body": "<p>Hi {{first_name}},</p><p>Thanks for booking a discovery call. I'm really glad you did.</p><p>Here's what to expect. It's a relaxed conversation. I'll ask what your days feel like right now and what you'd love them to feel like. Then I'll share how our training works and whether it's a good fit for you. No pressure and no homework.</p><p>One thing to think about before we talk: if your days felt better a few months from now, what's the first thing you'd notice?</p><p>If the time no longer works, you can choose a new one here.</p><p><a href=\"https://api.leadconnectorhq.com/widget/bookings/cameron-allen-personal-calendar-nznqif3gc\">Pick a time that works</a></p><p>Cameron</p>"
+    "body": "<p>Hi {{first_name}},</p><p>Thanks for booking a discovery call. I'm really glad you did.</p><p>Here's what to expect. It's a relaxed conversation. I'll ask what your days feel like right now and what you'd love them to feel like. Then I'll share how our training works and whether it's a good fit for you. No pressure and no homework.</p><p>One thing to think about before we talk: if your days felt better a few months from now, what's the first thing you'd notice?</p><p>If the time no longer works, you can choose a new one here.</p><p><a href=\"{{discovery_booking_url}}\">Pick a time that works</a></p><p>Cameron</p>"
    }
   ]
  },
  {
+  "entry_paywalls": null,
   "name": "Post-discovery follow-up",
   "source": "stage:e922e1ba-e304-4c5f-989d-892139705295",
   "pipeline": "d2aa430f-84fb-45e1-be3c-95958403d4d6",
   "stage": "e922e1ba-e304-4c5f-989d-892139705295",
-  "description": "After the discovery call. A same day thank-you with a recap Cameron writes, then day 2, day 5 and day 10.",
+  "description": "After the discovery call. A same day thank-you, then day 2, day 5 and day 10.",
   "exit": {
    "stages": [
     "ac06b5d8-38de-494d-b853-a96262dc3fc9",
@@ -142,7 +170,7 @@ begin
    {
     "delay": 60,
     "subject": "Thank you for today",
-    "body": "<p>Hi {{first_name}},</p><p>Thank you for your time today. I really enjoyed our conversation.</p><p>[[RECAP: two or three sentences on what we talked about and what you want more of]]</p><p>When you're ready to start, you can enroll here.</p><p><a href=\"https://university.neuroprogeny.com/checkout/capacity-protocol\">Enroll now</a></p><p>Cameron</p>"
+    "body": "<p>Hi {{first_name}},</p><p>Thank you for your time today. I really enjoyed our conversation.</p><p>We talked about what your days feel like right now and what you'd love more of. What you shared is exactly what this training is built for, and I'd love to help you build it one small step at a time.</p><p>When you're ready to start, you can enroll here.</p><p><a href=\"https://university.neuroprogeny.com/checkout/capacity-protocol\">Enroll now</a></p><p>Cameron</p>"
    },
    {
     "delay": 2820,
@@ -157,11 +185,12 @@ begin
    {
     "delay": 7200,
     "subject": "Checking in one last time",
-    "body": "<p>Hi {{first_name}},</p><p>It's been about ten days since we talked, and I wanted to check in one last time.</p><p>If now isn't the right moment, that's completely okay. If you have questions or want to talk it through again, grab a time that suits you.</p><p><a href=\"https://api.leadconnectorhq.com/widget/bookings/cameron-allen-personal-calendar-nznqif3gc\">Book a follow-up call</a></p><p>Cameron</p>"
+    "body": "<p>Hi {{first_name}},</p><p>It's been about ten days since we talked, and I wanted to check in one last time.</p><p>If now isn't the right moment, that's completely okay. If you have questions or want to talk it through again, grab a time that suits you.</p><p><a href=\"{{discovery_booking_url}}\">Book a follow-up call</a></p><p>Cameron</p>"
    }
   ]
  },
  {
+  "entry_paywalls": null,
   "name": "Signed up, no purchase",
   "source": "signup:university",
   "pipeline": null,
@@ -176,17 +205,17 @@ begin
    {
     "delay": 2880,
     "subject": "Glad you joined us",
-    "body": "<p>Hi {{first_name}},</p><p>Thanks for creating your account with Neuro Progeny University. I'm glad you're here.</p><p>A lot of people sign up because they want their days to feel a little lighter: better sleep, steadier energy, more patience with the people they love. If that sounds like you, the best next step is a short conversation with me. We'll talk about what you want more of and whether our training is a good fit.</p><p><a href=\"https://api.leadconnectorhq.com/widget/bookings/cameron-allen-personal-calendar-nznqif3gc\">Book a discovery call</a></p><p>Cameron</p>"
+    "body": "<p>Hi {{first_name}},</p><p>Thanks for creating your account with Neuro Progeny University. I'm glad you're here.</p><p>A lot of people sign up because they want their days to feel a little lighter: better sleep, steadier energy, more patience with the people they love. If that sounds like you, the best next step is a short conversation with me. We'll talk about what you want more of and whether our training is a good fit.</p><p><a href=\"{{discovery_booking_url}}\">Book a discovery call</a></p><p>Cameron</p>"
    },
    {
     "delay": 4320,
     "subject": "What would you want more of?",
-    "body": "<p>Hi {{first_name}},</p><p>Here's a question I love asking: if the next few months went really well, what would you want more of? More energy? Easier evenings? Feeling like yourself again?</p><p>Whatever your answer is, that's exactly what we'd talk about on a discovery call. It's relaxed and there's no pressure.</p><p><a href=\"https://api.leadconnectorhq.com/widget/bookings/cameron-allen-personal-calendar-nznqif3gc\">Book a discovery call</a></p><p>Cameron</p>"
+    "body": "<p>Hi {{first_name}},</p><p>Here's a question I love asking: if the next few months went really well, what would you want more of? More energy? Easier evenings? Feeling like yourself again?</p><p>Whatever your answer is, that's exactly what we'd talk about on a discovery call. It's relaxed and there's no pressure.</p><p><a href=\"{{discovery_booking_url}}\">Book a discovery call</a></p><p>Cameron</p>"
    },
    {
     "delay": 7200,
     "subject": "One last invitation",
-    "body": "<p>Hi {{first_name}},</p><p>I'll keep this short. If you've been curious about what training your capacity could look like in your own life, I'd love to talk with you.</p><p>Pick a time that works for you.</p><p><a href=\"https://api.leadconnectorhq.com/widget/bookings/cameron-allen-personal-calendar-nznqif3gc\">Book a discovery call</a></p><p>Cameron</p>"
+    "body": "<p>Hi {{first_name}},</p><p>I'll keep this short. If you've been curious about what training your capacity could look like in your own life, I'd love to talk with you.</p><p>Pick a time that works for you.</p><p><a href=\"{{discovery_booking_url}}\">Book a discovery call</a></p><p>Cameron</p>"
    }
   ]
  }
@@ -195,7 +224,7 @@ begin
   for c in select * from jsonb_array_elements(def) loop
     insert into public.funnel_campaigns (org_id, name, description, status, entry_pipeline_id, entry_stage_id, goal, live_enabled, created_by)
     values (v_org, c ->> 'name', (c ->> 'description') || c_tag, 'draft', (c ->> 'pipeline')::uuid, (c ->> 'stage')::uuid,
-            jsonb_build_object('exit', c -> 'exit'), false, v_actor)
+            jsonb_strip_nulls(jsonb_build_object('exit', c -> 'exit', 'entry_paywalls', c -> 'entry_paywalls')), false, v_actor)
     returning id into v_camp;
     n_camp := n_camp + 1;
 
@@ -209,6 +238,9 @@ begin
       i := i + 1;
       if (st ->> 'body') ~ (chr(8212) || '|&mdash;') or (st ->> 'subject') ~ (chr(8212) || '|&mdash;') then
         raise exception 'launch drafts: an em dash in % step %', c ->> 'name', i;
+      end if;
+      if strpos(st ->> 'body', '[[') > 0 or strpos(st ->> 'body', 'leadconnector') > 0 then
+        raise exception 'launch drafts: a placeholder or a hard-coded booking link in % step %', c ->> 'name', i;
       end if;
       insert into public.sequence_steps (sequence_id, step_order, channel, delay_minutes, subject, body, kind, step_type)
       values (v_seq, i, 'email', (st ->> 'delay')::int, st ->> 'subject', st ->> 'body', 'marketing', 'message');
@@ -231,10 +263,14 @@ begin
               where f.description like '%' || btrim(c_tag) || '%' and (r.active or r.activate_with_campaign)) then
     raise exception 'launch drafts: a route is armed';
   end if;
+  if (select count(*) from public.sequence_steps s join public.funnel_campaigns f on f.sequence_id = s.sequence_id
+       where f.description like '%' || btrim(c_tag) || '%' and f.goal ? 'entry_paywalls' and strpos(s.body, '{{checkout_link}}') > 0) <> 3 then
+    raise exception 'launch drafts: checkout recovery is not limited and linked as expected';
+  end if;
 end $fix$;
 
 -- report
-select f.name, f.status, f.live_enabled, r.source_key, r.active as route_active, f.goal -> 'exit' as exit_rules,
+select f.name, f.status, f.live_enabled, r.source_key, r.active as route_active, f.goal -> 'exit' as exit_rules, f.goal -> 'entry_paywalls' as entry_paywalls,
        (select count(*) from public.sequence_steps s where s.sequence_id = f.sequence_id) as steps
   from public.funnel_campaigns f join public.campaign_routes r on r.campaign_id = f.id
  where f.org_id = '00000000-0000-0000-0000-000000000001' and f.description like '%[launch-2026-11-07]%'
