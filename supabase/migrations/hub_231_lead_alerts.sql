@@ -1,6 +1,6 @@
 -- hub_231_lead_alerts.sql
 --
--- STATUS: PROPOSED. Not applied. Needs Cameron's go (schema change).
+-- STATUS: APPLIED 2026-11-08 to production with Cameron's go (ledger version 20261108121820).
 --
 -- Hub band (200+). Checked 2026-11-07: Hub files stop at hub_230, and the ledger has no hub_231 row.
 --

@@ -1,7 +1,7 @@
 -- 2026-11-07_launch_campaign_drafts.sql  (data fix, not a migration: no schema change)
 --
--- STATUS: PROPOSED. Not applied. Apply with Cameron's go, AFTER hub_231 and after the branch that reads
--- funnel_campaigns.goal.exit (src/lib/marketing/exits.ts) is deployed.
+-- STATUS: APPLIED 2026-11-08 to production with Cameron's go, after hub_231. Every campaign is a draft, live off,
+-- every route inactive; nothing was enrolled or sent.
 --
 -- Creates four campaign DRAFTS for Neuro Progeny in the existing funnel_campaigns / sequences engine:
 --
@@ -55,7 +55,8 @@ begin;
 do $fix$
 declare
   v_org      constant uuid := '00000000-0000-0000-0000-000000000001';
-  v_actor    constant uuid := '22456608-5f7d-495e-af02-7037fea125cc';  -- Cameron, as on earlier data fixes
+  v_actor    constant uuid := '22456608-5f7d-495e-af02-7037fea125cc';  -- Cameron's user id (funnel_campaigns.created_by)
+  v_member   constant uuid := 'e3019576-1fcf-4e07-8004-59ff121af990';  -- Cameron's team_members id (sequences.created_by FK)
   v_enrolled constant uuid := '51cab093-2b0a-4652-a9c0-9fb10ccf282d';
   v_checkout constant uuid := 'a623ec21-0bae-45b7-80da-b22d944f03bf';  -- Enrolled / Checkout started
   v_sales    constant uuid := 'd2aa430f-84fb-45e1-be3c-95958403d4d6';
@@ -64,7 +65,6 @@ declare
   v_quoted   constant uuid := 'ac06b5d8-38de-494d-b853-a96262dc3fc9';  -- Sales / Price quoted
   v_clarity1 constant uuid := '64be93a2-feed-418d-a2d1-9849473d7e2d';  -- Sales / Clarity Phase 1
   c_tag      constant text := ' [launch-2026-11-07]';
-  -- the copy, generated from one source so the em dash and banned-word check ran on every subject and body
   -- the copy, generated from one source so the em dash and banned-word check ran on every subject and body
   def jsonb;
   c jsonb;
@@ -229,7 +229,7 @@ begin
     n_camp := n_camp + 1;
 
     insert into public.sequences (org_id, name, campaign_id, created_by, is_active)
-    values (v_org, c ->> 'name', v_camp, v_actor, true)
+    values (v_org, c ->> 'name', v_camp, v_member, true)
     returning id into v_seq;
     update public.funnel_campaigns set sequence_id = v_seq where id = v_camp;
 
