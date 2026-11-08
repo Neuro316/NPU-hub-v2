@@ -46,8 +46,9 @@ const INTAKE_BASE = process.env.INTAKE_BASE || 'f018c92'
 const MULTI_PIPELINE_BASE = process.env.MULTI_PIPELINE_BASE || '10e9a8b'
 const MULTI_PIPELINE_FILES = new Set(['src/lib/marketing/engine.ts', 'src/app/api/sequences/process-step/route.ts', 'src/lib/marketing/render.ts'])
 // Speed-to-lead added campaign exit rules and the unfilled-placeholder skip to the engine, and the exit sweep to the
-// campaign-steps cron, on purpose (scripts/marketing/speed-to-lead-tamper.cjs proves both), so they are compared with that commit.
-const SPEED_TO_LEAD_BASE = process.env.SPEED_TO_LEAD_BASE || '35a939b'
+// campaign-steps cron, on purpose (scripts/marketing/speed-to-lead-tamper.cjs proves both), then the link resolution and
+// entry paywall limit (K_LINKS), so they are compared with that commit.
+const SPEED_TO_LEAD_BASE = process.env.SPEED_TO_LEAD_BASE || '1c166f1'
 const SPEED_TO_LEAD_FILES = new Set(['src/lib/marketing/engine.ts', 'src/app/api/cron/campaign-steps/route.ts'])
 const base = (f) => {
   const ref = SPEED_TO_LEAD_FILES.has(f) ? SPEED_TO_LEAD_BASE : MULTI_PIPELINE_FILES.has(f) ? MULTI_PIPELINE_BASE : f === 'src/app/api/intake/route.ts' ? INTAKE_BASE : BASE
