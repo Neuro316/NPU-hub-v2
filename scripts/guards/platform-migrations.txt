@@ -272,4 +272,5 @@ pf_295_under_load_tables.sql
 pf_296_under_load_early_access.sql
 pf_297_practice_pace_source.sql
 pf_298_booking_poll.sql
+pf_299_funnel_events.sql
 pf_301_on_behalf_writes.sql

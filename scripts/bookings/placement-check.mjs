@@ -2,7 +2,7 @@
 // Checks the booking sync's pure rules (src/lib/bookings/placement.ts): which stage a route
 // points at, nothing guessed, what a placement did, and the answers as shown on the card.
 // "Never backward" and "other pipelines left alone" are hub_pipeline_place's, in hub_229.
-import { routeStage, placementOf, answerList } from '../../src/lib/bookings/placement.ts'
+import { routeStage, placementOf, answerList, answerFill, bookingComplete, completedStageFor } from '../../src/lib/bookings/placement.ts'
 
 const pipes = [
   { id: 'u-sales', key: 'sales', name: 'Sales', stages: [{ id: 's1', name: 'New Lead' }, { id: 's2', name: 'Discovery Call Booked' }, { id: 's3', name: 'Discovery Call' }] },
@@ -37,6 +37,20 @@ const want = JSON.stringify([
 ])
 if (JSON.stringify(ans) !== want) { fail++; console.log('FAIL answers', JSON.stringify(ans)) }
 if (JSON.stringify(answerList(null, null)) !== '[]') { fail++; console.log('FAIL empty answers') }
-const total = cases.length + 2
+const qs = [{ key: 'best_phone_number_to_reach_you', label: 'Best phone number to reach you?' }, { key: 'how_did_you_hear_about_us', label: 'How did you hear about us?' }]
+const said = { best_phone_number_to_reach_you: '(828) 555-0100', how_did_you_hear_about_us: 'Podcast' }
+const more = [
+  ['blank fields fill', JSON.stringify(answerFill(qs, said, { phone: null, how_heard_about_us: '' })), JSON.stringify({ phone: '(828) 555-0100', how_heard_about_us: 'Podcast' })],
+  ['filled fields are never overwritten', JSON.stringify(answerFill(qs, said, { phone: '+18285550199', how_heard_about_us: 'Friend' })), '{}'],
+  ['a short phone does not count', JSON.stringify(answerFill(qs, { best_phone_number_to_reach_you: 'call me' }, {})), '{}'],
+  ['held and past is complete', bookingComplete({ status: 'confirmed', ends_at: '2026-11-08T10:00:00Z', starts_at: '2026-11-08T09:40:00Z' }, new Date('2026-11-08T11:00:00Z')), true],
+  ['future is not complete', bookingComplete({ status: 'confirmed', ends_at: '2026-11-08T12:00:00Z', starts_at: '2026-11-08T11:40:00Z' }, new Date('2026-11-08T11:00:00Z')), false],
+  ['cancelled is never complete', bookingComplete({ status: 'cancelled', ends_at: '2026-11-08T10:00:00Z', starts_at: '2026-11-08T09:40:00Z' }, new Date('2026-11-08T11:00:00Z')), false],
+  ['no-show is never complete', bookingComplete({ status: 'no_show', ends_at: '2026-11-08T10:00:00Z', starts_at: '2026-11-08T09:40:00Z' }, new Date('2026-11-08T11:00:00Z')), false],
+  ['completed stage by type', completedStageFor({ t1: 'Discovery Call' }, 't1'), 'Discovery Call'],
+  ['no completed stage', completedStageFor({ t1: 'Discovery Call' }, 't2'), null],
+]
+for (const [name, got, want] of more) if (got !== want) { fail++; console.log(`FAIL ${name}: want ${want} got ${got}`) }
+const total = cases.length + more.length + 2
 console.log(fail ? `PLACEMENT_CHECK FAIL ${fail}/${total}` : `PLACEMENT_CHECK PASS ${total}/${total}`)
 process.exit(fail ? 1 : 0)
