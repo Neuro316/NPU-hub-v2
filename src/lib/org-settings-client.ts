@@ -42,3 +42,16 @@ export async function saveOrgCredential(orgId: string, key: string, field: strin
     return false
   }
 }
+
+/**
+ * Saves an everyday, non-credential setting (pipelines board, column chooser, avatar colours, company overview,
+ * meeting settings, enrollment config, cross-org sharing) through PUT /api/settings/team, which any active Hub user
+ * of the org may call. Throws on failure so callers keep their existing error handling.
+ */
+export async function saveTeamSetting(orgId: string, key: string, value: unknown): Promise<void> {
+  const r = await fetch('/api/settings/team', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ org_id: orgId, setting_key: key, setting_value: value }),
+  })
+  if (!r.ok) throw new Error(`setting ${key} not saved (${r.status})`)
+}

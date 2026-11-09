@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
-import { readOrgSettingValue } from '@/lib/org-settings-client'
+import { readOrgSettingValue, saveTeamSetting } from '@/lib/org-settings-client'
 import { loadPipelines, findPipeline, resolveStage, firstStage, type PipelineRef } from '@/lib/pipelines/positions'
 import { apiSetStage } from '@/lib/pipelines/client'
 import {
@@ -883,10 +883,7 @@ export default function ImportPage() {
         ],
       }
       const updated = [...existing, newPipeline]
-      await sb.from('org_settings').upsert(
-        { org_id: currentOrg.id, setting_key: 'crm_pipelines', setting_value: { pipelines: updated, active: existing[0]?.id || newPipeline.id } },
-        { onConflict: 'org_id,setting_key' }
-      )
+      await saveTeamSetting(currentOrg.id, 'crm_pipelines', { pipelines: updated, active: existing[0]?.id || newPipeline.id })
       setPipelines(updated)
       // Auto-select the new pipeline and apply to all selected rows
       setBulkPipeline(newPipeline.id)

@@ -77,27 +77,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
           const savedOrg = orgs.find(o => o.id === lastOrgId)
           setCurrentOrg(savedOrg || orgs[0])
 
-          // Auto-create team profile if missing
-          const targetOrg = savedOrg || orgs[0]
-          if (targetOrg) {
-            const { data: existingProfile } = await supabase
-              .from('team_profiles')
-              .select('id')
-              .eq('org_id', targetOrg.id)
-              .eq('user_id', user.id)
-              .maybeSingle()
-            
-            if (!existingProfile) {
-              await supabase.from('team_profiles').insert({
-                org_id: targetOrg.id,
-                user_id: user.id,
-                display_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'New Member',
-                email: user.email,
-                role: 'team_member',
-                status: 'active',
-              })
-            }
-          }
+          // No team profile is created here (2026-11-08). This used to insert an ACTIVE team_member row for any
+          // org member without one, participants included, on every dashboard load; that row is what withStaff and
+          // the other Hub access checks trust. A team profile now comes only from an invite or an org admin
+          // (/api/team/members), and hub_232 stops the browser writing team_profiles at all.
         } else {
           // No memberships: leave the workspace empty.
           //
