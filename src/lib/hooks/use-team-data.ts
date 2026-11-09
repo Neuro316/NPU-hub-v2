@@ -3,6 +3,12 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
+import { readOrgSettings } from '@/lib/org-settings-client'
+import { credentialFields, withoutCredentials } from '@/lib/org-vault-fields'
+
+// The org_settings keys this hook's consumers read through getSetting (integrations, tasks, my-tasks). Read through
+// GET /api/settings/read (2026-11-08): admin-only keys are left out for other users, credential fields come back blank.
+export const TEAM_SETTING_KEYS = ['avatar_colors', 'slack_config', 'google_calendar', 'gmail', 'apps_script']
 
 export interface TeamMember {
   id: string
@@ -41,6 +47,7 @@ export function useTeamData() {
   const { currentOrg } = useWorkspace()
   const [members, setMembers] = useState<TeamMember[]>([])
   const [settings, setSettings] = useState<OrgSetting[]>([])
+  const [credentialsSet, setCredentialsSet] = useState<Record<string, Record<string, boolean>>>({})
   const [currentMemberRole, setCurrentMemberRole] = useState<string>('team_member')
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
@@ -51,7 +58,7 @@ export function useTeamData() {
 
     const [memberRes, settingsRes, userRes] = await Promise.all([
       supabase.from('team_profiles').select('*').eq('org_id', currentOrg.id).order('display_name'),
-      supabase.from('org_settings').select('*').eq('org_id', currentOrg.id),
+      readOrgSettings(currentOrg.id, TEAM_SETTING_KEYS),
       supabase.auth.getUser(),
     ])
 
@@ -60,7 +67,11 @@ export function useTeamData() {
       const me = memberRes.data.find(m => m.user_id === userRes.data.user?.id)
       if (me) setCurrentMemberRole(me.role)
     }
-    if (settingsRes.data) setSettings(settingsRes.data)
+    const orgId = currentOrg.id
+    setSettings(Object.entries(settingsRes.settings).map(([setting_key, setting_value]) => ({
+      id: `${orgId}:${setting_key}`, org_id: orgId, setting_key, setting_value,
+    })))
+    setCredentialsSet(settingsRes.credentialsSet)
     setLoading(false)
   }, [currentOrg?.id])
 
@@ -95,17 +106,40 @@ export function useTeamData() {
     return settings.find(s => s.setting_key === key)?.setting_value || null
   }
 
+  // Never writes a credential field: they are stripped here and saved through saveOrgCredential. A credential-bearing
+  // key goes through PUT /api/settings, which keeps the stored credential fields (a browser upsert would replace the
+  // whole value and drop them, e.g. slack_config.webhook_url, which the University reads).
   const saveSetting = async (key: string, value: Record<string, any>) => {
     if (!currentOrg) return
-    const { data, error } = await supabase
-      .from('org_settings')
-      .upsert({ org_id: currentOrg.id, setting_key: key, setting_value: value, updated_at: new Date().toISOString() }, { onConflict: 'org_id,setting_key' })
-      .select().single()
+    const orgId = currentOrg.id
+    const clean = withoutCredentials(key, value)
+    let data: OrgSetting | null = null
+    let error: { message: string } | null = null
+    if (credentialFields(key).length) {
+      try {
+        const r = await fetch('/api/settings', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ org_id: orgId, setting_key: key, setting_value: clean }),
+        })
+        if (r.ok) data = { id: `${orgId}:${key}`, org_id: orgId, setting_key: key, setting_value: clean }
+        else error = { message: (await r.json().catch(() => ({})))?.error || r.statusText }
+      } catch (e: any) {
+        error = { message: e?.message || 'Save failed' }
+      }
+    } else {
+      const res = await supabase
+        .from('org_settings')
+        .upsert({ org_id: orgId, setting_key: key, setting_value: clean, updated_at: new Date().toISOString() }, { onConflict: 'org_id,setting_key' })
+        .select().single()
+      data = res.data as OrgSetting | null
+      error = res.error
+    }
     if (data && !error) {
+      const saved = data
       setSettings(prev => {
         const exists = prev.find(s => s.setting_key === key)
-        if (exists) return prev.map(s => s.setting_key === key ? data : s)
-        return [...prev, data]
+        if (exists) return prev.map(s => s.setting_key === key ? saved : s)
+        return [...prev, saved]
       })
     }
     return { data, error }
@@ -115,7 +149,7 @@ export function useTeamData() {
   const isAdmin = currentMemberRole === 'super_admin' || currentMemberRole === 'admin'
 
   return {
-    members, settings, loading,
+    members, settings, credentialsSet, loading,
     currentMemberRole, isSuperAdmin, isAdmin,
     refresh: fetchData,
     addMember, updateMember, deleteMember,

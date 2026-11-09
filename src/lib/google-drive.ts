@@ -13,6 +13,9 @@ function getOAuthClient() {
   return new google.auth.OAuth2(clientId, clientSecret, redirectUri)
 }
 
+/** The one-time cookie /api/drive/callback checks against the OAuth state (set by /api/drive authUrl). */
+export const DRIVE_STATE_COOKIE = 'hub_drive_oauth'
+
 export function getAuthUrl(orgId?: string) {
   const client = getOAuthClient()
   return client.generateAuthUrl({

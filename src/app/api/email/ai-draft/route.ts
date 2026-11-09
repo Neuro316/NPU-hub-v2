@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabase } from '@/lib/supabase'
+import { requireOrgMember, STAFF_TEAM_ROLES } from '@/lib/api-guard'
+import { readOrgSetting } from '@/lib/org-vault'
 import { loadPositions } from '@/lib/pipelines/positions'
 
 export async function POST(request: NextRequest) {
@@ -39,15 +41,10 @@ export async function POST(request: NextRequest) {
     .order('created_at', { ascending: false })
     .limit(5)
 
-  // Get AI config
-  const { data: aiConfig } = await supabase
-    .from('org_settings')
-    .select('setting_value')
-    .eq('org_id', org_id)
-    .eq('setting_key', 'crm_ai')
-    .maybeSingle()
-
-  const apiKey = aiConfig?.setting_value?.api_key || process.env.ANTHROPIC_API_KEY
+  // AI key: Vault, service role, only for staff of that org (2026-11-08)
+  const member = await requireOrgMember(org_id, STAFF_TEAM_ROLES)
+  const aiConfig = member instanceof Response ? null : await readOrgSetting<any>(member.db, member.orgId, 'crm_ai').catch(() => null)
+  const apiKey = aiConfig?.api_key || process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
     return NextResponse.json({ error: 'AI not configured. Add API key in CRM Settings > AI.' }, { status: 400 })
   }

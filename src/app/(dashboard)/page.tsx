@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
+import { readOrgSettingValue } from '@/lib/org-settings-client'
 import Link from 'next/link'
 import {
   Route, CheckSquare, Megaphone, Target, Brain, Image, BarChart3, Users,
@@ -54,14 +55,9 @@ export default function DashboardPage() {
   /* --- Load overview from org_settings --- */
   const loadOverview = useCallback(async () => {
     if (!currentOrg) return
-    const { data } = await supabase
-      .from('org_settings')
-      .select('setting_value')
-      .eq('org_id', currentOrg.id)
-      .eq('setting_key', 'company_overview')
-      .maybeSingle()
-    if (data?.setting_value) {
-      const val = typeof data.setting_value === 'string' ? JSON.parse(data.setting_value) : data.setting_value
+    const value: any = await readOrgSettingValue(currentOrg.id, 'company_overview')
+    if (value) {
+      const val = typeof value === 'string' ? JSON.parse(value) : value
       setOverview({ ...EMPTY_OVERVIEW, ...val })
     } else {
       setOverview(EMPTY_OVERVIEW)

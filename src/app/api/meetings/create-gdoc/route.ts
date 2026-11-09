@@ -3,9 +3,9 @@
 // and returns the shareable Google Doc URL
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
 import { createAdminSupabase } from '@/lib/supabase'
+import { withStaff, requireOrg } from '@/lib/api-guard'
+import { readOrgSetting } from '@/lib/org-vault'
 import { createGoogleDoc } from '@/lib/google-drive'
 import Anthropic from '@anthropic-ai/sdk'
 
@@ -15,20 +15,10 @@ export const maxDuration = 30
 const BRAND_BLUE = '#386797'
 const BRAND_TEAL = '#2A9D8F'
 
+/** The org's Drive refresh token, from Vault with the service role (src/lib/org-vault.ts). Never returned. */
 async function getRefreshToken(orgId: string): Promise<string | null> {
-  const cookieStore = await cookies()
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { cookies: { getAll() { return cookieStore.getAll() }, setAll() {} } }
-  )
-  const { data } = await supabase
-    .from('org_settings')
-    .select('setting_value')
-    .eq('org_id', orgId)
-    .eq('setting_key', 'google_drive')
-    .single()
-  return data?.setting_value?.refresh_token || null
+  const v = await readOrgSetting<any>(createAdminSupabase(), orgId, 'google_drive')
+  return typeof v?.refresh_token === 'string' && v.refresh_token ? v.refresh_token : null
 }
 
 function agendaToHtml(title: string, dateStr: string, duration: number, sections: any[]): string {
@@ -146,10 +136,12 @@ const TEMPLATE_SECTIONS: Record<string, any[]> = {
   ],
 }
 
-export async function POST(req: NextRequest) {
+// Guarded (2026-11-08): Hub staff of the org named.
+export const POST = withStaff(async (req: NextRequest, ctx) => {
   try {
-    const { org_id, meeting_id, use_ai, ai_description } = await req.json()
-    if (!org_id) return NextResponse.json({ error: 'org_id required' }, { status: 400 })
+    const { org_id: rawOrg, meeting_id, use_ai, ai_description } = await req.json()
+    const org_id = requireOrg(ctx, rawOrg)
+    if (org_id instanceof Response) return org_id
 
     const refreshToken = await getRefreshToken(org_id)
     if (!refreshToken) {
@@ -223,4 +215,4 @@ export async function POST(req: NextRequest) {
     console.error('create-gdoc error:', e)
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
-}
+})

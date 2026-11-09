@@ -65,3 +65,29 @@ export function isOrgAdmin(ctx: StaffContext, orgId: string): boolean {
 
 export const forbidden = (msg: string) => NextResponse.json({ error: msg }, { status: 403 })
 export const bad = (msg: string, extra: Record<string, unknown> = {}) => NextResponse.json({ error: msg, ...extra }, { status: 400 })
+
+/** Hub access roles: staff plus facilitator (not participant). Used where non-staff Hub users may read. */
+export const HUB_ACCESS_TEAM_ROLES = [...STAFF_TEAM_ROLES, 'facilitator']
+
+/**
+ * For routes not wrapped in withStaff: is this signed-in user an ACTIVE team member of the org (team_profiles,
+ * ruling 17), in one of `roles`? Read with the service role. A platform superadmin passes for any org they belong to.
+ */
+export async function userInOrg(db: SupabaseClient, userId: string, orgId: unknown, roles: string[] = STAFF_TEAM_ROLES): Promise<boolean> {
+  if (typeof orgId !== 'string' || !/^[0-9a-f-]{36}$/i.test(orgId)) return false
+  const { data, error } = await db.from('team_profiles').select('role').eq('user_id', userId).eq('org_id', orgId).eq('status', 'active')
+  if (error || !data?.length) return false
+  return data.some((t: any) => roles.includes(String(t.role ?? 'team_member')))
+}
+
+/**
+ * For a route that names an org in its request: the signed-in caller must have Hub access there (staff or
+ * facilitator by default). Returns the user and a service-role client, or the 401/403 response to send.
+ */
+export async function requireOrgMember(orgId: unknown, roles: string[] = HUB_ACCESS_TEAM_ROLES): Promise<{ userId: string; orgId: string; db: SupabaseClient } | Response> {
+  const { data: { user } } = await createServerSupabase().auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Sign in again to continue.' }, { status: 401 })
+  const db = createAdminSupabase()
+  if (!(await userInOrg(db, user.id, orgId, roles))) return NextResponse.json({ error: 'You do not have access to that organization.' }, { status: 403 })
+  return { userId: user.id, orgId: orgId as string, db }
+}

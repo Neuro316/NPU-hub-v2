@@ -15,6 +15,7 @@ import ContactDetail from '@/components/crm/contact-detail'
 import CrossOrgContactsPanel from '@/components/crm/cross-org-contacts-panel'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient as createBrowserSb } from '@/lib/supabase-browser'
+import { readOrgSettingValue } from '@/lib/org-settings-client'
 import { loadPipelines, loadPositions, positionsByContact, firstStage, type PipelineRef, type Position } from '@/lib/pipelines/positions'
 import { apiSetStage } from '@/lib/pipelines/client'
 
@@ -202,10 +203,9 @@ function ContactsPageContent() {
   // Load saved column config
   useEffect(() => {
     if (!currentOrg) return
-    const { createClient: cc } = require('@/lib/supabase-browser')
-    cc().from('org_settings').select('setting_value').eq('org_id', currentOrg.id).eq('setting_key', 'crm_contact_columns').maybeSingle()
-      .then(({ data }: { data: any }) => {
-        if (data?.setting_value?.columns) setActiveColumns(data.setting_value.columns)
+    readOrgSettingValue(currentOrg.id, 'crm_contact_columns')
+      .then((value: any) => {
+        if (value?.columns) setActiveColumns(value.columns)
       })
   }, [currentOrg?.id])
 

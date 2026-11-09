@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase-browser'
+import { readOrgSettingValue } from '@/lib/org-settings-client'
 import { Plus, Trash2, FileText, ClipboardCheck, Check, Loader2, X, Shield, ArrowRight, Sparkles, ExternalLink, GripVertical } from 'lucide-react'
 
 interface EnrollmentService {
@@ -41,10 +42,10 @@ export default function EnrollmentConfig({ orgId, orgName }: { orgId: string; or
     if (!orgId) return
     setLoading(true)
     Promise.all([
-      supabase.from('org_settings').select('setting_value').eq('org_id', orgId).eq('setting_key', 'crm_enrollment_config').maybeSingle(),
+      readOrgSettingValue(orgId, 'crm_enrollment_config'),
       supabase.from('company_library').select('id, title, category, file_url').eq('org_id', orgId).order('title'),
     ]).then(([configRes, libRes]) => {
-      const config = configRes.data?.setting_value
+      const config: any = configRes
       if (config?.services) setServices(config.services)
       if (libRes.data) setLibraryDocs(libRes.data)
       setLoading(false)

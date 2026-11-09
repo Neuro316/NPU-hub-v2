@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase-browser'
+import { readOrgSettings } from '@/lib/org-settings-client'
 import type { User } from '@supabase/supabase-js'
 import type { SidebarOrder } from '@/lib/nav-config'
 import { confirmLeaveDuringCall } from '@/lib/call-navigation-guard'
@@ -144,26 +145,22 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   // Load enabled modules + hidden modules + sidebar order when org changes
   useEffect(() => {
     if (!currentOrg) { setEnabledModules([]); setHiddenModules([]); setSidebarOrder(null); return }
-    supabase
-      .from('org_settings')
-      .select('setting_key, setting_value')
-      .eq('org_id', currentOrg.id)
-      .in('setting_key', ['enabled_modules', 'hidden_modules', 'sidebar_order'])
-      .then(({ data }) => {
-        const enabled = data?.find(r => r.setting_key === 'enabled_modules')
-        const hidden = data?.find(r => r.setting_key === 'hidden_modules')
-        const order = data?.find(r => r.setting_key === 'sidebar_order')
+    readOrgSettings(currentOrg.id, ['enabled_modules', 'hidden_modules', 'sidebar_order'])
+      .then(({ settings }) => {
+        const enabled = settings.enabled_modules
+        const hidden = settings.hidden_modules
+        const order = settings.sidebar_order
         setEnabledModules(
-          enabled?.setting_value && Array.isArray(enabled.setting_value)
-            ? enabled.setting_value : []
+          enabled && Array.isArray(enabled)
+            ? enabled : []
         )
-        const hiddenList = hidden?.setting_value && Array.isArray(hidden.setting_value)
-          ? hidden.setting_value : []
+        const hiddenList = hidden && Array.isArray(hidden)
+          ? hidden : []
         console.log('[WorkspaceContext] hidden_modules loaded:', hiddenList)
         setHiddenModules(hiddenList)
         setSidebarOrder(
-          order?.setting_value && typeof order.setting_value === 'object' && !Array.isArray(order.setting_value)
-            ? order.setting_value as SidebarOrder : null
+          order && typeof order === 'object' && !Array.isArray(order)
+            ? order as SidebarOrder : null
         )
       })
   }, [currentOrg?.id])

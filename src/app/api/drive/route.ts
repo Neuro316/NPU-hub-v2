@@ -1,28 +1,21 @@
+// Guarded (2026-11-08): Hub staff of the org named (withStaff + requireOrg). The refresh token is read from Vault
+// with the service role (src/lib/org-vault.ts) and never returned. The OAuth state is bound to this user and org
+// by a one-time httpOnly cookie that /api/drive/callback checks.
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
-import { uploadFile, listFiles, createSubfolder, deleteFile, extractFolderId, getAuthUrl } from '@/lib/google-drive'
+import { randomBytes } from 'crypto'
+import { uploadFile, listFiles, createSubfolder, deleteFile, extractFolderId, getAuthUrl, DRIVE_STATE_COOKIE } from '@/lib/google-drive'
+import { withStaff, requireOrg, type StaffContext } from '@/lib/api-guard'
+import { readOrgSetting } from '@/lib/org-vault'
 
 export const maxDuration = 30
+export const dynamic = 'force-dynamic'
 
-async function getRefreshToken(orgId: string): Promise<string | null> {
-  const cookieStore = await cookies()
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { cookies: { getAll() { return cookieStore.getAll() }, setAll() {} } }
-  )
-  const { data } = await supabase
-    .from('org_settings')
-    .select('setting_value')
-    .eq('org_id', orgId)
-    .eq('setting_key', 'google_drive')
-    .single()
-
-  return data?.setting_value?.refresh_token || null
+async function getRefreshToken(ctx: StaffContext, orgId: string): Promise<string | null> {
+  const v = await readOrgSetting<any>(ctx.db, orgId, 'google_drive')
+  return typeof v?.refresh_token === 'string' && v.refresh_token ? v.refresh_token : null
 }
 
-export async function POST(req: NextRequest) {
+export const POST = withStaff(async (req: NextRequest, ctx) => {
   try {
     const contentType = req.headers.get('content-type') || ''
 
@@ -35,9 +28,10 @@ export async function POST(req: NextRequest) {
       const orgId = formData.get('orgId') as string | null
 
       if (!file) return NextResponse.json({ success: false, error: 'No file provided' })
-      if (!orgId) return NextResponse.json({ success: false, error: 'No orgId provided' })
+      const org = requireOrg(ctx, orgId)
+      if (org instanceof Response) return org
 
-      const refreshToken = await getRefreshToken(orgId)
+      const refreshToken = await getRefreshToken(ctx, org)
       if (!refreshToken) return NextResponse.json({ success: false, error: 'Google Drive not connected. Go to Settings to connect.' })
 
       const targetFolderId = folderId || (folderUrl ? extractFolderId(folderUrl) : null)
@@ -52,21 +46,26 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const { action, folderId, folderUrl, folderName, fileId, orgId } = body
 
-    // Auth URL - no token needed
-    if (action === 'authUrl') {
-      const url = getAuthUrl(orgId)
-      return NextResponse.json({ success: true, url })
-    }
+    const org = requireOrg(ctx, orgId)
+    if (org instanceof Response) return org
 
-    if (!orgId) return NextResponse.json({ success: false, error: 'orgId required' })
+    // Auth URL: state = org.nonce, and the nonce, user and org are pinned in a one-time cookie
+    if (action === 'authUrl') {
+      const nonce = randomBytes(24).toString('hex')
+      const res = NextResponse.json({ success: true, url: getAuthUrl(`${org}.${nonce}`) })
+      res.cookies.set(DRIVE_STATE_COOKIE, `${nonce}.${ctx.userId}.${org}`, {
+        httpOnly: true, secure: true, sameSite: 'lax', path: '/api/drive/callback', maxAge: 600,
+      })
+      return res
+    }
 
     // Check connection status
     if (action === 'status') {
-      const token = await getRefreshToken(orgId)
+      const token = await getRefreshToken(ctx, org)
       return NextResponse.json({ success: true, connected: !!token })
     }
 
-    const refreshToken = await getRefreshToken(orgId)
+    const refreshToken = await getRefreshToken(ctx, org)
     if (!refreshToken) {
       return NextResponse.json({ success: false, error: 'Google Drive not connected. Go to Settings to connect.', needsAuth: true })
     }
@@ -94,7 +93,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: `Unknown action: ${action}` })
     }
   } catch (error: any) {
-    console.error('Drive API error:', error)
+    console.error(`[drive] failed: ${String(error?.message ?? 'error').slice(0, 80)}`)
     return NextResponse.json({ success: false, error: error.message || 'Drive API error' }, { status: 500 })
   }
-}
+})

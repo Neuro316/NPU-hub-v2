@@ -7,6 +7,8 @@ import {
 } from 'lucide-react'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
+import { readOrgSettings, saveOrgCredential } from '@/lib/org-settings-client'
+import { credentialFields, withoutCredentials } from '@/lib/org-vault-fields'
 import PipelineResourcesManager from '@/components/crm/pipeline-resources'
 import GuestProfileSettings from '@/components/settings/GuestProfileSettings'
 import VoicemailGreeting from '@/components/crm/voicemail-greeting'
@@ -61,6 +63,30 @@ interface TwilioNumber {
 }
 const GREETING_KEYS = ['greeting_url', 'greeting_path', 'greeting_filename', 'greeting_updated_at'] as const
 
+// Credential fields are write-only (2026-11-08): never prefilled, a "Set / Not set" badge, and a Clear.
+function CredBadge({ isSet, onClear }: { isSet: boolean; onClear: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 ml-2 normal-case tracking-normal align-middle">
+      <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${isSet ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+        {isSet ? 'Set' : 'Not set'}
+      </span>
+      {isSet && (
+        <button type="button" onClick={(e) => { e.preventDefault(); onClear() }}
+          className="text-[9px] font-medium text-red-500 hover:underline">Clear</button>
+      )}
+    </span>
+  )
+}
+
+/** A fresh read of one setting (credential fields blank). Throws when it cannot be read, so a merge never runs on {}. */
+async function readFreshSetting(orgId: string, key: string): Promise<Record<string, any>> {
+  const qs = new URLSearchParams({ org_id: orgId, key })
+  const r = await fetch(`/api/settings/read?${qs}`, { cache: 'no-store' })
+  if (!r.ok) throw new Error(`The current ${key} could not be read.`)
+  const v = (await r.json())?.setting_value
+  return v && typeof v === 'object' && !Array.isArray(v) ? v : {}
+}
+
 export default function SettingsPage() {
   const { currentOrg } = useWorkspace()
   const [active, setActive] = useState<Section>('general')
@@ -83,6 +109,43 @@ export default function SettingsPage() {
     anthropic_key: '', openai_key: '', gemini_key: '',
     call_summaries: true, smart_replies: true, sentiment: true, task_gen: true,
   })
+  // Credential fields (write-only). credSet says which are stored; the inputs hold only a new value being typed.
+  const [credSet, setCredSet] = useState<Record<string, Record<string, boolean>>>({})
+  const refreshCredSet = async () => {
+    if (!currentOrg) return
+    const { credentialsSet } = await readOrgSettings(currentOrg.id, ['crm_twilio', 'crm_ai'])
+    setCredSet(credentialsSet)
+  }
+  const credPh = (key: string, field: string, fallback: string) =>
+    credSet[key]?.[field] ? 'Saved — enter a new value to replace' : fallback
+  const clearCredential = async (key: string, field: string) => {
+    if (!currentOrg || !confirm('Clear this saved credential?')) return
+    if (!(await saveOrgCredential(currentOrg.id, key, field, ''))) alert('Could not clear it. Only org admins can change credentials.')
+    await refreshCredSet()
+  }
+  /** Saves each credential field the user typed a value into. Returns the fields that failed. */
+  const saveTypedCredentials = async (key: string, draft: Record<string, unknown>) => {
+    const failed: string[] = []
+    if (!currentOrg) return failed
+    for (const f of credentialFields(key)) {
+      const v = typeof draft[f] === 'string' ? String(draft[f]).trim() : ''
+      if (v && !(await saveOrgCredential(currentOrg.id, key, f, v))) failed.push(f)
+    }
+    return failed
+  }
+  /** The non-credential fields of a credential-bearing key: PUT /api/settings, which keeps the stored credentials. */
+  const putSetting = async (key: string, value: Record<string, unknown>) => {
+    if (!currentOrg) return
+    const res = await fetch('/api/settings', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ org_id: currentOrg.id, setting_key: key, setting_value: withoutCredentials(key, value) }),
+    })
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}))
+      throw new Error(d.error || res.statusText)
+    }
+  }
+
   const [pipeline, setPipeline] = useState({ stages: 'New Lead,Contacted,Qualified,Proposal,Negotiation,Won,Lost' })
   const [compliance, setCompliance] = useState({ double_optin: false, auto_dnc_unsubscribe: true, retention_days: 365 })
   const [notifications, setNotifications] = useState({ new_lead: true, missed_call: true, task_overdue: true, campaign_complete: true })
@@ -96,16 +159,17 @@ export default function SettingsPage() {
         if (data) setEmail({ sending_email: data.sending_email || '', sending_name: data.sending_name || '', daily_limit: data.daily_send_limit || 500, provider: data.provider || 'gmail_workspace', warmup: data.warmup_enabled ?? true })
       })
     // Load Twilio + other settings from org_settings
-    supabase.from('org_settings').select('setting_key, setting_value').eq('org_id', currentOrg.id)
-      .in('setting_key', ['crm_twilio', 'crm_ai', 'crm_compliance', 'crm_notifications'])
-      .then(({ data }) => {
-        data?.forEach(row => {
+    // Through the server (2026-11-08): credential fields come back blank, credentials_set says which are stored.
+    readOrgSettings(currentOrg.id, ['crm_twilio', 'crm_ai', 'crm_compliance', 'crm_notifications'])
+      .then(({ settings, credentialsSet }) => {
+        setCredSet(credentialsSet)
+        Object.entries(settings).map(([setting_key, setting_value]) => ({ setting_key, setting_value: setting_value as any })).forEach(row => {
           const v = row.setting_value
           if (row.setting_key === 'crm_twilio' && v) {
-            setTwilio({ account_sid: v.account_sid || '', auth_token: v.auth_token || '', messaging_service_sid: v.messaging_service_sid || '', api_key: v.api_key || '', api_secret: v.api_secret || '', twiml_app_sid: v.twiml_app_sid || '', voice_caller_id: v.voice_caller_id || '', ring_timeout_seconds: clampRingTimeout(v.ring_timeout_seconds) })
+            setTwilio({ account_sid: v.account_sid || '', auth_token: '', messaging_service_sid: v.messaging_service_sid || '', api_key: '', api_secret: '', twiml_app_sid: v.twiml_app_sid || '', voice_caller_id: v.voice_caller_id || '', ring_timeout_seconds: clampRingTimeout(v.ring_timeout_seconds) })
             if (v.numbers?.length) setTwilioNumbers(v.numbers)
           }
-          if (row.setting_key === 'crm_ai' && v) setAi(prev => ({ ...prev, ...v }))
+          if (row.setting_key === 'crm_ai' && v) setAi(prev => ({ ...prev, ...withoutCredentials('crm_ai', v) }))
           if (row.setting_key === 'crm_compliance' && v) setCompliance(prev => ({ ...prev, ...v }))
           if (row.setting_key === 'crm_notifications' && v) setNotifications(prev => ({ ...prev, ...v }))
         })
@@ -132,11 +196,10 @@ export default function SettingsPage() {
         // upsert of the form state would silently DROP them — and the greeting can
         // change after this page loaded, so merge against a fresh read, not the
         // copy captured at mount.
-        const { data: current } = await supabase.from('org_settings')
-          .select('setting_value').eq('org_id', currentOrg.id)
-          .eq('setting_key', 'crm_twilio').maybeSingle()
-        const existing = (current?.setting_value && typeof current.setting_value === 'object' && !Array.isArray(current.setting_value))
-          ? current.setting_value : {}
+        // Credentials are write-only: each typed one is saved on its own, then the rest without them through
+        // PUT /api/settings (which keeps the stored credentials). The fresh read is the server's, credentials blank.
+        const twilioFailed = await saveTypedCredentials('crm_twilio', twilio)
+        const existing: Record<string, any> = await readFreshSetting(currentOrg.id, 'crm_twilio')
         // Per-number merge, same reason. A line's greeting_* keys are written
         // by /api/comms/greeting into numbers[i], possibly after this page
         // loaded; writing the in-memory numbers[] back verbatim would drop
@@ -170,20 +233,23 @@ export default function SettingsPage() {
           else out.recording_notice_text = String(out.recording_notice_text).trim()
           return out
         })
-        await supabase.from('org_settings').upsert({
-          org_id: currentOrg.id, setting_key: 'crm_twilio',
-          // clamp on write as well as read — the stored value is never outside
-          // the range that keeps browser ringing functional.
-          setting_value: {
-            ...existing, ...twilio, numbers,
-            ring_timeout_seconds: clampRingTimeout(twilio.ring_timeout_seconds),
-          },
-        }, { onConflict: 'org_id,setting_key' })
+        // clamp on write as well as read — the stored value is never outside
+        // the range that keeps browser ringing functional.
+        await putSetting('crm_twilio', {
+          ...existing, ...twilio, numbers,
+          ring_timeout_seconds: clampRingTimeout(twilio.ring_timeout_seconds),
+        })
+        setTwilio(p => ({ ...p, auth_token: '', api_key: '', api_secret: '' }))
+        await refreshCredSet()
+        if (twilioFailed.length) alert('These credentials were not saved (org admins only): ' + twilioFailed.join(', '))
       }
       if (active === 'ai') {
-        await supabase.from('org_settings').upsert({
-          org_id: currentOrg.id, setting_key: 'crm_ai', setting_value: ai,
-        }, { onConflict: 'org_id,setting_key' })
+        const aiFailed = await saveTypedCredentials('crm_ai', ai)
+        const existingAi = await readFreshSetting(currentOrg.id, 'crm_ai')
+        await putSetting('crm_ai', { ...existingAi, ...ai })
+        setAi(p => ({ ...p, anthropic_key: '', openai_key: '', gemini_key: '' }))
+        await refreshCredSet()
+        if (aiFailed.length) alert('These keys were not saved (org admins only): ' + aiFailed.join(', '))
       }
       if (active === 'compliance') {
         await supabase.from('org_settings').upsert({
@@ -295,8 +361,8 @@ export default function SettingsPage() {
                 <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Account SID</label>
                   <input value={twilio.account_sid} onChange={e => setTwilio(p=>({...p,account_sid:e.target.value}))} placeholder="AC..."
                     className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
-                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Auth Token</label>
-                  <input type="password" value={twilio.auth_token} onChange={e => setTwilio(p=>({...p,auth_token:e.target.value}))} placeholder="••••••"
+                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Auth Token<CredBadge isSet={!!credSet.crm_twilio?.auth_token} onClear={() => clearCredential('crm_twilio', 'auth_token')} /></label>
+                  <input type="password" value={twilio.auth_token} onChange={e => setTwilio(p=>({...p,auth_token:e.target.value}))} autoComplete="off" placeholder={credPh('crm_twilio', 'auth_token', '••••••')}
                     className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
               </div>
               <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Messaging Service SID</label>
@@ -308,11 +374,11 @@ export default function SettingsPage() {
                 <h4 className="text-xs font-semibold text-np-dark mb-2">Voice (Browser Calling)</h4>
                 <p className="text-[10px] text-gray-400 mb-3">Required for making calls directly from the CRM. Create an API Key and TwiML App in your Twilio Console.</p>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">API Key SID</label>
-                    <input value={twilio.api_key} onChange={e => setTwilio(p=>({...p,api_key:e.target.value}))} placeholder="SK..."
+                  <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">API Key SID<CredBadge isSet={!!credSet.crm_twilio?.api_key} onClear={() => clearCredential('crm_twilio', 'api_key')} /></label>
+                    <input type="password" value={twilio.api_key} onChange={e => setTwilio(p=>({...p,api_key:e.target.value}))} autoComplete="off" placeholder={credPh('crm_twilio', 'api_key', 'SK...')}
                       className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
-                  <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">API Secret</label>
-                    <input type="password" value={twilio.api_secret} onChange={e => setTwilio(p=>({...p,api_secret:e.target.value}))} placeholder="••••••"
+                  <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">API Secret<CredBadge isSet={!!credSet.crm_twilio?.api_secret} onClear={() => clearCredential('crm_twilio', 'api_secret')} /></label>
+                    <input type="password" value={twilio.api_secret} onChange={e => setTwilio(p=>({...p,api_secret:e.target.value}))} autoComplete="off" placeholder={credPh('crm_twilio', 'api_secret', '••••••')}
                       className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
                 </div>
                 <div className="mt-3"><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">TwiML App SID</label>
@@ -589,16 +655,16 @@ export default function SettingsPage() {
               <h3 className="text-sm font-bold text-np-dark">AI Integration</h3>
               <p className="text-xs text-gray-400">Configure AI providers and feature toggles for the entire platform.</p>
               <div>
-                <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Claude API Key (Anthropic)</label>
-                <input type="password" value={ai.anthropic_key} onChange={e => setAi(p=>({...p,anthropic_key:e.target.value}))} placeholder="sk-ant-..."
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Claude API Key (Anthropic)<CredBadge isSet={!!credSet.crm_ai?.anthropic_key} onClear={() => clearCredential('crm_ai', 'anthropic_key')} /></label>
+                <input type="password" value={ai.anthropic_key} onChange={e => setAi(p=>({...p,anthropic_key:e.target.value}))} autoComplete="off" placeholder={credPh('crm_ai', 'anthropic_key', 'sk-ant-...')}
                   className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-teal/30" />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">OpenAI / ChatGPT Key</label>
-                  <input type="password" value={ai.openai_key} onChange={e => setAi(p=>({...p,openai_key:e.target.value}))} placeholder="sk-..."
+                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">OpenAI / ChatGPT Key<CredBadge isSet={!!credSet.crm_ai?.openai_key} onClear={() => clearCredential('crm_ai', 'openai_key')} /></label>
+                  <input type="password" value={ai.openai_key} onChange={e => setAi(p=>({...p,openai_key:e.target.value}))} autoComplete="off" placeholder={credPh('crm_ai', 'openai_key', 'sk-...')}
                     className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
-                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Gemini API Key</label>
-                  <input type="password" value={ai.gemini_key} onChange={e => setAi(p=>({...p,gemini_key:e.target.value}))} placeholder="AI..."
+                <div><label className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Gemini API Key<CredBadge isSet={!!credSet.crm_ai?.gemini_key} onClear={() => clearCredential('crm_ai', 'gemini_key')} /></label>
+                  <input type="password" value={ai.gemini_key} onChange={e => setAi(p=>({...p,gemini_key:e.target.value}))} autoComplete="off" placeholder={credPh('crm_ai', 'gemini_key', 'AI...')}
                     className="w-full mt-1 px-3 py-2 text-xs border border-gray-100 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-teal/30" /></div>
               </div>
               <div>

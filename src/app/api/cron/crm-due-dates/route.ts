@@ -1,4 +1,5 @@
 import { createAdminSupabase } from '@/lib/supabase';
+import { withVault } from '@/lib/org-vault';
 import { NextResponse } from 'next/server';
 
 export async function GET(request: Request) {
@@ -9,13 +10,16 @@ export async function GET(request: Request) {
 
   const supabase = createAdminSupabase();
 
-  const { data: orgSettings } = await supabase
+  // The webhook lives in Vault (src/lib/org-vault.ts). Behavior kept as it was: one config row is required.
+  // ⚠ Two orgs hold slack_crm_due_dates, so (as with the .single() this replaces) no webhook is chosen and the
+  // cron answers "No Slack config found". Fixing that means choosing an org per contact; not done here.
+  const { data: rows } = await supabase
     .from('org_settings')
-    .select('setting_value')
-    .eq('setting_key', 'slack_crm_due_dates')
-    .single();
+    .select('org_id, setting_value')
+    .eq('setting_key', 'slack_crm_due_dates');
+  const configs = await withVault(supabase, 'slack_crm_due_dates', (rows ?? []) as { org_id: string; setting_value: any }[]);
 
-  const webhookUrl = orgSettings?.setting_value?.webhook_url;
+  const webhookUrl = configs.length === 1 ? configs[0].setting_value?.webhook_url : null;
   if (!webhookUrl) return NextResponse.json({ error: 'No Slack config found' }, { status: 500 });
 
   const todayStr = new Date().toISOString().split('T')[0];

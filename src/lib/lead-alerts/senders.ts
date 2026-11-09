@@ -2,24 +2,26 @@
 // The two real channels for a speed-to-lead alert. Both reach ONE person: the staff member whose user id is the
 // configured recipient. Neither accepts an address from the caller.
 //
-//   slack  a DM from the org's Slack bot (org_settings slack_config.bot_token) to the recipient's slack_user_id
+//   slack  a DM from the org's Slack bot (org_settings slack_config.bot_token, in Vault) to the recipient's slack_user_id
 //          (team_profiles). Slack pushes it to the phone.
 //   sms    sendNotifySms: the recipient's own profile phone, the consent gate, the Primary line.
 //
 // The bot token is never logged; results carry codes only.
 import { createAdminSupabase } from '@/lib/supabase'
+import { readOrgSetting } from '../org-vault'
 import { sendNotifySms } from '@/lib/notify-sms'
 import type { Senders } from './run'
 
 export const realSenders: Senders = {
   async slack(orgId, userId, text) {
     const db = createAdminSupabase()
-    const [{ data: cfg, error: cErr }, { data: tp, error: tErr }] = await Promise.all([
-      db.from('org_settings').select('setting_value').eq('org_id', orgId).eq('setting_key', 'slack_config').maybeSingle(),
+    // bot_token lives in Vault (src/lib/org-vault.ts)
+    const [cfg, { data: tp, error: tErr }] = await Promise.all([
+      readOrgSetting<any>(db, orgId, 'slack_config').then((v) => ({ v, code: null as string | null }), (e: Error) => ({ v: null, code: e.message.split(': ').pop() ?? 'unknown' })),
       db.from('team_profiles').select('slack_user_id').eq('org_id', orgId).eq('user_id', userId).maybeSingle(),
     ])
-    if (cErr || tErr) return { ok: false, code: `read_${(cErr ?? tErr)?.code ?? 'unknown'}` }
-    const v = (cfg as any)?.setting_value
+    if (cfg.code || tErr) return { ok: false, code: `read_${cfg.code ?? tErr?.code ?? 'unknown'}` }
+    const v = cfg.v
     const token = typeof v?.bot_token === 'string' ? v.bot_token : ''
     const slackUser = (tp as any)?.slack_user_id as string | null
     if (!v || (v.enabled !== true && v.enabled !== 'true') || !token) return { ok: false, code: 'slack_not_configured' }

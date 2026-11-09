@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useTeamData } from '@/lib/hooks/use-team-data'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
+import { saveOrgCredential } from '@/lib/org-settings-client'
 import {
   MessageSquare, Calendar, Mail, CheckSquare, ChevronDown, ChevronUp,
   ExternalLink, Zap, Globe, FolderOpen, FileText, Loader2, Check, X,
@@ -218,11 +219,58 @@ function PersonalGoogleConnection() {
 }
 
 // ════════════════════════════════════════════════
+// Credential field: write-only ("set / not set"). The stored value never reaches the browser.
+// ════════════════════════════════════════════════
+function CredentialInput({ orgId, settingKey, field, label, placeholder, isSet, onSaved }: {
+  orgId: string; settingKey: string; field: string; label: string; placeholder: string
+  isSet: boolean; onSaved: () => void
+}) {
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  const save = async (value: string) => {
+    if (!orgId) return
+    setBusy(true)
+    const ok = await saveOrgCredential(orgId, settingKey, field, value)
+    setBusy(false)
+    if (!ok) { alert(`Could not save ${label}. Only org admins can change credentials.`); return }
+    setDraft('')
+    onSaved()
+  }
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-0.5">
+        <label className="text-[10px] text-gray-500">{label}</label>
+        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${isSet ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+          {isSet ? 'Set' : 'Not set'}
+        </span>
+        {isSet && (
+          <button type="button" disabled={busy}
+            onClick={() => { if (confirm(`Clear the saved ${label}?`)) save('') }}
+            className="text-[9px] text-red-500 hover:underline disabled:opacity-50">Clear</button>
+        )}
+      </div>
+      <div className="flex gap-2">
+        <input value={draft} type="password" autoComplete="off"
+          onChange={e => setDraft(e.target.value)}
+          placeholder={isSet ? 'Saved — enter a new value to replace' : placeholder}
+          className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 font-mono" />
+        <button type="button" disabled={busy || !draft.trim()}
+          onClick={() => save(draft.trim())}
+          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-np-blue text-white hover:opacity-90 disabled:opacity-40 whitespace-nowrap">
+          {busy ? 'Saving...' : 'Save'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════
 // Main Page
 // ════════════════════════════════════════════════
 export default function IntegrationsPage() {
   const { currentOrg, loading: orgLoading } = useWorkspace()
-  const { getSetting, saveSetting, isSuperAdmin, loading } = useTeamData()
+  const { getSetting, saveSetting, isSuperAdmin, loading, credentialsSet, refresh } = useTeamData()
+  const orgId = currentOrg?.id || ''
 
   const slackConfig = getSetting('slack_config') as any || {}
   const calendarConfig = getSetting('google_calendar') as any || {}
@@ -232,16 +280,20 @@ export default function IntegrationsPage() {
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string; caps?: string[] } | null>(null)
 
+  // Tests the SAVED Apps Script URL through the server proxy (POST /api/google, action 'ping'); the browser never
+  // holds the URL.
   const testConnection = async () => {
-    const url = appsScriptConfig.url?.trim()
-    if (!url) { setTestResult({ ok: false, msg: 'Enter a URL first' }); return }
+    if (!credentialsSet.apps_script?.url) { setTestResult({ ok: false, msg: 'Save a URL first' }); return }
     setTesting(true)
     setTestResult(null)
     try {
-      const res = await fetch(url + '?t=' + Date.now())
+      const res = await fetch('/api/google', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orgId, action: 'ping' }),
+      })
       const data = await res.json()
       if (data.success || data.status === 'ok') {
-        setTestResult({ ok: true, msg: 'Connected! ' + (data.service || 'Apps Script'), caps: data.capabilities })
+        setTestResult({ ok: true, msg: 'Connected! ' + (data.service || data.message || 'Apps Script'), caps: data.capabilities })
       } else {
         setTestResult({ ok: false, msg: data.error || 'Unexpected response' })
       }
@@ -249,6 +301,20 @@ export default function IntegrationsPage() {
       setTestResult({ ok: false, msg: 'Connection failed: ' + (err.message || 'Network error') })
     }
     setTesting(false)
+  }
+
+  // Slack tests run server side with the STORED webhook / bot token (POST /api/slack/send).
+  const testSlack = async (action: 'test_webhook' | 'test_bot') => {
+    try {
+      const res = await fetch('/api/slack/send', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, org_id: orgId }),
+      })
+      const data = await res.json().catch(() => ({}))
+      alert(data.message || data.error || (data.success ? 'Test sent!' : 'Test failed'))
+    } catch {
+      alert('Test failed')
+    }
   }
 
   if (orgLoading || loading) {
@@ -317,14 +383,9 @@ export default function IntegrationsPage() {
                     </p>
                   </div>
 
-                  <div>
-                    <label className="text-[10px] text-gray-500 block mb-0.5">Web App URL</label>
-                    <input
-                      value={appsScriptConfig.url || ''}
-                      onChange={e => saveSetting('apps_script', { ...appsScriptConfig, url: e.target.value })}
-                      placeholder="https://script.google.com/macros/s/.../exec"
-                      className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 font-mono" />
-                  </div>
+                  <CredentialInput orgId={orgId} settingKey="apps_script" field="url" label="Web App URL"
+                    placeholder="https://script.google.com/macros/s/.../exec"
+                    isSet={!!credentialsSet.apps_script?.url} onSaved={refresh} />
 
                   <div className="flex items-center gap-2">
                     <button onClick={testConnection} disabled={testing}
@@ -368,8 +429,8 @@ export default function IntegrationsPage() {
                       <li>Go to script.google.com and create a new project</li>
                       <li>Paste Code.gs from the google-apps-script folder</li>
                       <li>Deploy as Web App (Execute as: Me, Access: Anyone)</li>
-                      <li>Copy the URL and paste above</li>
-                      <li>Click "Test Connection" to verify</li>
+                      <li>Copy the URL, paste above and click Save</li>
+                      <li>Click "Test Connection" to verify (it tests the saved URL)</li>
                       <li>Click "Enable" to activate</li>
                     </ol>
                   </div>
@@ -465,32 +526,27 @@ export default function IntegrationsPage() {
                 connected={!!slackConfig.enabled}
               >
                 <div className="space-y-3">
-                  <div>
-                    <label className="text-[10px] text-gray-500 block mb-0.5">Webhook URL</label>
-                    <input value={slackConfig.webhook_url || ''}
-                      onChange={e => saveSetting('slack_config', { ...slackConfig, webhook_url: e.target.value })}
-                      placeholder="https://hooks.slack.com/services/..."
-                      className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 font-mono" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-gray-500 block mb-0.5">Bot Token</label>
-                    <input value={slackConfig.bot_token || ''}
-                      onChange={e => saveSetting('slack_config', { ...slackConfig, bot_token: e.target.value })}
-                      placeholder="xoxb-..." type="password"
-                      className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-np-blue/30 placeholder-gray-300 font-mono" />
-                  </div>
+                  <CredentialInput orgId={orgId} settingKey="slack_config" field="webhook_url" label="Webhook URL"
+                    placeholder="https://hooks.slack.com/services/..."
+                    isSet={!!credentialsSet.slack_config?.webhook_url} onSaved={refresh} />
+                  <CredentialInput orgId={orgId} settingKey="slack_config" field="bot_token" label="Bot Token"
+                    placeholder="xoxb-..."
+                    isSet={!!credentialsSet.slack_config?.bot_token} onSaved={refresh} />
                   <div className="flex items-center gap-2 pt-1">
                     <button onClick={() => saveSetting('slack_config', { ...slackConfig, enabled: !slackConfig.enabled })}
                       className={`text-xs font-medium px-3 py-1.5 rounded-lg ${slackConfig.enabled ? 'bg-red-50 text-red-500' : 'bg-green-50 text-green-600'}`}>
                       {slackConfig.enabled ? 'Disable' : 'Enable'}
                     </button>
-                    <button onClick={() => {
-                      fetch(slackConfig.webhook_url, { method: 'POST', body: JSON.stringify({ text: 'NPU Hub Slack test!' }) })
-                        .then(() => alert('Test message sent!')).catch(() => alert('Failed'))
-                    }} className="text-xs font-medium px-3 py-1.5 rounded-lg bg-[#4A154B] text-white hover:opacity-90">
-                      Send Test
+                    <button onClick={() => testSlack('test_webhook')}
+                      className="text-xs font-medium px-3 py-1.5 rounded-lg bg-[#4A154B] text-white hover:opacity-90">
+                      Test Webhook
+                    </button>
+                    <button onClick={() => testSlack('test_bot')}
+                      className="text-xs font-medium px-3 py-1.5 rounded-lg bg-white text-[#4A154B] border border-[#4A154B]/30 hover:bg-gray-50">
+                      Test Bot
                     </button>
                   </div>
+                  <p className="text-[9px] text-gray-400">Tests use the saved values: save first, and enable Slack.</p>
                 </div>
               </IntegrationCard>
 

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase-browser'
+import { readOrgSettingValue } from '@/lib/org-settings-client'
 import { useWorkspace } from '@/lib/workspace-context'
 import { ArrowRight, Check, Loader2, Plus, Save, Shield, Tag, Trash2, X } from 'lucide-react'
 
@@ -30,9 +31,8 @@ export default function CrossOrgSharingSettings() {
 
   const load = useCallback(async () => {
     if (!currentOrg) return; setLoading(true)
-    const { data } = await sb.from('org_settings').select('setting_value')
-      .eq('org_id', currentOrg.id).eq('setting_key', 'cross_org_contact_sharing').maybeSingle()
-    if (data?.setting_value) setConfig(data.setting_value)
+    const value = await readOrgSettingValue<SharingConfig>(currentOrg.id, 'cross_org_contact_sharing')
+    if (value) setConfig(value)
     setLoading(false)
   }, [currentOrg?.id])
 

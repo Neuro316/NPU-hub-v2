@@ -6,28 +6,15 @@
 
 import { createClient } from '@/lib/supabase-browser'
 
-interface SlackConfig {
-  webhook_url: string
-  bot_token: string
-  enabled: boolean
-}
-
 interface TeamMemberSlack {
   display_name: string
   slack_user_id: string | null
 }
 
-// Get Slack config for the current org
-async function getSlackConfig(orgId: string): Promise<SlackConfig | null> {
-  const supabase = createClient()
-  const { data } = await supabase
-    .from('org_settings')
-    .select('setting_value')
-    .eq('org_id', orgId)
-    .eq('setting_key', 'slack_config')
-    .single()
-  if (!data?.setting_value?.enabled) return null
-  return data.setting_value as SlackConfig
+// The browser never reads slack_config (its webhook and bot token are credentials, 2026-11-08). /api/slack/send
+// reads it server side and answers "Slack not enabled" when it is off, so this only says "go ahead".
+async function getSlackConfig(_orgId: string): Promise<{ enabled: true }> {
+  return { enabled: true }
 }
 
 // Get Slack user ID for a team member by display name

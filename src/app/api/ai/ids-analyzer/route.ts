@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabase } from '@/lib/supabase'
+import { requireOrgMember } from '@/lib/api-guard'
 import { loadPositions, positionsByContact } from '@/lib/pipelines/positions'
 
 export const maxDuration = 60
@@ -10,6 +11,9 @@ export async function POST(req: NextRequest) {
 
   const { issue_description, org_id, ai_instructions, team_members } = await req.json()
   if (!issue_description?.trim() || !org_id) return NextResponse.json({ error: 'Missing issue or org_id' }, { status: 400 })
+  // Guarded (2026-11-08): the caller must belong to the org named
+  const member = await requireOrgMember(org_id)
+  if (member instanceof Response) return member
 
   const supabase = createAdminSupabase()
 
