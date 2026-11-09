@@ -2,7 +2,8 @@
 // PATCH /api/mail/messages {id, status}                            mark new / seen / done
 // Superadmin only. Messages follow their mailbox's visibility (phase 1 rules): private
 // mailboxes to the owner, shared ones to superadmins in that org, anything else 404.
-// Returns metadata and the AI summary only; bodies are never stored.
+// Returns metadata and the AI summary only; bodies are never stored. Scheduling rows also carry the reply-draft
+// state (draft_status, drafted_at, gmail_draft_id) once hub_234 is applied; before that the old columns are read.
 import { NextResponse } from 'next/server'
 import { withStaff, forbidden, bad } from '@/lib/api-guard'
 import { listVisible, loadVisible } from '@/lib/mail/google'
@@ -16,6 +17,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const COLUMNS =
   'id, connection_id, gmail_thread_id, from_address, from_name, subject, received_at, category, priority, ' +
   'summary, suggested_action, status, triaged_at, triage_attempts, triage_error, created_at'
+
+const DRAFT_COLUMNS = ', draft_status, drafted_at, gmail_draft_id'
+// hub_234 not applied: PostgREST or Postgres does not know the draft columns
+const missingColumn = (e: { code?: string | null } | null) => !!e && (e.code === '42703' || e.code === 'PGRST204')
 
 const notFound = () => NextResponse.json({ error: 'Not found.' }, { status: 404 })
 
@@ -35,14 +40,19 @@ export const GET = withStaff(async (req, ctx) => {
   const mailboxes = visible.map(c => ({ id: c.id, email_address: c.email_address, visibility: c.visibility, status: c.status }))
   if (!ids.length) return NextResponse.json({ mailboxes, messages: [], next: null })
 
-  let query = ctx.db.from('hub_mail_messages').select(COLUMNS).in('connection_id', ids)
-  if (category) query = query.eq('category', category)
-  if (status) query = query.eq('status', status)
-  if (before) query = query.lt('created_at', before)
-  const { data, error } = await query.order('created_at', { ascending: false }).limit(PAGE)
+  const read = (columns: string) => {
+    let query = ctx.db.from('hub_mail_messages').select(columns).in('connection_id', ids)
+    if (category) query = query.eq('category', category)
+    if (status) query = query.eq('status', status)
+    if (before) query = query.lt('created_at', before)
+    return query.order('created_at', { ascending: false }).limit(PAGE)
+  }
+  let { data, error } = await read(COLUMNS + DRAFT_COLUMNS)
+  const drafts = !missingColumn(error)
+  if (!drafts) ({ data, error } = await read(COLUMNS))
   if (error) return NextResponse.json({ error: 'The inbox could not be loaded.' }, { status: 500 })
 
-  const messages = (data ?? []).map((m: any) => {
+  const messages = ((data ?? []) as any[]).map((m: any) => {
     const email = byId.get(m.connection_id)!.email_address
     return {
       id: m.id,
@@ -60,10 +70,12 @@ export const GET = withStaff(async (req, ctx) => {
       triage: m.triaged_at ? 'done' : m.triage_attempts >= 3 ? 'failed' : 'waiting',
       triage_error: m.triaged_at ? null : m.triage_error,
       gmail_url: `https://mail.google.com/mail/?authuser=${encodeURIComponent(email)}#all/${m.gmail_thread_id}`,
+      thread_url: `https://mail.google.com/mail/u/?authuser=${encodeURIComponent(email)}#inbox/${m.gmail_thread_id}`,
+      ...(drafts ? { draft_status: m.draft_status ?? null, drafted_at: m.drafted_at ?? null, gmail_draft_id: m.gmail_draft_id ?? null } : {}),
     }
   })
   const next = (data?.length ?? 0) === PAGE ? (data as any[])[PAGE - 1].created_at : null
-  return NextResponse.json({ mailboxes, messages, next })
+  return NextResponse.json({ mailboxes, messages, next, drafts_available: drafts })
 })
 
 export const PATCH = withStaff(async (req, ctx) => {

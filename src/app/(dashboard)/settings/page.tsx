@@ -10,6 +10,7 @@ import {
   GripVertical, RotateCcw, Inbox, CalendarClock, CalendarCheck,
 } from 'lucide-react'
 import { MailboxesSection } from '@/components/settings/mailboxes-section'
+import { CalendarSection } from '@/components/settings/calendar-section'
 import { SchedulingRulesSection } from '@/components/settings/scheduling-rules-section'
 import { BookingRoutesSection } from '@/components/settings/booking-routes-section'
 import { useWorkspace } from '@/lib/workspace-context'
@@ -1014,7 +1015,12 @@ export default function SettingsPage() {
           )}
 
           {/* Mailboxes (superadmin) */}
-          {active === 'mailboxes' && mailboxesAllowed && <MailboxesSection orgId={currentOrg?.id} />}
+          {active === 'mailboxes' && mailboxesAllowed && (
+            <div className="space-y-8">
+              <MailboxesSection orgId={currentOrg?.id} />
+              <CalendarSection />
+            </div>
+          )}
 
           {/* Booking Routes (superadmin) */}
           {active === 'booking_routes' && mailboxesAllowed && <BookingRoutesSection orgId={currentOrg?.id} />}
