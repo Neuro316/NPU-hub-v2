@@ -94,8 +94,9 @@ Phase 2/3 conversion (a comped Phase 2/3 is not a conversion), coaching attach, 
 assessments sold, new clients, new lead-gen buyers, promo redemptions, onboarding steps and the stuck list, and
 Onboarded (a participant whose University purchases are all comps is not counted; people with no University
 purchase still are). Comps are tracked on the Sales tab: **Comps** (count) and **Comps at list value**, whose list
-shows who, what (with add-ons), the date and the list value. Not changed: Clarity → Capacity upgrades, which are read
-from entitlement grants, not payments.
+shows who, what (with add-ons), the date and the list value. Clarity → Capacity upgrades count only a Capacity grant backed by a paid Phase 1
+purchase; a comped grant is never an upgrade, and a grant with no payment at all is listed under Comps as
+"(granted, no payment)" at the Capacity paywall's list price.
 
 A bundled payment's revenue is split across its lines in proportion to list price (the add-on's sale price, else its
 price, else the paywall's price); with no prices, the main line takes it all. The split is an estimate: Stripe has
@@ -209,7 +210,7 @@ completed lesson in the last 14 days.
 
 | Metric | Source | Formula | Status |
 |---|---|---|---|
-| Clarity → Capacity upgrades | A profile with a `clarity-protocol` entitlement that later gets a Capacity Protocol entitlement or enrollment (`capacity-protocol*` keywords, programs named "Capacity Protocol…") | count by upgrade date | ✅ |
+| Clarity → Capacity upgrades | A profile with a `clarity-protocol` entitlement that later gets a Capacity Protocol entitlement (`capacity-protocol*` keywords), counted only when a **paid** Phase 1 purchase (after the Clarity grant, up to two days after the Capacity grant) backs it. Comped grants never count; unpaid grants appear under Comps | count by upgrade date | ✅ |
 | Membership tier mix | `subscriptions` (0 rows) | — | ❌ G9; shown from `entitlements` keywords as a stand-in |
 | Refunds | `payments.amount_refunded_cents > 0`, on the payment's date (no refund date is stored) | count, $ | ✅ |
 | Repeat purchase | Buyers with ≥ 2 distinct paid products, all time | count | ✅ |

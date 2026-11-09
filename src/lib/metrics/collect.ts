@@ -387,6 +387,39 @@ const paymentsLoader: Loader = async ctx => {
   for (const p of purchases) if (p.participant && isPaid(p) && !firstBuy.has(p.participant)) firstBuy.set(p.participant, p)
   for (const p of Array.from(firstBuy.values())) if (inRange(ctx, p.day)) items.push({ metric: 'buyers', day: p.day, value: 1, rec: rec(p, p.product) })
 
+  // Clarity → Capacity upgrades, counted on the Capacity grant, only when a PAID Phase 1 purchase backs it
+  // (paid between the Clarity grant and two days after the Capacity grant). A grant with no paid purchase is a
+  // comp: never an upgrade; it is listed under Comps unless a $0 payment for it is already listed there.
+  const okUser = (id: string | null) => !!id && !ctx.filter.testProfileIds.has(id)
+  const ents = await all((a, b) => db.from('entitlements').select('user_id, keyword, granted_at').or('keyword.eq.clarity-protocol,keyword.like.capacity-protocol%').range(a, b), 'entitlements')
+  const clarityAt = new Map<string, string>()
+  for (const e of ents) if (e.keyword === 'clarity-protocol' && okUser(e.user_id) && (!clarityAt.has(e.user_id) || e.granted_at < clarityAt.get(e.user_id)!)) clarityAt.set(e.user_id, e.granted_at)
+  const upgrades: { user: string; keyword: string; at: string }[] = []
+  const seen = new Set<string>()
+  for (const e of ents.filter(x => x.keyword !== 'clarity-protocol').sort((a, b) => a.granted_at.localeCompare(b.granted_at))) {
+    const c = clarityAt.get(e.user_id)
+    if (!c || e.granted_at <= c || seen.has(e.user_id)) continue
+    seen.add(e.user_id)
+    if (inRange(ctx, nyDay(e.granted_at))) upgrades.push({ user: e.user_id, keyword: e.keyword, at: e.granted_at })
+  }
+  if (upgrades.length) {
+    const names = new Map((await inChunks(upgrades.map(u => u.user), ch => db.from('profiles').select('id, full_name, email').in('id', ch), 'profiles'))
+      .map(p => [p.id, p.full_name || p.email || 'Client']))
+    const prices = new Map((await all((a, b) => db.from('paywalls').select('slug, price_cents').like('slug', 'capacity-protocol%').range(a, b), 'paywalls'))
+      .map(w => [w.slug, Number(w.price_cents ?? 0)]))
+    for (const u of upgrades) {
+      const day = nyDay(u.at), until = new Date(u.at).getTime() + 2 * DAY, since = clarityAt.get(u.user)!
+      const backing = (byPerson.get(u.user) ?? []).filter(p => p.at > since && new Date(p.at).getTime() <= until && p.lines.some(l => coversPhase1(l.kind)))
+      const label = names.get(u.user) ?? 'Client'
+      if (backing.some(isPaid)) { items.push({ metric: 'upgrades', day, value: 1, rec: { id: u.user, label, sub: u.keyword } }); continue }
+      if (backing.some(isComp)) continue
+      const list = prices.get(u.keyword) ?? 0
+      const cr: Rec = { id: `grant:${u.user}:${u.keyword}`, label, sub: `${u.keyword} (granted, no payment) · list ${usd(list)}`, amount: list / 100 }
+      items.push({ metric: 'comps', day, value: 1, dims: { product: u.keyword }, rec: cr })
+      items.push({ metric: 'comps_value', day, value: list / 100, dims: { product: u.keyword }, rec: cr })
+    }
+  }
+
   // days from lead to purchase (paid sales; the contact is matched by email)
   const paidInRange = purchases.filter(p => inRange(ctx, p.day) && p.cents > 0 && p.email)
   const emails = Array.from(new Set(paidInRange.map(p => lower(p.email))))
@@ -582,18 +615,7 @@ const outcomesLoader: Loader = async ctx => {
     items.push({ metric: 'reviews', day, value: 1, rec })
     items.push({ metric: 'review_rating_sum', day, value: Number(r.overall_rating) })
   }
-  // Clarity → Capacity upgrades, counted on the Capacity grant
-  const ents = await all((a, b) => db.from('entitlements').select('user_id, keyword, granted_at').or('keyword.eq.clarity-protocol,keyword.like.capacity-protocol%').range(a, b), 'entitlements')
-  const clarityAt = new Map<string, string>()
-  for (const e of ents) if (e.keyword === 'clarity-protocol' && ok(e.user_id) && (!clarityAt.has(e.user_id) || e.granted_at < clarityAt.get(e.user_id)!)) clarityAt.set(e.user_id, e.granted_at)
-  const upgraded = new Set<string>()
-  for (const e of ents.filter(x => x.keyword !== 'clarity-protocol').sort((a, b) => a.granted_at.localeCompare(b.granted_at))) {
-    const c = clarityAt.get(e.user_id)
-    if (!c || e.granted_at <= c || upgraded.has(e.user_id)) continue
-    upgraded.add(e.user_id)
-    const day = nyDay(e.granted_at)
-    if (inRange(ctx, day)) items.push({ metric: 'upgrades', day, value: 1, rec: { id: e.user_id, label: 'Client', sub: e.keyword } })
-  }
+  // Clarity → Capacity upgrades are counted in the payments loader (only paid grants count; comps never do)
   // self-report change, as of today: first vs latest composite per person with 2+ results
   if (inRange(ctx, ctx.today)) {
     const quiz = await all((a, b) => db.from('nr_quiz_results').select('profile_id, composite_score, submitted_at')
@@ -796,7 +818,7 @@ export const LOADER_OF: Record<string, string[]> = {
   repeat_buyers: ['payments'], paying_buyers: ['payments'], revenue_all_time: ['payments'], ad_spend: ['other_revenue'],
   onboarded: ['onboarding'], hrv_sessions: ['onboarding'], days_to_consent: ['onboarding'], days_to_pairing: ['onboarding'], days_to_first_session: ['onboarding'],
   onboarding_stuck: ['onboarding'], active_clients: ['onboarding'], hrv_trend_n: ['onboarding'], hrv_improving: ['onboarding'],
-  practice_sessions: ['outcomes'], lessons_completed: ['outcomes'], reviews: ['outcomes'], review_rating_sum: ['outcomes'], upgrades: ['outcomes'], self_report_n: ['outcomes'], self_report_delta_sum: ['outcomes'],
+  practice_sessions: ['outcomes'], lessons_completed: ['outcomes'], reviews: ['outcomes'], review_rating_sum: ['outcomes'], upgrades: ['payments'], self_report_n: ['outcomes'], self_report_delta_sum: ['outcomes'],
   campaign_entered: ['marketing'], email_sent: ['marketing'], email_delivered: ['marketing'], email_opened: ['marketing'], email_clicked: ['marketing'], email_bounced: ['marketing'], email_complained: ['marketing'],
   podcasts: ['content'], posts_published: ['content'],
   cron_failures: ['operations'], inbox_waiting: ['operations'], tickets_open: ['operations'], tasks_overdue: ['operations'], pipeline_value: ['operations'],
