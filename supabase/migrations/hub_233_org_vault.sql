@@ -1,7 +1,9 @@
 -- hub_233_org_vault.sql
 --
--- STATUS: PROPOSED 2026-11-08. NOT APPLIED. Needs a go. Apply BEFORE hub_232 (the number is only a label; the
--- ledger keys on the apply timestamp). Production (htfrfaxlcuyawtlztxxm) only.
+-- STATUS: APPLIED 2026-11-09 to production (htfrfaxlcuyawtlztxxm) only, through the Supabase connector as
+-- hub_233_org_vault (body without this header). Ledger version 20261109022400. Read back: all three functions owned
+-- by postgres, SECURITY INVOKER, executable by service_role only (not anon, not authenticated).
+-- Applied BEFORE hub_232 (the number is only a label; the ledger keys on the apply timestamp).
 --
 -- PURPOSE: org credentials in Supabase Vault, reachable only by the service role (the hub_216 pattern).
 -- src/lib/org-vault.ts calls these two functions. Until this is applied the Hub reads the org_settings values as

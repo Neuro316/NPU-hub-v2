@@ -1,6 +1,7 @@
 -- 2026-11-08_org_credentials_to_vault.sql
 --
--- STATUS: PROPOSED. NOT APPLIED. Two parts, each its own go. Production (htfrfaxlcuyawtlztxxm) only.
+-- STATUS: PART 1 APPLIED 2026-11-09 (production): read-back 14 rows, all match = true. PART 2 not applied.
+-- Two parts, each its own go. Production (htfrfaxlcuyawtlztxxm) only.
 -- Values are moved inside the database; no statement here returns or logs a credential (read-backs return counts
 -- and booleans only). No rotation (ruled 2026-11-08): the current values move as they are.
 --
