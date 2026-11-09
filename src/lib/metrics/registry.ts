@@ -8,8 +8,13 @@
 //   last    the latest daily total in the range (a level, such as open tickets)
 //   ratio   value(num) / value(den) × scale, each side aggregated by its own agg
 //   gap     no data source yet (definitions "Gaps"); shown as a gap tile
+//
+// Targets (hub_metric_targets): a sum metric's target is a monthly total, prorated by day and compared with the pace
+// so far; a ratio, median or level metric's target is a level, compared directly. `direction` says whether higher or
+// lower is better, so amber and red work both ways (lower: amber above the amber share of the target, red above the
+// red share; coaching capacity uses amber 90%, red above 100%).
 
-export type Unit = 'count' | 'usd' | 'minutes' | 'days' | 'pct' | 'rating' | 'per_week'
+export type Unit = 'count' | 'usd' | 'minutes' | 'days' | 'hours' | 'pct' | 'rating' | 'per_week'
 export type Agg = 'sum' | 'median' | 'last' | 'ratio' | 'gap'
 export type Tab = 'scorecard' | 'acquisition' | 'sales' | 'onboarding' | 'outcomes' | 'retention' | 'marketing' | 'content' | 'operations'
 
@@ -37,6 +42,11 @@ export interface MetricDef {
   /** the records endpoint has no list for it (ratios, gaps) */
   noRecords?: boolean
   hidden?: boolean
+  /** information only: the targets editor does not offer it */
+  noTarget?: boolean
+  /** dated by the session day, so later days of the month count (coaching hours booked): a range ending today runs
+   *  to the month's end, and the target is compared in full, not prorated to today */
+  forward?: boolean
 }
 
 export const TABS: { key: Tab; label: string }[] = [
@@ -55,16 +65,31 @@ const D = 'docs/metrics/definitions.md'
 export const DEFINITIONS_PATH = D
 
 export const METRICS: MetricDef[] = [
-  // ── Scorecard ──
+  // ── Scorecard (product line, ruled 2026-11-09) ──
+  { key: 'phase1_sales', label: 'Phase 1 sales', tab: 'scorecard', unit: 'count', agg: 'sum', def: '1-scorecard', dim: 'product' },
+  { key: 'phase23_conversion', label: 'Phase 1 → Phase 2/3 (by today)', tab: 'scorecard', unit: 'pct', agg: 'ratio', num: 'phase23_converted', den: 'phase1_buyers', scale: 100, dim: 'cohort', def: '1-scorecard', noRecords: true },
+  { key: 'coaching_attach_30', label: 'Coaching attach, 30 min', tab: 'scorecard', unit: 'pct', agg: 'ratio', num: 'coaching_attached_30', den: 'phase1_buyers', scale: 100, def: '1-scorecard', noRecords: true, noTarget: true },
+  { key: 'coaching_attach_60', label: 'Coaching attach, 60 min', tab: 'scorecard', unit: 'pct', agg: 'ratio', num: 'coaching_attached_60', den: 'phase1_buyers', scale: 100, def: '1-scorecard', noRecords: true, noTarget: true },
+  { key: 'core_revenue', label: 'Core revenue (Capacity + coaching)', tab: 'scorecard', unit: 'usd', agg: 'sum', def: '1-scorecard', dim: 'product' },
   { key: 'leads', label: 'Leads', tab: 'scorecard', unit: 'count', agg: 'sum', def: '1-scorecard', dim: 'channel' },
-  { key: 'assessments_sold', label: 'Assessments sold', tab: 'scorecard', unit: 'count', agg: 'sum', def: '1-scorecard', dim: 'product' },
   { key: 'booked_calls', label: 'Booked calls', tab: 'scorecard', unit: 'count', agg: 'sum', def: '1-scorecard', dim: 'type' },
   { key: 'shows', label: 'Shows', tab: 'scorecard', unit: 'count', agg: 'sum', def: '1-scorecard' },
+  { key: 'coaching_hours_booked', label: 'Coaching hours booked', tab: 'scorecard', unit: 'hours', agg: 'sum', def: '1-scorecard', dim: 'length', forward: true },
+  { key: 'coaching_capacity_used', label: 'Coaching capacity used (of 10 h a month)', tab: 'scorecard', unit: 'pct', agg: 'ratio', num: 'coaching_hours_booked', den: 'coaching_capacity_hours', scale: 100, def: '1-scorecard', noRecords: true, lowerIsBetter: true, forward: true },
+  { key: 'coaching_committed_hours', label: 'Coaching committed, next 5 weeks (owed, not booked)', tab: 'scorecard', unit: 'hours', agg: 'last', def: '1-scorecard', dim: 'length', noTarget: true },
+  { key: 'assessments_sold', label: 'Assessments sold', tab: 'scorecard', unit: 'count', agg: 'sum', def: '1-scorecard', dim: 'product' },
   { key: 'sales', label: 'Sales (paid)', tab: 'scorecard', unit: 'count', agg: 'sum', def: '1-scorecard', dim: 'product' },
-  { key: 'comps', label: 'Comps ($0)', tab: 'scorecard', unit: 'count', agg: 'sum', def: '1-scorecard', dim: 'product' },
-  { key: 'clarity_sales', label: 'Clarity sales', tab: 'scorecard', unit: 'count', agg: 'sum', def: '1-scorecard' },
   { key: 'onboarded', label: 'Onboarded', tab: 'scorecard', unit: 'count', agg: 'sum', def: '1-scorecard' },
   { key: 'revenue', label: 'Revenue', tab: 'scorecard', unit: 'usd', agg: 'sum', def: '1-scorecard', dim: 'stream' },
+  // the parts of the ratios above (not tiles)
+  { key: 'phase1_buyers', label: 'First Phase 1 purchases (paid)', tab: 'scorecard', unit: 'count', agg: 'sum', def: '1-scorecard', dim: 'cohort', hidden: true },
+  { key: 'phase23_converted', label: 'Phase 1 buyers who bought Phase 2/3 by today', tab: 'scorecard', unit: 'count', agg: 'sum', def: '1-scorecard', dim: 'cohort', hidden: true },
+  { key: 'phase23_converted_60', label: 'Phase 1 buyers who bought Phase 2/3 within 60 days', tab: 'scorecard', unit: 'count', agg: 'sum', def: '1-scorecard', dim: 'cohort', hidden: true },
+  { key: 'coaching_attached_30', label: 'Phase 1 buyers with 30 min coaching within 90 days', tab: 'scorecard', unit: 'count', agg: 'sum', def: '1-scorecard', hidden: true },
+  { key: 'coaching_attached_60', label: 'Phase 1 buyers with 60 min coaching within 90 days', tab: 'scorecard', unit: 'count', agg: 'sum', def: '1-scorecard', hidden: true },
+  { key: 'coaching_hours_60', label: 'Coaching hours booked, 60 min sessions', tab: 'scorecard', unit: 'hours', agg: 'sum', def: '1-scorecard', hidden: true, forward: true },
+  { key: 'coaching_hours_30', label: 'Coaching hours booked, 30 min sessions', tab: 'scorecard', unit: 'hours', agg: 'sum', def: '1-scorecard', hidden: true, forward: true },
+  { key: 'coaching_capacity_hours', label: 'Coaching capacity (hours)', tab: 'scorecard', unit: 'hours', agg: 'sum', def: '1-scorecard', hidden: true, forward: true },
 
   // ── Acquisition ──
   { key: 'leads_all', label: 'All new contacts', tab: 'acquisition', unit: 'count', agg: 'sum', def: '2-acquisition', dim: 'channel' },
@@ -85,11 +110,23 @@ export const METRICS: MetricDef[] = [
   { key: 'revenue_platform', label: 'Revenue: University payments', tab: 'sales', unit: 'usd', agg: 'sum', def: '3-sales', dim: 'product' },
   { key: 'promo_redemptions', label: 'Promo redemptions', tab: 'sales', unit: 'count', agg: 'sum', def: '3-sales', dim: 'code' },
   { key: 'promo_discount', label: 'Promo discount given', tab: 'sales', unit: 'usd', agg: 'sum', def: '3-sales', dim: 'code' },
+  { key: 'show_outcomes', label: 'Calls held or missed', tab: 'sales', unit: 'count', agg: 'sum', def: '3-sales', hidden: true },
+  { key: 'show_rate', label: 'Show rate (shows ÷ calls held or missed)', tab: 'sales', unit: 'pct', agg: 'ratio', num: 'shows', den: 'show_outcomes', scale: 100, def: '3-sales', noRecords: true },
+  { key: 'phase23_conversion_60', label: 'Phase 1 → Phase 2/3 within 60 days', tab: 'sales', unit: 'pct', agg: 'ratio', num: 'phase23_converted_60', den: 'phase1_buyers', scale: 100, dim: 'cohort', def: '3-sales', noRecords: true },
+  { key: 'coaching_revenue', label: 'Coaching revenue', tab: 'sales', unit: 'usd', agg: 'sum', def: '3-sales', dim: 'product' },
+  { key: 'leadgen_revenue', label: 'Lead-gen revenue (everything else, WNW apart)', tab: 'sales', unit: 'usd', agg: 'sum', def: '3-sales', dim: 'product' },
+  { key: 'leadgen_buyers', label: 'New lead-gen buyers', tab: 'sales', unit: 'count', agg: 'sum', def: '3-sales', dim: 'product' },
+  { key: 'leadgen_converted', label: 'Lead-gen buyers who later bought Phase 1', tab: 'sales', unit: 'count', agg: 'sum', def: '3-sales', hidden: true },
+  { key: 'leadgen_to_phase1', label: 'Lead-gen buyers → Phase 1', tab: 'sales', unit: 'pct', agg: 'ratio', num: 'leadgen_converted', den: 'leadgen_buyers', scale: 100, def: '3-sales', noRecords: true },
+  { key: 'comps', label: 'Comps ($0, never toward a goal)', tab: 'sales', unit: 'count', agg: 'sum', def: '3-sales', dim: 'product', noTarget: true },
+  { key: 'comps_value', label: 'Comps at list value', tab: 'sales', unit: 'usd', agg: 'sum', def: '3-sales', dim: 'product', noTarget: true },
+  { key: 'wnw_revenue', label: 'WNW program revenue', tab: 'sales', unit: 'usd', agg: 'sum', def: '3-sales', dim: 'product' },
+  { key: 'clarity_sales', label: 'Clarity sales (retired product)', tab: 'sales', unit: 'count', agg: 'sum', def: '1-scorecard', noTarget: true },
   { key: 'gap_checkout_started', label: 'Checkout started vs paid', tab: 'sales', unit: 'count', agg: 'gap', gap: 'G7', def: 'gaps-what-to-start-collecting', noRecords: true },
   { key: 'gap_partner_sales', label: 'Partner-referred sales', tab: 'sales', unit: 'count', agg: 'gap', gap: 'G8', def: 'gaps-what-to-start-collecting', noRecords: true },
 
   // ── Onboarding ──
-  { key: 'buyers', label: 'New clients (paid or comp)', tab: 'onboarding', unit: 'count', agg: 'sum', def: '4-onboarding' },
+  { key: 'buyers', label: 'New clients (paid)', tab: 'onboarding', unit: 'count', agg: 'sum', def: '4-onboarding' },
   { key: 'days_to_consent', label: 'Days to consent (median)', tab: 'onboarding', unit: 'days', agg: 'median', def: '4-onboarding', lowerIsBetter: true },
   { key: 'days_to_pairing', label: 'Days to headset pairing (median)', tab: 'onboarding', unit: 'days', agg: 'median', def: '4-onboarding', lowerIsBetter: true },
   { key: 'days_to_first_session', label: 'Days to first session (median)', tab: 'onboarding', unit: 'days', agg: 'median', def: '4-onboarding', lowerIsBetter: true },
@@ -144,5 +181,19 @@ export const METRICS: MetricDef[] = [
 
 export const METRIC = Object.fromEntries(METRICS.map(m => [m.key, m])) as Record<string, MetricDef>
 
-/** Metrics the targets editor offers (counts and money that accumulate over a month). */
-export const TARGETABLE = METRICS.filter(m => m.agg === 'sum' && !m.hidden).map(m => m.key)
+/** The coaching split takes targets although it is not a tile of its own. */
+const TARGETABLE_PARTS = ['coaching_hours_60', 'coaching_hours_30']
+
+/** Metrics the targets editor offers: every tile with a value, except information-only ones and client outcomes. */
+export const TARGETABLE = METRICS.filter(m => m.agg !== 'gap' && (!m.hidden || TARGETABLE_PARTS.includes(m.key)) && !m.noTarget && !m.namesOnly && m.tab !== 'outcomes').map(m => m.key)
+
+/** A sum's target is a monthly total (prorated by day); anything else is a level, compared directly. */
+export const targetKind = (m: MetricDef): 'total' | 'level' => (m.agg === 'sum' ? 'total' : 'level')
+export const defaultDirection = (m: MetricDef): 'higher' | 'lower' => (m.lowerIsBetter ? 'lower' : 'higher')
+
+/** Cameron's coaching ceiling: 10 hours a month (about 5 × 60 min and 10 × 30 min). */
+export const COACHING_HOURS_PER_MONTH = 10
+/** Committed coaching looks this many weeks ahead (one session a week per package). */
+export const COMMITTED_WEEKS = 5
+/** The onboarding steps' target days when hub_metric_targets has no row for the step's metric. */
+export const STEP_TARGET_DEFAULTS: Record<'days_to_consent' | 'days_to_pairing' | 'days_to_first_session', number> = { days_to_consent: 2, days_to_pairing: 7, days_to_first_session: 10 }
