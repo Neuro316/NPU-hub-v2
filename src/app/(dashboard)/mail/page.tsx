@@ -3,6 +3,8 @@
 // Inbox (superadmin only): new mail from connected Gmail mailboxes, triaged by AI.
 // Read-only toward Gmail; the only writes are this view's own status (seen / done).
 // What is listed is decided by /api/mail/messages under the mailbox visibility rules.
+// The Scheduling filter (also ?filter=scheduling) lists scheduling mail with its reply-draft state. Drafts are made
+// by the scheduling agent only when switched on, and are never sent: the owner opens the thread in Gmail to send.
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Inbox, ExternalLink, Check, Eye, RotateCcw, AlertTriangle, Loader2 } from 'lucide-react'
@@ -23,6 +25,21 @@ interface Message {
   triage: 'done' | 'waiting' | 'failed'
   triage_error: string | null
   gmail_url: string
+  thread_url: string
+  /** present once hub_234 is applied */
+  draft_status?: 'drafted' | 'link_drafted' | 'flagged' | 'exception' | 'no_slot' | 'error' | null
+  drafted_at?: string | null
+  gmail_draft_id?: string | null
+}
+
+const DRAFT_BADGE: Record<string, { text: string; style: string }> = {
+  drafted: { text: 'Draft ready', style: 'bg-green-50 text-green-700 border-green-100' },
+  link_drafted: { text: 'Booking link drafted', style: 'bg-green-50 text-green-700 border-green-100' },
+  flagged: { text: 'Flagged', style: 'bg-amber-50 text-amber-700 border-amber-100' },
+  exception: { text: 'Needs approval', style: 'bg-amber-50 text-amber-700 border-amber-100' },
+  no_slot: { text: 'No slot', style: 'bg-red-50 text-red-600 border-red-100' },
+  error: { text: 'Error', style: 'bg-red-50 text-red-600 border-red-100' },
+  none: { text: 'Not handled', style: 'bg-gray-50 text-gray-500 border-gray-100' },
 }
 
 const CATEGORIES = [
@@ -45,12 +62,28 @@ export default function MailInboxPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const [view, setView] = useState<'all' | 'scheduling' | null>(null)
+
+  // ?filter=scheduling opens the Scheduling view; read once on mount, before the first load
+  useEffect(() => {
+    setView(new URLSearchParams(window.location.search).get('filter') === 'scheduling' ? 'scheduling' : 'all')
+  }, [])
+
+  const chooseView = (v: 'all' | 'scheduling') => {
+    setView(v)
+    const url = new URL(window.location.href)
+    if (v === 'scheduling') url.searchParams.set('filter', 'scheduling')
+    else url.searchParams.delete('filter')
+    window.history.replaceState(null, '', url.toString())
+  }
 
   const load = useCallback(async (before?: string) => {
+    if (view === null) return
     setLoading(true); setError(null)
     const q = new URLSearchParams()
     if (filters.mailbox) q.set('mailbox', filters.mailbox)
-    if (filters.category) q.set('category', filters.category)
+    if (view === 'scheduling') q.set('category', 'scheduling')
+    else if (filters.category) q.set('category', filters.category)
     if (filters.status) q.set('status', filters.status)
     if (before) q.set('before', before)
     try {
@@ -65,7 +98,7 @@ export default function MailInboxPage() {
     } finally {
       setLoading(false)
     }
-  }, [filters])
+  }, [filters, view])
 
   useEffect(() => { load() }, [load])
 
@@ -112,14 +145,24 @@ export default function MailInboxPage() {
       </div>
 
       <div className="flex flex-wrap gap-2">
+        <div className="flex rounded-lg border border-gray-100 bg-white p-0.5">
+          {(['all', 'scheduling'] as const).map(v => (
+            <button key={v} onClick={() => chooseView(v)}
+              className={`px-2.5 py-1 text-xs rounded-md ${view === v ? 'bg-np-blue text-white' : 'text-gray-500 hover:bg-gray-50'}`}>
+              {v === 'all' ? 'All' : 'Scheduling'}
+            </button>
+          ))}
+        </div>
         <select className={select} value={filters.mailbox} onChange={e => setFilters(f => ({ ...f, mailbox: e.target.value }))}>
           <option value="">All mailboxes</option>
           {mailboxes.map(b => <option key={b.id} value={b.id}>{b.email_address}</option>)}
         </select>
-        <select className={select} value={filters.category} onChange={e => setFilters(f => ({ ...f, category: e.target.value }))}>
-          <option value="">All categories</option>
-          {CATEGORIES.map(c => <option key={c} value={c}>{label(c)}</option>)}
-        </select>
+        {view !== 'scheduling' && (
+          <select className={select} value={filters.category} onChange={e => setFilters(f => ({ ...f, category: e.target.value }))}>
+            <option value="">All categories</option>
+            {CATEGORIES.map(c => <option key={c} value={c}>{label(c)}</option>)}
+          </select>
+        )}
         <select className={select} value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
           <option value="">Any status</option>
           <option value="new">New</option>
@@ -127,6 +170,12 @@ export default function MailInboxPage() {
           <option value="done">Done</option>
         </select>
       </div>
+
+      {view === 'scheduling' && (
+        <p className="text-[11px] text-gray-400">
+          Scheduling requests and their reply drafts. A draft is only ever saved in the Gmail thread, never sent: open the thread to review and send it.
+        </p>
+      )}
 
       {error && (
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs bg-red-50 text-red-600">
@@ -165,13 +214,17 @@ export default function MailInboxPage() {
                 <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                   {m.category && <span className="px-1.5 py-0.5 rounded border border-gray-100 bg-gray-50 text-[10px] text-gray-600">{label(m.category)}</span>}
                   {m.priority && <span className={`px-1.5 py-0.5 rounded border text-[10px] ${PRIORITY_STYLE[m.priority]}`}>{m.priority}</span>}
+                  {m.category === 'scheduling' && 'draft_status' in m && (() => {
+                    const b = DRAFT_BADGE[m.draft_status ?? 'none'] ?? DRAFT_BADGE.none
+                    return <span className={`px-1.5 py-0.5 rounded border text-[10px] ${b.style}`}>{b.text}</span>
+                  })()}
                   <span className="text-[10px] text-gray-400">{m.mailbox}</span>
                 </div>
               </div>
               <div className="flex items-center gap-1 flex-shrink-0">
-                <a href={m.gmail_url} target="_blank" rel="noopener noreferrer" title="Open in Gmail"
+                <a href={m.category === 'scheduling' ? m.thread_url : m.gmail_url} target="_blank" rel="noopener noreferrer" title="Open in Gmail"
                   className="flex items-center gap-1 px-2 py-1.5 text-[10px] font-medium border border-gray-100 rounded-lg hover:bg-gray-50">
-                  <ExternalLink size={10} /> Gmail
+                  <ExternalLink size={10} /> {view === 'scheduling' ? 'Open in Gmail' : 'Gmail'}
                 </a>
                 {m.status === 'new' && (
                   <button onClick={() => setStatus(m, 'seen')} disabled={busy === m.id} title="Mark seen"
