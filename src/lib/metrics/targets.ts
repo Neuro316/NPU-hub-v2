@@ -8,7 +8,7 @@
 // direction:
 //   higher  green at or above amber × target, amber at or above red × target, else red   (amber 0.90, red 0.75)
 //   lower   green at or below amber × target, amber at or below red × target, else red   (amber 1.00, red 1.25;
-//           coaching capacity: amber 0.90, red 1.00, so anything above 100% is red)
+//           coaching capacity: amber 0.90, red 1.01, so exactly 100% is amber and above it red)
 import { METRIC, targetKind, defaultDirection } from './registry'
 import { daysInMonth, eachDay, monthStart } from './dates'
 

@@ -95,14 +95,14 @@ const R = load('registry.js')
 eq('lower: at target is green', T.statusOf(20, 20, 1, 1.25, 'lower'), 'green')
 eq('lower: 10% over is amber', T.statusOf(22, 20, 1, 1.25, 'lower'), 'amber')
 eq('lower: 30% over is red', T.statusOf(26, 20, 1, 1.25, 'lower'), 'red')
-eq('capacity 85% is green', T.statusOf(85, 100, 0.9, 1, 'lower'), 'green')
-eq('capacity 95% is amber', T.statusOf(95, 100, 0.9, 1, 'lower'), 'amber')
-eq('capacity exactly 100% is amber', T.statusOf(100, 100, 0.9, 1, 'lower'), 'amber')
-eq('capacity 101% is red', T.statusOf(101, 100, 0.9, 1, 'lower'), 'red')
+eq('capacity 85% is green', T.statusOf(85, 100, 0.9, 1.01, 'lower'), 'green')
+eq('capacity 95% is amber', T.statusOf(95, 100, 0.9, 1.01, 'lower'), 'amber')
+eq('capacity exactly 100% is amber', T.statusOf(100, 100, 0.9, 1.01, 'lower'), 'amber')
+eq('capacity 10.5 of 10 hours is red', T.statusOf(105, 100, 0.9, 1.01, 'lower'), 'red')
 eq('higher is the default direction', T.statusOf(30, 50, 0.9, 0.75), 'red')
 eq('thresholds: higher valid', T.validThresholds('higher', 0.9, 0.75), true)
 eq('thresholds: higher above 100% refused', T.validThresholds('higher', 1.1, 0.75), false)
-eq('thresholds: lower capacity valid', T.validThresholds('lower', 0.9, 1), true)
+eq('thresholds: lower capacity valid', T.validThresholds('lower', 0.9, 1.01), true)
 eq('thresholds: lower red under amber refused', T.validThresholds('lower', 1.2, 1), false)
 const tg = [
   { metric_key: 'close_rate', month: '2026-11-01', target_value: 25, amber_threshold: 0.9, red_threshold: 0.75, direction: 'higher' },
@@ -145,7 +145,7 @@ const kinds = {
   '30-minute-coaching': 'coaching30', '30-minute-coaching-5': 'coaching30', '30-minute-coaching-6-months': 'coaching30', '30-minute-coaching-phases-2-3': 'coaching30',
   '60-minute-coaching': 'coaching60', '60-minute-coaching-5': 'coaching60', '60-minute-coaching-6-months': 'coaching60', '60-minute-coaching-phases-2-3': 'coaching60',
   '15-minute-coaching-session': 'coaching_other', 'Eleven 60 Minute Coaching sessions': 'coaching60', 'Weekly 30 Minute Coaching, 6 Months': 'coaching30',
-  'clarity-protocol': 'clarity', 'fresh-air-app': 'leadgen', 'capacity-assessment': 'leadgen', 'wnwhp': 'leadgen',
+  'clarity-protocol': 'clarity', 'fresh-air-app': 'leadgen', 'capacity-assessment': 'leadgen', 'wnwhp': 'wnw', 'wnw-in-office-program': 'wnw', 'wnw-neuro-program': 'wnw', 'golf-peak-performance': 'leadgen',
 }
 for (const [slug, k] of Object.entries(kinds)) eq(`kind of ${slug}`, C.productKind(slug), k)
 eq('Phase 1 is covered by the 1-2-3 bundle', ['phase1', 'phase123', 'phase2'].map(C.coversPhase1), [true, true, false])
@@ -166,6 +166,16 @@ eq('committed: two weekly packages still meet once a week, earliest first',
   C.committedSessions([{ key: 'six', owed: 26, since: '2026-11-05' }, { key: 'p23', owed: 6, since: '2026-11-04' }], 0), [{ key: 'p23', n: 5 }, { key: 'six', n: 0 }])
 eq('committed: a 3-session package then the next one', cs([{ key: 'a', owed: 3, since: '2026-11-01' }, { key: 'b', owed: 26, since: '2026-11-02' }], 0), [3, 2])
 eq('coaching lengths', [60, 50, 30, 15].map(C.coachingLength), [60, 30, 30, 15])
+
+// comps never count toward a goal; WNW is its own bucket
+eq('a $0 payment is a comp', C.isComp({ cents: 0, status: 'succeeded' }), true)
+eq('a paid payment is not a comp', C.isComp({ cents: 335700, status: 'succeeded' }), false)
+eq('a comp is not paid', C.isPaid({ cents: 0, refunded: 0 }), false)
+eq('fully refunded is not paid', C.isPaid({ cents: 5000, refunded: 5000 }), false)
+eq('WNW is neither core nor lead-gen', [C.isCore('wnw'), C.productKind('wnwhp') === 'leadgen'], [false, false])
+eq('WNW coaching add-on is still coaching', C.productKind('Eleven 60 Minute Coaching sessions'), 'coaching60')
+for (const k of ['comps', 'comps_value']) eq(`${k} takes no target`, R.TARGETABLE.includes(k), false)
+eq('comps sit on the Sales tab', [R.METRIC.comps.tab, R.METRIC.comps_value.tab, R.METRIC.wnw_revenue.tab], ['sales', 'sales', 'sales'])
 
 fs.rmSync(out, { recursive: true, force: true })
 console.log(fail ? `metrics-check FAIL ${fail}/${total}` : `metrics-check PASS ${total}/${total}`)

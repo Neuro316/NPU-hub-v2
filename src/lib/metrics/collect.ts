@@ -90,7 +90,7 @@ function sourceLabel(source: string | null | undefined): string {
 // or coaching on a Phase 1 or Phase 2 checkout). Add-ons are enrollments whose metadata carries addon_id and the
 // same Stripe session as the payment. Each line is classified by its paywall slug (or, for an add-on program with
 // no paywall of its own, by its program name).
-export type ProductKind = 'phase1' | 'phase2' | 'phase3' | 'phase23' | 'phase123' | 'coaching30' | 'coaching60' | 'coaching_other' | 'clarity' | 'leadgen'
+export type ProductKind = 'phase1' | 'phase2' | 'phase3' | 'phase23' | 'phase123' | 'coaching30' | 'coaching60' | 'coaching_other' | 'clarity' | 'wnw' | 'leadgen'
 
 export function productKind(slugOrName: string | null | undefined): ProductKind {
   const s = lower(slugOrName).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
@@ -101,15 +101,23 @@ export function productKind(slugOrName: string | null | undefined): ProductKind 
   if (s === 'capacity-protocol-phases-1-2-3') return 'phase123'
   if (s.includes('coaching')) return /(^|-)60-min/.test(s) ? 'coaching60' : /(^|-)30-min/.test(s) ? 'coaching30' : 'coaching_other'
   if (s === 'clarity-protocol') return 'clarity'
+  if (s.startsWith('wnw')) return 'wnw' // WNW programs: their own revenue bucket (ruled 2026-11-09)
   return 'leadgen'
 }
-/** core = the Capacity Protocol phases and coaching; clarity is retired (kept apart); everything else is lead-gen */
+/** core = the Capacity Protocol phases and coaching; clarity is retired and WNW programs are their own bucket;
+ *  everything else is lead-gen */
 export const isCore = (k: ProductKind) => k.startsWith('phase') || k.startsWith('coaching')
 export const isCoaching = (k: ProductKind) => k.startsWith('coaching')
 export const coversPhase1 = (k: ProductKind) => k === 'phase1' || k === 'phase123'
 export const coversPhase23 = (k: ProductKind) => k === 'phase2' || k === 'phase3' || k === 'phase23' || k === 'phase123'
 
 export interface Line { slug: string; kind: ProductKind; list: number; net: number }
+
+/** A comp is a $0 payment (every product has a list price). Comps are tracked (Sales › Comps) but never count toward
+ *  a goal: no targeted metric counts a comped purchase, cohort member or conversion (ruled 2026-11-09). */
+export const isComp = (p: { cents: number; status: string }) => p.cents === 0 && p.status === 'succeeded'
+/** Paid: a positive amount with a positive net after refunds. */
+export const isPaid = (p: { cents: number; refunded: number }) => p.cents > 0 && p.cents - p.refunded > 0
 
 /** Splits a payment's net across its lines by list price (the main line takes it all when no line has a price). */
 export function allocate(netCents: number, lines: { slug: string; kind: ProductKind; list: number }[]): Line[] {
@@ -312,8 +320,14 @@ const paymentsLoader: Loader = async ctx => {
       items.push({ metric: 'sales', day: p.day, value: 1, dims: { product: p.product }, rec: rec(p, `${p.product} · ${usd(p.cents)}`) })
       if (p.product === 'clarity-protocol') items.push({ metric: 'clarity_sales', day: p.day, value: 1, rec: rec(p, usd(p.cents)) })
     }
-    if (!paid && p.status === 'succeeded') items.push({ metric: 'comps', day: p.day, value: 1, dims: { product: p.product }, rec: rec(p, `${p.product} · $0`) })
-    if (isAssessment && (net > 0 || !paid)) items.push({ metric: 'assessments_sold', day: p.day, value: 1, dims: { product: p.product, paid: paid ? 'paid' : 'free' }, rec: rec(p, `${p.product} · ${usd(p.cents)}`) })
+    if (isComp(p)) {
+      const list = p.lines.reduce((n, l) => n + Math.max(0, l.list), 0)
+      const what = p.lines.map(l => l.slug).join(' + ')
+      const cr: Rec = { id: p.id, label: p.name, sub: `${what} · list ${usd(list)}`, amount: list / 100 }
+      items.push({ metric: 'comps', day: p.day, value: 1, dims: { product: p.product }, rec: cr })
+      items.push({ metric: 'comps_value', day: p.day, value: list / 100, dims: { product: p.product }, rec: cr })
+    }
+    if (isAssessment && isPaid(p)) items.push({ metric: 'assessments_sold', day: p.day, value: 1, dims: { product: p.product }, rec: rec(p, `${p.product} · ${usd(p.cents)}`) })
     if (net !== 0) {
       items.push({ metric: 'revenue', day: p.day, value: net, dims: { stream: 'university' }, rec: rec(p, `${p.product} · University payment`) })
       items.push({ metric: 'revenue_platform', day: p.day, value: net, dims: { product: p.product }, rec: rec(p, p.product) })
@@ -326,14 +340,14 @@ const paymentsLoader: Loader = async ctx => {
 
   // product line: Phase 1 sales, core / coaching / lead-gen revenue (bundles split by list price)
   for (const p of purchases.filter(x => inRange(ctx, x.day))) {
-    const paid = p.cents > 0 && p.cents - p.refunded > 0
-    if (paid && p.lines.some(l => coversPhase1(l.kind))) items.push({ metric: 'phase1_sales', day: p.day, value: 1, dims: { product: p.product }, rec: rec(p, `${p.product} · ${usd(p.cents)}`) })
+    if (isPaid(p) && p.lines.some(l => coversPhase1(l.kind))) items.push({ metric: 'phase1_sales', day: p.day, value: 1, dims: { product: p.product }, rec: rec(p, `${p.product} · ${usd(p.cents)}`) })
     for (const l of p.lines) {
       if (!l.net) continue
       const v = l.net / 100, sub = `${l.slug}${p.lines.length > 1 ? ` (part of ${p.product})` : ''}`
       if (isCore(l.kind)) items.push({ metric: 'core_revenue', day: p.day, value: v, dims: { product: l.kind }, rec: rec(p, sub) })
       if (isCoaching(l.kind)) items.push({ metric: 'coaching_revenue', day: p.day, value: v, dims: { product: l.slug }, rec: rec(p, sub) })
       if (l.kind === 'leadgen') items.push({ metric: 'leadgen_revenue', day: p.day, value: v, dims: { product: l.slug }, rec: rec(p, sub) })
+      if (l.kind === 'wnw') items.push({ metric: 'wnw_revenue', day: p.day, value: v, dims: { product: l.slug }, rec: rec(p, sub) })
     }
   }
 
@@ -343,34 +357,34 @@ const paymentsLoader: Loader = async ctx => {
   for (const p of live) byPerson.set(p.participant!, [...(byPerson.get(p.participant!) ?? []), p])
   const DAY = 86_400_000
   for (const [, list] of Array.from(byPerson.entries())) {
-    const first = list.find(p => p.cents > 0 && p.cents - p.refunded > 0 && p.lines.some(l => coversPhase1(l.kind)))
+    const first = list.find(p => isPaid(p) && p.lines.some(l => coversPhase1(l.kind)))
     if (first && inRange(ctx, first.day)) {
       const t0 = new Date(first.at).getTime(), cohort = first.day.slice(0, 7)
       const after = (days: number, test: (k: ProductKind) => boolean, paidOnly: boolean) => list.some(p => {
         const t = new Date(p.at).getTime()
         if (t < t0 - DAY || t > t0 + days * DAY || t > ctx.now.getTime()) return false
-        if (paidOnly && !(p.cents > 0)) return false
+        if (paidOnly && !isPaid(p)) return false
         return p.lines.some(l => test(l.kind))
       })
       const r = rec(first, first.product)
       items.push({ metric: 'phase1_buyers', day: first.day, value: 1, dims: { cohort }, rec: r })
       if (after(100_000, coversPhase23, true)) items.push({ metric: 'phase23_converted', day: first.day, value: 1, dims: { cohort }, rec: r })
       if (after(60, coversPhase23, true)) items.push({ metric: 'phase23_converted_60', day: first.day, value: 1, dims: { cohort }, rec: r })
-      if (after(90, k => k === 'coaching30', false)) items.push({ metric: 'coaching_attached_30', day: first.day, value: 1, rec: r })
-      if (after(90, k => k === 'coaching60', false)) items.push({ metric: 'coaching_attached_60', day: first.day, value: 1, rec: r })
+      if (after(90, k => k === 'coaching30', true)) items.push({ metric: 'coaching_attached_30', day: first.day, value: 1, rec: r })
+      if (after(90, k => k === 'coaching60', true)) items.push({ metric: 'coaching_attached_60', day: first.day, value: 1, rec: r })
     }
-    // lead-gen: a person's first lead-gen purchase (paid or free), and whether they bought Phase 1 later
-    const lg = list.find(p => p.status === 'succeeded' && p.lines[0].kind === 'leadgen')
+    // lead-gen: a person's first paid lead-gen purchase, and whether they bought Phase 1 (paid) later
+    const lg = list.find(p => isPaid(p) && p.lines[0].kind === 'leadgen')
     if (lg && inRange(ctx, lg.day)) {
       const r = rec(lg, lg.product)
       items.push({ metric: 'leadgen_buyers', day: lg.day, value: 1, dims: { product: lg.product }, rec: r })
-      if (list.some(p => p.at > lg.at && p.cents > 0 && p.lines.some(l => coversPhase1(l.kind)))) items.push({ metric: 'leadgen_converted', day: lg.day, value: 1, rec: r })
+      if (list.some(p => p.at > lg.at && isPaid(p) && p.lines.some(l => coversPhase1(l.kind)))) items.push({ metric: 'leadgen_converted', day: lg.day, value: 1, rec: r })
     }
   }
 
-  // new clients (paid or comp): a participant's first purchase in the range
+  // new clients: a participant's first PAID purchase in the range (comps never count toward a goal)
   const firstBuy = new Map<string, Purchase>()
-  for (const p of purchases) if (p.participant && p.status === 'succeeded' && !firstBuy.has(p.participant)) firstBuy.set(p.participant, p)
+  for (const p of purchases) if (p.participant && isPaid(p) && !firstBuy.has(p.participant)) firstBuy.set(p.participant, p)
   for (const p of Array.from(firstBuy.values())) if (inRange(ctx, p.day)) items.push({ metric: 'buyers', day: p.day, value: 1, rec: rec(p, p.product) })
 
   // days from lead to purchase (paid sales; the contact is matched by email)
@@ -387,11 +401,13 @@ const paymentsLoader: Loader = async ctx => {
   }
 
   // promo redemptions (test codes and test buyers excluded)
-  const promos = await all((a, b) => db.from('promo_redemptions').select('id, promo_code, customer_email, customer_name, discount_amount_cents, created_at')
+  const compIds = new Set(purchases.filter(isComp).map(p => p.id))
+  const promos = await all((a, b) => db.from('promo_redemptions').select('id, payment_id, promo_code, customer_email, customer_name, discount_amount_cents, created_at')
     .gte('created_at', queryFrom(ctx.from)).lt('created_at', queryTo(ctx.to)).range(a, b), 'promo_redemptions')
   for (const r of promos) {
     const day = nyDay(r.created_at)
     if (!inRange(ctx, day) || ctx.filter.isTestPromo(r.promo_code) || ctx.filter.isTestEmail(r.customer_email)) continue
+    if (r.payment_id && compIds.has(r.payment_id)) continue // a 100% code is a comp: listed under Comps, not here
     const code = String(r.promo_code ?? '').toUpperCase() || '(none)'
     const pr: Rec = { id: r.id, label: r.customer_name || r.customer_email || 'Buyer', sub: code }
     items.push({ metric: 'promo_redemptions', day, value: 1, dims: { code }, rec: pr })
@@ -464,8 +480,12 @@ const onboardingLoader: Loader = async ctx => {
   const { db, filter } = ctx
   const items: Item[] = []
   const purchases = await loadPurchases(ctx)
+  // steps and the stuck list follow PAID buyers; a participant whose University purchases are all comps is not
+  // counted as onboarded (comps never count toward a goal). People with no University purchase still count.
   const firstBuy = new Map<string, Purchase>()
-  for (const p of purchases) if (p.participant && p.status === 'succeeded' && !firstBuy.has(p.participant)) firstBuy.set(p.participant, p)
+  for (const p of purchases) if (p.participant && isPaid(p) && !firstBuy.has(p.participant)) firstBuy.set(p.participant, p)
+  const compOnly = new Set<string>()
+  for (const p of purchases) if (p.participant && isComp(p) && !firstBuy.has(p.participant)) compOnly.add(p.participant)
 
   // first valid HRV session per participant (all time), and valid sessions in range
   const sessions = await all((a, b) => db.from('np_hrv_sessions').select('participant_id, start_time, rmssd')
@@ -477,7 +497,7 @@ const onboardingLoader: Loader = async ctx => {
     ch => db.from('profiles').select('id, full_name, email').in('id', ch), 'profiles')).map(p => [p.id, p.full_name || p.email || 'Client']))
   for (const [pid, at] of Array.from(firstSession.entries())) {
     const day = nyDay(at)
-    if (inRange(ctx, day)) items.push({ metric: 'onboarded', day, value: 1, rec: { id: pid, label: names.get(pid) ?? 'Client' } })
+    if (inRange(ctx, day) && !compOnly.has(pid)) items.push({ metric: 'onboarded', day, value: 1, rec: { id: pid, label: names.get(pid) ?? 'Client' } })
   }
   for (const s of live) { const day = nyDay(s.start_time); if (inRange(ctx, day)) items.push({ metric: 'hrv_sessions', day, value: 1 }) }
 
@@ -771,7 +791,7 @@ export const LOADER_OF: Record<string, string[]> = {
   coaching_attached_30: ['payments'], coaching_attached_60: ['payments'], core_revenue: ['payments'], coaching_revenue: ['payments'],
   leadgen_revenue: ['payments'], leadgen_buyers: ['payments'], leadgen_converted: ['payments'],
   coaching_hours_booked: ['coaching'], coaching_hours_60: ['coaching'], coaching_hours_30: ['coaching'], coaching_capacity_hours: ['coaching'], coaching_committed_hours: ['coaching'],
-  sales: ['payments'], comps: ['payments'], clarity_sales: ['payments'], assessments_sold: ['payments'], revenue: ['payments', 'other_revenue'], revenue_platform: ['payments'],
+  sales: ['payments'], comps: ['payments'], comps_value: ['payments'], wnw_revenue: ['payments'], clarity_sales: ['payments'], assessments_sold: ['payments'], revenue: ['payments', 'other_revenue'], revenue_platform: ['payments'],
   refunds: ['payments'], refund_amount: ['payments'], buyers: ['payments'], days_lead_to_purchase: ['payments'], promo_redemptions: ['payments'], promo_discount: ['payments'],
   repeat_buyers: ['payments'], paying_buyers: ['payments'], revenue_all_time: ['payments'], ad_spend: ['other_revenue'],
   onboarded: ['onboarding'], hrv_sessions: ['onboarding'], days_to_consent: ['onboarding'], days_to_pairing: ['onboarding'], days_to_first_session: ['onboarding'],

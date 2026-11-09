@@ -16,7 +16,8 @@
 --   coaching_hours_booked   10 hours a month           higher  0.90 / 0.75
 --   coaching_hours_60        5 hours (60 min sessions)  higher  0.90 / 0.75
 --   coaching_hours_30        5 hours (30 min sessions)  higher  0.90 / 0.75
---   coaching_capacity_used 100 (%)                     lower   0.90 / 1.00   amber from 90%, red above 100%
+--   coaching_capacity_used 100 (%)                     lower   0.90 / 1.01   amber from 90%, red above 100%
+--                                                                           (exactly 10 hours is at capacity, amber)
 --   days_to_consent          2 days                    lower   1.00 / 1.25   (were hard-coded in collect.ts;
 --   days_to_pairing          7 days                    lower   1.00 / 1.25    the "stuck" check now reads
 --   days_to_first_session   10 days                    lower   1.00 / 1.25    these rows)
@@ -56,7 +57,7 @@ insert into public.hub_metric_targets (metric_key, month, target_value, directio
   ('coaching_hours_booked',  '2026-11-01',  10, 'higher', 0.90, 0.75),
   ('coaching_hours_60',      '2026-11-01',   5, 'higher', 0.90, 0.75),
   ('coaching_hours_30',      '2026-11-01',   5, 'higher', 0.90, 0.75),
-  ('coaching_capacity_used', '2026-11-01', 100, 'lower',  0.90, 1.00),
+  ('coaching_capacity_used', '2026-11-01', 100, 'lower',  0.90, 1.01),
   ('days_to_consent',        '2026-11-01',   2, 'lower',  1.00, 1.25),
   ('days_to_pairing',        '2026-11-01',   7, 'lower',  1.00, 1.25),
   ('days_to_first_session',  '2026-11-01',  10, 'lower',  1.00, 1.25)

@@ -345,7 +345,7 @@ function Targets({ today, onChanged }: { today: string; onChanged: () => void })
         <p className="text-[10px] text-gray-400">
           A count, money or hours target is a monthly total, prorated by day and compared with the pace so far. A rate, median or level target is compared directly.
           Higher is better: amber below the amber share of the target, red below the red share. Lower is better: amber above the amber share, red above the red share
-          (coaching capacity: amber 90%, red above 100%). A month without its own row uses the latest earlier month.
+          (coaching capacity: amber from 90%, red above 100%). Comps never count toward a goal. A month without its own row uses the latest earlier month.
         </p>
         <div className="flex flex-wrap items-end gap-2">
           <select value={draft.metric_key} onChange={e => setDraft({ ...draftFor(metricOf(e.target.value), draft.month), target_value: draft.target_value })} className="px-2 py-1.5 text-[11px] border border-gray-100 rounded-lg max-w-[260px]">

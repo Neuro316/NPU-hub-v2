@@ -85,7 +85,17 @@ add-on is classified by its program's paywall slug, or by its program name when 
 | Phase 2 / Phase 3 | `capacity-protocol-phase-2`, `capacity-protocol-phase-3`, `capacity-protocol-phases-2-3`, and the 1-2-3 bundle |
 | Coaching 30 / 60 min | slugs containing `coaching`, split by `30-minute` / `60-minute` (single sessions, 5-packs, 6-month and phases-2-3 packages); 15-minute sessions are coaching but in neither split |
 | Retired | `clarity-protocol` (history stays readable on the Sales tab; not core, not lead-gen) |
-| Lead-gen | everything else (artifacts, worksheets, Fresh Air, Capacity Assessment, and, as ruled, other programs such as `wnwhp`) |
+| WNW | slugs starting `wnw` (`wnwhp`, `wnw-in-office-program`, `wnw-neuro-program`): their own revenue bucket, `wnw_revenue`. A WNW coaching add-on is still coaching and counts against the 10 coaching hours |
+| Lead-gen | everything else (artifacts, worksheets, Fresh Air, Capacity Assessment, Golf) |
+
+**Comps never count toward a goal (ruled 2026-11-09).** A comp is a `succeeded` payment of $0 (every product has a
+list price). No targeted metric counts one: Phase 1 sales, the Phase 1 cohort (a comped Phase 1 buyer is not in it),
+Phase 2/3 conversion (a comped Phase 2/3 is not a conversion), coaching attach, core and every other revenue,
+assessments sold, new clients, new lead-gen buyers, promo redemptions, onboarding steps and the stuck list, and
+Onboarded (a participant whose University purchases are all comps is not counted; people with no University
+purchase still are). Comps are tracked on the Sales tab: **Comps** (count) and **Comps at list value**, whose list
+shows who, what (with add-ons), the date and the list value. Not changed: Clarity → Capacity upgrades, which are read
+from entitlement grants, not payments.
 
 A bundled payment's revenue is split across its lines in proportion to list price (the add-on's sale price, else its
 price, else the paywall's price); with no prices, the main line takes it all. The split is an estimate: Stripe has
@@ -100,16 +110,16 @@ one amount per checkout.
 | **Coaching attach, 30 / 60 min** | Of the same Phase 1 cohort, those with a 30-minute (or 60-minute) coaching line, as an add-on or bought separately, within 90 days of the Phase 1 purchase | % — **information only, no target** | ✅ |
 | **Core revenue** | Net of Phase and coaching lines (bundles split as above); dimension = kind | sum USD | ✅ |
 | **Coaching hours booked** | `nr_bookings` on coaching appointment types (name contains "coaching"), status not `cancelled` or `released`, test excluded, **by session day (`starts_at`), including sessions later in the month**: "this month" runs to the month's end. Hours from `ends_at − starts_at`, else the type's duration. Dimension = length (60, 30 or 15 min); `coaching_hours_60` and `coaching_hours_30` carry the split for targets | sum hours. Target 10 a month (5 of 60-minute, 5 of 30-minute), compared with the whole month, not prorated to today | ✅ (no coaching bookings yet) |
-| **Coaching capacity used** | Hours booked ÷ capacity, capacity = 10 hours a month (`COACHING_HOURS_PER_MONTH`), prorated per day of the range | %. Target 100%, **lower is better: amber from 90%, red above 100%** (over capacity is the warning) | ✅ |
+| **Coaching capacity used** | Hours booked ÷ capacity, capacity = 10 hours a month (`COACHING_HOURS_PER_MONTH`), prorated per day of the range | %. Target 100%, **lower is better: amber from 90% (exactly 10 hours is at capacity, amber), red above 100%** (thresholds 0.90 / 1.01; over capacity is the warning) | ✅ |
 | **Coaching committed, next 5 weeks** | As of today: coaching `program_sessions` with status `owed` (not expired), at **one session a week per person** for the next 5 weeks, less that person's sessions already `scheduled` in the window, filled from their earliest package first, × the package's session length. A weekly 6-month package shows 5 sessions, a single session 1, and a person holding two weekly packages still counts 5. Dimension = length | hours, snapshot. Information only | ✅ |
 | **Leads** | New contacts by `contacts.created_at`; dimension `channel` from the table above | count where channel ∉ {`prospecting`, `import`} (the scorecard counts inbound demand; prospecting is shown separately on Acquisition) | ✅ 22 contacts in Oct, all channels |
-| **Assessments sold** | `payments` whose product (the description without "Paywall: ") contains "assessment", by `paid_at`, test excluded. Paid and $0 rows both count, because the Capacity Assessment is a $0 program. Dimension `paid` / `free` | count | ✅ |
+| **Assessments sold** | `payments` whose product (the description without "Paywall: ") contains "assessment", by `paid_at`, test excluded, **paid only** ($0 rows are comps since 2026-11-09). Dimension = product | count | ✅ |
 | **Booked calls** | `nr_bookings` created in period, status not `released`, for public free call types (WNW Discovery Call, Interesting meeting, Collaboration Meeting); coaching types are never calls (2026-11-09), whatever their payment flow | count | ⚠ 4 real bookings ever |
 | **Shows** | `nr_bookings.status='arrived'`, by `starts_at` | count | ⚠ the status exists but is never set yet (no one marks arrival) |
 | **Sales (paid)** | `payments` with `amount_cents > 0` and a positive net after refunds, by `coalesce(paid_at, created_at)`, test excluded; dimension = product | count | ✅ |
-| **Comps** | `payments` with `amount_cents = 0` and status `succeeded` (100% promo enrollments), shown beside sales; dimension = product | count | ✅ |
+| Comps (Sales tab) | `payments` with `amount_cents = 0` and status `succeeded` (100% promo enrollments); dimension = product. With **Comps at list value** (the paywall's price plus its add-ons'). Never toward a goal; no target | count, $ | ✅ |
 | Clarity sales (Sales tab) | Paid sales with product `clarity-protocol`. Clarity comps count under Comps. **Retired 2026-11-09**: off the scorecard, no target, history readable | count | ✅ |
-| **Onboarded** | First valid HRV session (`np_hrv_sessions.valid`, min `start_time` per participant) in period. "Fully onboarded" = consent, pairing and a session | count of clients whose first session falls in the period | ✅ 17 participants with sessions |
+| **Onboarded** | First valid HRV session (`np_hrv_sessions.valid`, min `start_time` per participant) in period, except participants whose University purchases are all comps. "Fully onboarded" = consent, pairing and a session | count of clients whose first session falls in the period | ✅ 17 participants with sessions |
 | **Revenue** | `payments` (`amount_cents − amount_refunded_cents`, by `coalesce(paid_at, created_at)`, status succeeded, refunded or partially refunded, test excluded) + `acct_payments.amount` (clinic, by `payment_date`) + `fin_income.amount` where `source='manual'`, with no Stripe or NP payment id and status not void, refunded, cancelled or pending (anything taken off-platform). Dimension = stream (`university`, `clinic`, `manual`). Labelled "Revenue" | sum USD | ✅ |
 | **Funnel strip** | Leads → Booked calls → Shows → Phase 1 sales → Onboarded | step conversion = next ÷ previous, same period. The "biggest drop-off" skips Shows until they are recorded (G2) | ⚠ shows are missing |
 | **12-week trend** | Each of the above, weekly (Mon–Sun) | — | as above |
@@ -150,8 +160,9 @@ onboarded client per sale.
 | Close rate | Sales ÷ booked calls (rolling 30 days) | % | ⚠ |
 | Show rate | Shows ÷ (shows + no-shows), by `starts_at` | % | ⚠ few marked |
 | Coaching revenue | Net of coaching lines (bundles split by list price); dimension = slug | sum $ | ✅ |
-| Lead-gen revenue | Net of lead-gen lines (everything that is not a Phase, coaching or Clarity) | sum $ | ✅ |
-| New lead-gen buyers | A person's **first** lead-gen purchase (paid or $0), in the range; dimension = product | count | ✅ |
+| Lead-gen revenue | Net of lead-gen lines (everything that is not a Phase, coaching, WNW or Clarity) | sum $ | ✅ |
+| WNW program revenue | Net of WNW lines | sum $ | ✅ |
+| New lead-gen buyers | A person's **first paid** lead-gen purchase, in the range; dimension = product | count | ✅ |
 | Lead-gen buyers → Phase 1 | Of those, the ones with a later paid Phase 1 purchase (by today) | % | ✅ |
 | Median days lead → purchase | Contact `created_at` → first sale (enrollment or entitlement), joined by email | median days | ✅ |
 | Revenue by product | University payments only, by product (the payment description) | sum $ | ✅ |
@@ -161,7 +172,7 @@ onboarded client per sale.
 
 ## 4. Onboarding
 
-Cohort: buyers (sales as above) per purchase date.
+Cohort: paid buyers (sales as above, comps excluded) per purchase date.
 
 The step targets live in `hub_metric_targets` (metrics `days_to_consent`, `days_to_pairing`,
 `days_to_first_session`, lower is better) and are edited in Targets; the defaults below apply when a month has no row.
