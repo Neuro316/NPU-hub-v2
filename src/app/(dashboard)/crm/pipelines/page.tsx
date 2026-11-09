@@ -16,7 +16,7 @@ import type { CrmContact } from '@/types/crm'
 import { PIPELINE_STAGES, STAGE_COLORS } from '@/types/crm'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
-import { readOrgSettingValue } from '@/lib/org-settings-client'
+import { readOrgSettingValue, saveTeamSetting } from '@/lib/org-settings-client'
 import { ContactCommsButtons } from '@/components/crm/twilio-comms'
 import { LeadValueEditor, formatUsdFull, formatUsdCompact } from '@/components/crm/lead-value'
 
@@ -1129,7 +1129,7 @@ export default function PipelinesPage() {
   const savePipelines = async (updated: PipelineConfig[], activeId?: string) => {
     setPipelines(updated); if (activeId) setActivePipelineId(activeId); if (!currentOrg) return
     try {
-      await createClient().from('org_settings').upsert({ org_id: currentOrg.id, setting_key: 'crm_pipelines', setting_value: { pipelines: updated, active: activeId || activePipelineId } }, { onConflict: 'org_id,setting_key' })
+      await saveTeamSetting(currentOrg.id, 'crm_pipelines', { pipelines: updated, active: activeId || activePipelineId })
       // The tables follow the config by trigger; read them again for the new uuids.
       setRefsVersion(v => v + 1)
     } catch (e) { console.error(e) }

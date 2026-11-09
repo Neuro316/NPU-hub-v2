@@ -1,23 +1,25 @@
 // src/app/api/slack/send/route.ts
 // Server-side Slack proxy: the browser asks, this route posts with the org's STORED webhook or bot token.
 //
-// Guarded (2026-11-08): the caller must be Hub staff in the org they name (withStaff + requireOrg). It posts only to
+// Guarded (2026-11-08): the caller must be an active Hub user (staff or facilitator) in the org they name
+// (requireOrgMember; team_profiles is locked by hub_232). It posts only to
 // the org's own stored webhook and bot token, never to a URL or token named in the request, and never returns either.
 // The bot token is read from Vault (src/lib/org-vault.ts). A DM goes only to a Slack user id held by a team profile
 // of that org.
 import { NextRequest, NextResponse } from 'next/server'
-import { withStaff, requireOrg, bad } from '@/lib/api-guard'
+import { requireOrgMember, bad } from '@/lib/api-guard'
 import { readOrgSetting } from '@/lib/org-vault'
 
 export const dynamic = 'force-dynamic'
 
 const on = (v: unknown) => v === true || v === 'true'
 
-export const POST = withStaff(async (req: NextRequest, ctx) => {
+export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({} as any))
   const { action, text, blocks, slack_user_id } = body ?? {}
-  const orgId = requireOrg(ctx, body?.org_id)
-  if (orgId instanceof Response) return orgId
+  const ctx = await requireOrgMember(body?.org_id)
+  if (ctx instanceof Response) return ctx
+  const orgId = ctx.orgId
   if (typeof action !== 'string') return bad('Missing action.')
 
   let config: any
@@ -82,4 +84,4 @@ export const POST = withStaff(async (req: NextRequest, ctx) => {
     console.error(`[slack/send] ${action} failed: ${String(e?.message ?? 'error').slice(0, 80)}`)
     return NextResponse.json({ error: 'Slack could not be reached.' }, { status: 502 })
   }
-})
+}
