@@ -158,10 +158,14 @@ const MULTI_PIPELINE_FILES = new Set(['src/lib/crm-server.ts', 'src/app/(dashboa
 // The org credentials build (2026-11-08) moved these files' credential reads to Vault and added the org-membership
 // helpers to api-guard on purpose, so each is compared with that commit instead of its earlier pin.
 const ORG_VAULT_BASE = process.env.ORG_VAULT_BASE || '00a6b6c'
-const ORG_VAULT_FILES = new Set(['src/lib/api-guard.ts', 'src/lib/twilio-org.ts', 'src/app/api/twilio/intelligence/route.ts'])
+const ORG_VAULT_FILES = new Set(['src/lib/twilio-org.ts', 'src/app/api/twilio/intelligence/route.ts'])
+// The team_profiles lock (2026-11-09) added strictOrgAdmin to api-guard on purpose.
+const TEAM_LOCK_BASE = process.env.TEAM_LOCK_BASE || '0e115d1'
+const TEAM_LOCK_FILES = new Set(['src/lib/api-guard.ts'])
 const base = (f, ref = BASE) => {
   if (MULTI_PIPELINE_FILES.has(f)) ref = MULTI_PIPELINE_BASE
   if (ORG_VAULT_FILES.has(f)) ref = ORG_VAULT_BASE
+  if (TEAM_LOCK_FILES.has(f)) ref = TEAM_LOCK_BASE
   try { return norm(execFileSync('git', ['show', `${ref}:${f}`], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })) }
   catch (e) { console.error(`git show ${ref}:${f} failed (is the history fetched?)`); process.exit(2) }
 }

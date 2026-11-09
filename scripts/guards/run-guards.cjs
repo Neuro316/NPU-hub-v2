@@ -40,6 +40,8 @@ const G1_REVIEWED_PUBLIC = {
   'src/app/lead-device/[slug]/submit/route.ts': 'exact public host only, origin check, rate limit, honeypot, Turnstile that refuses when unset',
   'src/app/lead-device/[slug]/track/route.ts': 'exact public host only, rate limit, event name only',
   'src/app/api/twilio/intelligence/route.ts': 'Twilio signature, fail closed, verified in handleIntelligenceCallback before any write (scripts/tests/voice-intelligence.test.mjs)',
+  // not withStaff on purpose: withStaff trusts team_profiles, which cannot vouch for writes to itself (2026-11-09)
+  'src/app/api/team/members/route.ts': 'session user; every write checks strictOrgAdmin (org_members owner/admin, or profiles admin/superadmin with membership) or own-row harmless fields only',
 }
 // verifyTwilioWebhook: the click-to-call webhooks (always enforced, fail closed). That it
 // runs before the first database call is proved by scripts/click-to-call/c2c-tamper.cjs.
