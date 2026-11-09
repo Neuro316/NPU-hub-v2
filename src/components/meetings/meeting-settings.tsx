@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase-browser'
+import { readOrgSettings } from '@/lib/org-settings-client'
 import { useWorkspace } from '@/lib/workspace-context'
 import { useTeamData } from '@/lib/hooks/use-team-data'
 import { MEETING_TEMPLATES } from '@/lib/types/meetings'
@@ -39,13 +40,11 @@ export default function MeetingSettings() {
 
   const load = useCallback(async () => {
     if (!currentOrg) return; setLoading(true)
-    const { data } = await supabase.from('org_settings').select('setting_key, setting_value').eq('org_id', currentOrg.id).in('setting_key', ['meeting_ai_instructions', 'meeting_team_roster'])
-    if (data) {
-      const ai = data.find(d => d.setting_key === 'meeting_ai_instructions')
-      if (ai?.setting_value) setAiConfig({ instructions: ai.setting_value.instructions || '', persona: ai.setting_value.persona || 'Strategic Advisor', focus_areas: ai.setting_value.focus_areas || [], critical_lens: ai.setting_value.critical_lens || 'balanced' })
-      const r = data.find(d => d.setting_key === 'meeting_team_roster')
-      if (r?.setting_value) setRoster(r.setting_value)
-    }
+    const { settings } = await readOrgSettings(currentOrg.id, ['meeting_ai_instructions', 'meeting_team_roster'])
+    const ai = settings.meeting_ai_instructions
+    if (ai) setAiConfig({ instructions: ai.instructions || '', persona: ai.persona || 'Strategic Advisor', focus_areas: ai.focus_areas || [], critical_lens: ai.critical_lens || 'balanced' })
+    const r = settings.meeting_team_roster
+    if (r) setRoster(r)
     setLoading(false)
   }, [currentOrg?.id])
   useEffect(() => { load() }, [load])

@@ -13,11 +13,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { loadPipelines, loadPositions, findPipeline, placeContact, positionsByContact } from '@/lib/pipelines/positions'
+import { timingSafeEqual } from 'crypto'
+import { patchSetting, readOrgSetting } from '@/lib/org-vault'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
+
+/** The NeuroReport key (in Vault, src/lib/org-vault.ts) matches the header, compared in constant time. */
+async function apiKeyValid(apiKey: string): Promise<boolean> {
+  const v = await readOrgSetting<any>(supabase, NP_ORG_ID, 'neuroreport_api_key').catch(() => null)
+  const stored = typeof v?.key === 'string' ? v.key : ''
+  const a = Buffer.from(stored), b = Buffer.from(apiKey)
+  return !!stored && a.length === b.length && timingSafeEqual(a, b)
+}
 
 // Neuro Progeny org ID
 const NP_ORG_ID = '00000000-0000-0000-0000-000000000001'
@@ -54,28 +64,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing x-api-key header' }, { status: 401 })
     }
 
-    const { data: keySetting } = await supabase
-      .from('org_settings')
-      .select('setting_value')
-      .eq('org_id', NP_ORG_ID)
-      .eq('setting_key', 'neuroreport_api_key')
-      .single()
-
-    if (!keySetting || keySetting.setting_value?.key !== apiKey) {
+    if (!(await apiKeyValid(apiKey))) {
       return NextResponse.json({ error: 'Invalid API key' }, { status: 403 })
     }
 
-    // Update last_used timestamp
-    await supabase
-      .from('org_settings')
-      .update({
-        setting_value: {
-          ...keySetting.setting_value,
-          last_used: new Date().toISOString(),
-        },
-      })
-      .eq('org_id', NP_ORG_ID)
-      .eq('setting_key', 'neuroreport_api_key')
+    // Update last_used only (never the key: it lives in Vault)
+    await patchSetting(supabase, NP_ORG_ID, 'neuroreport_api_key', { last_used: new Date().toISOString() })
+      .catch((e: Error) => console.error(`[neuroreport] last_used: ${e.message.slice(0, 60)}`))
 
     // ─── Parse request ───
     const body = await req.json()
@@ -323,14 +318,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Missing x-api-key header' }, { status: 401 })
   }
 
-  const { data: keySetting } = await supabase
-    .from('org_settings')
-    .select('setting_value')
-    .eq('org_id', NP_ORG_ID)
-    .eq('setting_key', 'neuroreport_api_key')
-    .single()
-
-  if (!keySetting || keySetting.setting_value?.key !== apiKey) {
+  if (!(await apiKeyValid(apiKey))) {
     return NextResponse.json({ error: 'Invalid API key' }, { status: 403 })
   }
 

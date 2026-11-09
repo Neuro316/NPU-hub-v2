@@ -1,54 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { withStaff, requireOrg } from '@/lib/api-guard'
+import { appsScriptUrl } from '@/lib/apps-script-url'
 
+// Guarded (2026-11-08): Hub staff; an orgId must be one of theirs. The Apps Script URL is a credential (Vault).
 export const maxDuration = 30
+export const dynamic = 'force-dynamic'
 
-async function getAppsScriptUrl(orgId: string): Promise<string | null> {
-  const cookieStore = await cookies()
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() { return cookieStore.getAll() },
-        setAll() {},
-      },
-    }
-  )
-
-  // Try apps_script setting first (unified)
-  const { data: asSetting } = await supabase
-    .from('org_settings')
-    .select('setting_value')
-    .eq('org_id', orgId)
-    .eq('setting_key', 'apps_script')
-    .single()
-
-  if (asSetting?.setting_value?.url && asSetting?.setting_value?.enabled) {
-    return asSetting.setting_value.url
-  }
-
-  // Fallback to gmail setting
-  const { data: gmailSetting } = await supabase
-    .from('org_settings')
-    .select('setting_value')
-    .eq('org_id', orgId)
-    .eq('setting_key', 'gmail')
-    .single()
-
-  if (gmailSetting?.setting_value?.apps_script_url && gmailSetting?.setting_value?.enabled) {
-    return gmailSetting.setting_value.apps_script_url
-  }
-
-  // Fallback to env var
-  return process.env.APPS_SCRIPT_URL || null
-}
-
-export async function POST(req: NextRequest) {
+export const POST = withStaff(async (req: NextRequest, ctx) => {
   try {
     const data = await req.json()
-    const { recipientName, recipientEmail, personalNote, resources, cardName, senderName, senderEmail, orgId, useSenderFromSettings } = data
+    const { recipientName, recipientEmail, personalNote, resources, cardName, senderName, senderEmail, orgId: rawOrg, useSenderFromSettings } = data
+    let orgId: string | null = null
+    if (rawOrg) {
+      const org = requireOrg(ctx, rawOrg)
+      if (org instanceof Response) return org
+      orgId = org
+    }
 
     if (!recipientName?.trim()) return NextResponse.json({ success: false, error: 'Recipient name required' })
     if (!recipientEmail?.trim() || !recipientEmail.includes('@')) return NextResponse.json({ success: false, error: 'Valid email required' })
@@ -59,21 +26,15 @@ export async function POST(req: NextRequest) {
     let finalSenderEmail = senderEmail || 'cameron.allen@neuroprogeny.com'
 
     if (useSenderFromSettings && orgId) {
-      const cookieStore = await cookies()
-      const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        { cookies: { getAll() { return cookieStore.getAll() }, setAll() {} } }
-      )
-      const { data: gmailSetting } = await supabase.from('org_settings').select('setting_value').eq('org_id', orgId).eq('setting_key', 'gmail').single()
+      const { data: gmailSetting } = await ctx.db.from('org_settings').select('setting_value').eq('org_id', orgId).eq('setting_key', 'gmail').single()
       if (gmailSetting?.setting_value?.sender_name) finalSenderName = gmailSetting.setting_value.sender_name
       if (gmailSetting?.setting_value?.sender_email) finalSenderEmail = gmailSetting.setting_value.sender_email
     }
 
-    const appsScriptUrl = orgId ? await getAppsScriptUrl(orgId) : process.env.APPS_SCRIPT_URL || null
+    const scriptUrl = orgId ? await appsScriptUrl(ctx.db, orgId) : process.env.APPS_SCRIPT_URL || null
 
-    if (appsScriptUrl) {
-      const response = await fetch(appsScriptUrl, {
+    if (scriptUrl) {
+      const response = await fetch(scriptUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -103,4 +64,4 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message || 'Server error' }, { status: 500 })
   }
-}
+})

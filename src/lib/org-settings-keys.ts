@@ -4,8 +4,12 @@
  * Keys any org member may READ. Anything NOT listed here is treated as
  * credential-bearing and requires an admin role — unknown keys are admin-gated
  * by default, so a newly added secret is protected before anyone remembers to
- * classify it. This list mirrors the org_settings RLS allowlist; keep the two
- * in step when adding a key.
+ * classify it.
+ *
+ * Enforced by GET /api/settings/read, the only way a non-admin Hub user reads
+ * org_settings (2026-11-08). RLS (hub_232) admits org admins only, with no
+ * member-level read policy. The credential FIELDS inside a key are listed in
+ * src/lib/org-vault-fields.ts and are never returned to a browser at all.
  */
 export const ORG_MEMBER_READABLE_KEYS = new Set([
   'enabled_modules',

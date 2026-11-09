@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabase } from '@/lib/supabase'
+import { requireOrgMember } from '@/lib/api-guard'
 import { loadPositions, positionsByContact } from '@/lib/pipelines/positions'
 
 export const maxDuration = 60
@@ -7,6 +8,9 @@ export const maxDuration = 60
 export async function POST(req: NextRequest) {
   const { org_id, meeting_id, issue_text, meeting_notes } = await req.json()
   if (!org_id) return NextResponse.json({ error: 'Missing org_id' }, { status: 400 })
+  // Guarded (2026-11-08): the caller must belong to the org named
+  const member = await requireOrgMember(org_id)
+  if (member instanceof Response) return member
 
   const sb = createAdminSupabase()
 
@@ -20,7 +24,7 @@ export async function POST(req: NextRequest) {
     sb.from('meetings').select('id, title, template, scheduled_at, status, notes, agenda, read_ai_data, action_items, ids_items')
       .eq('org_id', org_id).order('scheduled_at', { ascending: false }).limit(20),
     sb.from('team_profiles').select('*').eq('org_id', org_id).eq('status', 'active'),
-    sb.from('org_settings').select('setting_key, setting_value').eq('org_id', org_id),
+    sb.from('org_settings').select('setting_key, setting_value').eq('org_id', org_id).eq('setting_key', 'meeting_ai_settings'),
     sb.from('contacts').select('id, first_name, last_name, tags, occupation, reason_for_contact')
       .eq('org_id', org_id).is('merged_into_id', null).limit(100),
   ])

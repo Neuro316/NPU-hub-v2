@@ -2,6 +2,7 @@ import { SupabaseClient } from '@supabase/supabase-js'
 import twilio from 'twilio'
 import { createAdminSupabase } from '@/lib/supabase'
 import { toE164 } from '@/lib/phone'
+import { readOrgSetting } from '@/lib/org-vault'
 
 export type NumberPurpose = 'outreach' | 'client_relations' | 'appointments' | 'inbound_main' | 'general'
 
@@ -105,16 +106,10 @@ export async function getOrgTwilioConfig(
   _supabase: SupabaseClient,
   orgId: string
 ): Promise<OrgTwilioConfig> {
-  // Use admin client to bypass RLS on org_settings
+  // Service role: the credentials (auth_token, api_key, api_secret) come from Vault (src/lib/org-vault.ts),
+  // the rest of the config from org_settings.
   const admin = createAdminSupabase()
-  const { data } = await admin
-    .from('org_settings')
-    .select('setting_value')
-    .eq('org_id', orgId)
-    .eq('setting_key', 'crm_twilio')
-    .maybeSingle()
-
-  const v = data?.setting_value
+  const v = await readOrgSetting<any>(admin, orgId, 'crm_twilio').catch(() => null)
 
   if (v?.account_sid) {
     return {

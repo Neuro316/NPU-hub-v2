@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabase } from '@/lib/supabase'
+import { createServerSupabase, createAdminSupabase } from '@/lib/supabase'
+import { userInOrg } from '@/lib/api-guard'
+import { readOrgSetting } from '@/lib/org-vault'
 
 export async function POST(request: NextRequest) {
   const supabase = createServerSupabase()
@@ -9,8 +11,10 @@ export async function POST(request: NextRequest) {
   const { org_id, instruction, current_html } = await request.json()
   if (!instruction) return NextResponse.json({ error: 'No instruction' }, { status: 400 })
 
-  const { data: aiConfig } = await supabase.from('org_settings').select('setting_value').eq('org_id', org_id).eq('setting_key', 'crm_ai').maybeSingle()
-  const apiKey = (aiConfig?.setting_value as any)?.api_key || process.env.ANTHROPIC_API_KEY
+  // AI key: Vault, service role, only for staff of that org (2026-11-08)
+  const admin = createAdminSupabase()
+  const aiConfig = (await userInOrg(admin, user.id, org_id)) ? await readOrgSetting<any>(admin, org_id, 'crm_ai').catch(() => null) : null
+  const apiKey = aiConfig?.api_key || process.env.ANTHROPIC_API_KEY
   if (!apiKey) return NextResponse.json({ error: 'AI not configured. Add API key in CRM Settings > AI.' }, { status: 400 })
 
   const prompt = `You generate EMAIL-SAFE HTML for a marketing/CRM email body. The HTML must render correctly in Gmail and Outlook, so:

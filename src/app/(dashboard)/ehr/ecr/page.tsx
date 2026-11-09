@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
+import { readOrgSettingValue } from '@/lib/org-settings-client'
 import { loadPipelines, loadPositions, positionsByContact } from '@/lib/pipelines/positions'
 import { apiSetStage } from '@/lib/pipelines/client'
 import {
@@ -192,13 +193,8 @@ export default function EcrPage() {
 
       // Load service types for Sensorium
       if (isSensorium) {
-        const { data: stData } = await supabase
-          .from('org_settings')
-          .select('setting_value')
-          .eq('org_id', orgId)
-          .eq('setting_key', 'ecr_service_types')
-          .maybeSingle()
-        if (stData?.setting_value?.types) setServiceTypes(stData.setting_value.types)
+        const stValue: any = await readOrgSettingValue(orgId, 'ecr_service_types')
+        if (stValue?.types) setServiceTypes(stValue.types)
       }
     } catch (err) { console.error('ECR load error:', err) }
     setLoading(false)

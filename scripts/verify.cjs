@@ -44,6 +44,7 @@ const HARNESSES = [
   { file: 'scripts/agent/help-ci.cjs', selectors: ['orphan', 'ghost', 'badref', 'dash', 'banned', 'stale', '1'] },
   { file: 'scripts/click-to-call/c2c-tamper.cjs', selectors: ['wrongorg', 'nophone', 'suppressed', 'dnclist', 'nostaffphone', 'ratelimit', 'flagoff', 'allowlistonly', 'notallowlisted', 'quiethoursblock', 'dialfirst', 'sigcore', 'sigbridge', 'sigstatus', 'staleswitch', 'entryevent', 'inboundroute', 'directionin', 'recording', 'forgedline', 'inactiveline', 'novoice', 'defaultshift', 'storagecrash', 'singleselect', 'rawline', 'eligibleorg', 'unverified', '1'] },
   { file: 'scripts/click-to-call/parity.cjs', selectors: ['outside', 'untouched', 'webhook', '1'] },
+  { file: 'scripts/org-settings/credentials-tamper.cjs', selectors: ['dropfield', 'noredact', 'rawread', 'bodyurl', '1'] },
 ]
 let fail = 0
 const report = (ok, label) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${label}`); if (!ok) fail++ }

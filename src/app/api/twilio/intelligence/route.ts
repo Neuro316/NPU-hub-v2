@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminSupabase } from '@/lib/supabase';
 import { voiceSignatureUrl } from '@/lib/twilio-voice-signature';
 import { handleIntelligenceCallback, wavChannelLevels, type CallLogForTranscript } from '@/lib/voice-intelligence';
+import { withVault } from '@/lib/org-vault';
 
 // Twilio Voice Intelligence completion webhook (the Service's WebhookUrl).
 // Saves the speaker-labeled transcript of an ANSWERED call onto its call_logs
@@ -37,7 +38,8 @@ export async function POST(request: NextRequest) {
   const accountTwilio = async (accountSid: string) => {
     const { data } = await db.from('org_settings').select('org_id, setting_value')
       .eq('setting_key', 'crm_twilio').eq('setting_value->>account_sid', accountSid);
-    return (data ?? []) as { org_id: string; setting_value: any }[];
+    // the auth token lives in Vault (src/lib/org-vault.ts); account_sid stays in org_settings for this lookup
+    return withVault(db, 'crm_twilio', (data ?? []) as { org_id: string; setting_value: any }[]);
   };
 
   try {

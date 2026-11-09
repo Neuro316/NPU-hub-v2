@@ -1,23 +1,16 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { createAdminSupabase } from '@/lib/supabase';
+import { readOrgSetting } from '@/lib/org-vault';
 
 // Get Anthropic client - checks org settings first, falls back to env var
 export async function getAnthropicClient(orgId?: string): Promise<Anthropic> {
   if (orgId) {
     try {
-      const supabase = createAdminSupabase();
-      const { data } = await supabase
-        .from('org_settings')
-        .select('setting_value')
-        .eq('org_id', orgId)
-        .eq('setting_key', 'crm_ai')
-        .maybeSingle();
-
-      if (data?.setting_value?.anthropic_key) {
-        return new Anthropic({ apiKey: data.setting_value.anthropic_key });
-      }
+      // the key lives in Vault (src/lib/org-vault.ts)
+      const v = await readOrgSetting<any>(createAdminSupabase(), orgId, 'crm_ai');
+      if (v?.anthropic_key) return new Anthropic({ apiKey: v.anthropic_key });
     } catch (e) {
-      console.warn('Failed to load org AI config, using env:', e);
+      console.warn(`[crm-ai] org AI config unreadable, using env: ${(e as Error)?.message ?? 'error'}`);
     }
   }
 

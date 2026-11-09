@@ -16,6 +16,7 @@ import type { CrmContact } from '@/types/crm'
 import { PIPELINE_STAGES, STAGE_COLORS } from '@/types/crm'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
+import { readOrgSettingValue } from '@/lib/org-settings-client'
 import { ContactCommsButtons } from '@/components/crm/twilio-comms'
 import { LeadValueEditor, formatUsdFull, formatUsdCompact } from '@/components/crm/lead-value'
 
@@ -1105,19 +1106,10 @@ export default function PipelinesPage() {
     if (!currentOrg) return
     const load = async () => {
       try {
-        // Try browser client first
-        const { data } = await createClient().from('org_settings').select('setting_value').eq('org_id', currentOrg.id).eq('setting_key', 'crm_pipelines').maybeSingle()
-        if (data?.setting_value?.pipelines) {
-          setPipelines(data.setting_value.pipelines)
-          setActivePipelineId(data.setting_value.active || data.setting_value.pipelines[0]?.id)
-          return
-        }
-        // Fallback: fetch via API route (service role, bypasses RLS)
-        const res = await fetch(`/api/settings/read?org_id=${currentOrg.id}&key=crm_pipelines`)
-        const apiData = await res.json()
-        if (apiData?.setting_value?.pipelines) {
-          setPipelines(apiData.setting_value.pipelines)
-          setActivePipelineId(apiData.setting_value.active || apiData.setting_value.pipelines[0]?.id)
+        const value: any = await readOrgSettingValue(currentOrg.id, 'crm_pipelines')
+        if (value?.pipelines) {
+          setPipelines(value.pipelines)
+          setActivePipelineId(value.active || value.pipelines[0]?.id)
         }
       } catch (e) { console.error('[Pipelines] load error:', e) }
     }

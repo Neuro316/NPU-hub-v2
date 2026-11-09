@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
+import { readOrgSettingValue } from '@/lib/org-settings-client'
 import { loadPipelines, findPipeline, resolveStage, firstStage, type PipelineRef } from '@/lib/pipelines/positions'
 import { apiSetStage } from '@/lib/pipelines/client'
 import {
@@ -338,10 +339,9 @@ export default function ImportPage() {
   // Load pipelines
   useEffect(() => {
     if (!currentOrg) return
-    const sb = createClient()
-    sb.from('org_settings').select('setting_value').eq('org_id', currentOrg.id).eq('setting_key', 'crm_pipelines').maybeSingle()
-      .then(({ data }: { data: any }) => {
-        if (data?.setting_value?.pipelines) setPipelines(data.setting_value.pipelines)
+    readOrgSettingValue(currentOrg.id, 'crm_pipelines')
+      .then((value: any) => {
+        if (value?.pipelines) setPipelines(value.pipelines)
       })
   }, [currentOrg?.id])
 
@@ -871,9 +871,8 @@ export default function ImportPage() {
     setSavingPipeline(true)
     try {
       const sb = createClient()
-      const { data } = await sb.from('org_settings').select('setting_value')
-        .eq('org_id', currentOrg.id).eq('setting_key', 'crm_pipelines').maybeSingle()
-      const existing: any[] = data?.setting_value?.pipelines || []
+      const current: any = await readOrgSettingValue(currentOrg.id, 'crm_pipelines')
+      const existing: any[] = current?.pipelines || []
       const newPipeline = {
         id: `pipeline-${Date.now()}`,
         name: newPipelineName.trim(),

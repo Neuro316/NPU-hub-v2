@@ -1,42 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { withStaff, requireOrg } from '@/lib/api-guard'
+import { appsScriptUrl } from '@/lib/apps-script-url'
 
+// Guarded (2026-11-08): Hub staff of the org named. The Apps Script URL is a credential (Vault); this route proxies
+// to it and never returns it.
 export const maxDuration = 30
+export const dynamic = 'force-dynamic'
 
-async function getAppsScriptUrl(orgId: string): Promise<string | null> {
-  const cookieStore = await cookies()
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() { return cookieStore.getAll() },
-        setAll() {},
-      },
-    }
-  )
-
-  const { data } = await supabase
-    .from('org_settings')
-    .select('setting_value')
-    .eq('org_id', orgId)
-    .eq('setting_key', 'apps_script')
-    .single()
-
-  if (data?.setting_value?.url && data?.setting_value?.enabled) return data.setting_value.url
-  return process.env.APPS_SCRIPT_URL || null
-}
-
-export async function POST(req: NextRequest) {
+export const POST = withStaff(async (req: NextRequest, ctx) => {
   try {
     const body = await req.json()
     const { orgId, action, ...payload } = body
 
     if (!action) return NextResponse.json({ success: false, error: 'action required' })
-    if (!orgId) return NextResponse.json({ success: false, error: 'orgId required' })
+    const org = requireOrg(ctx, orgId)
+    if (org instanceof Response) return org
 
-    const url = await getAppsScriptUrl(orgId)
+    const url = await appsScriptUrl(ctx.db, org)
     if (!url) {
       return NextResponse.json({ success: false, error: 'Google Apps Script not configured. Go to Integrations to set it up.' })
     }
@@ -56,4 +36,4 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message || 'Server error' }, { status: 500 })
   }
-}
+})

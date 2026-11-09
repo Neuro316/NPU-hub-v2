@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabase, createAdminSupabase } from '@/lib/supabase';
 import { resolveMergeTags } from '@/lib/crm-server';
 import { findPipeline, loadPipelines } from '@/lib/pipelines/positions';
+import { readOrgSetting } from '@/lib/org-vault';
 
 // ─── POST /api/crm/stage-emails ───
 // Fires the emails configured on a pipeline stage. Called from the Pipelines
@@ -139,8 +140,8 @@ export async function POST(request: NextRequest) {
   const mergeContact = { ...contact, stage_name: enteredStageName };
 
   // stage email script config (Apps Script URL + secret)
-  const { data: setting } = await admin.from('org_settings').select('setting_value').eq('org_id', org_id).eq('setting_key', 'stage_email_script').single();
-  const cfg = setting?.setting_value as any;
+  // url and secret are credentials in Vault (src/lib/org-vault.ts)
+  const cfg = await readOrgSetting<any>(admin, org_id, 'stage_email_script').catch(() => null);
   if (!cfg?.url || !cfg?.enabled) return NextResponse.json({ error: 'Stage email script not configured' }, { status: 400 });
 
   // org name for merge tags

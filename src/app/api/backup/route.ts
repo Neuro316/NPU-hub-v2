@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabase } from '@/lib/supabase';
+import { redactCredentials } from '@/lib/org-vault-fields';
 
 export async function GET(request: NextRequest) {
   const supabase = createServerSupabase();
@@ -35,16 +36,8 @@ export async function GET(request: NextRequest) {
       supabase.from('contact_notes').select('*').then(r => r.data || []),
       supabase.from('crm_activity_log').select('*').eq('org_id', orgId).then(r => r.data || []),
       supabase.from('org_settings').select('*').eq('org_id', orgId).then(r => {
-        // Redact sensitive keys
-        return (r.data || []).map(s => {
-          if (s.setting_key === 'crm_twilio') {
-            const v = { ...s.setting_value };
-            if (v.auth_token) v.auth_token = '***REDACTED***';
-            if (v.api_secret) v.api_secret = '***REDACTED***';
-            return { ...s, setting_value: v };
-          }
-          return s;
-        });
+        // Every credential field is blanked (2026-11-08), not only the Twilio ones
+        return (r.data || []).map(s => ({ ...s, setting_value: redactCredentials(s.setting_key, s.setting_value).value }));
       }),
       supabase.from('org_email_configs').select('*').eq('org_id', orgId).then(r => r.data || []),
       supabase.from('sequences').select('*').eq('org_id', orgId).then(r => r.data || []),

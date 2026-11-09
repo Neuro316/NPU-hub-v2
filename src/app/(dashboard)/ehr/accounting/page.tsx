@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useWorkspace } from '@/lib/workspace-context'
 import { usePermissions } from '@/lib/hooks/use-permissions'
 import { createClient } from '@/lib/supabase-browser'
+import { readOrgSettingValue } from '@/lib/org-settings-client'
 import { DollarSign, Users, TrendingUp, ChevronLeft, Plus, X, Settings as SettingsIcon, BarChart3, LayoutDashboard, Search, Wallet, Megaphone, Trash2, Pencil, Download, FileText, Building2, Calendar as CalendarIcon } from 'lucide-react'
 
 interface AcctLocation { id: string; name: string; short_code: string; color: string; clinic_id: string | null; org_id: string }
@@ -1629,7 +1630,7 @@ export default function AccountingPage() {
       supabase.from('acct_locations').select('*').eq('org_id',orgId),supabase.from('acct_clinics').select('*').eq('org_id',orgId),
       supabase.from('acct_clients').select('*').eq('org_id',orgId).order('name'),supabase.from('acct_services').select('*').eq('org_id',orgId),
       supabase.from('acct_payments').select('*').eq('org_id',orgId).order('payment_date'),
-      supabase.from('org_settings').select('setting_value').eq('org_id',orgId).eq('setting_key','acct_config').maybeSingle(),
+      readOrgSettingValue(orgId,'acct_config').then((v:any)=>({data:v!=null?{setting_value:v}:null})),
       supabase.from('acct_checks').select('*').eq('org_id',orgId).order('check_date'),
       supabase.from('acct_marketing_charges').select('*').eq('org_id',orgId),
       supabase.from('acct_adjustments').select('*').eq('org_id',orgId).order('adj_date')])

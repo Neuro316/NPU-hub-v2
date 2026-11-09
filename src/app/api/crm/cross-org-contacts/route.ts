@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
   const admin = createAdminSupabase()
 
   // Verify user belongs to requesting org
-  const { data: membership } = await admin.from('org_members').select('id').eq('user_id', user.id).eq('org_id', org_id).single()
+  const { data: membership } = await admin.from('org_members').select('id').eq('user_id', user.id).eq('organization_id', org_id).maybeSingle()
   if (!membership) return NextResponse.json({ error: 'Not a member of this org' }, { status: 403 })
 
   // Load cross-org sharing rules for this org
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
 
   for (const rule of activeRules) {
     const { data: srcMembership } = await admin.from('org_members').select('id')
-      .eq('user_id', user.id).eq('org_id', rule.org_id).single()
+      .eq('user_id', user.id).eq('organization_id', rule.org_id).maybeSingle()
     if (!srcMembership) continue // user doesn't have access to source org
 
     // Normalize tags to lowercase for matching
