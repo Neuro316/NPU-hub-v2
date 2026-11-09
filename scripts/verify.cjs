@@ -56,6 +56,10 @@ report(tsc.code === 0, `tsc --noEmit${tsc.code ? `\n${tsc.out.slice(0, 2000)}` :
 const gen = run(process.execPath, ['scripts/agent/gen-content.cjs', '--check'])
 report(gen.code === 0, `generated agent content is current${gen.code ? `\n${gen.out.slice(0, 500)}` : ''}`)
 
+// the Growth Dashboard's pure rules (targets both ways, product lines, coaching load, work back)
+const mc = run(process.execPath, ['scripts/metrics/metrics-check.cjs'])
+report(mc.code === 0, `metrics-check${mc.code ? `\n${mc.out.split('\n').filter((l) => /FAIL|Error/.test(l)).join('\n').slice(0, 1500)}` : ''}`)
+
 const g = run(process.execPath, ['scripts/guards/run-guards.cjs'])
 report(g.code === 0, `guards${g.code ? `\n${g.out.split('\n').filter((l) => /FAIL|NEW|RED/.test(l)).join('\n')}` : ''}`)
 for (const t of ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7']) {

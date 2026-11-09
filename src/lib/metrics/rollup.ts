@@ -7,13 +7,16 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { METRICS, METRIC } from './registry'
 import { collect, median, type Item } from './collect'
 import { loadTestFilter } from './test-filter'
-import { nyDay } from './dates'
+import { addDays, nyDay } from './dates'
 
 export interface Row { date: string; metric_key: string; dimension_key: string; dimension_value: string; value: number }
 
 const STORED = METRICS.filter(m => m.agg !== 'ratio' && m.agg !== 'gap')
 const LEVEL_KEYS = STORED.filter(m => m.agg === 'last').map(m => m.key)
 const DAILY_KEYS = STORED.filter(m => m.agg !== 'last').map(m => m.key)
+/** Forward metrics (coaching hours, by session day) are also written for the days after today. */
+export const FORWARD_KEYS = STORED.filter(m => m.forward).map(m => m.key)
+export const FORWARD_DAYS = 62
 
 export function toRows(items: Item[]): Row[] {
   const rows = new Map<string, Row>()
@@ -72,5 +75,19 @@ export async function runRollup(db: SupabaseClient, from: string, to: string, no
   const items = await collect({ db, from, to, today, now, filter })
   const rows = toRows(items)
   await replaceRange(db, from, to, today, rows)
-  return { from, to, items: items.length, rows: rows.length, test_filter: filter.stats }
+  let forward = 0
+  if (today >= from && today <= to) {
+    // sessions booked later this month and next: the coaching loader only, replacing its own future rows
+    const f = { from: addDays(today, 1), to: addDays(today, FORWARD_DAYS) }
+    const fRows = toRows((await collect({ db, from: f.from, to: f.to, today, now, filter }, ['coaching'])).filter(i => FORWARD_KEYS.includes(i.metric)))
+    const del = await db.from('hub_metrics_daily').delete().gte('date', f.from).lte('date', f.to).in('metric_key', FORWARD_KEYS)
+    if (del.error) throw new Error(`metrics delete failed: ${del.error.code}`)
+    const stamp = new Date().toISOString()
+    for (let i = 0; i < fRows.length; i += 500) {
+      const { error } = await db.from('hub_metrics_daily').insert(fRows.slice(i, i + 500).map(r => ({ ...r, computed_at: stamp })))
+      if (error) throw new Error(`metrics insert failed: ${error.code}`)
+    }
+    forward = fRows.length
+  }
+  return { from, to, items: items.length, rows: rows.length, forward_rows: forward, test_filter: filter.stats }
 }

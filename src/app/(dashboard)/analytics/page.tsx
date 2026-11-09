@@ -8,13 +8,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
   BarChart3, ArrowUpRight, ArrowDownRight, X, BookOpen, Target, RefreshCw, Loader2,
-  CheckCircle2, AlertTriangle, Trash2, Save, ShieldCheck, ShieldOff, Undo2,
+  CheckCircle2, AlertTriangle, Trash2, Save, ShieldCheck, ShieldOff, Undo2, Calculator,
 } from 'lucide-react'
 import { METRICS, METRIC, TABS, type MetricDef, type Tab } from '@/lib/metrics/registry'
+import { DEFAULT_THRESHOLDS, targetFor, workBack, type Direction, type Target as TargetT } from '@/lib/metrics/targets'
 
 interface TileValue {
   value: number | null; prev: number | null; n?: number | null; hidden?: boolean
   dims?: Record<string, { value: string; v: number }[]>; target?: number; pace?: number; status?: 'green' | 'amber' | 'red'
+  direction?: Direction; through?: string
 }
 interface Summary { from: string; to: string; prev: { from: string; to: string }; metrics: Record<string, TileValue>; series?: Record<string, { day: string; v: number }[]>; computed_at: string | null }
 interface RecordRow { day: string; label: string; sub?: string; href?: string; value?: number; dims?: Record<string, string> }
@@ -42,6 +44,7 @@ function fmt(def: MetricDef, v: number | null | undefined): string {
     case 'pct': return `${v.toFixed(v < 10 ? 1 : 0)}%`
     case 'minutes': return v >= 120 ? `${(v / 60).toFixed(1)} h` : `${Math.round(v)} min`
     case 'days': return `${v.toFixed(v < 10 ? 1 : 0)} d`
+    case 'hours': return `${(Math.round(v * 10) / 10).toLocaleString('en-US')} h`
     case 'rating': return v.toFixed(2)
     default: return Math.round(v).toLocaleString('en-US')
   }
@@ -71,7 +74,9 @@ function Tile({ def, t, onOpen }: { def: MetricDef; t?: TileValue; onOpen: (def:
       <div className="flex items-start justify-between gap-2">
         <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wider">{def.label}</p>
         {t?.status && (
-          <span title={`${fmt(def, t.value)} against a pace of ${fmt(def, t.pace)} (target ${fmt(def, t.target)} for the range)`}
+          <span title={def.agg === 'sum'
+              ? `${fmt(def, t.value)} against ${def.forward ? 'a target' : 'a pace'} of ${fmt(def, t.pace)} (target ${fmt(def, t.target)} for the range; ${t.direction === 'lower' ? 'lower' : 'higher'} is better)`
+              : `${fmt(def, t.value)} against a target of ${fmt(def, t.target)} (${t.direction === 'lower' ? 'lower' : 'higher'} is better)`}
             className="w-2.5 h-2.5 rounded-full shrink-0 mt-0.5" style={{ background: STATUS_COLOR[t.status] }} />
         )}
       </div>
@@ -89,6 +94,7 @@ function Tile({ def, t, onOpen }: { def: MetricDef; t?: TileValue; onOpen: (def:
         {t?.target != null && <span>· target {fmt(def, t.target)}</span>}
         {t?.n != null && !t.hidden && <span>· n {t.n}</span>}
       </div>
+      {t?.through && <p className="text-[10px] text-gray-400">sessions through {fmtDay(t.through)}</p>}
       {dims.length > 0 && (
         <div className="mt-2 space-y-0.5">
           {dims.slice(0, 5).map(x => (
@@ -150,7 +156,7 @@ function Records({ def, from, to, onClose }: { def: MetricDef; from: string; to:
 }
 
 // ─── scorecard extras: funnel strip and 12-week trend ────────────────────────
-const FUNNEL = ['leads', 'booked_calls', 'shows', 'sales', 'onboarded']
+const FUNNEL = ['leads', 'booked_calls', 'shows', 'phase1_sales', 'onboarded']
 function Funnel({ m }: { m: Record<string, TileValue> }) {
   return (
     <div className="bg-white border border-gray-100 rounded-xl p-4">
@@ -164,7 +170,6 @@ function Funnel({ m }: { m: Record<string, TileValue> }) {
               <div className="px-3 py-2 rounded-lg bg-np-blue/5 min-w-[88px]">
                 <p className="text-[10px] text-gray-500">{METRIC[k].label}</p>
                 <p className="text-sm font-bold text-np-dark">{Math.round(v)}</p>
-                {k === 'shows' && <p className="text-[9px] text-amber-600">not recorded yet (G2)</p>}
               </div>
             </div>
           )
@@ -180,7 +185,7 @@ function Trend({ series, today }: { series: Summary['series']; today: string }) 
     const thisMon = shift(today, -((dow + 6) % 7))
     return Array.from({ length: 12 }, (_, i) => shift(thisMon, -7 * (11 - i)))
   }, [today])
-  const keys = ['leads', 'booked_calls', 'sales', 'onboarded', 'revenue']
+  const keys = ['phase1_sales', 'leads', 'booked_calls', 'shows', 'core_revenue']
   return (
     <div className="bg-white border border-gray-100 rounded-xl p-4 overflow-x-auto">
       <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wider mb-3">12-week trend (weeks start Monday)</p>
@@ -210,14 +215,76 @@ function Trend({ series, today }: { series: Summary['series']; today: string }) 
   )
 }
 
-// ─── targets editor and test-account review ──────────────────────────────────
-interface TargetRow { metric_key: string; month: string; target_value: number; amber_threshold: number; red_threshold: number }
+// ─── targets editor, work-back helper and test-account review ────────────────
+interface TargetRow { metric_key: string; month: string; target_value: number; amber_threshold: number; red_threshold: number; direction: Direction }
+interface TargetMetric { key: string; label: string; unit: string; kind: 'total' | 'level'; direction: Direction }
 interface Suspect { kind: 'contact' | 'profile'; id: string; name: string; email: string | null; detail: string | null; decision: 'exclude' | 'keep' | null; already: boolean }
+
+const pct = (x: number) => String(Math.round(x * 100))
+function draftFor(m: TargetMetric | undefined, month: string, direction?: Direction) {
+  const d = direction ?? m?.direction ?? 'higher'
+  return { metric_key: m?.key ?? 'leads', month, target_value: '', direction: d, amber: pct(DEFAULT_THRESHOLDS[d].amber), red: pct(DEFAULT_THRESHOLDS[d].red) }
+}
+
+/** From the Onboarded target and the live close, show and booking rates (last 90 days): what a month and a week need. */
+function WorkBackPanel({ targets, month, onSave, busy }: { targets: TargetRow[]; month: string; onSave: (rows: { metric_key: string; target_value: number }[]) => void; busy: boolean }) {
+  const [rates, setRates] = useState<{ close: number | null; show: number | null; booking: number | null } | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const today = useMemo(nyToday, [])
+  useEffect(() => {
+    fetch(`/api/metrics/summary?from=${shift(today, -89)}&to=${today}`, { cache: 'no-store' })
+      .then(async r => {
+        const d = await r.json().catch(() => ({}))
+        if (!r.ok) { setErr(d.error || 'Live rates could not be loaded.'); return }
+        const v = (k: string) => (d.metrics?.[k]?.value == null ? null : Number(d.metrics[k].value) / 100)
+        setRates({ close: v('close_rate'), show: v('show_rate'), booking: v('lead_to_booked_rate') })
+      }).catch(() => setErr('Live rates could not be loaded.'))
+  }, [today])
+  const goal = targetFor(targets as TargetT[], 'onboarded', month)
+  const plan = rates ? workBack(goal ? Number(goal.target_value) : null, rates.close, rates.show, rates.booking) : null
+  const rate = (x: number | null) => (x == null ? '—' : `${(x * 100).toFixed(x < 0.1 ? 1 : 0)}%`)
+  return (
+    <div className="bg-white border border-gray-100 rounded-xl p-4 space-y-3">
+      <h3 className="text-xs font-bold text-np-dark flex items-center gap-1"><Calculator size={12} /> Work back from the goal ({month.slice(0, 7)})</h3>
+      <p className="text-[10px] text-gray-400">
+        Booked calls = Onboarded target ÷ close rate; shows = booked calls × show rate; leads = booked calls ÷ lead to booked rate.
+        Live rates are the last 90 days. A week is a month × 12 ÷ 52. Rounded up.
+      </p>
+      {err && <p className="text-[11px] text-red-500">{err}</p>}
+      {!rates && !err && <p className="text-[11px] text-gray-400 flex items-center gap-1"><Loader2 size={11} className="animate-spin" /> Loading live rates...</p>}
+      {rates && (
+        <div className="flex flex-wrap gap-2 text-[10px]">
+          <span className="px-2 py-1 rounded bg-gray-50">Onboarded target <b className="text-np-dark">{goal ? Math.round(Number(goal.target_value)) : '—'}</b></span>
+          <span className="px-2 py-1 rounded bg-gray-50">Close rate <b className="text-np-dark">{rate(rates.close)}</b></span>
+          <span className="px-2 py-1 rounded bg-gray-50">Show rate <b className="text-np-dark">{rate(rates.show)}</b></span>
+          <span className="px-2 py-1 rounded bg-gray-50">Lead to booked <b className="text-np-dark">{rate(rates.booking)}</b></span>
+        </div>
+      )}
+      {plan && plan.missing.length > 0 && <p className="text-[11px] text-amber-600">Needs {plan.missing.join(', ')} before it can work back.</p>}
+      {plan?.month && plan.week && (
+        <>
+          <table className="text-[11px] w-full max-w-sm">
+            <thead><tr className="text-left text-gray-400"><th className="font-medium py-1" /><th className="font-medium text-right">Per month</th><th className="font-medium text-right">Per week</th></tr></thead>
+            <tbody>
+              {([['leads', 'Leads'], ['booked_calls', 'Booked calls'], ['shows', 'Shows']] as const).map(([k, l]) => (
+                <tr key={k} className="border-t border-gray-50"><td className="py-1.5">{l}</td><td className="text-right font-semibold text-np-dark">{plan.month![k]}</td><td className="text-right">{plan.week![k]}</td></tr>
+              ))}
+            </tbody>
+          </table>
+          <button disabled={busy} onClick={() => onSave((['leads', 'booked_calls', 'shows'] as const).map(k => ({ metric_key: k, target_value: plan.month![k] })))}
+            className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium bg-np-blue text-white rounded-lg disabled:opacity-40">
+            <Save size={10} /> Save as {month.slice(0, 7)} targets
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
 
 function Targets({ today, onChanged }: { today: string; onChanged: () => void }) {
   const [targets, setTargets] = useState<TargetRow[]>([])
-  const [metrics, setMetrics] = useState<{ key: string; label: string; unit: string }[]>([])
-  const [draft, setDraft] = useState({ metric_key: 'leads', month: `${today.slice(0, 8)}01`, target_value: '', amber: '90', red: '75' })
+  const [metrics, setMetrics] = useState<TargetMetric[]>([])
+  const [draft, setDraft] = useState(() => draftFor(undefined, `${today.slice(0, 8)}01`))
   const [suspects, setSuspects] = useState<Suspect[]>([])
   const [seeded, setSeeded] = useState<{ id: string; rule: string; reason: string | null }[]>([])
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null)
@@ -245,6 +312,19 @@ function Targets({ today, onChanged }: { today: string; onChanged: () => void })
     try { if (await send('/api/metrics/recompute', 'POST', { days: 120 }, 'Recomputed the last 120 days.')) onChanged() } finally { setBusy(null) }
   }
   const label = (k: string) => METRIC[k]?.label ?? k
+  const metricOf = (k: string) => metrics.find(m => m.key === k)
+  const dm = metricOf(draft.metric_key)
+  const saveDraft = () => send('/api/metrics/targets', 'PUT', {
+    metric_key: draft.metric_key, month: draft.month, target_value: Number(draft.target_value), direction: draft.direction,
+    amber_threshold: Number(draft.amber) / 100, red_threshold: Number(draft.red) / 100,
+  }, 'Target saved.').then(ok => { if (ok) onChanged() })
+  const saveWorkBack = async (rows: { metric_key: string; target_value: number }[]) => {
+    setBusy('workback')
+    try {
+      const body = { targets: rows.map(r => ({ ...r, month: draft.month, direction: 'higher', amber_threshold: 0.9, red_threshold: 0.75 })) }
+      if (await send('/api/metrics/targets', 'PUT', body, `Saved leads, booked calls and shows targets for ${draft.month.slice(0, 7)}.`)) onChanged()
+    } finally { setBusy(null) }
+  }
   const undecided = suspects.filter(s => !s.decision && !s.already)
   const decided = suspects.filter(s => s.decision)
 
@@ -262,39 +342,52 @@ function Targets({ today, onChanged }: { today: string; onChanged: () => void })
             {busy === 'recompute' ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />} Recompute now
           </button>
         </div>
-        <p className="text-[10px] text-gray-400">Amber below the amber share of the target pace, red below the red share. A month without its own row uses the latest earlier month. Weeks and custom ranges are prorated by day.</p>
+        <p className="text-[10px] text-gray-400">
+          A count, money or hours target is a monthly total, prorated by day and compared with the pace so far. A rate, median or level target is compared directly.
+          Higher is better: amber below the amber share of the target, red below the red share. Lower is better: amber above the amber share, red above the red share
+          (coaching capacity: amber 90%, red above 100%). A month without its own row uses the latest earlier month.
+        </p>
         <div className="flex flex-wrap items-end gap-2">
-          <select value={draft.metric_key} onChange={e => setDraft({ ...draft, metric_key: e.target.value })} className="px-2 py-1.5 text-[11px] border border-gray-100 rounded-lg">
+          <select value={draft.metric_key} onChange={e => setDraft({ ...draftFor(metricOf(e.target.value), draft.month), target_value: draft.target_value })} className="px-2 py-1.5 text-[11px] border border-gray-100 rounded-lg max-w-[260px]">
             {metrics.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
           </select>
           <input type="month" value={draft.month.slice(0, 7)} onChange={e => setDraft({ ...draft, month: `${e.target.value}-01` })} className="px-2 py-1.5 text-[11px] border border-gray-100 rounded-lg" />
-          <input value={draft.target_value} onChange={e => setDraft({ ...draft, target_value: e.target.value })} placeholder="Target" inputMode="decimal" className="w-24 px-2 py-1.5 text-[11px] border border-gray-100 rounded-lg" />
-          <label className="text-[10px] text-gray-500">Amber % <input value={draft.amber} onChange={e => setDraft({ ...draft, amber: e.target.value })} className="w-12 px-1.5 py-1 border border-gray-100 rounded" /></label>
-          <label className="text-[10px] text-gray-500">Red % <input value={draft.red} onChange={e => setDraft({ ...draft, red: e.target.value })} className="w-12 px-1.5 py-1 border border-gray-100 rounded" /></label>
-          <button onClick={() => send('/api/metrics/targets', 'PUT', { metric_key: draft.metric_key, month: draft.month, target_value: Number(draft.target_value), amber_threshold: Number(draft.amber) / 100, red_threshold: Number(draft.red) / 100 }, 'Target saved.')}
-            disabled={draft.target_value === ''} className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium bg-np-blue text-white rounded-lg disabled:opacity-40">
+          <input value={draft.target_value} onChange={e => setDraft({ ...draft, target_value: e.target.value })} inputMode="decimal"
+            placeholder={dm?.unit === 'pct' ? 'Target %' : dm?.unit === 'hours' ? 'Hours' : dm?.unit === 'usd' ? 'Target $' : dm?.unit === 'days' ? 'Days' : dm?.unit === 'minutes' ? 'Minutes' : 'Target'}
+            className="w-24 px-2 py-1.5 text-[11px] border border-gray-100 rounded-lg" />
+          <select value={draft.direction} onChange={e => { const d = e.target.value as Direction; setDraft({ ...draft, direction: d, amber: pct(DEFAULT_THRESHOLDS[d].amber), red: pct(DEFAULT_THRESHOLDS[d].red) }) }} className="px-2 py-1.5 text-[11px] border border-gray-100 rounded-lg">
+            <option value="higher">Higher is better</option>
+            <option value="lower">Lower is better</option>
+          </select>
+          <label className="text-[10px] text-gray-500">Amber {draft.direction === 'lower' ? 'above' : 'below'} % <input value={draft.amber} onChange={e => setDraft({ ...draft, amber: e.target.value })} className="w-12 px-1.5 py-1 border border-gray-100 rounded" /></label>
+          <label className="text-[10px] text-gray-500">Red {draft.direction === 'lower' ? 'above' : 'below'} % <input value={draft.red} onChange={e => setDraft({ ...draft, red: e.target.value })} className="w-12 px-1.5 py-1 border border-gray-100 rounded" /></label>
+          <button onClick={saveDraft} disabled={draft.target_value === ''} className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium bg-np-blue text-white rounded-lg disabled:opacity-40">
             <Save size={10} /> Save target
           </button>
         </div>
+        {dm && <p className="text-[10px] text-gray-400">{dm.kind === 'total' ? 'Monthly total' : 'Level, compared directly'}{dm.unit === 'pct' ? ', in percent' : dm.unit === 'hours' ? ', in hours' : dm.unit === 'days' ? ', in days' : dm.unit === 'minutes' ? ', in minutes' : ''}.</p>}
         <table className="w-full text-[11px]">
-          <thead><tr className="text-left text-gray-400"><th className="font-medium py-1">Month</th><th className="font-medium">Metric</th><th className="font-medium text-right">Target</th><th className="font-medium text-right">Amber</th><th className="font-medium text-right">Red</th><th /></tr></thead>
+          <thead><tr className="text-left text-gray-400"><th className="font-medium py-1">Month</th><th className="font-medium">Metric</th><th className="font-medium text-right">Target</th><th className="font-medium text-right">Better</th><th className="font-medium text-right">Amber</th><th className="font-medium text-right">Red</th><th /></tr></thead>
           <tbody>
             {targets.map(t => (
               <tr key={`${t.metric_key}${t.month}`} className="border-t border-gray-50">
                 <td className="py-1.5">{t.month.slice(0, 7)}</td>
                 <td>{label(t.metric_key)}</td>
                 <td className="text-right">{fmt(METRIC[t.metric_key] ?? METRICS[0], Number(t.target_value))}</td>
-                <td className="text-right">{Math.round(Number(t.amber_threshold) * 100)}%</td>
-                <td className="text-right">{Math.round(Number(t.red_threshold) * 100)}%</td>
+                <td className="text-right text-gray-500">{t.direction === 'lower' ? 'lower' : 'higher'}</td>
+                <td className="text-right">{t.direction === 'lower' ? '>' : '<'} {Math.round(Number(t.amber_threshold) * 100)}%</td>
+                <td className="text-right">{t.direction === 'lower' ? '>' : '<'} {Math.round(Number(t.red_threshold) * 100)}%</td>
                 <td className="text-right">
-                  <button onClick={() => setDraft({ metric_key: t.metric_key, month: t.month, target_value: String(t.target_value), amber: String(Math.round(t.amber_threshold * 100)), red: String(Math.round(t.red_threshold * 100)) })} className="text-[10px] text-np-blue mr-2">Edit</button>
-                  <button onClick={() => send(`/api/metrics/targets?metric_key=${t.metric_key}&month=${t.month}`, 'DELETE', undefined, 'Target removed.')} className="text-gray-400 hover:text-red-500"><Trash2 size={11} /></button>
+                  {metricOf(t.metric_key) && <button onClick={() => setDraft({ metric_key: t.metric_key, month: t.month, target_value: String(t.target_value), direction: t.direction, amber: pct(Number(t.amber_threshold)), red: pct(Number(t.red_threshold)) })} className="text-[10px] text-np-blue mr-2">Edit</button>}
+                  <button onClick={() => send(`/api/metrics/targets?metric_key=${t.metric_key}&month=${t.month}`, 'DELETE', undefined, 'Target removed.').then(ok => { if (ok) onChanged() })} className="text-gray-400 hover:text-red-500"><Trash2 size={11} /></button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      <WorkBackPanel targets={targets} month={draft.month} onSave={saveWorkBack} busy={!!busy} />
 
       <div className="bg-white border border-gray-100 rounded-xl p-4 space-y-3">
         <h3 className="text-xs font-bold text-np-dark flex items-center gap-1"><ShieldCheck size={12} /> Review test accounts</h3>
@@ -416,7 +509,7 @@ export default function GrowthDashboardPage() {
           {tab === 'outcomes' && <p className="text-[10px] text-gray-400">Aggregates only. A share is hidden when fewer than 5 people qualify, and click-through lists names, never values.</p>}
         </>
       )}
-      {open && <Records def={open} from={range[0]} to={range[1]} onClose={() => setOpen(null)} />}
+      {open && <Records def={open} from={range[0]} to={data?.metrics[open.key]?.through ?? range[1]} onClose={() => setOpen(null)} />}
     </div>
   )
 }
