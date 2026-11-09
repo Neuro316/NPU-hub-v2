@@ -107,9 +107,12 @@ eq('name candidates skip stop words', nameCandidates('Discovery Call with Jane D
 
 // ── gate ───────────────────────────────────────────────────────────────────
 const rid = '11111111-2222-3333-4444-555555555555'
-eq('gate on', parseSchedAgentConfig({ enabled: 'on', recipient_user_id: rid, since: '2026-11-09T00:00:00Z' }), { enabled: true, since: '2026-11-09T00:00:00.000Z', recipientUserId: rid })
+eq('gate on', parseSchedAgentConfig({ enabled: 'on', recipient_user_id: rid, since: '2026-11-09T00:00:00Z' }), { enabled: true, drafts: false, since: '2026-11-09T00:00:00.000Z', recipientUserId: rid })
 eq('gate true boolean is off', parseSchedAgentConfig({ enabled: true, recipient_user_id: rid }).enabled, false)
-eq('gate missing is off', parseSchedAgentConfig(null), { enabled: false, since: null, recipientUserId: null })
+eq('gate missing is off', parseSchedAgentConfig(null), { enabled: false, drafts: false, since: null, recipientUserId: null })
+eq('drafts on needs drafts on', parseSchedAgentConfig({ enabled: 'on', recipient_user_id: rid, since: '2026-11-09T00:00:00Z', drafts: 'on' }).drafts, true)
+eq('drafts on but agent off is off', parseSchedAgentConfig({ enabled: 'off', recipient_user_id: rid, since: '2026-11-09T00:00:00Z', drafts: 'on' }).drafts, false)
+eq('drafts on without since is off', parseSchedAgentConfig({ enabled: 'on', recipient_user_id: rid, drafts: 'on' }).drafts, false)
 eq('gate on without recipient is off', parseSchedAgentConfig({ enabled: 'on' }).enabled, false)
 
 const pass = results.filter((r) => r.ok).length
