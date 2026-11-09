@@ -107,15 +107,32 @@ async function tokenRequest(params: Record<string, string>): Promise<any> {
     throw new MailError('Google could not be reached. Try again.', 'network')
   }
   const data = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    // Only Google's short error code is kept, and only from a fixed list.
-    const code = ['invalid_grant', 'invalid_client', 'unauthorized_client'].includes(data?.error) ? data.error : 'token_error'
-    const msg = code === 'invalid_grant'
-      ? 'Google no longer accepts this connection. Disconnect and connect again.'
-      : 'Google refused the token request.'
-    throw new MailError(msg, code)
-  }
+  if (!res.ok) throw tokenError(data?.error)
   return data
+}
+
+// Only Google's short error code is kept, and only from this fixed list. The rest of
+// the response body (error_description included) never reaches a message or a log.
+const TOKEN_ERROR_HINTS: Record<string, string> = {
+  invalid_grant: 'Google no longer accepts this connection. Disconnect and connect again.',
+  invalid_client: 'Google did not accept the Hub OAuth client. Check the client id and secret on this deployment.',
+  unauthorized_client: 'This Google OAuth client is not allowed to make this request.',
+  admin_policy_enforced: 'Your Google Workspace admin settings block this app for this account.',
+  invalid_request: 'Google said the request was malformed. Disconnect and connect again.',
+  invalid_scope: 'Google rejected the requested access. Connect again and allow everything requested.',
+  org_internal: 'This app is limited to its own Google organization, and this account is outside it.',
+  access_denied: 'Google denied access for this account. Connect again and allow access.',
+}
+
+/** A MailError with Google's short code (fixed list, else token_error) and a plain-English hint.
+ *  invalid_grant keeps its reconnect message unchanged. */
+export function tokenError(googleCode: unknown): MailError {
+  const code = typeof googleCode === 'string' && Object.prototype.hasOwnProperty.call(TOKEN_ERROR_HINTS, googleCode)
+    ? googleCode
+    : 'token_error'
+  if (code === 'invalid_grant') return new MailError(TOKEN_ERROR_HINTS.invalid_grant, code)
+  const hint = TOKEN_ERROR_HINTS[code]
+  return new MailError(`Google refused the token request (${code}).${hint ? ` ${hint}` : ''}`, code)
 }
 
 /** The id_token's claims. It came straight from Google's token endpoint over TLS, so
@@ -149,7 +166,7 @@ export async function exchangeCode(code: string, origin: string): Promise<CodeEx
 
 export async function accessTokenFor(refreshToken: string): Promise<string> {
   const data = await tokenRequest({ refresh_token: refreshToken, grant_type: 'refresh_token' })
-  if (typeof data.access_token !== 'string') throw new MailError('Google refused the token request.', 'token_error')
+  if (typeof data.access_token !== 'string' || !data.access_token) throw tokenError(data?.error)
   return data.access_token
 }
 
