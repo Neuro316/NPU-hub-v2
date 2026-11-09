@@ -509,7 +509,13 @@ const operationsLoader: Loader = async ctx => {
   const runs = await all((a, b) => db.from('job_runs').select('id, job, started_at').eq('ok', false).gte('started_at', queryFrom(ctx.from)).lt('started_at', queryTo(ctx.to)).range(a, b), 'job_runs')
   for (const r of runs) { const day = nyDay(r.started_at); if (inRange(ctx, day)) items.push({ metric: 'cron_failures', day, value: 1, dims: { job: r.job }, rec: { id: String(r.id), label: r.job, sub: r.started_at } }) }
   if (inRange(ctx, ctx.today)) {
-    const inbox = await all((a, b) => db.from('hub_mail_messages').select('id, received_at').eq('status', 'new').range(a, b), 'hub_mail_messages')
+    // Shared mailboxes only (2026-11-09): metrics are visible to every staff member, so a private mailbox's
+    // messages are never counted or listed here. Its owner sees them on /mail.
+    const shared = await all((a, b) => db.from('hub_mail_connections').select('id').eq('visibility', 'shared').range(a, b), 'hub_mail_connections')
+    const sharedIds = shared.map((c: any) => c.id as string)
+    const inbox = sharedIds.length
+      ? await all((a, b) => db.from('hub_mail_messages').select('id, received_at').eq('status', 'new').in('connection_id', sharedIds).range(a, b), 'hub_mail_messages')
+      : []
     for (const m of inbox) items.push({ metric: 'inbox_waiting', day: ctx.today, value: 1, rec: { id: m.id, label: 'Message waiting', sub: `received ${nyDay(m.received_at)}`, href: '/mail' } })
     const tickets = await all((a, b) => db.from('support_tickets').select('id, subject, created_at, status').in('status', ['open', 'in_progress']).range(a, b), 'support_tickets')
     for (const t of tickets) items.push({ metric: 'tickets_open', day: ctx.today, value: 1, rec: { id: t.id, label: t.subject || 'Ticket', sub: `opened ${nyDay(t.created_at)}`, href: '/tickets' } })
