@@ -126,3 +126,58 @@ export async function getMessageForTriage(accessToken: string, id: string): Prom
     body: plain.replace(/[ \t\f\v\r]+/g, ' ').replace(/\n\s*\n+/g, '\n\n').trim().slice(0, BODY_CHARS),
   }
 }
+
+// ─── SENT label, metadata only (speed to lead; hub_236) ──────────────────────
+/** Messages added to SENT since `startHistoryId`, and the cursor to store next (same paging as the inbox). */
+export async function sentAddedSince(accessToken: string, startHistoryId: string): Promise<{ added: AddedMessage[]; historyId: string }> {
+  const seen = new Map<string, AddedMessage>()
+  let pageToken = ''
+  let historyId = startHistoryId
+  let lastRecordId = ''
+  for (let page = 0; page < MAX_HISTORY_PAGES; page++) {
+    const q = new URLSearchParams({ startHistoryId, historyTypes: 'messageAdded', labelId: 'SENT', maxResults: '500' })
+    if (pageToken) q.set('pageToken', pageToken)
+    const { status, data } = await gmailGet(accessToken, `/history?${q}`)
+    if (status === 404) throw new MailError('Gmail history expired; sent-mail sync restarted from now.', 'history_expired')
+    if (status !== 200) throw new MailError(`Gmail refused the history request (HTTP ${status}).`, 'gmail_error')
+    for (const h of data.history ?? []) {
+      if (/^\d+$/.test(String(h.id ?? ''))) lastRecordId = String(h.id)
+      for (const a of h.messagesAdded ?? []) {
+        const m = a.message ?? {}
+        const labels: string[] = m.labelIds ?? []
+        if (!labels.includes('SENT') || labels.includes('DRAFT')) continue
+        if (/^[0-9a-f]{1,32}$/.test(m.id ?? '') && /^[0-9a-f]{1,32}$/.test(m.threadId ?? '')) seen.set(m.id, { id: m.id, threadId: m.threadId })
+      }
+    }
+    pageToken = data.nextPageToken ?? ''
+    if (!pageToken) {
+      if (/^\d+$/.test(String(data.historyId ?? ''))) historyId = String(data.historyId)
+      return { added: Array.from(seen.values()), historyId }
+    }
+  }
+  return { added: Array.from(seen.values()), historyId: lastRecordId || historyId }
+}
+
+/** Split a To/Cc/Bcc header into lower-case addresses. */
+export function parseAddressList(raw: string | undefined): string[] {
+  if (!raw) return []
+  const out = new Set<string>()
+  for (const m of Array.from(raw.matchAll(/[^\s<>",;:()]+@[^\s<>",;:()]+\.[^\s<>",;:()]+/g))) {
+    const a = m[0].toLowerCase().replace(/[.]+$/, '')
+    if (a.length <= 320) out.add(a)
+  }
+  return Array.from(out)
+}
+
+/** A sent message's recipients and time. format=metadata with only the address headers: no subject, no body. */
+export async function getSentMetadata(accessToken: string, id: string): Promise<{ recipients: string[]; sentAt: string | null }> {
+  const q = new URLSearchParams({ format: 'metadata' })
+  for (const h of ['To', 'Cc', 'Bcc']) q.append('metadataHeaders', h)
+  const { status, data } = await gmailGet(accessToken, `/messages/${encodeURIComponent(id)}?${q}`)
+  if (status === 404) throw new MailError('The message is no longer in Gmail.', 'message_gone')
+  if (status !== 200) throw new MailError(`Gmail refused the message request (HTTP ${status}).`, 'gmail_error')
+  const headers: { name: string; value: string }[] = data.payload?.headers ?? []
+  const recipients = Array.from(new Set(headers.filter(h => /^(to|cc|bcc)$/i.test(h.name ?? '')).flatMap(h => parseAddressList(h.value))))
+  const internal = Number(data.internalDate)
+  return { recipients, sentAt: Number.isFinite(internal) && internal > 0 ? new Date(internal).toISOString() : null }
+}
