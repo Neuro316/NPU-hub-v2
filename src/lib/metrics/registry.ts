@@ -69,7 +69,8 @@ export const METRICS: MetricDef[] = [
   // ── Acquisition ──
   { key: 'leads_all', label: 'All new contacts', tab: 'acquisition', unit: 'count', agg: 'sum', def: '2-acquisition', dim: 'channel' },
   { key: 'leads_by_source', label: 'New contacts by source', tab: 'acquisition', unit: 'count', agg: 'sum', def: '2-acquisition', dim: 'source', hidden: true },
-  { key: 'speed_to_lead', label: 'Speed to lead (median)', tab: 'acquisition', unit: 'minutes', agg: 'median', def: '2-acquisition', lowerIsBetter: true },
+  { key: 'speed_to_lead', label: "Speed to lead (leads who didn't book)", tab: 'acquisition', unit: 'minutes', agg: 'median', def: '2-acquisition', lowerIsBetter: true },
+  { key: 'self_booked_leads', label: 'Self-booked leads', tab: 'acquisition', unit: 'count', agg: 'sum', def: '2-acquisition' },
   { key: 'leads_booked_30d', label: 'Leads that booked within 30 days', tab: 'acquisition', unit: 'count', agg: 'sum', def: '2-acquisition', dim: 'channel' },
   { key: 'lead_to_booked_rate', label: 'Lead to booked rate', tab: 'acquisition', unit: 'pct', agg: 'ratio', num: 'leads_booked_30d', den: 'leads', scale: 100, def: '2-acquisition', noRecords: true },
   { key: 'ad_spend', label: 'Marketing spend', tab: 'acquisition', unit: 'usd', agg: 'sum', def: '2-acquisition' },
