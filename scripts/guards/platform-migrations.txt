@@ -273,4 +273,7 @@ pf_296_under_load_early_access.sql
 pf_297_practice_pace_source.sql
 pf_298_booking_poll.sql
 pf_299_funnel_events.sql
+pf_300_scheduled_jobs_booking_poll.sql
 pf_301_on_behalf_writes.sql
+pf_302_holiday_fresh_air_grant.sql
+pf_303_support_ticket_notify.sql

@@ -121,14 +121,58 @@ const contactsLoader: Loader = async ctx => {
     for (const s of sends) touch(s.contact_id, s.sent_at)
     const emails = await inChunks(ids, ch => db.from('email_sends').select('contact_id, sent_at').not('sent_at', 'is', null).in('contact_id', ch), 'email_sends')
     for (const e of emails) touch(e.contact_id, e.sent_at)
+
+    // Gmail sent from connected mailboxes (metadata only: recipient address and sent time), SHARED mailboxes only:
+    // the mail privacy rule (2026-11-09) keeps private mailboxes out of every metric. Absent until hub_236.
+    const byEmail = new Map<string, string[]>()
+    for (const c of inbound) { const e = lower(c.email); if (e) byEmail.set(e, [...(byEmail.get(e) ?? []), c.id]) }
+    const leadEmails = Array.from(byEmail.keys())
+    if (leadEmails.length) {
+      const { data: shared } = await db.from('hub_mail_connections').select('id').eq('visibility', 'shared')
+      const sharedIds = (shared ?? []).map((c: any) => c.id as string)
+      if (sharedIds.length) {
+        const sent = await inChunks(leadEmails, ch => db.from('hub_mail_sent').select('to_address, sent_at').in('connection_id', sharedIds).in('to_address', ch), 'hub_mail_sent')
+          .catch(() => [] as any[])  // table absent before hub_236
+        for (const m of sent) for (const id of byEmail.get(lower(m.to_address)) ?? []) touch(id, m.sent_at)
+      }
+    }
+
+    // the lead's own booking (nr_bookings matched by email to the guest or participant), any time
+    const bookedAll = new Map<string, number[]>()
+    if (leadEmails.length) {
+      const bl = await inChunks(leadEmails, ch => db.from('nr_booking_leads').select('id, email').in('email', ch), 'nr_booking_leads')
+      const pr = await inChunks(leadEmails, ch => db.from('profiles').select('id, email').in('email', ch), 'profiles')
+      const blEmail = new Map(bl.map(l => [l.id, lower(l.email)])), prEmail = new Map(pr.map(p => [p.id, lower(p.email)]))
+      const bks = [
+        ...await inChunks(Array.from(blEmail.keys()), ch => db.from('nr_bookings').select('created_at, lead_id, participant_id').in('lead_id', ch), 'nr_bookings'),
+        ...await inChunks(Array.from(prEmail.keys()), ch => db.from('nr_bookings').select('created_at, lead_id, participant_id').in('participant_id', ch), 'nr_bookings'),
+      ]
+      for (const k of bks) {
+        const e = (k.lead_id && blEmail.get(k.lead_id)) || (k.participant_id && prEmail.get(k.participant_id)) || ''
+        if (e) bookedAll.set(e, [...(bookedAll.get(e) ?? []), new Date(k.created_at).getTime()])
+      }
+    }
+
     for (const c of inbound) {
       const created = new Date(c.created_at).getTime()
       const t = firstTouch.get(c.id)
       const touched = t !== undefined && t >= created
+      const label = fullName(c.first_name, c.last_name) || c.email || 'Unnamed contact'
+      const bk = bookedAll.get(lower(c.email)) ?? []
+      // handled by their own booking: one made at or before the lead (0 minutes), or after it and before any touch
+      const before = bk.some(b => b <= created)
+      const after = bk.filter(b => b > created).sort((x, y) => x - y)[0]
+      if (before || (after !== undefined && (!touched || after < t!))) {
+        const minutes = before ? 0 : Math.round((after! - created) / 60_000)
+        items.push({ metric: 'self_booked_leads', day: nyDay(c.created_at), value: 1, rec: {
+          id: c.id, label, sub: before ? 'booked before or as the lead came in' : `booked a call ${minutes} min after coming in`, href: contactHref(c.id),
+        } })
+        continue
+      }
       // an untouched lead counts the minutes it has waited so far
       const minutes = Math.max(0, Math.round(((touched ? t! : ctx.now.getTime()) - created) / 60_000))
       items.push({ metric: 'speed_to_lead', day: nyDay(c.created_at), value: minutes, rec: {
-        id: c.id, label: fullName(c.first_name, c.last_name) || c.email || 'Unnamed contact',
+        id: c.id, label,
         sub: touched ? `${minutes} min to first touch` : `no outbound touch yet (${minutes} min)`, href: contactHref(c.id),
       } })
     }
@@ -509,7 +553,13 @@ const operationsLoader: Loader = async ctx => {
   const runs = await all((a, b) => db.from('job_runs').select('id, job, started_at').eq('ok', false).gte('started_at', queryFrom(ctx.from)).lt('started_at', queryTo(ctx.to)).range(a, b), 'job_runs')
   for (const r of runs) { const day = nyDay(r.started_at); if (inRange(ctx, day)) items.push({ metric: 'cron_failures', day, value: 1, dims: { job: r.job }, rec: { id: String(r.id), label: r.job, sub: r.started_at } }) }
   if (inRange(ctx, ctx.today)) {
-    const inbox = await all((a, b) => db.from('hub_mail_messages').select('id, received_at').eq('status', 'new').range(a, b), 'hub_mail_messages')
+    // Shared mailboxes only (2026-11-09): metrics are visible to every staff member, so a private mailbox's
+    // messages are never counted or listed here. Its owner sees them on /mail.
+    const shared = await all((a, b) => db.from('hub_mail_connections').select('id').eq('visibility', 'shared').range(a, b), 'hub_mail_connections')
+    const sharedIds = shared.map((c: any) => c.id as string)
+    const inbox = sharedIds.length
+      ? await all((a, b) => db.from('hub_mail_messages').select('id, received_at').eq('status', 'new').in('connection_id', sharedIds).range(a, b), 'hub_mail_messages')
+      : []
     for (const m of inbox) items.push({ metric: 'inbox_waiting', day: ctx.today, value: 1, rec: { id: m.id, label: 'Message waiting', sub: `received ${nyDay(m.received_at)}`, href: '/mail' } })
     const tickets = await all((a, b) => db.from('support_tickets').select('id, subject, created_at, status').in('status', ['open', 'in_progress']).range(a, b), 'support_tickets')
     for (const t of tickets) items.push({ metric: 'tickets_open', day: ctx.today, value: 1, rec: { id: t.id, label: t.subject || 'Ticket', sub: `opened ${nyDay(t.created_at)}`, href: '/tickets' } })
@@ -544,7 +594,7 @@ export const LOADERS: Record<string, Loader> = {
   onboarding: onboardingLoader, outcomes: outcomesLoader, marketing: marketingLoader, content: contentLoader, operations: operationsLoader,
 }
 export const LOADER_OF: Record<string, string[]> = {
-  leads: ['contacts'], leads_all: ['contacts'], leads_by_source: ['contacts'], podcast_leads: ['contacts'], speed_to_lead: ['contacts'], leads_booked_30d: ['contacts'], unsubscribed: ['contacts'],
+  leads: ['contacts'], leads_all: ['contacts'], leads_by_source: ['contacts'], podcast_leads: ['contacts'], speed_to_lead: ['contacts'], self_booked_leads: ['contacts'], leads_booked_30d: ['contacts'], unsubscribed: ['contacts'],
   booked_calls: ['bookings'], shows: ['bookings'], no_shows: ['bookings'],
   sales: ['payments'], comps: ['payments'], clarity_sales: ['payments'], assessments_sold: ['payments'], revenue: ['payments', 'other_revenue'], revenue_platform: ['payments'],
   refunds: ['payments'], refund_amount: ['payments'], buyers: ['payments'], days_lead_to_purchase: ['payments'], promo_redemptions: ['payments'], promo_discount: ['payments'],

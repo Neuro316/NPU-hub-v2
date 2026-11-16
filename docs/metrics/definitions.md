@@ -98,7 +98,8 @@ Purchases are **test** when any of the following is true:
 | Leads by campaign | `campaign_enrollments.campaign_id` (5 rows), plus `contacts.acquisition_campaign` (0 filled) | count | ⚠ |
 | Cost per lead | Spend ÷ leads (inbound channels), monthly. Spend = `acct_marketing_charges.amount` where not `waived`, by `month` | $ | ⚠ spend is clinic co-op charges only (G5) |
 | Cost per client | Spend ÷ sales, monthly | $ | ⚠ |
-| Speed to lead | Per new scorecard lead: minutes from `contacts.created_at` to the first outbound touch, which is the earliest of: `crm_messages` (direction `outbound`, joined through `conversations.contact_id`), `call_logs` (direction `outbound`), `message_sends` (`dry_run=false`, sent), `email_sends.sent_at`. **A lead with no touch yet counts the minutes it has waited so far** | median minutes over the leads created in the range | ⚠ Gmail-sent replies aren't visible (G6) |
+| Speed to lead (leads who didn't book) | Per new scorecard lead **not handled by their own booking**: minutes from `contacts.created_at` to the first outbound touch, which is the earliest of: `crm_messages` (direction `outbound`, joined through `conversations.contact_id`), `call_logs` (direction `outbound`), `message_sends` (`dry_run=false`, sent), `email_sends.sent_at`, and **Gmail sent mail** to the lead's address (`hub_mail_sent`, metadata only, **shared mailboxes only** under the mail privacy rule; synced from hub_236 on, no back-fill). **A lead with no touch yet counts the minutes it has waited so far** | median minutes over the leads created in the range | ✅ |
+| Self-booked leads | New scorecard leads handled by their own booking: an `nr_bookings` row matched by email (the booking lead's or participant's address) made at or before the lead was created (0 minutes), or after it but before any outbound touch. These leads are left out of the speed-to-lead median | count by lead date | ✅ |
 | Lead → booked rate by source | Leads in period that have any `nr_bookings` (matched by email: contact ↔ lead or profile) within 30 days ÷ leads, by channel | % | ⚠ |
 
 ## 3. Sales
@@ -194,7 +195,7 @@ completed lesson in the last 14 days.
 | G3 | **Comp vs sale (ruled).** A $0 payment (100% promo) is a comp. It is shown beside sales and not counted as one | — |
 | G4 | **Lead device.** No table stores a device or user agent | Capture it at the lead forms and quiz (University) |
 | G5 | **Ad spend.** Only clinic marketing co-op charges exist (`acct_marketing_charges`) | A spend table or entries per channel |
-| G6 | **Gmail replies** from connected mailboxes don't count toward speed to lead (only inbox mail is synced) | Sync the Sent label in mail-sync |
+| G6 | ~~Gmail replies from connected mailboxes don't count toward speed to lead~~ **Closed 2026-11-10:** mail-sync records the SENT label's recipients and time (hub_236); speed to lead counts a sent email to the lead's address from a shared mailbox | — |
 | G7 | **Checkout started.** There's no record of an abandoned checkout | Write a row when a Stripe Checkout session is created |
 | G8 | **Partner referrals.** `affiliate_referrals` is empty and promo `affiliate_id` is never set | Attribute affiliate codes |
 | G9 | **Memberships.** `subscriptions` is empty | — |
