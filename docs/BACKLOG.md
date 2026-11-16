@@ -1,17 +1,17 @@
 # Hub backlog
 
 One line per Hub Running List id. Titles and status come from the Hub Running List (a Claude artifact,
-not in this repo), as of 16 Nov 2026. Branch, PR and Migration come from git. `-` means none found in git.
+not in this repo), as of 16 Nov 2026, updated with the Hub chat's applied state that afternoon. Branch, PR and Migration come from git. `-` means none found in git.
 
 | Id | Item | Status (16 Nov) | Branch | PR | Migration |
 |----|------|-----------------|--------|----|-----------|
 | q01 | Conversations: Add as contact with suggested pipeline and stage | Rank 8, not started | - | - | - |
-| q02 | Contact card: Communications history section | Rank 7, not started (needs hub_236 applied) | - | - | depends on hub_236 |
-| q03 | Speed to lead counts self-booked leads and Gmail replies | DONE, merged Nov 10 | `feat/speed-to-lead` | #48 merged | hub_236 not applied |
+| q02 | Contact card: Communications history section | Rank 7, not started (hub_236 applied 16 Nov, so unblocked) | - | - | hub_236 applied 16 Nov |
+| q03 | Speed to lead counts self-booked leads and Gmail replies | DONE, merged Nov 10 | `feat/speed-to-lead` | #48 merged | hub_236 applied 16 Nov 11:22 |
 | q04 | LeadConnector bridge into Sales | Deferred | - | - | - |
 | q05 | Mobile friendly Hub | On hold | - | - | - |
-| q06 | Every University booking link lands in the pipeline with stage history | Rank 1, Shane, Task B | `feat/booking-routes-triggers` (earlier: `feat/booking-routes` #23, `feat/discovery-bookings-sales` #42, both merged) | #50 open | hub_237 proposed |
-| q07 | Triggers: booking, checkout, purchase, consent, first session, inactivity, program end | Rank 2, Shane, Task B | `feat/booking-routes-triggers` | #50 open | hub_237 proposed |
+| q06 | Every University booking link lands in the pipeline with stage history | Rank 1, Shane, Task B | `feat/booking-routes-triggers` (earlier: `feat/booking-routes` #23, `feat/discovery-bookings-sales` #42, both merged) | #50 open | hub_237 applied 16 Nov 14:47; setup run 14:50 (dry_run) |
+| q07 | Triggers: booking, checkout, purchase, consent, first session, inactivity, program end | Rank 2, Shane, Task B | `feat/booking-routes-triggers` | #50 open | hub_237 applied 16 Nov 14:47; setup run 14:50 (dry_run) |
 | q08 | Wire lead sources into Hub intake | Rank 6, website and platform sessions, not this repo | - | - | - |
 | q09 | Scheduling assistant: morning brief and reply drafts | Rank 10, on hold | `feat/scheduling-agent-phase3` | #46 open | hub_234 proposed |
 | q10 | Customer service: support drafts, FAQ videos, welcome email monitoring | Rank 11 | - | - | - |
@@ -23,24 +23,27 @@ not in this repo), as of 16 Nov 2026. Branch, PR and Migration come from git. `-
 | q16 | Affiliate and podcast promo code tracking | Rank 16 | - | - | - |
 | q17 | Failed payment recovery and weekly KPI text | Rank 17 | - | - | - |
 | q18 | Podcast workflow | Rank 18 | - | - | - |
-| q19 | Lead follow-up system | Rank 3, Shane, Task B | `feat/booking-routes-triggers` | #50 open | hub_237 proposed |
-| q20 | Program enrollment pipeline automation | Rank 4, Shane, Task B | `feat/booking-routes-triggers` | #50 open | hub_237 proposed |
-| q21 | Drop-off messages for clients | Rank 5, Shane, Task B | `feat/booking-routes-triggers` | #50 open | hub_237 proposed |
+| q19 | Lead follow-up system | Rank 3, Shane, Task B | `feat/booking-routes-triggers` | #50 open | hub_237 applied 16 Nov 14:47; setup run 14:50 (dry_run) |
+| q20 | Program enrollment pipeline automation | Rank 4, Shane, Task B | `feat/booking-routes-triggers` | #50 open | hub_237 applied 16 Nov 14:47; setup run 14:50 (dry_run) |
+| q21 | Drop-off messages for clients | Rank 5, Shane, Task B | `feat/booking-routes-triggers` | #50 open | hub_237 applied 16 Nov 14:47; setup run 14:50 (dry_run) |
 | q22 | CRM notifications and task organization | Rank 9 | - | - | - |
 | q23 | Hub Health (Hub half of Platform Health) | Rank 6, Shane; blocked on platform pf_310 | - | - | - |
-| q24 | Adopt standing practices, STATE/BACKLOG, nonprod catch-up | Rank 0, Task A | `docs/standing-practices-2026-11-16` | #49 open | nonprod catch-up proposed |
+| q24 | Adopt standing practices, STATE/BACKLOG, nonprod catch-up | DONE 16 Nov | `docs/standing-practices-2026-11-16` | #49 merged (`53e2788`) | nonprod catch-up applied 16 Nov 10:44, ledger aligned |
 | q25 | Headset program access: 6 months from the last purchase, with an on/off switch on the contact card | Not started; platform builds the access rule plus a view and one override function, Hub builds the card and switch against them (handed to Cameron's platform chat 16 Nov) | - | - | - |
-| c01 | hub_235 go, then merge PR #47 | Waiting on go and nonprod catch-up | `feat/metrics-targets` | #47 open | hub_235 proposed |
-| c02 | Heather Bauer into Sales | Waiting on go | - | - | no data-fix file found in git |
+| q26 | Mail search endpoint across all connected mailboxes (for call prep) | Not started | - | - | - |
+| q27 | Nonprod staff seed, then point Hub previews at nonprod | Not started | - | - | - |
+| c01 | hub_235 go, then merge PR #47 | Waiting on go (nonprod catch-up done 16 Nov) | `feat/metrics-targets` | #47 open | hub_235 proposed |
+| c02 | Heather Bauer into Sales | DONE 16 Nov | - | - | - |
 | c03 | Swap LeadConnector link for University discovery link | Cameron, manual | - | - | - |
 | c04 | One Sales Pipeline for all discovery calls | DONE, decided Nov 13 | - | - | - |
 | c05 | Approve first four campaigns and switch live | Cameron | `feat/speed-to-lead-campaigns` (drafts) | #40 merged | - |
 | c06 | Shane's Hub access | DONE | - | - | - |
 | c07 | Platform pf_310 (health tables) | Platform chat | - | - | pf_310 (platform) |
-| c08 | Security: hub_232 team_profiles plus org_settings lockdown | TOP PRIORITY | `fix/team-profiles-lockdown` | #44 open | split 16 Nov: hub_232 (team_profiles, apply now) and hub_238 (org_settings, after the release); both proposed, not applied |
+| c08 | Security: hub_232 team_profiles plus org_settings lockdown | DONE 16 Nov | `fix/team-profiles-lockdown` | #44 merged (`3a80963`) | hub_232 applied 11:20, hub_238 applied 14:42 |
 | c09 | Reconnect cameron@ and admin@ mailboxes | Cameron, manual | - | - | - |
-| c10 | hub_236 go (Gmail sent metadata) | Waiting on go and nonprod catch-up | `feat/speed-to-lead` | #48 merged | hub_236 on main, not applied |
-| c11 | Hub settings saves have failed silently since Nov 10 (pf_304); fix on PR #44 | Fix pushed 16 Nov, waiting on walkthrough and merge | `fix/team-profiles-lockdown` | #44 open | hub_238 after the release |
+| c10 | hub_236 go (Gmail sent metadata) | DONE 16 Nov | `feat/speed-to-lead` | #48 merged | hub_236 applied 16 Nov 11:22 |
+| c11 | Hub settings saves have failed silently since Nov 10 (pf_304); fix on PR #44 | DONE 16 Nov | `fix/team-profiles-lockdown` | #44 merged (`3a80963`) | hub_238 applied 16 Nov 14:42 |
+| c12 | Decide which mailboxes count a reply toward speed to lead | Open decision | - | - | - |
 | d01 | Clean up about 20 duplicate contacts | Deferred | - | - | - |
 | d02 | Rotate exposed keys (Slack, Twilio, AI) | Deferred | - | - | - |
 | d03 | Merge duplicate pipelines and overlapping tags | Deferred | - | - | - |
@@ -52,9 +55,7 @@ not in this repo), as of 16 Nov 2026. Branch, PR and Migration come from git. `-
 
 | Branch | PR | Migration |
 |--------|----|-----------|
-| `fix/team-profiles-lockdown` | #44 open | hub_232 proposed |
 | `feat/scheduling-agent-phase3` | #46 open | hub_234 proposed |
 | `feat/metrics-targets` | #47 open | hub_235 proposed |
-| `feat/speed-to-lead` | #48 merged | hub_236 on main, not applied |
-| `docs/standing-practices-2026-11-16` | #49 open | nonprod catch-up proposed |
-| `feat/booking-routes-triggers` | #50 open | hub_237 + two data fixes proposed (Task B) |
+| `feat/speed-to-lead` | #48 merged | hub_236 applied 16 Nov |
+| `feat/booking-routes-triggers` | #50 open | hub_237 applied; both data fixes run 16 Nov (Task B) |
