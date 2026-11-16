@@ -5,10 +5,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { METRICS, METRIC, type MetricDef } from './registry'
 import { median } from './collect'
-import { addDays, daysBetween, daysInMonth, eachDay, monthStart } from './dates'
+import { addDays, daysBetween, daysInMonth, monthStart } from './dates'
+import { evaluate, type Target, type Status, type Direction } from './targets'
 
-export interface Target { metric_key: string; month: string; target_value: number; amber_threshold: number; red_threshold: number }
-export type Status = 'green' | 'amber' | 'red'
+export { targetFor, targetPace, statusOf, type Target, type Status } from './targets'
 export interface TileValue {
   value: number | null
   prev: number | null
@@ -18,6 +18,9 @@ export interface TileValue {
   target?: number
   pace?: number
   status?: Status
+  direction?: Direction
+  /** a forward metric's range end (the month's end when the range ends today) */
+  through?: string
 }
 interface DbRow { date: string; metric_key: string; dimension_key: string; dimension_value: string; value: number }
 
@@ -38,30 +41,9 @@ export async function loadRows(db: SupabaseClient, from: string, to: string): Pr
   return out
 }
 
-/** The target in force for a month: its own row, else the latest earlier month's. */
-export function targetFor(targets: Target[], metric: string, day: string): Target | null {
-  const m = monthStart(day)
-  return targets.filter(t => t.metric_key === metric && t.month <= m).sort((a, b) => b.month.localeCompare(a.month))[0] ?? null
-}
-
-/** Target over the range (prorated per day) and the pace (only days up to today). */
-export function targetPace(targets: Target[], metric: string, from: string, to: string, today: string) {
-  let target = 0, pace = 0, t: Target | null = null
-  for (const d of eachDay(from, to)) {
-    const tt = targetFor(targets, metric, d)
-    if (!tt) continue
-    t = tt
-    const perDay = Number(tt.target_value) / daysInMonth(d)
-    target += perDay
-    if (d <= today) pace += perDay
-  }
-  return t ? { target, pace, amber: Number(t.amber_threshold), red: Number(t.red_threshold) } : null
-}
-
-export function statusOf(value: number, pace: number, amber: number, red: number): Status | undefined {
-  if (!(pace > 0)) return undefined
-  const r = value / pace
-  return r >= amber ? 'green' : r >= red ? 'amber' : 'red'
+/** A forward metric (dated by session day) read for a range ending today runs to the end of that month. */
+export function forwardTo(to: string, today: string): string {
+  return to === today ? addDays(monthStart(to), daysInMonth(to) - 1) : to
 }
 
 function valueOf(def: MetricDef, rows: DbRow[], from: string, to: string, cache: Map<string, number | null>): number | null {
@@ -82,6 +64,18 @@ function valueOf(def: MetricDef, rows: DbRow[], from: string, to: string, cache:
 
 function dimsOf(def: MetricDef, rows: DbRow[], from: string, to: string) {
   if (!def.dim) return undefined
+  if (def.agg === 'ratio' && def.num && def.den) {
+    // per breakdown value (a cohort month): num ÷ den within that value, with n shown in the label's place
+    const by = (k: string) => {
+      const m = new Map<string, number>()
+      for (const r of rows) if (r.metric_key === k && r.date >= from && r.date <= to && r.dimension_key === def.dim) m.set(r.dimension_value, (m.get(r.dimension_value) ?? 0) + r.value)
+      return m
+    }
+    const num = by(def.num), den = by(def.den)
+    return { [def.dim]: Array.from(den.entries()).filter(([, d]) => d > 0)
+      .map(([value, d]) => ({ value: `${value} (n ${Math.round(d)})`, v: Math.round(((num.get(value) ?? 0) / d) * (def.scale ?? 1) * 100) / 100 }))
+      .sort((a, b) => b.value.localeCompare(a.value)) }
+  }
   const mine = rows.filter(r => r.metric_key === def.key && r.date >= from && r.date <= to && r.dimension_key === def.dim)
   let use = mine
   if (def.agg === 'last') { const last = mine.map(r => r.date).sort().pop(); use = mine.filter(r => r.date === last) }
@@ -92,9 +86,11 @@ function dimsOf(def: MetricDef, rows: DbRow[], from: string, to: string) {
 
 export async function summarize(db: SupabaseClient, from: string, to: string, today: string, opts: { series?: boolean } = {}) {
   const prev = previousRange(from, to)
+  const fwdTo = forwardTo(to, today)
   const [rows, targetsRes, stamp] = await Promise.all([
-    loadRows(db, prev.from, to),
-    db.from('hub_metric_targets').select('metric_key, month, target_value, amber_threshold, red_threshold'),
+    loadRows(db, prev.from, fwdTo),
+    // '*' so the page keeps working before hub_235 adds `direction` (the metric's own direction is the fallback)
+    db.from('hub_metric_targets').select('*'),
     db.from('hub_metrics_daily').select('computed_at').order('computed_at', { ascending: false }).limit(1).maybeSingle(),
   ])
   if (targetsRes.error) throw new Error(`targets read failed: ${targetsRes.error.code}`)
@@ -103,18 +99,21 @@ export async function summarize(db: SupabaseClient, from: string, to: string, to
   const out: Record<string, TileValue> = {}
   for (const def of METRICS) {
     if (def.agg === 'gap') { out[def.key] = { value: null, prev: null }; continue }
-    const value = valueOf(def, rows, from, to, cache)
-    const tile: TileValue = { value, prev: valueOf(def, rows, prev.from, prev.to, cache), dims: dimsOf(def, rows, from, to) }
+    const end = def.forward ? fwdTo : to
+    const value = valueOf(def, rows, from, end, cache)
+    const tile: TileValue = { value, prev: valueOf(def, rows, prev.from, prev.to, cache), dims: dimsOf(def, rows, from, end) }
+    if (end !== to) tile.through = end
     if (def.agg === 'ratio' && def.minN && def.den) {
-      const n = valueOf(METRIC[def.den], rows, from, to, cache)
+      const n = valueOf(METRIC[def.den], rows, from, end, cache)
       tile.n = n
       if ((n ?? 0) < def.minN) { tile.hidden = true; tile.value = null; tile.prev = null }
     }
-    const tp = targetPace(targets, def.key, from, to, today)
-    if (tp && value != null) {
-      tile.target = Math.round(tp.target * 100) / 100
-      tile.pace = Math.round(tp.pace * 100) / 100
-      tile.status = statusOf(value, tp.pace, tp.amber, tp.red)
+    const ev = evaluate(targets, def.key, value, from, end, today)
+    if (ev) {
+      tile.target = Math.round(ev.target * 100) / 100
+      tile.pace = Math.round(ev.pace * 100) / 100
+      tile.status = ev.status
+      tile.direction = ev.direction
     }
     out[def.key] = tile
   }
@@ -122,15 +121,15 @@ export async function summarize(db: SupabaseClient, from: string, to: string, to
   if (opts.series) {
     series = {}
     for (const r of rows) {
-      if (r.dimension_key !== '' || r.date < from) continue
+      if (r.dimension_key !== '' || r.date < from || r.date > to) continue
       ;(series[r.metric_key] ??= []).push({ day: r.date, v: r.value })
     }
   }
-  return { from, to, prev, metrics: out, series, computed_at: stamp.data?.computed_at ?? null }
+  return { from, to, prev, metrics: out, series, targets, computed_at: stamp.data?.computed_at ?? null }
 }
 
 // ─── funnel (Scorecard strip and the Monday text) ───────────────────────────
-export const FUNNEL: [string, string][] = [['leads', 'Leads'], ['booked_calls', 'Booked calls'], ['sales', 'Sales'], ['onboarded', 'Onboarded']]
+export const FUNNEL: [string, string][] = [['leads', 'Leads'], ['booked_calls', 'Booked calls'], ['phase1_sales', 'Phase 1 sales'], ['onboarded', 'Onboarded']]
 
 /** The step with the lowest conversion (shows are skipped: never recorded yet, gap G2). */
 export function biggestDropOff(values: Record<string, number | null>): string | null {
