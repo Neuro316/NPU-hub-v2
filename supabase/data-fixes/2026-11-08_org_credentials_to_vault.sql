@@ -1,6 +1,9 @@
 -- 2026-11-08_org_credentials_to_vault.sql
 --
--- STATUS: PART 1 APPLIED 2026-11-09 (production): read-back 14 rows, all match = true. PART 2 not applied.
+-- STATUS: PART 1 APPLIED 2026-11-09 (production): read-back 14 rows, all match = true.
+-- PART 2 APPLIED 2026-11-09 after the release (3570c06) was live and its readers passed (lead-alert test, one SMS,
+-- Slack bot test; hub_org_vault_get called through the API): read-back 0 rows. The same three tests passed again
+-- with Vault as the only source.
 -- Two parts, each its own go. Production (htfrfaxlcuyawtlztxxm) only.
 -- Values are moved inside the database; no statement here returns or logs a credential (read-backs return counts
 -- and booleans only). No rotation (ruled 2026-11-08): the current values move as they are.

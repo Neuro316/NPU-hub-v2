@@ -23,13 +23,15 @@ import { findContactByPhoneNormalized } from '@/lib/crm-server'
 import { isUsableEmail } from '@/lib/contacts/match'
 import { loadPipelines, placeContact } from '@/lib/pipelines/positions'
 import { answerFill, answerList, bookingComplete, completedStageFor, placementOf, routeStage, type Pipeline, type Placement } from './placement'
+import { parseConfig, parseTypeRoutes } from '@/lib/lifecycle/rules'
 
 /** Bookings changed within this window are looked at on each run. */
 const LOOKBACK_DAYS = 30
 const MAX_BOOKINGS = 500
 
 export interface Route {
-  id: string
+  /** nr_booking_pipeline_routes.id; null for a Hub route (org_settings 'hub_booking_type_routes') */
+  id: string | null
   appointment_type_id: string
   org_id: string
   pipeline_id: string
@@ -125,7 +127,7 @@ async function timeline(db: SupabaseClient, orgId: string, contactId: string, ev
  * then its deal row, keyed on the pipeline's legacy key. Other pipelines the contact is in are untouched.
  */
 async function place(db: SupabaseClient, orgId: string, contactId: string, pipeline: Pipeline, stageId: string, route: Route): Promise<Placement> {
-  const result = await placeContact(db, contactId, stageId, route.move_earlier_stages_only, `booking_route:${route.id}`)
+  const result = await placeContact(db, contactId, stageId, route.move_earlier_stages_only, `booking_route:${route.id ?? 'hub'}`)
   const placement = placementOf(result)
   if (placement === 'none') console.warn(`[booking-sync] route ${route.id} placed nothing: ${result.reason ?? 'unknown'}`)
   if (placement !== 'entered' && placement !== 'moved') return placement
@@ -153,6 +155,30 @@ async function fillBlanks(db: SupabaseClient, contactId: string, questions: unkn
   return filled
 }
 
+/**
+ * The Hub's own routes, from every org whose lifecycle mode is LIVE. In dry_run or off this is empty, so the sync
+ * behaves exactly as before and the University's route rows decide.
+ */
+async function hubRoutes(db: SupabaseClient): Promise<Map<string, { kind: 'lead'; route: Route } | { kind: 'activity' }>> {
+  const out = new Map<string, { kind: 'lead'; route: Route } | { kind: 'activity' }>()
+  const { data, error } = await db.from('org_settings').select('org_id, setting_key, setting_value')
+    .in('setting_key', ['hub_lifecycle', 'hub_booking_type_routes'])
+  if (error) throw new Error(`hub routes ${error.code ?? 'unknown'}`)
+  const rows = (data ?? []) as Array<{ org_id: string; setting_key: string; setting_value: unknown }>
+  for (const life of rows.filter(r => r.setting_key === 'hub_lifecycle')) {
+    if (parseConfig(life.org_id, life.setting_value).mode !== 'live') continue
+    const raw = rows.find(r => r.org_id === life.org_id && r.setting_key === 'hub_booking_type_routes')?.setting_value
+    for (const [typeId, r] of Array.from(parseTypeRoutes(raw).entries())) {
+      if (r.kind === 'activity') { out.set(typeId, { kind: 'activity' }); continue }
+      out.set(typeId, { kind: 'lead', route: {
+        id: null, appointment_type_id: typeId, org_id: life.org_id, pipeline_id: r.pipeline!, pipeline_name: null,
+        stage_name: r.stage!, move_earlier_stages_only: true, create_contact_if_missing: true,
+      } })
+    }
+  }
+  return out
+}
+
 export interface SyncCounts {
   routes: number; seen: number; created_contacts: number; matched_contacts: number
   synced: number; rescheduled: number; cancelled: number; completed: number; replaced: number; skipped: number; failed: number
@@ -164,9 +190,15 @@ export async function runBookingSync(db: SupabaseClient, deadline: number): Prom
   const { data: routes, error: rErr } = await db.from('nr_booking_pipeline_routes')
     .select('id, appointment_type_id, org_id, pipeline_id, pipeline_name, stage_name, move_earlier_stages_only, create_contact_if_missing')
   if (rErr) throw new Error(`routes ${rErr.code ?? 'unknown'}`)
-  counts.routes = routes?.length ?? 0
-  if (!routes?.length) return counts
-  const routeByType = new Map((routes as Route[]).map(r => [r.appointment_type_id, r]))
+  const routeByType = new Map(((routes ?? []) as Route[]).map(r => [r.appointment_type_id, r]))
+  // Hub routes (lifecycle LIVE only): a lead route replaces the University row for its type; an activity route
+  // (coaching) is never synced here, because a session is activity on a client, not a lead (src/lib/lifecycle).
+  for (const [typeId, r] of Array.from((await hubRoutes(db)).entries())) {
+    if (r.kind === 'activity') { routeByType.delete(typeId); continue }
+    routeByType.set(typeId, r.route)
+  }
+  counts.routes = routeByType.size
+  if (!routeByType.size) return counts
 
   const { data: types, error: tErr } = await db.from('nr_appointment_types')
     .select('id, org_id, name, intake_questions').in('id', Array.from(routeByType.keys()))

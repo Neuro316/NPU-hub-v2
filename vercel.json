@@ -18,6 +18,7 @@
     { "path": "/api/cron/metrics-rollup", "schedule": "5 * * * *" },
     { "path": "/api/cron/metrics-rollup/nightly", "schedule": "30 7 * * *" },
     { "path": "/api/cron/lead-identity-purge", "schedule": "15 8 * * *" },
-    { "path": "/api/cron/lead-alerts", "schedule": "* * * * *" }
+    { "path": "/api/cron/lead-alerts", "schedule": "* * * * *" },
+    { "path": "/api/cron/lifecycle", "schedule": "2-59/5 * * * *" }
   ]
 }

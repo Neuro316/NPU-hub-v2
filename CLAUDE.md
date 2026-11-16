@@ -21,14 +21,67 @@ No test framework is configured. Validation is done via `npm run build`, `npm ru
 
 ## Deploy Pattern
 
-```bash
-git add .
-git commit -m "message"
-git pull --no-rebase
-git push
-```
+Work on a branch, never on main. Stage files by name (never `git add .`), run `npm run verify`, push the
+branch with `git push -u origin <branch>`, and open a PR. Vercel builds a preview for the branch. Shane or
+Cameron merges to main, which Vercel deploys to production. See Standing practices below.
 
-Vercel auto-deploys on push to main.
+---
+
+## Standing practices (16 Nov 2026)
+
+These replace any earlier working rules. Where an older section of this file or a hand-off doc disagrees,
+this section wins.
+
+### Production is read-only from a Code session
+
+- Never apply a migration, to any database, from a Code session.
+- Never use a production service-role key.
+- Propose each migration as a file with its full SQL and its rollback, put both in the report, and stop.
+- Shane or Cameron gives the go in the Hub chat. The Hub chat applies it and tells the session when it is done.
+
+### Migrations: nonprod first, then production
+
+1. Apply to nonprod (`cpasntagxhxitavivwlb`).
+2. Then apply to production (`htfrfaxlcuyawtlztxxm`).
+3. After each apply, run `NOTIFY pgrst, 'reload schema';` and read the result back (the ledger row and
+   the objects the migration created).
+
+The Hub chat does all three steps. This replaces the old "Hub migrations go to production only" rule.
+
+### Branches and merging
+
+- Never commit to, merge or push `main`.
+- One Code session per repo, across machines. Shane and Cameron each work on their own branch.
+  `docs/STATE.md` says who is running the session and which branch is live. Update it when that changes.
+- Shane or Cameron merges, only after the walkthrough and only after the production deploy for the merge
+  SHA is confirmed Ready.
+- Walkthroughs run on the branch's Vercel alias. A walkthrough item is ticked only by a person, never by
+  Claude.
+- Money-path changes (checkout, Stripe, payments, entitlements, refunds) need a human walkthrough, and are
+  not merged after 6 PM ET unless that is explicitly waived.
+
+### Secrets
+
+- Never read, print or write a secret value (env files, keys, tokens, Vault contents).
+- Slack webhook URLs are credentials. Treat them exactly like keys.
+
+### Before every push
+
+- Run `npm run verify`. Push only when it passes.
+- Stage files by name.
+- No em dashes in any copy (UI text, messages, campaign drafts, docs).
+
+### New harnesses: the red-set convention
+
+Every new tamper harness follows the convention the existing ones in `scripts/` use:
+
+- Each tamper selector's red set (the checks it must turn red) is declared from the intent of the check,
+  written before the run, not copied from what a run printed.
+- Selectors are disjoint: no two selectors declare the same check.
+- `TAMPER=1` (all tampers at once) turns red exactly the sum of the individual selectors' red sets.
+- The untampered run exits 0.
+
+Register the harness and its selectors in `scripts/verify.cjs`.
 
 ---
 

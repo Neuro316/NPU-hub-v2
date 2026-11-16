@@ -3,11 +3,22 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
-import { readOrgSettings } from '@/lib/org-settings-client'
+import { readOrgSettings, saveTeamSetting } from '@/lib/org-settings-client'
 import { credentialFields, withoutCredentials } from '@/lib/org-vault-fields'
 
 // The org_settings keys this hook's consumers read through getSetting (integrations, tasks, my-tasks). Read through
 // GET /api/settings/read (2026-11-08): admin-only keys are left out for other users, credential fields come back blank.
+
+/** Shows a failed settings save to the user, at most once per key every 30 seconds (some screens save per keystroke). */
+const lastSaveAlert = new Map<string, number>()
+function notifySaveFailed(key: string, message: string) {
+  if (typeof window === 'undefined') return
+  const now = Date.now()
+  if (now - (lastSaveAlert.get(key) ?? 0) < 30_000) return
+  lastSaveAlert.set(key, now)
+  window.alert(`This setting was not saved: ${message}`)
+}
+
 export const TEAM_SETTING_KEYS = ['avatar_colors', 'slack_config', 'google_calendar', 'gmail', 'apps_script']
 
 export interface TeamMember {
@@ -77,27 +88,33 @@ export function useTeamData() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
+  // team_profiles writes go through /api/team/members (hub_232: the browser may not write team_profiles, because the
+  // table grants Hub access). Same { data, error } shape as before.
+  const teamWrite = async (method: 'POST' | 'PATCH' | 'DELETE', body: unknown): Promise<{ data: any; error: { message: string } | null }> => {
+    try {
+      const r = await fetch('/api/team/members', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const j = await r.json().catch(() => ({}))
+      return r.ok ? { data: j.data ?? null, error: null } : { data: null, error: { message: j.error || r.statusText } }
+    } catch (e: any) {
+      return { data: null, error: { message: e?.message || 'Save failed' } }
+    }
+  }
+
   const addMember = async (member: Partial<TeamMember>) => {
     if (!currentOrg) return
-    const { data, error } = await supabase
-      .from('team_profiles')
-      .insert({ org_id: currentOrg.id, ...member })
-      .select().single()
+    const { data, error } = await teamWrite('POST', { org_id: currentOrg.id, member })
     if (data && !error) setMembers(prev => [...prev, data])
     return { data, error }
   }
 
   const updateMember = async (id: string, updates: Partial<TeamMember>) => {
-    const { data, error } = await supabase
-      .from('team_profiles')
-      .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq('id', id).select().single()
+    const { data, error } = await teamWrite('PATCH', { id, updates })
     if (data && !error) setMembers(prev => prev.map(m => m.id === id ? data : m))
     return { data, error }
   }
 
   const deleteMember = async (id: string) => {
-    const { error } = await supabase.from('team_profiles').delete().eq('id', id)
+    const { error } = await teamWrite('DELETE', { id })
     if (!error) setMembers(prev => prev.filter(m => m.id !== id))
     return { error }
   }
@@ -127,12 +144,13 @@ export function useTeamData() {
         error = { message: e?.message || 'Save failed' }
       }
     } else {
-      const res = await supabase
-        .from('org_settings')
-        .upsert({ org_id: orgId, setting_key: key, setting_value: clean, updated_at: new Date().toISOString() }, { onConflict: 'org_id,setting_key' })
-        .select().single()
-      data = res.data as OrgSetting | null
-      error = res.error
+      // everyday keys (avatar_colors) go through PUT /api/settings/team, open to any active Hub user (hub_232)
+      try {
+        await saveTeamSetting(orgId, key, clean)
+        data = { id: `${orgId}:${key}`, org_id: orgId, setting_key: key, setting_value: clean }
+      } catch (e: any) {
+        error = { message: e?.message || 'Save failed' }
+      }
     }
     if (data && !error) {
       const saved = data
@@ -142,6 +160,7 @@ export function useTeamData() {
         return [...prev, saved]
       })
     }
+    if (error) notifySaveFailed(key, error.message)
     return { data, error }
   }
 

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase-browser'
-import { readOrgSettingValue } from '@/lib/org-settings-client'
+import { readOrgSettingValue, saveTeamSetting } from '@/lib/org-settings-client'
 import { useWorkspace } from '@/lib/workspace-context'
 import { ArrowRight, Check, Loader2, Plus, Save, Shield, Tag, Trash2, X } from 'lucide-react'
 
@@ -40,12 +40,12 @@ export default function CrossOrgSharingSettings() {
 
   const saveConfig = async () => {
     if (!currentOrg) return; setSaving(true)
-    await sb.from('org_settings').upsert({
-      org_id: currentOrg.id,
-      setting_key: 'cross_org_contact_sharing',
-      setting_value: config,
-    }, { onConflict: 'org_id,setting_key' })
-    setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000)
+    try {
+      await saveTeamSetting(currentOrg.id, 'cross_org_contact_sharing', config)
+      setSaved(true); setTimeout(() => setSaved(false), 2000)
+    } catch (e: any) {
+      console.error(e); alert('Sharing settings were not saved: ' + (e?.message || 'unknown error'))
+    } finally { setSaving(false) }
   }
 
   const addRule = (orgId: string, orgName: string) => {

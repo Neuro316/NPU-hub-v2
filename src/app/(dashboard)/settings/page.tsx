@@ -341,14 +341,10 @@ export default function SettingsPage() {
         if (aiFailed.length) alert('These keys were not saved (org admins only): ' + aiFailed.join(', '))
       }
       if (active === 'compliance') {
-        await supabase.from('org_settings').upsert({
-          org_id: currentOrg.id, setting_key: 'crm_compliance', setting_value: compliance,
-        }, { onConflict: 'org_id,setting_key' })
+        await putSetting('crm_compliance', compliance)
       }
       if (active === 'notifications') {
-        await supabase.from('org_settings').upsert({
-          org_id: currentOrg.id, setting_key: 'crm_notifications', setting_value: notifications,
-        }, { onConflict: 'org_id,setting_key' })
+        await putSetting('crm_notifications', notifications)
       }
       if (active === 'modules') {
         console.log('[Settings] Saving hidden_modules:', hiddenModules)
@@ -394,7 +390,7 @@ export default function SettingsPage() {
         return
       }
       setSaved(true); setTimeout(() => setSaved(false), 2000)
-    } catch (e) { console.error(e); alert('Failed to save settings') }
+    } catch (e: any) { console.error(e); alert('Failed to save settings: ' + (e?.message || 'unknown error')) }
     finally { setSaving(false) }
   }
 
