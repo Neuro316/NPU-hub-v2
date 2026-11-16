@@ -91,3 +91,18 @@ export async function requireOrgMember(orgId: unknown, roles: string[] = HUB_ACC
   if (!(await userInOrg(db, user.id, orgId, roles))) return NextResponse.json({ error: 'You do not have access to that organization.' }, { status: 403 })
   return { userId: user.id, orgId: orgId as string, db }
 }
+
+/**
+ * Org admin decided WITHOUT team_profiles (ruled 2026-11-08: team_profiles cannot vouch for itself). True when the
+ * user is org_members owner/admin of the org, or has profiles.role admin/superadmin AND an org_members row there.
+ * Mirrors hub_team_admin_strict in hub_232. Read with the service role.
+ */
+export async function strictOrgAdmin(db: SupabaseClient, userId: string, orgId: string): Promise<boolean> {
+  const [{ data: m }, { data: p }] = await Promise.all([
+    db.from('org_members').select('role').eq('user_id', userId).eq('organization_id', orgId),
+    db.from('profiles').select('role').eq('id', userId).maybeSingle(),
+  ])
+  const roles = (m ?? []).map((r: any) => String(r.role))
+  if (roles.some((r) => r === 'owner' || r === 'admin')) return true
+  return roles.length > 0 && ['admin', 'superadmin'].includes(String((p as any)?.role ?? ''))
+}

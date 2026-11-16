@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase-browser'
-import { readOrgSettingValue } from '@/lib/org-settings-client'
+import { readOrgSettingValue, saveTeamSetting } from '@/lib/org-settings-client'
 import { Plus, Trash2, FileText, ClipboardCheck, Check, Loader2, X, Shield, ArrowRight, Sparkles, ExternalLink, GripVertical } from 'lucide-react'
 
 interface EnrollmentService {
@@ -55,11 +55,12 @@ export default function EnrollmentConfig({ orgId, orgName }: { orgId: string; or
   const save = async (svcs?: EnrollmentService[]) => {
     const toSave = svcs || services
     setSaving(true)
-    await supabase.from('org_settings').upsert({
-      org_id: orgId, setting_key: 'crm_enrollment_config',
-      setting_value: { services: toSave, default_services_by_pipeline: {} },
-    }, { onConflict: 'org_id,setting_key' })
-    setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000)
+    try {
+      await saveTeamSetting(orgId, 'crm_enrollment_config', { services: toSave, default_services_by_pipeline: {} })
+      setSaved(true); setTimeout(() => setSaved(false), 2000)
+    } catch (e: any) {
+      console.error(e); alert('Enrollment settings were not saved: ' + (e?.message || 'unknown error'))
+    } finally { setSaving(false) }
   }
 
   const addService = () => {

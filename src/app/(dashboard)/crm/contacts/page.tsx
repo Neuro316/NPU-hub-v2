@@ -15,7 +15,7 @@ import ContactDetail from '@/components/crm/contact-detail'
 import CrossOrgContactsPanel from '@/components/crm/cross-org-contacts-panel'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient as createBrowserSb } from '@/lib/supabase-browser'
-import { readOrgSettingValue } from '@/lib/org-settings-client'
+import { readOrgSettingValue, saveTeamSetting } from '@/lib/org-settings-client'
 import { loadPipelines, loadPositions, positionsByContact, firstStage, type PipelineRef, type Position } from '@/lib/pipelines/positions'
 import { apiSetStage } from '@/lib/pipelines/client'
 
@@ -212,12 +212,9 @@ function ContactsPageContent() {
   // Save column config
   const saveColumnConfig = async (cols: string[]) => {
     if (!currentOrg) return
-    const supabase = require('@/lib/supabase-browser').createClient()
-    await supabase.from('org_settings').upsert({
-      org_id: currentOrg.id, setting_key: 'crm_contact_columns',
-      setting_value: { columns: cols },
-    }, { onConflict: 'org_id,setting_key' })
     setActiveColumns(cols)
+    await saveTeamSetting(currentOrg.id, 'crm_contact_columns', { columns: cols })
+      .catch((e: any) => { console.error(e); alert('Your column choice was not saved: ' + (e?.message || 'unknown error')) })
   }
 
   const toggleColumn = (key: string) => {

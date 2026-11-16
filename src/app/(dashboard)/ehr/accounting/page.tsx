@@ -1743,7 +1743,8 @@ export default function AccountingPage() {
     const{error:ce}=await supabase.from('acct_clients').delete().eq('id',clientId)
     if(ce){console.error('delete client failed',ce);alert('Could not delete client: '+ce.message);return}
     sS(null);loadData()}
-  const saveConfig=async()=>{if(!orgId)return;await supabase.from('org_settings').upsert({org_id:orgId,setting_key:'acct_config',setting_value:config},{onConflict:'org_id,setting_key'})}
+  // acct_config (payout agreement and splits) saves through PUT /api/settings: org admins only, and a failure is shown
+  const saveConfig=async()=>{if(!orgId)return;try{const r=await fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({org_id:orgId,setting_key:'acct_config',setting_value:config})});if(!r.ok){const d=await r.json().catch(()=>({}));alert('Accounting settings were not saved: '+(d.error||r.statusText))}}catch{alert('Accounting settings were not saved: network error')}}
   const saveLoc=async(id:string|null,data:any)=>{if(!orgId)return;if(id)await supabase.from('acct_locations').update(data).eq('id',id);else await supabase.from('acct_locations').insert({id:data.short_code,org_id:orgId,...data});loadData()}
   const deleteLoc=async(id:string)=>{await supabase.from('acct_locations').delete().eq('id',id);loadData()}
   const saveClinic=async(id:string|null,data:any)=>{if(!orgId)return;if(id)await supabase.from('acct_clinics').update(data).eq('id',id);else await supabase.from('acct_clinics').insert({id:`clinic-${Date.now()}`,org_id:orgId,...data});loadData()}
