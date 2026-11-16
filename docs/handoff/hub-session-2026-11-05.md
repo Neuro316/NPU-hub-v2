@@ -38,7 +38,6 @@ Main is at `61f094e` (#30). Production: hub.neuroprogeny.com, Supabase `htfrfaxl
 
 ## Standing rules for this repo
 - **Migrations:** propose the full SQL and stop. Apply only on Cameron's separate go.
-- **Production only:** Hub migrations go to production only, never npu-platform-nonprod.
 - **Approval prompts:** Supabase approval prompts expire after 2 minutes, so tell Cameron to be at the desk before applying.
 - **Merging:** merge PRs with merge commits, never squash, so the parity pins stay reachable.
 - **Test results:** never merge on test results Cameron hasn't reported himself.

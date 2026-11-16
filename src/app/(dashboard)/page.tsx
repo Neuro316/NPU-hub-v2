@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
-import { readOrgSettingValue } from '@/lib/org-settings-client'
+import { readOrgSettingValue, saveTeamSetting } from '@/lib/org-settings-client'
 import Link from 'next/link'
 import {
   Route, CheckSquare, Megaphone, Target, Brain, Image, BarChart3, Users,
@@ -70,14 +70,16 @@ export default function DashboardPage() {
   const saveOverview = async () => {
     if (!currentOrg) return
     setSaving(true)
-    await supabase.from('org_settings').upsert({
-      org_id: currentOrg.id,
-      setting_key: 'company_overview',
-      setting_value: draft,
-    }, { onConflict: 'org_id,setting_key' })
-    setOverview(draft)
-    setEditing(false)
-    setSaving(false)
+    try {
+      await saveTeamSetting(currentOrg.id, 'company_overview', draft)
+      setOverview(draft)
+      setEditing(false)
+    } catch (e: any) {
+      console.error(e)
+      alert('The company overview was not saved: ' + (e?.message || 'unknown error'))
+    } finally {
+      setSaving(false)
+    }
   }
 
   const startEdit = () => { setDraft({ ...overview, companyValues: [...overview.companyValues], teamValues: [...overview.teamValues] }); setEditing(true) }

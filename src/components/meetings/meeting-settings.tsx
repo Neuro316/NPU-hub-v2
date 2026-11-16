@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase-browser'
-import { readOrgSettings } from '@/lib/org-settings-client'
+import { readOrgSettings, saveTeamSetting } from '@/lib/org-settings-client'
 import { useWorkspace } from '@/lib/workspace-context'
 import { useTeamData } from '@/lib/hooks/use-team-data'
 import { MEETING_TEMPLATES } from '@/lib/types/meetings'
@@ -51,11 +51,13 @@ export default function MeetingSettings() {
 
   const saveAll = async () => {
     if (!currentOrg) return; setSaving(true)
-    // Save AI instructions
-    await supabase.from('org_settings').upsert({ org_id: currentOrg.id, setting_key: 'meeting_ai_instructions', setting_value: aiConfig }, { onConflict: 'org_id,setting_key' })
-    // Save team roster
-    await supabase.from('org_settings').upsert({ org_id: currentOrg.id, setting_key: 'meeting_team_roster', setting_value: roster }, { onConflict: 'org_id,setting_key' })
-    setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000)
+    try {
+      await saveTeamSetting(currentOrg.id, 'meeting_ai_instructions', aiConfig)
+      await saveTeamSetting(currentOrg.id, 'meeting_team_roster', roster)
+      setSaved(true); setTimeout(() => setSaved(false), 2000)
+    } catch (e: any) {
+      console.error(e); alert('Meeting settings were not saved: ' + (e?.message || 'unknown error'))
+    } finally { setSaving(false) }
   }
 
   const toggleRoster = (tmpl: string, userId: string) => {
