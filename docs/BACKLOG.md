@@ -10,8 +10,8 @@ not in this repo), as of 16 Nov 2026. Branch, PR and Migration come from git. `-
 | q03 | Speed to lead counts self-booked leads and Gmail replies | DONE, merged Nov 10 | `feat/speed-to-lead` | #48 merged | hub_236 not applied |
 | q04 | LeadConnector bridge into Sales | Deferred | - | - | - |
 | q05 | Mobile friendly Hub | On hold | - | - | - |
-| q06 | Every University booking link lands in the pipeline with stage history | Rank 1, Shane, Task B | `feat/booking-routes-triggers` (earlier: `feat/booking-routes` #23, `feat/discovery-bookings-sales` #42, both merged) | not opened | - |
-| q07 | Triggers: booking, checkout, purchase, consent, first session, inactivity, program end | Rank 2, Shane, Task B | `feat/booking-routes-triggers` | not opened | - |
+| q06 | Every University booking link lands in the pipeline with stage history | Rank 1, Shane, Task B | `feat/booking-routes-triggers` (earlier: `feat/booking-routes` #23, `feat/discovery-bookings-sales` #42, both merged) | #50 open | hub_237 proposed |
+| q07 | Triggers: booking, checkout, purchase, consent, first session, inactivity, program end | Rank 2, Shane, Task B | `feat/booking-routes-triggers` | #50 open | hub_237 proposed |
 | q08 | Wire lead sources into Hub intake | Rank 6, website and platform sessions, not this repo | - | - | - |
 | q09 | Scheduling assistant: morning brief and reply drafts | Rank 10, on hold | `feat/scheduling-agent-phase3` | #46 open | hub_234 proposed |
 | q10 | Customer service: support drafts, FAQ videos, welcome email monitoring | Rank 11 | - | - | - |
@@ -23,12 +23,12 @@ not in this repo), as of 16 Nov 2026. Branch, PR and Migration come from git. `-
 | q16 | Affiliate and podcast promo code tracking | Rank 16 | - | - | - |
 | q17 | Failed payment recovery and weekly KPI text | Rank 17 | - | - | - |
 | q18 | Podcast workflow | Rank 18 | - | - | - |
-| q19 | Lead follow-up system | Rank 3, Shane, Task B | `feat/booking-routes-triggers` | not opened | - |
-| q20 | Program enrollment pipeline automation | Rank 4, Shane, Task B | `feat/booking-routes-triggers` | not opened | - |
-| q21 | Drop-off messages for clients | Rank 5, Shane, Task B | `feat/booking-routes-triggers` | not opened | - |
+| q19 | Lead follow-up system | Rank 3, Shane, Task B | `feat/booking-routes-triggers` | #50 open | hub_237 proposed |
+| q20 | Program enrollment pipeline automation | Rank 4, Shane, Task B | `feat/booking-routes-triggers` | #50 open | hub_237 proposed |
+| q21 | Drop-off messages for clients | Rank 5, Shane, Task B | `feat/booking-routes-triggers` | #50 open | hub_237 proposed |
 | q22 | CRM notifications and task organization | Rank 9 | - | - | - |
 | q23 | Hub Health (Hub half of Platform Health) | Rank 6, Shane; blocked on platform pf_310 | - | - | - |
-| q24 | Adopt standing practices, STATE/BACKLOG, nonprod catch-up | Rank 0, Task A | `docs/standing-practices-2026-11-16` | this PR | nonprod catch-up proposed |
+| q24 | Adopt standing practices, STATE/BACKLOG, nonprod catch-up | Rank 0, Task A | `docs/standing-practices-2026-11-16` | #49 open | nonprod catch-up proposed |
 | c01 | hub_235 go, then merge PR #47 | Waiting on go and nonprod catch-up | `feat/metrics-targets` | #47 open | hub_235 proposed |
 | c02 | Heather Bauer into Sales | Waiting on go | - | - | no data-fix file found in git |
 | c03 | Swap LeadConnector link for University discovery link | Cameron, manual | - | - | - |
@@ -54,5 +54,5 @@ not in this repo), as of 16 Nov 2026. Branch, PR and Migration come from git. `-
 | `feat/scheduling-agent-phase3` | #46 open | hub_234 proposed |
 | `feat/metrics-targets` | #47 open | hub_235 proposed |
 | `feat/speed-to-lead` | #48 merged | hub_236 on main, not applied |
-| `docs/standing-practices-2026-11-16` | this PR | nonprod catch-up proposed |
-| `feat/booking-routes-triggers` | not opened | Running List ranks 1 to 5 (Task B) |
+| `docs/standing-practices-2026-11-16` | #49 open | nonprod catch-up proposed |
+| `feat/booking-routes-triggers` | #50 open | hub_237 + two data fixes proposed (Task B) |
