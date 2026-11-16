@@ -1,6 +1,6 @@
 -- hub_237_lifecycle_events.sql
 --
--- STATUS: PROPOSED 2026-11-16. NOT APPLIED. Needs a go. Nonprod (cpasntagxhxitavivwlb) first, then production
+-- STATUS: APPLIED 2026-11-16 14:47 CST, nonprod then production, by the Hub chat on Shane's go. Order: nonprod (cpasntagxhxitavivwlb) first, then production
 -- (htfrfaxlcuyawtlztxxm), from the Hub chat, each followed by NOTIFY pgrst and the read-back at the bottom.
 -- Nonprod needs supabase/nonprod/catchup_2026-11-16.sql first (this depends on hub_212 and hub_231's origin check).
 --

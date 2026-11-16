@@ -1,6 +1,6 @@
 -- 2026-11-16_lifecycle_setup.sql  (data fix, not a migration: no schema change)
 --
--- STATUS: PROPOSED 2026-11-16. NOT RUN. Needs a go. Run AFTER hub_237, nonprod first only if nonprod has the same
+-- STATUS: RUN 2026-11-16 14:50 CST on production (dry_run). Run AFTER hub_237, nonprod first only if nonprod has the same
 -- Neuro Progeny org rows (it does not today; this file names production ids and refuses to run where they differ).
 --
 -- Neuro Progeny org (00000000-0000-0000-0000-000000000001) only. Everything stays in DRY RUN:

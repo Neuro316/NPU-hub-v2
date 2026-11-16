@@ -35,7 +35,7 @@ team_profiles lockdown, every settings save through a server route).
 |------------|------|
 | 10:44 | supabase/nonprod/catchup_2026-11-16.sql on nonprod; nonprod ledger aligned |
 | 11:20 | hub_232_team_profiles_lockdown |
-| 11:22 | hub_236_mail_sent_metadata (Gmail replies now count as a speed-to-lead touch) |
+| 11:22 | hub_236_mail_sent_metadata (Gmail sent metadata stored; replies count toward speed to lead only from mailboxes marked shared, and all five are private today: Running List c12) |
 | 14:42 | hub_238_org_settings_lockdown |
 | 14:47 | hub_237_lifecycle_events |
 | 14:50 | data-fixes/2026-11-16_lifecycle_setup.sql: hub_lifecycle mode is **dry_run** |
@@ -57,6 +57,7 @@ team_profiles lockdown, every settings save through a server route).
 
 ## Not yet checked
 
+- Header comments in hub_232, hub_236, hub_238 still say proposed; fix in the next docs PR.
 - Which Supabase host a Hub preview page calls. Previews sit behind Vercel SSO and this session has no
   browser, so it has not been observed. A person can check it: open a preview, DevTools, Network, filter
   `supabase.co`, and read the host of the requests. (Running List q27 points previews at nonprod.)

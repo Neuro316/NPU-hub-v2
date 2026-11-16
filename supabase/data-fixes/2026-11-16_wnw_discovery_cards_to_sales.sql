@@ -1,6 +1,6 @@
 -- 2026-11-16_wnw_discovery_cards_to_sales.sql  (data fix, not a migration)
 --
--- STATUS: PROPOSED 2026-11-16. NOT RUN. Needs a go. Production only (the ids are production's).
+-- STATUS: RUN 2026-11-16 14:55 CST on production, 1 card (Kari G.). Production only (the ids are production's).
 --
 -- Running List c04 (decided Nov 13): one Sales Pipeline for every discovery call. This moves the discovery-call
 -- cards on the Waynesville Neuro Wellness pipeline into Sales, tagged WNW.
