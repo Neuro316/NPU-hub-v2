@@ -40,8 +40,12 @@ export default function CrossOrgSharingSettings() {
 
   const saveConfig = async () => {
     if (!currentOrg) return; setSaving(true)
-    await saveTeamSetting(currentOrg.id, 'cross_org_contact_sharing', config).catch((e) => console.error(e))
-    setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000)
+    try {
+      await saveTeamSetting(currentOrg.id, 'cross_org_contact_sharing', config)
+      setSaved(true); setTimeout(() => setSaved(false), 2000)
+    } catch (e: any) {
+      console.error(e); alert('Sharing settings were not saved: ' + (e?.message || 'unknown error'))
+    } finally { setSaving(false) }
   }
 
   const addRule = (orgId: string, orgName: string) => {

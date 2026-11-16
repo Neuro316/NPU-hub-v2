@@ -892,7 +892,7 @@ export default function ImportPage() {
       } : r))
       setNewPipelineName('')
       setShowNewPipelineModal(false)
-    } catch (e) { console.error(e) } finally { setSavingPipeline(false) }
+    } catch (e: any) { console.error(e); alert('The new pipeline was not saved: ' + (e?.message || 'unknown error')) } finally { setSavingPipeline(false) }
   }
 
   const toggleSelectAll = () => {

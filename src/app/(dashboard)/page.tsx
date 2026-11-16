@@ -70,10 +70,16 @@ export default function DashboardPage() {
   const saveOverview = async () => {
     if (!currentOrg) return
     setSaving(true)
-    await saveTeamSetting(currentOrg.id, 'company_overview', draft).catch((e) => console.error(e))
-    setOverview(draft)
-    setEditing(false)
-    setSaving(false)
+    try {
+      await saveTeamSetting(currentOrg.id, 'company_overview', draft)
+      setOverview(draft)
+      setEditing(false)
+    } catch (e: any) {
+      console.error(e)
+      alert('The company overview was not saved: ' + (e?.message || 'unknown error'))
+    } finally {
+      setSaving(false)
+    }
   }
 
   const startEdit = () => { setDraft({ ...overview, companyValues: [...overview.companyValues], teamValues: [...overview.teamValues] }); setEditing(true) }

@@ -53,5 +53,8 @@ export async function saveTeamSetting(orgId: string, key: string, value: unknown
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ org_id: orgId, setting_key: key, setting_value: value }),
   })
-  if (!r.ok) throw new Error(`setting ${key} not saved (${r.status})`)
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({} as any))
+    throw new Error(d?.error || `The setting was not saved (${r.status}).`)
+  }
 }

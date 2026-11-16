@@ -8,6 +8,17 @@ import { credentialFields, withoutCredentials } from '@/lib/org-vault-fields'
 
 // The org_settings keys this hook's consumers read through getSetting (integrations, tasks, my-tasks). Read through
 // GET /api/settings/read (2026-11-08): admin-only keys are left out for other users, credential fields come back blank.
+
+/** Shows a failed settings save to the user, at most once per key every 30 seconds (some screens save per keystroke). */
+const lastSaveAlert = new Map<string, number>()
+function notifySaveFailed(key: string, message: string) {
+  if (typeof window === 'undefined') return
+  const now = Date.now()
+  if (now - (lastSaveAlert.get(key) ?? 0) < 30_000) return
+  lastSaveAlert.set(key, now)
+  window.alert(`This setting was not saved: ${message}`)
+}
+
 export const TEAM_SETTING_KEYS = ['avatar_colors', 'slack_config', 'google_calendar', 'gmail', 'apps_script']
 
 export interface TeamMember {
@@ -149,6 +160,7 @@ export function useTeamData() {
         return [...prev, saved]
       })
     }
+    if (error) notifySaveFailed(key, error.message)
     return { data, error }
   }
 

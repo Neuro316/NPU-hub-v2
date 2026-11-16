@@ -3,7 +3,7 @@
 //
 //   V_PARITY   the credential field lists agree everywhere: VAULT_FIELDS (src/lib/org-vault-fields.ts) equals the
 //              pairs hub_233 accepts and the pairs the data fix copies and blanks; credentialFields (Vault plus
-//              slack_config.webhook_url) equals the pairs hub_232's write policy refuses
+//              slack_config.webhook_url) equals the pairs hub_238's write policy refuses (hub_232 before the 2026-11-16 split)
 //   V_REDACT   redactCredentials blanks every credential field and reports which were set; carriesCredential and
 //              withoutCredentials agree with it
 //   V_ROUTES   GET /api/settings/read returns only redacted values; /api/slack/send never takes a webhook URL or a
@@ -45,7 +45,7 @@ const uniq = (a) => Array.from(new Set(a)).sort()
   const vault = uniq(Object.entries(fields.VAULT_FIELDS).flatMap(([k, fs_]) => fs_.map((f) => `${k}.${f}`)))
   const creds = uniq(Object.keys({ ...fields.VAULT_FIELDS, ...fields.KEPT_FIELDS }).flatMap((k) => fields.credentialFields(k).map((f) => `${k}.${f}`)))
   const h233 = uniq(pairsOf(raw('supabase/migrations/hub_233_org_vault.sql').split('create function public.hub_org_vault_get')[0]))
-  const h232src = raw('supabase/migrations/hub_232_org_settings_lockdown.sql')
+  const h232src = raw('supabase/migrations/hub_238_org_settings_lockdown.sql')
   const h232 = uniq(pairsOf(h232src.slice(h232src.indexOf('create function public.hub_org_settings_carries_credential'), h232src.indexOf('$function$;', h232src.indexOf('create function public.hub_org_settings_carries_credential')))))
   const fix = raw('supabase/data-fixes/2026-11-08_org_credentials_to_vault.sql')
   const fixLists = fix.split(/\) as f\(k, field\)/).slice(0, -1).map((chunk) => uniq(pairsOf(chunk.slice(chunk.lastIndexOf('(values')))))

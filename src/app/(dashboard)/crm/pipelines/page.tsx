@@ -1132,7 +1132,7 @@ export default function PipelinesPage() {
       await saveTeamSetting(currentOrg.id, 'crm_pipelines', { pipelines: updated, active: activeId || activePipelineId })
       // The tables follow the config by trigger; read them again for the new uuids.
       setRefsVersion(v => v + 1)
-    } catch (e) { console.error(e) }
+    } catch (e: any) { console.error(e); alert('Pipeline changes were not saved: ' + (e?.message || 'unknown error')) }
   }
 
   // The active board: its positions, then the contacts they belong to.

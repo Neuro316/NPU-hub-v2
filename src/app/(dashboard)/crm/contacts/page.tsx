@@ -212,9 +212,9 @@ function ContactsPageContent() {
   // Save column config
   const saveColumnConfig = async (cols: string[]) => {
     if (!currentOrg) return
-    const supabase = require('@/lib/supabase-browser').createClient()
-    await saveTeamSetting(currentOrg.id, 'crm_contact_columns', { columns: cols }).catch((e) => console.error(e))
     setActiveColumns(cols)
+    await saveTeamSetting(currentOrg.id, 'crm_contact_columns', { columns: cols })
+      .catch((e: any) => { console.error(e); alert('Your column choice was not saved: ' + (e?.message || 'unknown error')) })
   }
 
   const toggleColumn = (key: string) => {

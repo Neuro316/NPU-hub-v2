@@ -51,11 +51,13 @@ export default function MeetingSettings() {
 
   const saveAll = async () => {
     if (!currentOrg) return; setSaving(true)
-    // Save AI instructions
-    await saveTeamSetting(currentOrg.id, 'meeting_ai_instructions', aiConfig).catch((e) => console.error(e))
-    // Save team roster
-    await saveTeamSetting(currentOrg.id, 'meeting_team_roster', roster).catch((e) => console.error(e))
-    setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000)
+    try {
+      await saveTeamSetting(currentOrg.id, 'meeting_ai_instructions', aiConfig)
+      await saveTeamSetting(currentOrg.id, 'meeting_team_roster', roster)
+      setSaved(true); setTimeout(() => setSaved(false), 2000)
+    } catch (e: any) {
+      console.error(e); alert('Meeting settings were not saved: ' + (e?.message || 'unknown error'))
+    } finally { setSaving(false) }
   }
 
   const toggleRoster = (tmpl: string, userId: string) => {
