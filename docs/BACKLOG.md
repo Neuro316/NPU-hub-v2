@@ -29,6 +29,7 @@ not in this repo), as of 16 Nov 2026. Branch, PR and Migration come from git. `-
 | q22 | CRM notifications and task organization | Rank 9 | - | - | - |
 | q23 | Hub Health (Hub half of Platform Health) | Rank 6, Shane; blocked on platform pf_310 | - | - | - |
 | q24 | Adopt standing practices, STATE/BACKLOG, nonprod catch-up | Rank 0, Task A | `docs/standing-practices-2026-11-16` | #49 open | nonprod catch-up proposed |
+| q25 | Headset program access: 6 months from the last purchase, with an on/off switch on the contact card | Not started; platform builds the access rule plus a view and one override function, Hub builds the card and switch against them (handed to Cameron's platform chat 16 Nov) | - | - | - |
 | c01 | hub_235 go, then merge PR #47 | Waiting on go and nonprod catch-up | `feat/metrics-targets` | #47 open | hub_235 proposed |
 | c02 | Heather Bauer into Sales | Waiting on go | - | - | no data-fix file found in git |
 | c03 | Swap LeadConnector link for University discovery link | Cameron, manual | - | - | - |
@@ -36,9 +37,10 @@ not in this repo), as of 16 Nov 2026. Branch, PR and Migration come from git. `-
 | c05 | Approve first four campaigns and switch live | Cameron | `feat/speed-to-lead-campaigns` (drafts) | #40 merged | - |
 | c06 | Shane's Hub access | DONE | - | - | - |
 | c07 | Platform pf_310 (health tables) | Platform chat | - | - | pf_310 (platform) |
-| c08 | Security: hub_232 team_profiles plus org_settings lockdown | TOP PRIORITY | `fix/team-profiles-lockdown` | #44 open | hub_232 proposed, not applied |
+| c08 | Security: hub_232 team_profiles plus org_settings lockdown | TOP PRIORITY | `fix/team-profiles-lockdown` | #44 open | split 16 Nov: hub_232 (team_profiles, apply now) and hub_238 (org_settings, after the release); both proposed, not applied |
 | c09 | Reconnect cameron@ and admin@ mailboxes | Cameron, manual | - | - | - |
 | c10 | hub_236 go (Gmail sent metadata) | Waiting on go and nonprod catch-up | `feat/speed-to-lead` | #48 merged | hub_236 on main, not applied |
+| c11 | Hub settings saves have failed silently since Nov 10 (pf_304); fix on PR #44 | Fix pushed 16 Nov, waiting on walkthrough and merge | `fix/team-profiles-lockdown` | #44 open | hub_238 after the release |
 | d01 | Clean up about 20 duplicate contacts | Deferred | - | - | - |
 | d02 | Rotate exposed keys (Slack, Twilio, AI) | Deferred | - | - | - |
 | d03 | Merge duplicate pipelines and overlapping tags | Deferred | - | - | - |
