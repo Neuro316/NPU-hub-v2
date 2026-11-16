@@ -7,27 +7,26 @@ Last updated: 2026-11-16 afternoon, by the Code session on Shane's Mac. Applied 
 ## Session
 
 - **Running:** Code session on Shane's Mac (NPU-hub-v2).
-- **Live branch:** `feat/booking-routes-triggers` (PR #50), with origin/main merged in on 16 Nov.
+- **Live branch:** `fix/ci-tsc-memory` (Running List q28).
 - **Cameron:** no Code session recorded on this repo. Say so here before starting one.
 
 ## Production
 
-- **Main:** `3a80963` (merge of #44, team_profiles lockdown and server-side settings saves). Before it: `53e2788` (merge of #49).
-- **Last production deployment:** GitHub deployment `7835770292` for `3a80963`, state success,
-  2026-11-16 20:38 UTC, `npu-hub-v2-qapit8lzd-cameronsensoriumneus-projects.vercel.app`.
+- **Main:** `744bbd9` (merge of #47, Growth Dashboard targets). Before it: `3af023f` (#50), `3a80963` (#44), `53e2788` (#49).
+- **Last production deployment:** GitHub deployment `7838277623` for `744bbd9`, state success,
+  2026-11-16 22:32 UTC, `npu-hub-v2-ce7qultha-cameronsensoriumneus-projects.vercel.app`.
   The Vercel `dpl_` id is not readable from this machine (the local Vercel CLI is on a different account).
 
 ## Open PRs
 
 | PR | Branch | What | Migration |
 |----|--------|------|-----------|
-| #50 | `feat/booking-routes-triggers` | Lifecycle engine: booking routes and triggers (q06, q07, q19, q20, q21), dry run only | hub_237 and both data fixes applied or run 16 Nov |
 | #46 | `feat/scheduling-agent-phase3` | Scheduling agent stage 1 | hub_234 (proposed) |
-| #47 | `feat/metrics-targets` | Growth Dashboard targets both ways | hub_235 (proposed) |
 | #18 | `revert/release-2026-10-31` | Draft rollback, do not merge | none |
 
-Merged 16 Nov: #49 (`53e2788`, standing practices, STATE and BACKLOG, nonprod catch-up) and #44 (`3a80963`,
-team_profiles lockdown, every settings save through a server route).
+Merged 16 Nov: #49 (`53e2788`, standing practices, STATE and BACKLOG, nonprod catch-up), #44 (`3a80963`,
+team_profiles lockdown, every settings save through a server route), #50 (`3af023f`, lifecycle engine, dry run)
+and #47 (`744bbd9`, Growth Dashboard targets both ways, product-line scorecard, coaching load).
 
 ## Applied on 16 Nov (Hub chat)
 
@@ -40,19 +39,17 @@ team_profiles lockdown, every settings save through a server route).
 | 14:47 | hub_237_lifecycle_events |
 | 14:50 | data-fixes/2026-11-16_lifecycle_setup.sql: hub_lifecycle mode is **dry_run** |
 | 14:55 | data-fixes/2026-11-16_wnw_discovery_cards_to_sales.sql: 1 card moved |
+| 15:58 | hub_235_metric_targets_direction |
 
 ## Migrations waiting for a go
 
 | Migration | Where | Status |
 |-----------|-------|--------|
 | hub_234_scheduling_agent | PR #46 | Proposed. Not applied anywhere. |
-| hub_235_metric_targets_direction | PR #47 | Proposed. Not applied anywhere. |
 
 ## Lifecycle engine
 
-- The cron `/api/cron/lifecycle` ships with PR #50. Until #50 is merged and deployed, nothing reads the settings
-  the setup data fix created, so nothing is recorded.
-- After the merge it runs in dry_run: rows in `hub_lifecycle_events` with `planned` filled, and nothing else.
+- PR #50 is merged (`3af023f`), so `/api/cron/lifecycle` runs in production in dry_run: rows in `hub_lifecycle_events` with `planned` filled, and nothing else.
 - Going live is a separate go: set `hub_lifecycle.mode` to `live`, then activate campaign routes one at a time.
 
 ## Not yet checked
