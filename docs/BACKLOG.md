@@ -10,8 +10,8 @@ not in this repo), as of 16 Nov 2026, updated with the Hub chat's applied state 
 | q03 | Speed to lead counts self-booked leads and Gmail replies | DONE, merged Nov 10 | `feat/speed-to-lead` | #48 merged | hub_236 applied 16 Nov 11:22 |
 | q04 | LeadConnector bridge into Sales | Deferred | - | - | - |
 | q05 | Mobile friendly Hub | On hold | - | - | - |
-| q06 | Every University booking link lands in the pipeline with stage history | Rank 1, Shane, Task B | `feat/booking-routes-triggers` (earlier: `feat/booking-routes` #23, `feat/discovery-bookings-sales` #42, both merged) | #50 open | hub_237 applied 16 Nov 14:47; setup run 14:50 (dry_run) |
-| q07 | Triggers: booking, checkout, purchase, consent, first session, inactivity, program end | Rank 2, Shane, Task B | `feat/booking-routes-triggers` | #50 open | hub_237 applied 16 Nov 14:47; setup run 14:50 (dry_run) |
+| q06 | Every University booking link lands in the pipeline with stage history | Rank 1, Shane, Task B | `feat/booking-routes-triggers` (earlier: `feat/booking-routes` #23, `feat/discovery-bookings-sales` #42, both merged) | #50 merged (`3af023f`) | hub_237 applied 16 Nov 14:47; setup run 14:50 (dry_run) |
+| q07 | Triggers: booking, checkout, purchase, consent, first session, inactivity, program end | Rank 2, Shane, Task B | `feat/booking-routes-triggers` | #50 merged (`3af023f`) | hub_237 applied 16 Nov 14:47; setup run 14:50 (dry_run) |
 | q08 | Wire lead sources into Hub intake | Rank 6, website and platform sessions, not this repo | - | - | - |
 | q09 | Scheduling assistant: morning brief and reply drafts | Rank 10, on hold | `feat/scheduling-agent-phase3` | #46 open | hub_234 proposed |
 | q10 | Customer service: support drafts, FAQ videos, welcome email monitoring | Rank 11 | - | - | - |
@@ -23,16 +23,18 @@ not in this repo), as of 16 Nov 2026, updated with the Hub chat's applied state 
 | q16 | Affiliate and podcast promo code tracking | Rank 16 | - | - | - |
 | q17 | Failed payment recovery and weekly KPI text | Rank 17 | - | - | - |
 | q18 | Podcast workflow | Rank 18 | - | - | - |
-| q19 | Lead follow-up system | Rank 3, Shane, Task B | `feat/booking-routes-triggers` | #50 open | hub_237 applied 16 Nov 14:47; setup run 14:50 (dry_run) |
-| q20 | Program enrollment pipeline automation | Rank 4, Shane, Task B | `feat/booking-routes-triggers` | #50 open | hub_237 applied 16 Nov 14:47; setup run 14:50 (dry_run) |
-| q21 | Drop-off messages for clients | Rank 5, Shane, Task B | `feat/booking-routes-triggers` | #50 open | hub_237 applied 16 Nov 14:47; setup run 14:50 (dry_run) |
+| q19 | Lead follow-up system | Rank 3, Shane, Task B | `feat/booking-routes-triggers` | #50 merged (`3af023f`) | hub_237 applied 16 Nov 14:47; setup run 14:50 (dry_run) |
+| q20 | Program enrollment pipeline automation | Rank 4, Shane, Task B | `feat/booking-routes-triggers` | #50 merged (`3af023f`) | hub_237 applied 16 Nov 14:47; setup run 14:50 (dry_run) |
+| q21 | Drop-off messages for clients | Rank 5, Shane, Task B | `feat/booking-routes-triggers` | #50 merged (`3af023f`) | hub_237 applied 16 Nov 14:47; setup run 14:50 (dry_run) |
 | q22 | CRM notifications and task organization | Rank 9 | - | - | - |
 | q23 | Hub Health (Hub half of Platform Health) | Rank 6, Shane; blocked on platform pf_310 | - | - | - |
 | q24 | Adopt standing practices, STATE/BACKLOG, nonprod catch-up | DONE 16 Nov | `docs/standing-practices-2026-11-16` | #49 merged (`53e2788`) | nonprod catch-up applied 16 Nov 10:44, ledger aligned |
 | q25 | Headset program access: 6 months from the last purchase, with an on/off switch on the contact card | Not started; platform builds the access rule plus a view and one override function, Hub builds the card and switch against them (handed to Cameron's platform chat 16 Nov) | - | - | - |
 | q26 | Mail search endpoint across all connected mailboxes (for call prep) | Not started | - | - | - |
 | q27 | Nonprod staff seed, then point Hub previews at nonprod | Not started | - | - | - |
-| c01 | hub_235 go, then merge PR #47 | Waiting on go (nonprod catch-up done 16 Nov) | `feat/metrics-targets` | #47 open | hub_235 proposed |
+| q28 | CI: stop the type check dying silently | In progress | `fix/ci-tsc-memory` | (this PR) | - |
+| q29 | Count off-platform payments (check, cash) as paid sales | Waiting on the platform's field names | - | - | - |
+| c01 | hub_235 go, then merge PR #47 | DONE 16 Nov | `feat/metrics-targets` | #47 merged (`744bbd9`) | hub_235 applied 16 Nov 15:58 |
 | c02 | Heather Bauer into Sales | DONE 16 Nov | - | - | - |
 | c03 | Swap LeadConnector link for University discovery link | Cameron, manual | - | - | - |
 | c04 | One Sales Pipeline for all discovery calls | DONE, decided Nov 13 | - | - | - |
@@ -50,12 +52,12 @@ not in this repo), as of 16 Nov 2026, updated with the Hub chat's applied state 
 | d04 | WNW sender identity for marketing email | Deferred | - | - | - |
 | d05 | Content repurposing and social DM lead capture | Deferred | - | - | - |
 | d06 | Connector contact types and relationship map | Deferred | - | - | - |
+| d07 | For Cameron to review: comped Phase 1 in the Phase 2/3 conversion cohort | For review | - | - | - |
 
 ## In flight
 
 | Branch | PR | Migration |
 |--------|----|-----------|
 | `feat/scheduling-agent-phase3` | #46 open | hub_234 proposed |
-| `feat/metrics-targets` | #47 open | hub_235 proposed |
+| `fix/ci-tsc-memory` | (this PR) | - |
 | `feat/speed-to-lead` | #48 merged | hub_236 applied 16 Nov |
-| `feat/booking-routes-triggers` | #50 open | hub_237 applied; both data fixes run 16 Nov (Task B) |

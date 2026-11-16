@@ -15,8 +15,10 @@ const ROOT = path.resolve(__dirname, '..')
 
 const run = (cmd, args, env = {}) => {
   const r = spawnSync(cmd, args, { cwd: ROOT, env: { ...process.env, ...env }, encoding: 'utf8', shell: false })
-  return { code: r.status, out: `${r.stdout || ''}${r.stderr || ''}` }
+  return { code: r.status, signal: r.signal, error: r.error ? String(r.error.message || r.error) : null, out: `${r.stdout || ''}${r.stderr || ''}` }
 }
+/** Why a child failed, always non-empty: exit code, signal (a kill, e.g. out of memory, sets status to null), and spawn error. */
+const why = (r) => `exit code ${r.code === null ? 'none' : r.code}, signal ${r.signal || 'none'}${r.error ? `, spawn error ${r.error}` : ''}`
 const HARNESSES = [
   { file: 'scripts/marketing/pure-tamper.cjs', selectors: ['flagson', 'placeholder', 'svixopen', 'redirect', 'nostop', 'onefail', 'unsubreq', 'noescape', 'stopmerged', 'connected', 'optout', 'nocap', '1'] },
   { file: 'scripts/marketing/entry-wiring-tamper.cjs', selectors: ['nocall', 'mergeorder', 'importoptin', 'nosummary', 'hardcoded', 'consent', 'cached', '1'] },
@@ -51,8 +53,10 @@ const HARNESSES = [
 let fail = 0
 const report = (ok, label) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${label}`); if (!ok) fail++ }
 
-const tsc = run(process.execPath, [path.join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc'), '--noEmit'])
-report(tsc.code === 0, `tsc --noEmit${tsc.code ? `\n${tsc.out.slice(0, 2000)}` : ''}`)
+// a 4 GB heap for the type check wherever verify runs (CI and local): tsc has died silently in CI (Running List q28)
+const tsc = run(process.execPath, ['--max-old-space-size=4096', path.join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc'), '--noEmit'])
+// a non-zero exit OR a kill (status null, e.g. out of memory) fails, and always says which, so a silent death is visible
+report(tsc.code === 0, `tsc --noEmit${tsc.code !== 0 ? ` (${why(tsc)})\n${tsc.out.slice(0, 2000) || '(no output)'}` : ''}`)
 
 // the agent's bundled copies of the voice guide and the help articles must match their sources
 const gen = run(process.execPath, ['scripts/agent/gen-content.cjs', '--check'])
