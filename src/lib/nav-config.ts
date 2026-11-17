@@ -2,6 +2,7 @@ import {
   LayoutDashboard, Route, CheckSquare, Brain, FileText, Lightbulb,
   Users, Target, Megaphone, Radio, Calendar, BarChart3, Settings,
   BookOpen, TicketCheck, Image, Rocket, Contact2, DollarSign, Package, GitBranch, GraduationCap, FileInput, Inbox, FolderOpen, ListFilter, Sparkles,
+  Sun, Bell,
 } from 'lucide-react'
 
 /* ───────────────────────────────────────────────────────────
@@ -104,6 +105,8 @@ export const navCategories: NavCategory[] = [
     collapsible: true,
     items: [
       { label: 'Platform Advisor', href: '/platform-advisor', icon: Brain, moduleKey: 'platform_advisor' },
+      { label: 'Brief', href: '/brief', icon: Sun, moduleKey: 'settings' },
+      { label: 'Notifications', href: '/settings/notifications', icon: Bell, moduleKey: 'settings' },
       { label: 'Settings', href: '/settings', icon: Settings, moduleKey: 'settings' },
     ],
   },

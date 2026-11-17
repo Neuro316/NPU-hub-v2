@@ -1,11 +1,14 @@
 'use client'
 
 import type { KanbanTask } from '@/lib/types/tasks'
+import { cardBadges } from '@/lib/notify/board'
 import { PRIORITY_CONFIG } from '@/lib/types/tasks'
 import { getUserColor, getUserInitials, type ColorOverrides } from '@/lib/user-colors'
 import { Clock, MessageSquare, Link2, Zap, AlertTriangle, ListChecks, Lock, FileText, User } from 'lucide-react'
 
 interface TaskCardProps {
+  /** the card's column is closed (Done or Trash): no Overdue or Stuck badge */
+  closed?: boolean
   task: KanbanTask
   colorOverrides?: ColorOverrides
   onClick: () => void
@@ -19,11 +22,13 @@ const RACI_COLORS: Record<string, string> = {
   I: '#6B7280',
 }
 
-export function TaskCard({ task, colorOverrides, onClick, onDragStart }: TaskCardProps) {
+export function TaskCard({ task, colorOverrides, onClick, onDragStart, closed }: TaskCardProps) {
   const priority = PRIORITY_CONFIG[task.priority]
   const commentCount = task.custom_fields?.comment_count || 0
   const attachmentCount = task.custom_fields?.attachment_count || 0
-  const isOverdue = task.due_date && new Date(task.due_date) < new Date()
+  // q22: Overdue and Stuck (a client quiet for 7 days; reason key enrolled_inactive_10d, a historical name) never show
+  // on a finished card: completed_at set, or the card sits in a closed column (Done or Trash). One shared rule.
+  const { overdue: isOverdue, stuck: isStuck } = cardBadges(task, !!closed)
   const hasBlockers = (task.blocked_by_count || 0) > 0 || (task.blocked_by && task.blocked_by.length > 0)
   const isBlocking = (task.blocks_count || 0) > 0
   const isReady = !hasBlockers && isBlocking  // has dependencies resolved, blocks others
@@ -84,6 +89,12 @@ export function TaskCard({ task, colorOverrides, onClick, onDragStart }: TaskCar
             <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 flex items-center gap-0.5">
               <Zap className="w-2.5 h-2.5" /> AI
             </span>
+          )}
+          {isOverdue && (
+            <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-600" title="Past its due date">Overdue</span>
+          )}
+          {isStuck && (
+            <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700" title="Client quiet for 7 days">Stuck</span>
           )}
           {isPrivate && (
             <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-violet-100 text-violet-600 flex items-center gap-0.5" title="Personal task (only you)">

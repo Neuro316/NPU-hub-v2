@@ -4,6 +4,7 @@ import { useState } from 'react'
 import type { KanbanColumn, KanbanTask } from '@/lib/types/tasks'
 import { PRIORITY_CONFIG } from '@/lib/types/tasks'
 import { TaskCard } from './task-card'
+import { isClosedColumn } from '@/lib/notify/board'
 import type { ColorOverrides } from '@/lib/user-colors'
 import { Plus, MoreHorizontal, Pencil, Trash2, Check, User, Calendar, Lock, Unlock } from 'lucide-react'
 
@@ -32,6 +33,8 @@ export function KanbanColumnView({
   const [newPersonal, setNewPersonal] = useState(false)
   const [editingTitle, setEditingTitle] = useState(false)
   const [editTitle, setEditTitle] = useState(column.title)
+  // Done and Trash are closed: their cards never show Overdue or Stuck (shared rule, src/lib/notify/board.ts)
+  const closed = isClosedColumn(column.title)
   const [showMenu, setShowMenu] = useState(false)
   const [dragOver, setDragOver] = useState(false)
 
@@ -126,6 +129,7 @@ export function KanbanColumnView({
             key={task.id}
             task={task}
             colorOverrides={colorOverrides}
+            closed={closed}
             onClick={() => onTaskClick(task)}
             onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; onDragStart(task.id) }}
           />

@@ -52,18 +52,18 @@ A held discovery call moves to Sales / Discovery Call (`booking_completed_stages
 | booking no-show | nr_bookings status no_show | none | enrolls Discovery no-show, exits Discovery booked | opens "missed discovery call" |
 | booking cancelled | hub_booking_syncs | none | Discovery booked exits on its own booking_cancelled rule | none |
 | held, no purchase 2 days | ledger | none | none | opens "no purchase 2 days after call" |
-| coaching booked or held | nr_bookings (activity types) | none | none | closes the 10-day task (activity) |
+| coaching booked or held | nr_bookings (activity types) | none | none | closes the 7-day task (activity) |
 | checkout started | funnel_events checkout_opened | none | enrolls Checkout recovery | none |
 | checkout unpaid 1 hour | ledger | none | (Checkout recovery's own delay is 1 hour) | none |
 | purchase: Phase 1, 2, 3, Clarity, assessment, Fresh Air, WNW | funnel_events payment_succeeded + program and paywall | Purchased | enrolls Client onboarding; exits Checkout recovery, Post-discovery, Discovery no-show | closes lead, no-show and held-no-purchase tasks |
 | purchase: coaching or other | same | none | exits Checkout recovery | closes the same tasks |
 | consent signed | funnel_events consent_signed | Consent signed | none | none |
-| first lesson opened | funnel_events first_lesson_opened | Onboarded | none | closes the 10-day task |
-| first practice or HRV session | practice_sessions, hrv_sessions | Active | exits Client onboarding | closes the 10-day task |
-| no activity 5 days (enrolled) | lessons, practice, HRV, lesson events, held sessions | Drop-off risk | enrolls Drop-off nudge | none |
-| no activity 10 days (enrolled) | same | none | none | opens "client quiet for 10 days" |
-| activity resumed | same | Drop-off risk back to Active | exits Drop-off nudge | closes the 10-day task |
-| program end | enrollments completed_at or access_ends_at | Completed | exits Drop-off nudge, Client onboarding | closes the 10-day task |
+| first lesson opened | funnel_events first_lesson_opened | Onboarded | none | closes the 7-day task |
+| first practice or HRV session | practice_sessions, hrv_sessions | Active | exits Client onboarding | closes the 7-day task |
+| no activity 3 days (enrolled; key inactive_5d) | lessons, practice, HRV, lesson events, held sessions | Drop-off risk | enrolls Drop-off nudge | none |
+| no activity 7 days (enrolled; key inactive_10d) | same | none | none | opens "client quiet for 7 days" |
+| activity resumed | same | Drop-off risk back to Active | exits Drop-off nudge | closes the 7-day task |
+| program end | enrollments completed_at or access_ends_at | Completed | exits Drop-off nudge, Client onboarding | closes the 7-day task |
 | lead, no touch 24 hours | contacts (inbound sources) + texts, calls, sends, emails, shared Gmail | none | none | opens "new lead, no reply yet"; closes on a touch, booking or purchase |
 
 - Every event writes one ledger row, unique on its key. In live it writes one timeline row, keyed on that ledger row.
@@ -71,6 +71,10 @@ A held discovery call moves to Sales / Discovery Call (`booking_completed_stages
   (`lifecycle:<event>` or `booking_route:...`), and the hub_229 trigger's timeline entry.
 - Tasks are CRM tasks (`source = hub_followup:<reason>`) linked to the contact and assigned to Cameron, with a card
   in Action Steps. A unique index allows one open task per contact and reason.
+
+**Inactivity thresholds changed on 17 Nov (Shane):** 3 days quiet is Drop-off risk and 7 days opens the check-in
+task (was 5 and 10). The keys `inactive_5d`, `inactive_10d` and `enrolled_inactive_10d` keep their historical names,
+because hub_237's check constraint and existing ledger rows use them.
 
 ## Not wired, and why
 

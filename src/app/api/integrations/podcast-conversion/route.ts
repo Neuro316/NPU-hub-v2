@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { loadSettings, DEFAULT_OWNER } from '@/lib/notify/settings'
+import { taskOwner } from '@/lib/notify/rules'
 import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
@@ -158,12 +160,18 @@ export async function POST(req: NextRequest) {
     ).data
 
     let taskError: { message: string; code: string; details: string | null } | null = null
-    if (defaultCol) {
+    // every automatic task has an owner (q22): the podcast_conversion rule's recipient, else the default owner
+    const notify = await loadSettings(supabase as any, org_id).catch(() => null)
+    const owner = taskOwner(notify?.rules.podcast_conversion, DEFAULT_OWNER)
+    if (defaultCol && owner) {
+      const { data: who } = await supabase.from('team_profiles').select('display_name').eq('org_id', org_id).eq('user_id', owner).maybeSingle()
       const { error } = await supabase
         .from('kanban_tasks')
         .insert({
           org_id,
           column_id: defaultCol.id,
+          owner_id: owner,
+          assignee: (who as any)?.display_name ?? null,
           title: `Personally reach out to ${contactName || email} from ${showName}`,
           description: `New podcast-attributed enrollment via ${promo_code || utm_campaign || 'UTM link'}. They heard you on ${showName} and just enrolled. Reach out within 24 hours.\n\nEmail: ${email}\nSource: ${promo_code ? `Promo code ${promo_code}` : `UTM campaign ${utm_campaign}`}`,
           priority: 'high',
@@ -171,7 +179,7 @@ export async function POST(req: NextRequest) {
           source: 'media_appearance',
           visibility: 'everyone',
           sort_order: 0,
-          custom_fields: {},
+          custom_fields: { contact_id },
           ai_generated: false,
         })
       if (error) {
@@ -179,7 +187,7 @@ export async function POST(req: NextRequest) {
         console.error('Failed to create outreach task:', error)
       }
     } else {
-      taskError = { message: 'No kanban_columns found for org', code: 'NO_COLUMN', details: null }
+      taskError = { message: 'No kanban column or task owner for org', code: 'NO_COLUMN', details: null }
       console.error('Failed to create outreach task: no kanban columns for org', org_id)
     }
 

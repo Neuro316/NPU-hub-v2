@@ -7,14 +7,14 @@ Last updated: 2026-11-16 afternoon, by the Code session on Shane's Mac. Applied 
 ## Session
 
 - **Running:** Code session on Shane's Mac (NPU-hub-v2).
-- **Live branch:** `feat/contact-comms-history` (Running List q02).
+- **Live branch:** `feat/notifications-brief` (Running List q22).
 - **Cameron:** no Code session recorded on this repo. Say so here before starting one.
 
 ## Production
 
-- **Main:** `96623f1` (merge of #51, verify: type check heap and failure reporting). Before it: `744bbd9` (#47), `3af023f` (#50), `3a80963` (#44), `53e2788` (#49).
-- **Last production deployment:** GitHub deployment `7839297484` for `96623f1`, state success,
-  2026-11-16 23:25 UTC, `npu-hub-v2-lw91srntf-cameronsensoriumneus-projects.vercel.app`.
+- **Main:** `411940b` (merge of #52, contact card Communications). Before it: `96623f1` (#51), `744bbd9` (#47), `3af023f` (#50), `3a80963` (#44), `53e2788` (#49).
+- **Last production deployment:** GitHub deployment `7857621379` for `411940b`, state success,
+  2026-11-17 15:22 UTC, `npu-hub-v2-m2ib4rdu3-cameronsensoriumneus-projects.vercel.app`.
   The Vercel `dpl_` id is not readable from this machine (the local Vercel CLI is on a different account).
 
 ## Open PRs
@@ -47,6 +47,7 @@ verify gives tsc a 4 GB heap and reports its exit code and signal).
 | Migration | Where | Status |
 |-----------|-------|--------|
 | hub_234_scheduling_agent | PR #46 | Proposed. Not applied anywhere. |
+| hub_239_brief_runs | q22 PR | Proposed. Not applied anywhere. The brief ships off; live needs this table. |
 
 ## Lifecycle engine
 

@@ -6,7 +6,7 @@ not in this repo), as of 16 Nov 2026, updated with the Hub chat's applied state 
 | Id | Item | Status (16 Nov) | Branch | PR | Migration |
 |----|------|-----------------|--------|----|-----------|
 | q01 | Conversations: Add as contact with suggested pipeline and stage | Rank 8, not started | - | - | - |
-| q02 | Contact card: Communications history section | Rank 7, in progress | `feat/contact-comms-history` | (this PR) | none needed; Gmail history backfill proposed separately |
+| q02 | Contact card: Communications history section | DONE 17 Nov | `feat/contact-comms-history` | #52 merged (`411940b`) | none; Gmail history backfill proposed separately |
 | q03 | Speed to lead counts self-booked leads and Gmail replies | DONE, merged Nov 10 | `feat/speed-to-lead` | #48 merged | hub_236 applied 16 Nov 11:22 |
 | q04 | LeadConnector bridge into Sales | Deferred | - | - | - |
 | q05 | Mobile friendly Hub | On hold | - | - | - |
@@ -26,7 +26,7 @@ not in this repo), as of 16 Nov 2026, updated with the Hub chat's applied state 
 | q19 | Lead follow-up system | Rank 3, Shane, Task B | `feat/booking-routes-triggers` | #50 merged (`3af023f`) | hub_237 applied 16 Nov 14:47; setup run 14:50 (dry_run) |
 | q20 | Program enrollment pipeline automation | Rank 4, Shane, Task B | `feat/booking-routes-triggers` | #50 merged (`3af023f`) | hub_237 applied 16 Nov 14:47; setup run 14:50 (dry_run) |
 | q21 | Drop-off messages for clients | Rank 5, Shane, Task B | `feat/booking-routes-triggers` | #50 merged (`3af023f`) | hub_237 applied 16 Nov 14:47; setup run 14:50 (dry_run) |
-| q22 | CRM notifications and task organization | Rank 9 | - | - | - |
+| q22 | CRM notifications and task organization | Priority 2, in progress; brief ships off | `feat/notifications-brief` | (this PR) | hub_239 proposed |
 | q23 | Hub Health (Hub half of Platform Health) | Rank 6, Shane; blocked on platform pf_310 | - | - | - |
 | q24 | Adopt standing practices, STATE/BACKLOG, nonprod catch-up | DONE 16 Nov | `docs/standing-practices-2026-11-16` | #49 merged (`53e2788`) | nonprod catch-up applied 16 Nov 10:44, ledger aligned |
 | q25 | Headset program access: 6 months from the last purchase, with an on/off switch on the contact card | Not started; platform builds the access rule plus a view and one override function, Hub builds the card and switch against them (handed to Cameron's platform chat 16 Nov) | - | - | - |
@@ -59,5 +59,5 @@ not in this repo), as of 16 Nov 2026, updated with the Hub chat's applied state 
 | Branch | PR | Migration |
 |--------|----|-----------|
 | `feat/scheduling-agent-phase3` | #46 open | hub_234 proposed |
-| `feat/contact-comms-history` | (this PR) | none (q02) |
+| `feat/notifications-brief` | (this PR) | hub_239 proposed (q22) |
 | `feat/speed-to-lead` | #48 merged | hub_236 applied 16 Nov |

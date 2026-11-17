@@ -13,6 +13,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { loadPipelines, placeContact, setStage, loadPositions, findPipeline } from '@/lib/pipelines/positions'
 import { endAsExited } from '@/lib/marketing/exits'
+import { notifyUrgent } from '@/lib/notify/urgent'
 import {
   EVENT_TITLE, TASK_TITLE, actionsFor, brandTagToAdd, campaignSourceKey, enrolledTarget, tasksClosedBy,
   type Brand, type CampaignKey, type EventType, type LifecycleConfig, type TaskReason,
@@ -188,6 +189,8 @@ export async function applyPending(db: SupabaseClient, cfg: LifecycleConfig, org
       if (a.exit?.length) done.exited = await exitCampaigns(db, row, a.exit)
       done.closed = await closeTasks(db, orgId, row.contact_id, tasksClosedBy(row.event_type))
       if (a.openTask) done.task = await openTask(db, cfg, row, a.openTask)
+      // a missed discovery call is urgent by default (q22 notification rules): a text now, only when notifications are live
+      if (row.event_type === 'booking_no_show') done.urgent = await notifyUrgent(db, orgId, 'discovery_no_show', row.contact_id)
       const { error: uErr } = await db.from('hub_lifecycle_events').update({ applied_at: new Date().toISOString(), applied: done, error: null }).eq('id', row.id)
       if (uErr) throw new Error(`ledger update: ${uErr.code ?? 'unknown'}`)
       out.applied++
