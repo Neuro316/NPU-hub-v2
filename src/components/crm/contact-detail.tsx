@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import Link from 'next/link'
 import {
   X, Phone, Mail, MessageCircle, Tag, Clock, CheckCircle2, AlertTriangle,
@@ -22,7 +22,6 @@ import { fetchContactPositions, apiSetStage, apiRemoveFromPipeline } from '@/lib
 import type { CrmContact, ContactNote, CrmTask, CallLog, ActivityLogEntry, TeamMember, ContactRelationship, RelationshipType, ContactTagCategory } from '@/types/crm'
 import { ContactCommsButtons } from '@/components/crm/twilio-comms'
 import { CrmTaskCard, CrmTaskDetail } from '@/components/crm/crm-task-card'
-import ContactCommPanel from '@/components/crm/contact-comm-panel'
 import { ContactEquipmentTab } from '@/components/crm/contact-equipment-tab'
 import { ContactMarketingTab } from '@/components/marketing/contact-marketing-tab'
 import EmailComposer from '@/components/crm/email-composer'
@@ -32,7 +31,10 @@ import { LeadValueEditor } from '@/components/crm/lead-value'
 import { AddNamePrompt } from '@/components/crm/add-name-prompt'
 import { needsName } from '@/lib/call-new-number'
 import { BookingAnswers } from '@/components/crm/booking-answers'
-import { CommunicationsHistory } from '@/components/crm/communications-history'
+import { CommunicationsHistory, type CommsFilter } from '@/components/crm/communications-history'
+import { useCommunications } from '@/components/crm/use-communications'
+import { countTouches, commsTileAction } from '@/lib/comms/counts'
+import { conversationHref } from '@/lib/comms/conversation-link'
 import { DeviceAnswers } from '@/components/crm/device-answers'
 import { SendResources } from '@/components/crm/send-resources'
 
@@ -498,7 +500,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
     !cardConfig || cardConfig.sections[key] !== false
   const supabase = createClient()
   const [contact, setContact] = useState<CrmContact | null>(null)
-  const [tab, setTab] = useState<'overview' | 'intel' | 'connections' | 'timeline' | 'tasks' | 'notes' | 'comms' | 'stats' | 'equipment' | 'consent' | 'campaigns'>('overview')
+  const [tab, setTab] = useState<'overview' | 'intel' | 'connections' | 'timeline' | 'tasks' | 'notes' | 'equipment' | 'consent' | 'campaigns'>('overview')
   const [engagementTopics, setEngagementTopics] = useState<any[]>([])
   const [showEngagementForm, setShowEngagementForm] = useState(false)
   const [engTopic, setEngTopic] = useState('')
@@ -534,7 +536,18 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
   const [connSearch, setConnSearch] = useState('')
   const [allContacts, setAllContacts] = useState<CrmContact[]>([])
   const [connSearching, setConnSearching] = useState(false)
-  const [expandedComm, setExpandedComm] = useState<'calls' | 'texts' | 'emails' | null>(null)
+  // q30: the Communication Activity counts and the Communications section share ONE fetch (the same touches, the
+  // same private-mail rules); a count tile opens the section filtered to its type
+  const comms = useCommunications(contactId)
+  const commCounts = useMemo(() => countTouches(comms.touches ?? []), [comms.touches])
+  const [commsOpen, setCommsOpen] = useState(false)
+  const [commsFilter, setCommsFilter] = useState<CommsFilter>('all')
+  const commsRef = useRef<HTMLDivElement | null>(null)
+  const openComms = (type: 'call' | 'text' | 'email') => {
+    const a = commsTileAction(type)
+    setTab(a.tab); setCommsFilter(a.filter); setCommsOpen(a.open)
+    setTimeout(() => commsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+  }
   const [conversations, setConversations] = useState<any[]>([])
   const [editingInfo, setEditingInfo] = useState(false)
   const [tagCategories, setTagCategories] = useState<ContactTagCategory[]>([])
@@ -895,8 +908,6 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
     { key: 'timeline', label: 'Timeline', icon: Activity },
     { key: 'tasks', label: 'Tasks', icon: CheckCircle2 },
     { key: 'notes', label: 'Notes', icon: FileText },
-    { key: 'comms', label: 'Comms', icon: MessageCircle },
-    { key: 'stats', label: 'Stats', icon: BarChart3 },
     { key: 'equipment', label: 'Equipment', icon: Package },
     { key: 'consent', label: 'Consent', icon: ShieldCheck },
     { key: 'campaigns', label: 'Campaigns', icon: Megaphone },
@@ -1484,7 +1495,40 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                     </div>
                   )}
 
-                  {contactId && <CommunicationsHistory contactId={contactId} />}
+                  {contactId && (
+                    <div ref={commsRef} className="space-y-2">
+                      <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                        <Activity className="w-3 h-3" /> Communication Activity
+                      </h4>
+                      <div className="grid grid-cols-3 gap-2">
+                        <button onClick={() => openComms('call')} title="Show calls in Communications"
+                          className="rounded-lg p-2.5 text-center border transition-all bg-green-50/50 border-green-100/50 hover:bg-green-100/50">
+                          <Phone className="w-3.5 h-3.5 mx-auto text-green-500 mb-1" />
+                          <p className="text-lg font-bold text-np-dark">{comms.touches ? commCounts.calls : '-'}</p>
+                          <p className="text-[9px] text-gray-400">Calls</p>
+                        </button>
+                        <button onClick={() => openComms('text')} title="Show texts in Communications"
+                          className="rounded-lg p-2.5 text-center border transition-all bg-blue-50/50 border-blue-100/50 hover:bg-blue-100/50">
+                          <MessageCircle className="w-3.5 h-3.5 mx-auto text-blue-500 mb-1" />
+                          <p className="text-lg font-bold text-np-dark">{comms.touches ? commCounts.texts : '-'}</p>
+                          <p className="text-[9px] text-gray-400">Texts</p>
+                        </button>
+                        <button onClick={() => openComms('email')} title="Show emails in Communications"
+                          className="rounded-lg p-2.5 text-center border transition-all bg-amber-50/50 border-amber-100/50 hover:bg-amber-100/50">
+                          <Mail className="w-3.5 h-3.5 mx-auto text-amber-500 mb-1" />
+                          <p className="text-lg font-bold text-np-dark">{comms.touches ? commCounts.emails : '-'}</p>
+                          <p className="text-[9px] text-gray-400">Emails{commCounts.privateEmails ? ` +${commCounts.privateEmails} private` : ''}</p>
+                        </button>
+                      </div>
+                      <CommunicationsHistory state={comms} open={commsOpen} onOpenChange={setCommsOpen} filter={commsFilter} onFilterChange={setCommsFilter} />
+                      {/* message text, recordings and transcripts live in Conversations (the removed Stats tab showed them read-only) */}
+                      {conversations.length > 0 && (
+                        <Link href={conversationHref(conversations[0].id)} className="inline-flex items-center gap-1 text-[10px] text-np-blue hover:underline">
+                          Open in Conversations for message text, recordings and transcripts <ChevronRight className="w-3 h-3" />
+                        </Link>
+                      )}
+                    </div>
+                  )}
 
                   {contactId && <BookingAnswers contactId={contactId} />}
 
@@ -1845,90 +1889,8 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
 
                   <div className="space-y-2">
                     <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
-                      <Activity className="w-3 h-3" /> Communication Activity
+                      <Activity className="w-3 h-3" /> Activity
                     </h4>
-                    <div className="grid grid-cols-3 gap-2">
-                      <button onClick={() => setExpandedComm(expandedComm === 'calls' ? null : 'calls')}
-                        className={`rounded-lg p-2.5 text-center border transition-all ${expandedComm === 'calls' ? 'bg-green-100 border-green-300 ring-1 ring-green-200' : 'bg-green-50/50 border-green-100/50 hover:bg-green-100/50'}`}>
-                        <Phone className="w-3.5 h-3.5 mx-auto text-green-500 mb-1" />
-                        <p className="text-lg font-bold text-np-dark">{(contact as any).total_calls || 0}</p>
-                        <p className="text-[9px] text-gray-400">Calls</p>
-                      </button>
-                      <button onClick={() => setExpandedComm(expandedComm === 'texts' ? null : 'texts')}
-                        className={`rounded-lg p-2.5 text-center border transition-all ${expandedComm === 'texts' ? 'bg-blue-100 border-blue-300 ring-1 ring-blue-200' : 'bg-blue-50/50 border-blue-100/50 hover:bg-blue-100/50'}`}>
-                        <MessageCircle className="w-3.5 h-3.5 mx-auto text-blue-500 mb-1" />
-                        <p className="text-lg font-bold text-np-dark">{(contact as any).total_texts || 0}</p>
-                        <p className="text-[9px] text-gray-400">Texts</p>
-                      </button>
-                      <button onClick={() => setExpandedComm(expandedComm === 'emails' ? null : 'emails')}
-                        className={`rounded-lg p-2.5 text-center border transition-all ${expandedComm === 'emails' ? 'bg-amber-100 border-amber-300 ring-1 ring-amber-200' : 'bg-amber-50/50 border-amber-100/50 hover:bg-amber-100/50'}`}>
-                        <Mail className="w-3.5 h-3.5 mx-auto text-amber-500 mb-1" />
-                        <p className="text-lg font-bold text-np-dark">{(contact as any).total_emails || 0}</p>
-                        <p className="text-[9px] text-gray-400">Emails</p>
-                      </button>
-                    </div>
-
-                    {expandedComm === 'calls' && (
-                      <div className="bg-green-50/30 rounded-xl p-2 space-y-1.5 border border-green-100/50 max-h-48 overflow-y-auto">
-                        <p className="text-[9px] font-bold text-green-600 uppercase tracking-wider px-1">Call History</p>
-                        {calls.length === 0 ? (
-                          <p className="text-[10px] text-gray-400 text-center py-3">No calls recorded</p>
-                        ) : calls.map(call => (
-                          <div key={call.id} className="flex items-center gap-2 px-2 py-1.5 bg-white rounded-lg">
-                            <div className={`w-5 h-5 rounded-full flex items-center justify-center ${call.direction === 'inbound' ? 'bg-green-100' : 'bg-blue-100'}`}>
-                              <Phone className={`w-2.5 h-2.5 ${call.direction === 'inbound' ? 'text-green-600' : 'text-blue-600'}`} />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-[10px] font-medium text-np-dark">
-                                {call.direction === 'inbound' ? 'Inbound' : 'Outbound'}
-                                {(call.duration_seconds ?? 0) > 0 && ` · ${Math.floor((call.duration_seconds ?? 0) / 60)}:${String((call.duration_seconds ?? 0) % 60).padStart(2, '0')}`}
-                              </p>
-                              {call.ai_summary && <p className="text-[9px] text-gray-400 truncate">{call.ai_summary}</p>}
-                            </div>
-                            <span className="text-[8px] text-gray-300 flex-shrink-0">{new Date(call.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {expandedComm === 'texts' && (
-                      <div className="bg-blue-50/30 rounded-xl p-2 space-y-1.5 border border-blue-100/50 max-h-48 overflow-y-auto">
-                        <p className="text-[9px] font-bold text-blue-600 uppercase tracking-wider px-1">Text Messages</p>
-                        {conversations.filter(cv => cv.channel === 'sms').length === 0 ? (
-                          <p className="text-[10px] text-gray-400 text-center py-3">No text messages</p>
-                        ) : conversations.filter(cv => cv.channel === 'sms').map(cv => (
-                          <Link key={cv.id} href={`/crm/conversations?id=${cv.id}`}
-                            className="flex items-center gap-2 px-2 py-1.5 bg-white rounded-lg hover:bg-blue-50/50 transition-colors">
-                            <MessageCircle className="w-3 h-3 text-blue-500 flex-shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-[10px] font-medium text-np-dark">{cv.unread_count > 0 ? `${cv.unread_count} unread` : 'View thread'}</p>
-                            </div>
-                            <span className="text-[8px] text-gray-300">{cv.last_message_at ? new Date(cv.last_message_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}</span>
-                            <ChevronRight className="w-3 h-3 text-gray-300" />
-                          </Link>
-                        ))}
-                      </div>
-                    )}
-
-                    {expandedComm === 'emails' && (
-                      <div className="bg-amber-50/30 rounded-xl p-2 space-y-1.5 border border-amber-100/50 max-h-48 overflow-y-auto">
-                        <p className="text-[9px] font-bold text-amber-600 uppercase tracking-wider px-1">Email History</p>
-                        {conversations.filter(cv => cv.channel === 'email').length === 0 ? (
-                          <p className="text-[10px] text-gray-400 text-center py-3">No emails</p>
-                        ) : conversations.filter(cv => cv.channel === 'email').map(cv => (
-                          <Link key={cv.id} href={`/crm/conversations?id=${cv.id}`}
-                            className="flex items-center gap-2 px-2 py-1.5 bg-white rounded-lg hover:bg-amber-50/50 transition-colors">
-                            <Mail className="w-3 h-3 text-amber-500 flex-shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-[10px] font-medium text-np-dark">{cv.unread_count > 0 ? `${cv.unread_count} unread` : 'View thread'}</p>
-                            </div>
-                            <span className="text-[8px] text-gray-300">{cv.last_message_at ? new Date(cv.last_message_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}</span>
-                            <ChevronRight className="w-3 h-3 text-gray-300" />
-                          </Link>
-                        ))}
-                      </div>
-                    )}
-
                     <div className="grid grid-cols-2 gap-2">
                       <div className="bg-gray-50 rounded-lg p-2 text-center">
                         <p className="text-sm font-bold text-np-dark">{tasks.length}</p>
@@ -2246,17 +2208,6 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                   </div>
                   {notes.length === 0 && !newNote && <p className="text-center text-[10px] text-gray-400 py-6">No notes yet</p>}
                 </>
-              )}
-
-              {tab === 'comms' && (
-                <div className="space-y-4">
-                  {/* Comms tab content preserved */}
-                  <p className="text-center text-[10px] text-gray-400 py-8">Comms tab content preserved from original</p>
-                </div>
-              )}
-
-              {tab === 'stats' && contactId && (
-                <ContactCommPanel contactId={contactId} />
               )}
 
               {tab === 'equipment' && contactId && (

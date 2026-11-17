@@ -7,12 +7,12 @@ Last updated: 2026-11-16 afternoon, by the Code session on Shane's Mac. Applied 
 ## Session
 
 - **Running:** Code session on Shane's Mac (NPU-hub-v2).
-- **Live branch:** `feat/website-intake` (Running List q08, Hub half).
+- **Live branch:** `fix/contacts-card-search` (Running List q30).
 - **Cameron:** no Code session recorded on this repo. Say so here before starting one.
 
 ## Production
 
-- **Main:** `c11c1a6` (merge of #53, notifications and the 8 AM brief). Before it: `411940b` (#52), `96623f1` (#51), `744bbd9` (#47), `3af023f` (#50), `3a80963` (#44), `53e2788` (#49).
+- **Main:** `c03fe78` (merge of #55, website intake origins docs). Before it: `a471d14` (#54), `c11c1a6` (#53), `411940b` (#52), `96623f1` (#51), `744bbd9` (#47), `3af023f` (#50), `3a80963` (#44), `53e2788` (#49).
 - **Last production deployment:** GitHub deployment `7857621379` for `411940b`, state success,
   2026-11-17 15:22 UTC, `npu-hub-v2-m2ib4rdu3-cameronsensoriumneus-projects.vercel.app`.
   The Vercel `dpl_` id is not readable from this machine (the local Vercel CLI is on a different account).
@@ -53,7 +53,7 @@ verify gives tsc a 4 GB heap and reports its exit code and signal).
 | Migration | Where | Status |
 |-----------|-------|--------|
 | hub_234_scheduling_agent | PR #46 | Proposed. Not applied anywhere. |
-| data/2026-11-17_website_intake_forms.sql | q08 PR | Proposed, not run. Three published website forms, Sales routing, intake flag on. |
+| data/2026-11-17_website_intake_forms.sql | #54 (merged) | Proposed, not run. Three published website forms, Sales routing, intake flag on. |
 
 ## Lifecycle engine
 
