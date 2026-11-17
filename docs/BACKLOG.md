@@ -12,7 +12,7 @@ not in this repo), as of 16 Nov 2026, updated with the Hub chat's applied state 
 | q05 | Mobile friendly Hub | On hold | - | - | - |
 | q06 | Every University booking link lands in the pipeline with stage history | Rank 1, Shane, Task B | `feat/booking-routes-triggers` (earlier: `feat/booking-routes` #23, `feat/discovery-bookings-sales` #42, both merged) | #50 merged (`3af023f`) | hub_237 applied 16 Nov 14:47; setup run 14:50 (dry_run) |
 | q07 | Triggers: booking, checkout, purchase, consent, first session, inactivity, program end | Rank 2, Shane, Task B | `feat/booking-routes-triggers` | #50 merged (`3af023f`) | hub_237 applied 16 Nov 14:47; setup run 14:50 (dry_run) |
-| q08 | Wire lead sources into Hub intake | Priority 1. Hub half in progress (forms, Sales placement, contract for the Website session); website half is the Website session | `feat/website-intake` | (this PR) | data proposed: supabase/data/2026-11-17_website_intake_forms.sql |
+| q08 | Wire lead sources into Hub intake | Priority 1. Hub half merged (forms, Sales placement, contract for the Website session); website half is the Website session | `feat/website-intake` | #54 merged (`a471d14`); origins docs #55 merged (`c03fe78`) | data proposed, not run: supabase/data/2026-11-17_website_intake_forms.sql |
 | q09 | Scheduling assistant: morning brief and reply drafts | Rank 10, on hold | `feat/scheduling-agent-phase3` | #46 open | hub_234 proposed |
 | q10 | Customer service: support drafts, FAQ videos, welcome email monitoring | Rank 11 | - | - | - |
 | q11 | Website tracking and lead source attribution | On hold | - | - | - |
@@ -34,6 +34,8 @@ not in this repo), as of 16 Nov 2026, updated with the Hub chat's applied state 
 | q27 | Nonprod staff seed, then point Hub previews at nonprod | Not started | - | - | - |
 | q28 | CI: stop the type check dying silently | DONE 16 Nov | `fix/ci-tsc-memory` | #51 merged (`96623f1`) | - |
 | q29 | Count off-platform payments (check, cash) as paid sales | Waiting on the platform's field names | - | - | - |
+| q30 | Contact card and Contacts list fixes from the q02 walkthrough (search, Comms tab, activity counts) | In progress | `fix/contacts-card-search` | (this PR) | - |
+| q32 | Welcome email check (new University signups without a delivered welcome email) | Blocked on the platform: it does not record welcome emails or their delivery (contract sent 17 Nov) | `feat/welcome-email-check` (no commits) | - | - |
 | c01 | hub_235 go, then merge PR #47 | DONE 16 Nov | `feat/metrics-targets` | #47 merged (`744bbd9`) | hub_235 applied 16 Nov 15:58 |
 | c02 | Heather Bauer into Sales | DONE 16 Nov | - | - | - |
 | c03 | Swap LeadConnector link for University discovery link | Cameron, manual | - | - | - |
@@ -59,5 +61,5 @@ not in this repo), as of 16 Nov 2026, updated with the Hub chat's applied state 
 | Branch | PR | Migration |
 |--------|----|-----------|
 | `feat/scheduling-agent-phase3` | #46 open | hub_234 proposed |
-| `feat/website-intake` | (this PR) | data proposed (q08) |
+| `fix/contacts-card-search` | (this PR) | none (q30) |
 | `feat/speed-to-lead` | #48 merged | hub_236 applied 16 Nov |

@@ -2,7 +2,8 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useEffect, useState, useMemo, useCallback, Suspense } from 'react'
+import { useEffect, useState, useMemo, useCallback, useRef, Suspense } from 'react'
+import { latestOnly } from '@/lib/contacts/search'
 import { useSearchParams } from 'next/navigation'
 import {
   Search, Plus, Tag, X, Settings2, GripVertical, Check, Eye, EyeOff, Sparkles, Loader2,
@@ -327,8 +328,11 @@ function ContactsPageContent() {
   useEffect(() => { loadPipelineData() }, [loadPipelineData])
   useEffect(() => { setPipelineFilter(''); setStageFilter('') }, [currentOrg?.id])
 
+  // Only the newest request's results are applied (q30): a slower, older search can never land last and win.
+  const loadSeq = useRef(latestOnly())
   const load = useCallback(async () => {
     if (!currentOrg) return
+    const seq = loadSeq.current.begin()
     setLoading(true)
     try {
       const params: ContactSearchParams = { org_id: currentOrg.id, limit, offset: page * limit, sort_by: sortBy, sort_dir: sortDir }
@@ -337,9 +341,10 @@ function ContactsPageContent() {
       if (stageFilter) params.position_stage_id = stageFilter
       if (tagFilter) params.tags = [tagFilter]
       const res = await fetchContacts(params)
+      if (!loadSeq.current.isLatest(seq)) return
       setContacts(res.contacts); setTotal(res.total)
-    } catch (e) { console.error('Contact load error:', e) }
-    finally { setLoading(false) }
+    } catch (e) { if (loadSeq.current.isLatest(seq)) console.error('Contact load error:', e) }
+    finally { if (loadSeq.current.isLatest(seq)) setLoading(false) }
   }, [currentOrg?.id, search, pipelineFilter, stageFilter, tagFilter, page, sortBy, sortDir])
 
   useEffect(() => { load() }, [load])

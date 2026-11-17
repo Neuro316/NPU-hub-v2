@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { createClient } from '@/lib/supabase-browser'
+import { contactSearchFilter } from '@/lib/contacts/search'
 import { contactForNumber, type NumberContact } from '@/lib/call-new-number'
 import { loadActivity } from '@/lib/activity-log'
 import { loadPositions } from '@/lib/pipelines/positions'
@@ -40,10 +41,9 @@ export async function fetchContacts(params: ContactSearchParams = {}) {
   if (params.org_id) query = query.eq('org_id', params.org_id)
   if (!params.include_archived) query = query.is('archived_at', null)
 
-  if (params.q) {
-    // Try ilike on name/email first (more reliable than search_vector which may not be populated)
-    query = query.or(`first_name.ilike.%${params.q}%,last_name.ilike.%${params.q}%,email.ilike.%${params.q}%,phone.ilike.%${params.q}%`)
-  }
+  // name, email or phone; the text is cleaned for PostgREST and "first last" matches both names (src/lib/contacts/search.ts)
+  const searchFilter = contactSearchFilter(params.q)
+  if (searchFilter) query = query.or(searchFilter)
   if (params.tags?.length) query = query.overlaps('tags', params.tags)
   if (params.position_pipeline_id) query = query.eq('contact_pipeline_positions.pipeline_id', params.position_pipeline_id)
   if (params.position_stage_id) query = query.eq('contact_pipeline_positions.stage_id', params.position_stage_id)
