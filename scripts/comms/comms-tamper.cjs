@@ -13,14 +13,18 @@
 //                app's page folders) reads hub_mail_messages or hub_mail_sent
 //   C_LIFECYCLE  lifecycle dry-run rows reach superadmins only, as muted "Would have" rows; for anyone else the
 //                table is not even queried
-//   C_MERGED     touches of a contact merged into this one are included
+//   C_MERGED     touches of a contact merged into this one are included: its text, its call, and an email from
+//                its old address (in a SHARED mailbox, so this check never overlaps C_PRIVATE)
+//   C_ALT        the alternates a merge records in custom_fields are matched: a text from an alt_phones number
+//                (on a conversation not linked to the contact) and an email from an alt_emails address
 //
 //   privateopen   a private mailbox row is shown in full to a non-owner            {C_PRIVATE}
 //   body          the text row selects and returns the message body                {C_NOBODY}
 //   browserread   a client component reads hub_mail_messages                       {C_BROWSER}
 //   lifecycleall  dry-run lifecycle rows are shown to every staff member           {C_LIFECYCLE}
 //   nomerged      contacts merged into this one are left out                       {C_MERGED}
-// TAMPER=1 reddens the sum (5).
+//   noalt         custom_fields alt_emails and alt_phones are ignored              {C_ALT}
+// TAMPER=1 reddens the sum (6).
 const fs = require('fs'), path = require('path')
 const H = require('../agent/lib/harness.cjs')
 
@@ -32,8 +36,9 @@ const TAMPERS = {
   browserread: [],
   lifecycleall: [[HIST, '  if (!viewer.isSuperadmin) return []\n', '']],
   nomerged: [[HIST, 'const all = [c, ...(merged ?? [])] as any[]', 'const all = [c] as any[]; void merged']],
+  noalt: [[HIST, "  return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []", '  void v; return []']],
 }
-const RED_OF = { privateopen: ['C_PRIVATE'], body: ['C_NOBODY'], browserread: ['C_BROWSER'], lifecycleall: ['C_LIFECYCLE'], nomerged: ['C_MERGED'] }
+const RED_OF = { privateopen: ['C_PRIVATE'], body: ['C_NOBODY'], browserread: ['C_BROWSER'], lifecycleall: ['C_LIFECYCLE'], nomerged: ['C_MERGED'], noalt: ['C_ALT'] }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-comms')
 const load = H.install(out)
@@ -43,21 +48,29 @@ const { GET } = load(ROUTE)
 const ORG = '00000000-0000-0000-0000-0000000000a1'
 const C = '00000000-0000-4000-8000-000000000001', M = '00000000-0000-4000-8000-000000000002'
 const OWNER = '00000000-0000-4000-8000-0000000000u1'.replace('u', 'a'), STAFF = '00000000-0000-4000-8000-0000000000b2', SUPER = '00000000-0000-4000-8000-0000000000c3'
-const BOX = 'box-private-1'
+const BOX = 'box-private-1', SHARED = 'box-shared-1'
 const T = (h) => new Date(Date.UTC(2026, 10, 10, h)).toISOString()
 const DATA = {
   contacts: [
-    { id: C, org_id: ORG, email: 'Client@Example.com', phone: '(828) 555-0100', merged_into_id: null },
+    { id: C, org_id: ORG, email: 'Client@Example.com', phone: '(828) 555-0100', merged_into_id: null, custom_fields: { alt_emails: ['Alt.Person@Example.com'], alt_phones: ['+18285550177'] } },
     { id: M, org_id: ORG, email: 'old-address@example.com', phone: '(828) 555-0199', merged_into_id: C },
   ],
-  hub_mail_connections: [{ id: BOX, org_id: ORG, owner_user_id: OWNER, email_address: 'owner-mailbox@neuroprogeny.com', visibility: 'private' }],
+  hub_mail_connections: [
+    { id: BOX, org_id: ORG, owner_user_id: OWNER, email_address: 'owner-mailbox@neuroprogeny.com', visibility: 'private' },
+    { id: SHARED, org_id: ORG, owner_user_id: OWNER, email_address: 'shared-mailbox@neuroprogeny.com', visibility: 'shared' },
+  ],
   hub_mail_messages: [
     { id: 'mm1', connection_id: BOX, from_address: 'client@example.com', subject: 'SECRETSUBJECT', summary: 'SECRETSUMMARY', category: 'lead', received_at: T(1), body: 'SECRETBODY' },
     { id: 'mm2', connection_id: BOX, from_address: 'client@example.com', subject: 'CLINICALSUBJECT', summary: 'x', category: 'clinical', received_at: T(2) },
+    { id: 'mm3', connection_id: SHARED, from_address: 'old-address@example.com', subject: 'Hello again', summary: 'A short check-in', category: 'lead', received_at: T(8) },
+    { id: 'mm4', connection_id: SHARED, from_address: 'alt.person@example.com', subject: 'From my other address', summary: 'Same person', category: 'lead', received_at: T(9) },
   ],
   hub_mail_sent: [{ id: 'ms1', connection_id: BOX, to_address: 'client@example.com', sent_at: T(3) }],
   conversations: [{ id: 'cv1', contact_id: M }],
-  crm_messages: [{ id: 'tx1', conversation_id: 'cv1', org_id: ORG, direction: 'inbound', body: 'SECRETBODY', status: 'received', created_at: T(4), msg_type: 'sms' }],
+  crm_messages: [
+    { id: 'tx1', conversation_id: 'cv1', org_id: ORG, direction: 'inbound', body: 'SECRETBODY', status: 'received', created_at: T(4), msg_type: 'sms' },
+    { id: 'tx2', conversation_id: 'cv-unlinked', org_id: ORG, direction: 'inbound', body: 'SECRETBODY', status: 'received', created_at: T(10), msg_type: 'sms', from_e164: '+18285550177', to_e164: '+18285550000' },
+  ],
   call_logs: [{ id: 'cl1', contact_id: M, org_id: ORG, direction: 'outbound', status: 'completed', started_at: T(5), duration_seconds: 300, transcript: 'SECRETBODY', ai_summary: 'Talked about scheduling', team_member_id: 'tm1' }],
   team_members: [{ id: 'tm1', display_name: 'Cameron Allen' }],
   message_sends: [{ id: 'snd1', contact_id: C, channel: 'email', status: 'dry_run', dry_run: true, rendered_body: 'SECRETBODY', subject: 'SECRETBODY', claimed_at: T(6) }],
@@ -115,7 +128,8 @@ const check = (id, ok, got) => rows.push({ id, ok: !!ok, got })
 
   // C_PRIVATE
   {
-    const mailOf = (v) => v.touches.filter((t) => t.type === 'email')
+    const PRIVATE_IDS = ['mail:mm1', 'mail:mm2', 'sent:ms1']
+    const mailOf = (v) => v.touches.filter((t) => PRIVATE_IDS.includes(t.id))
     const hidden = (v) => !/SECRETSUBJECT|SECRETSUMMARY|CLINICALSUBJECT|owner-mailbox/.test(v.text)
     const redactedOk = (v) => mailOf(v).length === 3 && mailOf(v).every((t) => t.redacted && t.who === null && /^(Email \(private inbox\)|Private email)$/.test(t.summary))
     const ownerFull = mailOf(owner).length === 3 && owner.text.includes('SECRETSUBJECT') && owner.text.includes('CLINICALSUBJECT')
@@ -157,7 +171,13 @@ const check = (id, ok, got) => rows.push({ id, ok: !!ok, got })
   // C_MERGED
   {
     const ids = staff.touches.map((t) => t.id)
-    check('C_MERGED', ids.includes('text:tx1') && ids.includes('call:cl1'), ids)
+    check('C_MERGED', ids.includes('text:tx1') && ids.includes('call:cl1') && ids.includes('mail:mm3'), ids)
+  }
+
+  // C_ALT
+  {
+    const ids = staff.touches.map((t) => t.id)
+    check('C_ALT', ids.includes('text:tx2') && ids.includes('mail:mm4'), ids)
   }
 
   H.report(rows, active, RED_OF, () => fs.rmSync(out, { recursive: true, force: true }))

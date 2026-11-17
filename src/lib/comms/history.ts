@@ -5,7 +5,7 @@
 // nr_booking_leads) are read only.
 //
 // The contact is this contact plus every contact merged into it (merged_into_id), matched by their emails and
-// phones. Contacts have no alternate email or phone fields today, so merged contacts are the only alternates.
+// phones AND the alternates a merge records in custom_fields (alt_emails: emails, alt_phones: E.164 phones).
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { toE164 } from '@/lib/phone'
 import { EVENT_TITLE, type EventType } from '@/lib/lifecycle/rules'
@@ -16,21 +16,29 @@ const fail = (what: string, e: { code?: string } | null) => new Error(`${what} r
 const uniq = <T,>(xs: T[]) => Array.from(new Set(xs.filter((x) => x !== null && x !== undefined && x !== ''))) as T[]
 const likeExact = (s: string) => s.replace(/[\\%_]/g, (c) => '\\' + c)
 
+/** custom_fields.alt_emails / alt_phones, set by contact merges: an array of strings, anything else is none. */
+function altList(customFields: unknown, key: 'alt_emails' | 'alt_phones'): string[] {
+  const v = customFields && typeof customFields === 'object' ? (customFields as Record<string, unknown>)[key] : null
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+}
+
 export interface Subject { ids: string[]; orgId: string; emails: string[]; phones: string[] }
 
 /** The contact and every contact merged into it, with their emails and E.164 phones. */
 export async function subjectFor(db: SupabaseClient, contactId: string): Promise<Subject | null> {
-  const { data: c, error } = await db.from('contacts').select('id, org_id, email, phone').eq('id', contactId).maybeSingle()
+  const { data: c, error } = await db.from('contacts').select('id, org_id, email, phone, custom_fields').eq('id', contactId).maybeSingle()
   if (error) throw fail('contacts', error)
   if (!c) return null
-  const { data: merged, error: mErr } = await db.from('contacts').select('id, email, phone').eq('merged_into_id', contactId).limit(50)
+  const { data: merged, error: mErr } = await db.from('contacts').select('id, email, phone, custom_fields').eq('merged_into_id', contactId).limit(50)
   if (mErr) throw fail('merged contacts', mErr)
   const all = [c, ...(merged ?? [])] as any[]
+  const emails = all.flatMap((x) => [x.email, ...altList(x.custom_fields, 'alt_emails')])
+  const phones = all.flatMap((x) => [x.phone, ...altList(x.custom_fields, 'alt_phones')])
   return {
     ids: uniq(all.map((x) => x.id as string)),
     orgId: (c as any).org_id,
-    emails: uniq(all.map((x) => String(x.email ?? '').trim().toLowerCase()).filter((e) => e.includes('@'))),
-    phones: uniq(all.map((x) => (x.phone ? toE164(String(x.phone)) : '')).filter((p) => /^\+\d{10,15}$/.test(p))),
+    emails: uniq(emails.map((e) => String(e ?? '').trim().toLowerCase()).filter((e) => e.includes('@'))),
+    phones: uniq(phones.map((p) => (p ? toE164(String(p)) : '')).filter((p) => /^\+\d{10,15}$/.test(p))),
   }
 }
 
