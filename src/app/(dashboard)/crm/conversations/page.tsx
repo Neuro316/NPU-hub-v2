@@ -6,7 +6,9 @@
 // Queries existing: conversations, crm_messages, call_logs
 // ═══════════════════════════════════════════════════════════════
 
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { CONVERSATION_PARAM, pickLinkedThread } from '@/lib/comms/conversation-link'
 import Link from 'next/link'
 import {
   Search, Phone, MessageCircle, Mail, Filter, Send, X, Check, CheckCheck, Clock,
@@ -48,7 +50,12 @@ interface ThreadItem {
   line_e164: string | null
 }
 
+// useSearchParams needs a Suspense boundary in the App Router
 export default function ConversationsPage() {
+  return <Suspense fallback={null}><ConversationsPageInner /></Suspense>
+}
+
+function ConversationsPageInner() {
   const supabase = createClient()
   const { currentOrg } = useWorkspace()
   const [threads, setThreads] = useState<ThreadItem[]>([])
@@ -118,6 +125,21 @@ export default function ConversationsPage() {
   // filter changes (and once the default line is known, since NULL rows belong
   // to it).
   useEffect(() => { loadThreads() }, [selectedLine, defaultLine]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A link that names a thread (?id=, the contact card's "Open in Conversations") opens it once the list has loaded,
+  // and again when the param changes. Only a thread already in the viewer's list is opened, through the same
+  // openThread a click uses (so it is marked read exactly as a click would mark it); anything else shows a note.
+  const searchParams = useSearchParams()
+  const linkedId = searchParams.get(CONVERSATION_PARAM)
+  const [linkMissing, setLinkMissing] = useState(false)
+  const handledLink = useRef<string | null>(null)
+  useEffect(() => {
+    if (!linkedId) { handledLink.current = null; setLinkMissing(false); return }
+    if (loading || handledLink.current === linkedId) return
+    handledLink.current = linkedId
+    const linked = pickLinkedThread(threads, linkedId)
+    if (linked) { setLinkMissing(false); openThread(linked) } else setLinkMissing(true)
+  }, [linkedId, loading, threads]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadThreads() {
     setLoading(true)
@@ -489,6 +511,7 @@ export default function ConversationsPage() {
             <div className="text-center">
               <MessageCircle size={32} className="mx-auto text-gray-400/20 mb-3" />
               <p className="text-sm text-gray-400">Select a conversation</p>
+              {linkMissing && <p className="text-[11px] text-gray-400 mt-1">That conversation isn't available.</p>}
               <p className="text-[10px] text-gray-300 mt-1">Filter by channel and direction above</p>
             </div>
           </div>

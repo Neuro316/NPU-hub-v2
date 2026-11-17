@@ -13,6 +13,9 @@
 //              Stats tab read those columns, which an app route and a database trigger both bump, so they doubled.)
 //   C_CLICK    a tile click switches the card to the tab that holds Communications, opens it and filters it to the
 //              tile's type (commsTileAction, applied by openComms, wired to each tile)
+//   C_LINK     the card's "Open in Conversations" link and the Conversations page use the same param
+//              (conversationHref / CONVERSATION_PARAM), and the page opens the named thread on load, choosing it
+//              only from the viewer's loaded list (pickLinkedThread) and opening it through openThread, as a click does
 //   C_PRIVATE  a private mail the viewer may not read (a redacted row) is not counted as one of their emails; it is
 //              reported apart, so emails + private equals the email rows in their list
 //
@@ -21,23 +24,25 @@
 //   oldcounts     the Calls count reads contacts.total_calls again                {C_SOURCE}
 //   countprivate  redacted private mail counts as the viewer's email             {C_PRIVATE}
 //   noswitch      a tile click leaves the card on another tab                    {C_CLICK}
-// TAMPER=1 reddens the sum (5).
+//   ignoreid      the page ignores the thread named in the link                  {C_LINK}
+// TAMPER=1 reddens the sum (6).
 const fs = require('fs'), path = require('path')
 const H = require('../agent/lib/harness.cjs')
 
-const S = 'lib/contacts/search.ts', C = 'lib/comms/counts.ts'
+const S = 'lib/contacts/search.ts', C = 'lib/comms/counts.ts', L = 'lib/comms/conversation-link.ts'
 const TAMPERS = {
   olderwins: [[S, '    isLatest: (n: number) => n === seq,', '    isLatest: (n: number) => n > 0,']],
   rawquery: [[S, "  return String(q ?? '').replace(/[,()*%\\\\\"'`]/g, ' ').replace(/\\s+/g, ' ').trim().slice(0, 80)", "  return String(q ?? '').trim()"]],
   oldcounts: [],
   countprivate: [[C, "else if (t.type === 'email') { if (t.redacted) out.privateEmails++; else out.emails++ }", "else if (t.type === 'email') out.emails++"]],
   noswitch: [[C, "  return { tab: 'overview', open: true, filter: type }", "  return { tab: 'stats' as any, open: true, filter: type }"]],
+  ignoreid: [[L, '  return threads.find((t) => t.id === linkedId) ?? null', '  return null']],
 }
-const RED_OF = { olderwins: ['S_LATEST'], rawquery: ['S_QUERY'], oldcounts: ['C_SOURCE'], countprivate: ['C_PRIVATE'], noswitch: ['C_CLICK'] }
+const RED_OF = { olderwins: ['S_LATEST'], rawquery: ['S_QUERY'], oldcounts: ['C_SOURCE'], countprivate: ['C_PRIVATE'], noswitch: ['C_CLICK'], ignoreid: ['C_LINK'] }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-contactfix')
 const load = H.install(out)
-const search = load(S), counts = load(C)
+const search = load(S), counts = load(C), link = load(L)
 const read = (rel) => fs.readFileSync(path.join(H.ROOT, rel), 'utf8').replace(/\r\n/g, '\n')
 
 const rows = []
@@ -108,6 +113,20 @@ const check = (id, ok, got) => rows.push({ id, ok: !!ok, got })
   const applies = /const a = commsTileAction\(type\)\s*\n\s*setTab\(a\.tab\); setCommsFilter\(a\.filter\); setCommsOpen\(a\.open\)/.test(card)
   const wired = ['call', 'text', 'email'].every((t) => card.includes(`onClick={() => openComms('${t}')}`))
   check('C_CLICK', a.tab === holder && a.open === true && a.filter === 'text' && applies && wired, { a, holder, applies, wired })
+}
+
+// C_LINK
+{
+  const card = read('src/components/crm/contact-detail.tsx')
+  const page = read('src/app/(dashboard)/crm/conversations/page.tsx')
+  const threads = [{ id: 'conv-a' }, { id: 'conv-b' }]
+  const picked = link.pickLinkedThread(threads, 'conv-b')
+  const pure = picked && picked.id === 'conv-b' && link.pickLinkedThread(threads, 'conv-x') === null && link.pickLinkedThread(threads, null) === null
+    && link.conversationHref('conv-b') === `/crm/conversations?${link.CONVERSATION_PARAM}=conv-b`
+  const cardUsesHelper = card.includes('href={conversationHref(') && !/['`"]\/crm\/conversations\?/.test(card)
+  const pageReads = page.includes('searchParams.get(CONVERSATION_PARAM)')
+    && /const linked = pickLinkedThread\(threads, linkedId\)\s*\n\s*if \(linked\) \{ setLinkMissing\(false\); openThread\(linked\) \}/.test(page)
+  check('C_LINK', pure && cardUsesHelper && pageReads, { pure: !!pure, cardUsesHelper, pageReads })
 }
 
 // C_PRIVATE

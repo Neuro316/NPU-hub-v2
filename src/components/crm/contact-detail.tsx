@@ -34,6 +34,7 @@ import { BookingAnswers } from '@/components/crm/booking-answers'
 import { CommunicationsHistory, type CommsFilter } from '@/components/crm/communications-history'
 import { useCommunications } from '@/components/crm/use-communications'
 import { countTouches, commsTileAction } from '@/lib/comms/counts'
+import { conversationHref } from '@/lib/comms/conversation-link'
 import { DeviceAnswers } from '@/components/crm/device-answers'
 import { SendResources } from '@/components/crm/send-resources'
 
@@ -1522,7 +1523,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                       <CommunicationsHistory state={comms} open={commsOpen} onOpenChange={setCommsOpen} filter={commsFilter} onFilterChange={setCommsFilter} />
                       {/* message text, recordings and transcripts live in Conversations (the removed Stats tab showed them read-only) */}
                       {conversations.length > 0 && (
-                        <Link href={`/crm/conversations?id=${conversations[0].id}`} className="inline-flex items-center gap-1 text-[10px] text-np-blue hover:underline">
+                        <Link href={conversationHref(conversations[0].id)} className="inline-flex items-center gap-1 text-[10px] text-np-blue hover:underline">
                           Open in Conversations for message text, recordings and transcripts <ChevronRight className="w-3 h-3" />
                         </Link>
                       )}
