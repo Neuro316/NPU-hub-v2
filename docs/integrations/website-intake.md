@@ -13,9 +13,9 @@ POST https://hub.neuroprogeny.com/api/intake
 Content-Type: application/json
 ```
 
-- **Origins allowed today:** `https://neuroprogeny.com`, `https://www.neuroprogeny.com`. A page on any other
-  origin (including `https://transitions.neuroprogeny.com`) is refused **403** until Shane adds it to the Hub's
-  `HUB_INTAKE_ALLOWED_ORIGINS`.
+- **Origins allowed today:** `https://neuroprogeny.com`, `https://www.neuroprogeny.com` and
+  `https://transitions.neuroprogeny.com` (the Transitions quiz, hosted on Netlify). Checked with a CORS preflight
+  (204) at 15:08 CST on 17 Nov 2026. A page on any other origin is refused **403**.
 - **Never send an `Authorization` header** from the browser. A header switches the endpoint into a server mode and
   is refused 401.
 
