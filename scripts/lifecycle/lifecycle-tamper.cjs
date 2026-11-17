@@ -8,11 +8,11 @@
 //   L_TAG       a brand tag is added only when the contact has neither brand tag, so a hand edit is never overwritten
 //   L_PRODUCT   purchases are classified to the right product (phases, assessment, Fresh Air, WNW, coaching)
 //   L_FORWARD   Enrolled moves only forward; only Drop-off risk goes back to Active; Completed is never left
-//   L_ACTIONS   a coaching purchase is recorded only; a no-show opens a task and starts Discovery no-show; 5 quiet
+//   L_ACTIONS   a coaching purchase is recorded only; a no-show opens a task and starts Discovery no-show; 3 quiet
 //               days move to Drop-off risk and start Drop-off nudge
 //   L_CLOSE     each event closes exactly the task reasons it should (a booking never closes the held-no-purchase task)
 //   L_LEADTASK  a lead is owed a task only after 24 hours with no touch and no booking of their own
-//   L_INACTIVE  5 days quiet is risk, 10 days is the task
+//   L_INACTIVE  3 days quiet is risk, 7 days is the task (2 days is not risk)
 //   L_DRYRUN    in dry_run the only write is the ledger row; applying pending rows makes no call at all; off writes nothing
 //
 //   liveany     any truthy mode other than dry_run is live              {L_MODE}
@@ -23,7 +23,7 @@
 //   coachbuys   a coaching purchase moves Enrolled and starts onboarding {L_ACTIONS}
 //   closeall    every event closes every task                           {L_CLOSE}
 //   early       the lead task is owed after 2 hours                     {L_LEADTASK}
-//   idle4       risk after 4 quiet days                                 {L_INACTIVE}
+//   idle4       risk after 2 quiet days                                 {L_INACTIVE}
 //   dryapply    pending rows are applied in dry_run                     {L_DRYRUN}
 // TAMPER=1 reddens the union (10).
 const fs = require('fs')
@@ -39,7 +39,7 @@ const TAMPERS = {
   coachbuys: [[R, "if (event === 'purchase' && !ENROLLING_PRODUCTS.includes(product as Product)) return { exit: ['checkout_recovery'] }\n", '']],
   closeall: [[R, 'return (Object.keys(TASK_CLOSERS) as TaskReason[]).filter((r) => TASK_CLOSERS[r].some((c) => closers.includes(c)))', 'return Object.keys(TASK_CLOSERS) as TaskReason[]']],
   early: [[R, 'export const LEAD_TOUCH_HOURS = 24', 'export const LEAD_TOUCH_HOURS = 2']],
-  idle4: [[R, 'export const INACTIVE_DAYS = { risk: 5, task: 10 } as const', 'export const INACTIVE_DAYS = { risk: 4, task: 10 } as const']],
+  idle4: [[R, 'export const INACTIVE_DAYS = { risk: 3, task: 7 } as const', 'export const INACTIVE_DAYS = { risk: 2, task: 7 } as const']],
   dryapply: [[L, "  if (cfg.mode !== 'live') return out\n", "  if (cfg.mode === 'off') return out\n"]],
 }
 const RED_OF = {
@@ -135,7 +135,7 @@ check('L_LEADTASK', lt.every((x, i) => gotLt[i] === x[4]), gotLt)
 
 // L_INACTIVE
 const D = 86_400_000
-const ina = [[4.9, []], [5, ['inactive_5d']], [9.9, ['inactive_5d']], [10, ['inactive_5d', 'inactive_10d']]]
+const ina = [[2, []], [2.9, []], [3, ['inactive_5d']], [6.9, ['inactive_5d']], [7, ['inactive_5d', 'inactive_10d']]]
 const gotIna = ina.map(([d]) => rules.inactivityDue(T0, T0 + d * D))
 check('L_INACTIVE', ina.every(([, want], i) => JSON.stringify(gotIna[i]) === JSON.stringify(want)), gotIna)
 

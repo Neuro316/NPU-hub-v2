@@ -10,7 +10,7 @@ import { leadChannel, SCORECARD_CHANNELS } from '@/lib/metrics/collect'
 import { bookingComplete } from '@/lib/bookings/placement'
 import { recordEvent, closeTasks, type LifecycleEvent } from './ledger'
 import {
-  classifyProduct, inactivityDue, inactivityKey, leadOwedTask, CHECKOUT_UNPAID_HOURS, HELD_NO_PURCHASE_DAYS,
+  classifyProduct, inactivityDue, inactivityKey, INACTIVE_DAYS, leadOwedTask, CHECKOUT_UNPAID_HOURS, HELD_NO_PURCHASE_DAYS,
   type Brand, type LifecycleConfig, type TypeRoute,
 } from './rules'
 
@@ -185,7 +185,7 @@ async function activityTimes(ctx: ScanCtx, userId: string): Promise<number[]> {
 }
 
 /**
- * Enrolled clients: first practice or HRV session, 5 and 10 days without activity, activity resumed, program end.
+ * Enrolled clients: first practice or HRV session, 3 and 7 days without activity (INACTIVE_DAYS), activity resumed, program end.
  * "Enrolled" is an active University enrollment that has not completed and whose access has not ended.
  */
 export async function scanEnrolled(ctx: ScanCtx) {
@@ -237,7 +237,7 @@ export async function scanEnrolled(ctx: ScanCtx) {
     if (!last) continue
     const lastIso = iso(last)
     for (const ev of inactivityDue(last, ctx.now)) {
-      await emit(ctx, { contactId, type: ev, key: inactivityKey(ev, contactId, lastIso), occurredAt: iso(last + (ev === 'inactive_5d' ? 5 : 10) * DAY),
+      await emit(ctx, { contactId, type: ev, key: inactivityKey(ev, contactId, lastIso), occurredAt: iso(last + (ev === 'inactive_5d' ? INACTIVE_DAYS.risk : INACTIVE_DAYS.task) * DAY),
         source: 'activity', sourceId: null, detail: { anchor: lastIso } })
     }
     // activity resumed: a lapse recorded against an older anchor, and activity since

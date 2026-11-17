@@ -137,7 +137,7 @@ export const TASK_TITLE: Record<TaskReason, string> = {
   lead_no_touch_24h: 'New lead, no reply yet: reach out',
   discovery_no_show: 'Missed discovery call: check in and offer a new time',
   held_no_purchase_2d: 'Discovery call 2 days ago, no purchase: follow up',
-  enrolled_inactive_10d: 'Client quiet for 10 days: personal check-in',
+  enrolled_inactive_10d: 'Client quiet for 7 days: personal check-in',
 }
 
 /** Which closers an event counts as. */
@@ -216,7 +216,10 @@ export function enrolledTarget(current: string | null, want: EnrolledStage | 'ba
 
 // ── inactivity ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-export const INACTIVE_DAYS = { risk: 5, task: 10 } as const
+// 3 days quiet is Drop-off risk, 7 days opens the check-in task (Shane, 17 Nov 2026; was 5 and 10).
+// The keys inactive_5d, inactive_10d and enrolled_inactive_10d are historical names: hub_237's check constraint and
+// existing ledger rows use them, so they stay as they are whatever the day counts.
+export const INACTIVE_DAYS = { risk: 3, task: 7 } as const
 const DAY = 86_400_000
 
 /** Pure: which inactivity events are due for an enrolled client whose last activity was at `last`. */
@@ -262,8 +265,8 @@ export const EVENT_TITLE: Record<EventType, string> = {
   consent_signed: 'Consent signed',
   first_lesson_opened: 'First lesson opened',
   first_practice: 'First practice session',
-  inactive_5d: 'No activity for 5 days',
-  inactive_10d: 'No activity for 10 days',
+  inactive_5d: 'No activity for 3 days',
+  inactive_10d: 'No activity for 7 days',
   activity_resumed: 'Activity resumed',
   program_end: 'Program ended',
 }
