@@ -7,12 +7,12 @@ Last updated: 2026-11-16 afternoon, by the Code session on Shane's Mac. Applied 
 ## Session
 
 - **Running:** Code session on Shane's Mac (NPU-hub-v2).
-- **Live branch:** `feat/notifications-brief` (Running List q22).
+- **Live branch:** `feat/website-intake` (Running List q08, Hub half).
 - **Cameron:** no Code session recorded on this repo. Say so here before starting one.
 
 ## Production
 
-- **Main:** `411940b` (merge of #52, contact card Communications). Before it: `96623f1` (#51), `744bbd9` (#47), `3af023f` (#50), `3a80963` (#44), `53e2788` (#49).
+- **Main:** `c11c1a6` (merge of #53, notifications and the 8 AM brief). Before it: `411940b` (#52), `96623f1` (#51), `744bbd9` (#47), `3af023f` (#50), `3a80963` (#44), `53e2788` (#49).
 - **Last production deployment:** GitHub deployment `7857621379` for `411940b`, state success,
   2026-11-17 15:22 UTC, `npu-hub-v2-m2ib4rdu3-cameronsensoriumneus-projects.vercel.app`.
   The Vercel `dpl_` id is not readable from this machine (the local Vercel CLI is on a different account).
@@ -42,12 +42,18 @@ verify gives tsc a 4 GB heap and reports its exit code and signal).
 | 14:55 | data-fixes/2026-11-16_wnw_discovery_cards_to_sales.sql: 1 card moved |
 | 15:58 | hub_235_metric_targets_direction |
 
+## Applied on 17 Nov (Hub chat)
+
+| Time (CST) | What |
+|------------|------|
+| 13:15 | hub_239_brief_runs, nonprod (cpasntagxhxitavivwlb) then production (htfrfaxlcuyawtlztxxm); read back clean: RLS on, 0 policies, 0 browser grants. The brief still ships off (mode unset) |
+
 ## Migrations waiting for a go
 
 | Migration | Where | Status |
 |-----------|-------|--------|
 | hub_234_scheduling_agent | PR #46 | Proposed. Not applied anywhere. |
-| hub_239_brief_runs | q22 PR | Proposed. Not applied anywhere. The brief ships off; live needs this table. |
+| data/2026-11-17_website_intake_forms.sql | q08 PR | Proposed, not run. Three published website forms, Sales routing, intake flag on. |
 
 ## Lifecycle engine
 
