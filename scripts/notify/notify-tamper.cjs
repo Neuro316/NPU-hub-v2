@@ -12,6 +12,8 @@
 //   N_MODE     off and preview never send: no brief and no urgent text is queued
 //   N_RECENT   private mail is counted only when RECEIVED since the last brief; old unread mail is not counted, and
 //              a zero count leaves the line out
+//   N_CLOSED   a card in a closed column (Done or Trash) with a past due date shows no Overdue and no Stuck badge,
+//              through the one helper the board and the brief share (src/lib/notify/board.ts)
 //
 //   early      the brief may go from 07:00 New York                       {N_EARLY}
 //   normaltext an item set to the brief is routed to a text now           {N_NORMAL}
@@ -21,11 +23,12 @@
 //   subject    the brief names the first private mail's subject           {N_PRIVATE}
 //   sendpreview preview sends like live                                   {N_MODE}
 //   allmail    the brief counts every unread message, however old          {N_RECENT}
-// TAMPER=1 reddens the sum (8).
+//   closedbadge cards in Done and Trash keep their Overdue and Stuck badges  {N_CLOSED}
+// TAMPER=1 reddens the sum (9).
 const fs = require('fs')
 const H = require('../agent/lib/harness.cjs')
 
-const R = 'lib/notify/rules.ts', B = 'lib/notify/brief.ts', U = 'lib/notify/urgent.ts'
+const R = 'lib/notify/rules.ts', B = 'lib/notify/brief.ts', U = 'lib/notify/urgent.ts', BOARD = 'lib/notify/board.ts'
 const TAMPERS = {
   early: [[R, '  return n.hour === BRIEF_HOUR && n.minute >= BRIEF_MINUTE', '  return n.hour >= BRIEF_HOUR - 1']],
   normaltext: [[R, "  if (rule.urgency === 'urgent') return 'text_now'\n  return 'brief'", "  return 'text_now'"]],
@@ -35,12 +38,13 @@ const TAMPERS = {
   subject: [[R, "since the last brief in your mailbox: ${u}/mail`)", "since the last brief in your mailbox (${i.privateMail[0].subject}): ${u}/mail`)"]],
   sendpreview: [[R, "export const maySend = (mode: Mode) => mode === 'live'", "export const maySend = (mode: Mode) => mode !== 'off'"]],
   allmail: [[B, ".eq('status', 'new').gt('received_at', since).limit(1000)", ".eq('status', 'new').limit(1000)"]],
+  closedbadge: [[BOARD, '  const open = !task.completed_at && !closed\n', '  const open = !task.completed_at\n']],
 }
-const RED_OF = { early: ['N_EARLY'], normaltext: ['N_NORMAL'], holdurgent: ['N_URGENT'], twice: ['N_ONCE'], noowner: ['N_OWNER'], subject: ['N_PRIVATE'], sendpreview: ['N_MODE'], allmail: ['N_RECENT'] }
+const RED_OF = { early: ['N_EARLY'], normaltext: ['N_NORMAL'], holdurgent: ['N_URGENT'], twice: ['N_ONCE'], noowner: ['N_OWNER'], subject: ['N_PRIVATE'], sendpreview: ['N_MODE'], allmail: ['N_RECENT'], closedbadge: ['N_CLOSED'] }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-notify')
 const load = H.install(out, { '@/lib/metrics/collect': { leadChannel: () => 'inbound_web', SCORECARD_CHANNELS: () => true } })
-const rules = load(R), brief = load(B), urgent = load(U)
+const rules = load(R), brief = load(B), urgent = load(U), board = load(BOARD)
 
 const ORG = '00000000-0000-0000-0000-0000000000a1'
 const OWNER = brief.DEFAULT_OWNER
@@ -163,6 +167,21 @@ const check = (id, ok, got) => rows.push({ id, ok: !!ok, got })
     const none = await brief.gatherBrief(db, ORG, OWNER, s, TUE_0810, '2026-11-17T12:00:00Z')
     const lineOut = !rules.composeBrief(none).text.includes('in your mailbox')
     check('N_RECENT', recent.privateMail.length === 1 && none.privateMail.length === 0 && lineOut, { recent: recent.privateMail.length, none: none.privateMail.length, lineOut })
+  }
+
+  // N_CLOSED
+  {
+    const now = TUE_0810
+    const past = { due_date: '2026-11-01T00:00:00Z', completed_at: null, custom_fields: { reason: 'enrolled_inactive_10d' } }
+    const closedTitles = ['Done', 'Trash', ' trash ', 'DONE'].map((t) => board.isClosedColumn(t))
+    const openTitles = ['Action Steps', 'Capture', 'Waiting for', 'Someday Maybe', ''].map((t) => board.isClosedColumn(t))
+    const inDone = board.cardBadges(past, board.isClosedColumn('Done'), now)
+    const inTrash = board.cardBadges(past, board.isClosedColumn('Trash'), now)
+    const inOpen = board.cardBadges(past, board.isClosedColumn('Action Steps'), now)
+    const finished = board.cardBadges({ ...past, completed_at: '2026-11-02T00:00:00Z' }, false, now)
+    check('N_CLOSED', closedTitles.every(Boolean) && !openTitles.some(Boolean)
+      && !inDone.overdue && !inDone.stuck && !inTrash.overdue && !inTrash.stuck
+      && inOpen.overdue && inOpen.stuck && !finished.overdue && !finished.stuck, { inDone, inTrash, inOpen, finished })
   }
 
   // N_MODE

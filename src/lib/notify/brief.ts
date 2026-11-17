@@ -8,6 +8,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { leadChannel, SCORECARD_CHANNELS } from '@/lib/metrics/collect'
 import { briefDue, composeBrief, maySend, nyParts, type BriefInput, type NotificationType, type Settings } from './rules'
 import { HUB_URL, loadSettings } from './settings'
+import { isClosedColumn } from './board'
 
 export { DEFAULT_OWNER, HUB_URL, loadSettings } from './settings'
 const fail = (what: string, e: { code?: string } | null) => new Error(`${what} read: ${e?.code ?? 'unknown'}`)
@@ -67,7 +68,7 @@ export async function gatherBrief(db: SupabaseClient, orgId: string, userId: str
   }
   if (mine(s, userId, 'flagged_task')) {
     const { data: cols } = await db.from('kanban_columns').select('id, title').eq('org_id', orgId)
-    const closed = new Set(((cols ?? []) as any[]).filter((c) => c.title === 'Done' || c.title === 'Trash').map((c) => c.id))
+    const closed = new Set(((cols ?? []) as any[]).filter((c) => isClosedColumn(c.title)).map((c) => c.id))
     const { data, error } = await db.from('kanban_tasks').select('column_id').eq('org_id', orgId).eq('owner_id', userId).eq('priority', 'urgent').is('completed_at', null).limit(500)
     if (error) throw fail('kanban_tasks', error)
     input.flagged = ((data ?? []) as any[]).filter((t) => !closed.has(t.column_id)).length

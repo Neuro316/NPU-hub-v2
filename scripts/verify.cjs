@@ -48,7 +48,7 @@ const HARNESSES = [
   { file: 'scripts/click-to-call/parity.cjs', selectors: ['outside', 'untouched', 'webhook', '1'] },
   { file: 'scripts/org-settings/credentials-tamper.cjs', selectors: ['dropfield', 'noredact', 'rawread', 'bodyurl', '1'] },
   { file: 'scripts/settings/browser-writes-tamper.cjs', selectors: ['plantorg', 'plantteam', 'clientimport', 'weak', '1'] },
-  { file: 'scripts/notify/notify-tamper.cjs', selectors: ['early', 'normaltext', 'holdurgent', 'twice', 'noowner', 'subject', 'sendpreview', 'allmail', '1'] },
+  { file: 'scripts/notify/notify-tamper.cjs', selectors: ['early', 'normaltext', 'holdurgent', 'twice', 'noowner', 'subject', 'sendpreview', 'allmail', 'closedbadge', '1'] },
   { file: 'scripts/comms/comms-tamper.cjs', selectors: ['privateopen', 'body', 'browserread', 'lifecycleall', 'nomerged', 'noalt', '1'] },
   { file: 'scripts/lifecycle/lifecycle-tamper.cjs', selectors: ['liveany', 'leadnostage', 'tagover', 'phasemix', 'backward', 'coachbuys', 'closeall', 'early', 'idle4', 'dryapply', '1'] },
 ]
