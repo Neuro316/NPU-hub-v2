@@ -20,3 +20,9 @@ export function countTouches(touches: Pick<Touch, 'type' | 'redacted' | 'muted'>
   }
   return out
 }
+
+/** What a Calls, Texts or Emails tile does when clicked: show the Overview tab (where Communications lives), open the
+ *  section, and filter it to that type. Pure, so the harness can check the card applies all three. */
+export function commsTileAction(type: 'call' | 'text' | 'email'): { tab: 'overview'; open: true; filter: 'call' | 'text' | 'email' } {
+  return { tab: 'overview', open: true, filter: type }
+}
