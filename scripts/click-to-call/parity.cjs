@@ -162,10 +162,15 @@ const ORG_VAULT_FILES = new Set(['src/lib/twilio-org.ts', 'src/app/api/twilio/in
 // The team_profiles lock (2026-11-09) added strictOrgAdmin to api-guard on purpose.
 const TEAM_LOCK_BASE = process.env.TEAM_LOCK_BASE || '0e115d1'
 const TEAM_LOCK_FILES = new Set(['src/lib/api-guard.ts'])
+// The contact card's "Open in Conversations" link (q30, 2026-11-17) made the Conversations page open the thread named
+// by ?id= on purpose, so it is compared with that commit instead of its earlier pin.
+const CONTACT_LINK_BASE = process.env.CONTACT_LINK_BASE || '40eb8da'
+const CONTACT_LINK_FILES = new Set(['src/app/(dashboard)/crm/conversations/page.tsx'])
 const base = (f, ref = BASE) => {
   if (MULTI_PIPELINE_FILES.has(f)) ref = MULTI_PIPELINE_BASE
   if (ORG_VAULT_FILES.has(f)) ref = ORG_VAULT_BASE
   if (TEAM_LOCK_FILES.has(f)) ref = TEAM_LOCK_BASE
+  if (CONTACT_LINK_FILES.has(f)) ref = CONTACT_LINK_BASE
   try { return norm(execFileSync('git', ['show', `${ref}:${f}`], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })) }
   catch (e) { console.error(`git show ${ref}:${f} failed (is the history fetched?)`); process.exit(2) }
 }
