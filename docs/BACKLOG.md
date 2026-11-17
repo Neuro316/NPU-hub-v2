@@ -12,7 +12,7 @@ not in this repo), as of 16 Nov 2026, updated with the Hub chat's applied state 
 | q05 | Mobile friendly Hub | On hold | - | - | - |
 | q06 | Every University booking link lands in the pipeline with stage history | Rank 1, Shane, Task B | `feat/booking-routes-triggers` (earlier: `feat/booking-routes` #23, `feat/discovery-bookings-sales` #42, both merged) | #50 merged (`3af023f`) | hub_237 applied 16 Nov 14:47; setup run 14:50 (dry_run) |
 | q07 | Triggers: booking, checkout, purchase, consent, first session, inactivity, program end | Rank 2, Shane, Task B | `feat/booking-routes-triggers` | #50 merged (`3af023f`) | hub_237 applied 16 Nov 14:47; setup run 14:50 (dry_run) |
-| q08 | Wire lead sources into Hub intake | Rank 6, website and platform sessions, not this repo | - | - | - |
+| q08 | Wire lead sources into Hub intake | Priority 1. Hub half in progress (forms, Sales placement, contract for the Website session); website half is the Website session | `feat/website-intake` | (this PR) | data proposed: supabase/data/2026-11-17_website_intake_forms.sql |
 | q09 | Scheduling assistant: morning brief and reply drafts | Rank 10, on hold | `feat/scheduling-agent-phase3` | #46 open | hub_234 proposed |
 | q10 | Customer service: support drafts, FAQ videos, welcome email monitoring | Rank 11 | - | - | - |
 | q11 | Website tracking and lead source attribution | On hold | - | - | - |
@@ -26,7 +26,7 @@ not in this repo), as of 16 Nov 2026, updated with the Hub chat's applied state 
 | q19 | Lead follow-up system | Rank 3, Shane, Task B | `feat/booking-routes-triggers` | #50 merged (`3af023f`) | hub_237 applied 16 Nov 14:47; setup run 14:50 (dry_run) |
 | q20 | Program enrollment pipeline automation | Rank 4, Shane, Task B | `feat/booking-routes-triggers` | #50 merged (`3af023f`) | hub_237 applied 16 Nov 14:47; setup run 14:50 (dry_run) |
 | q21 | Drop-off messages for clients | Rank 5, Shane, Task B | `feat/booking-routes-triggers` | #50 merged (`3af023f`) | hub_237 applied 16 Nov 14:47; setup run 14:50 (dry_run) |
-| q22 | CRM notifications and task organization | Priority 2, in progress; brief ships off | `feat/notifications-brief` | (this PR) | hub_239 proposed |
+| q22 | CRM notifications and task organization | Priority 2, merged; brief ships off | `feat/notifications-brief` | #53 merged (`c11c1a6`) | hub_239 applied 17 Nov 13:15 (nonprod, then production) |
 | q23 | Hub Health (Hub half of Platform Health) | Rank 6, Shane; blocked on platform pf_310 | - | - | - |
 | q24 | Adopt standing practices, STATE/BACKLOG, nonprod catch-up | DONE 16 Nov | `docs/standing-practices-2026-11-16` | #49 merged (`53e2788`) | nonprod catch-up applied 16 Nov 10:44, ledger aligned |
 | q25 | Headset program access: 6 months from the last purchase, with an on/off switch on the contact card | Not started; platform builds the access rule plus a view and one override function, Hub builds the card and switch against them (handed to Cameron's platform chat 16 Nov) | - | - | - |
@@ -59,5 +59,5 @@ not in this repo), as of 16 Nov 2026, updated with the Hub chat's applied state 
 | Branch | PR | Migration |
 |--------|----|-----------|
 | `feat/scheduling-agent-phase3` | #46 open | hub_234 proposed |
-| `feat/notifications-brief` | (this PR) | hub_239 proposed (q22) |
+| `feat/website-intake` | (this PR) | data proposed (q08) |
 | `feat/speed-to-lead` | #48 merged | hub_236 applied 16 Nov |
