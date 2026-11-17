@@ -6,7 +6,7 @@ not in this repo), as of 16 Nov 2026, updated with the Hub chat's applied state 
 | Id | Item | Status (16 Nov) | Branch | PR | Migration |
 |----|------|-----------------|--------|----|-----------|
 | q01 | Conversations: Add as contact with suggested pipeline and stage | Rank 8, not started | - | - | - |
-| q02 | Contact card: Communications history section | Rank 7, not started (hub_236 applied 16 Nov, so unblocked) | - | - | hub_236 applied 16 Nov |
+| q02 | Contact card: Communications history section | Rank 7, in progress | `feat/contact-comms-history` | (this PR) | none needed; Gmail history backfill proposed separately |
 | q03 | Speed to lead counts self-booked leads and Gmail replies | DONE, merged Nov 10 | `feat/speed-to-lead` | #48 merged | hub_236 applied 16 Nov 11:22 |
 | q04 | LeadConnector bridge into Sales | Deferred | - | - | - |
 | q05 | Mobile friendly Hub | On hold | - | - | - |
@@ -32,7 +32,7 @@ not in this repo), as of 16 Nov 2026, updated with the Hub chat's applied state 
 | q25 | Headset program access: 6 months from the last purchase, with an on/off switch on the contact card | Not started; platform builds the access rule plus a view and one override function, Hub builds the card and switch against them (handed to Cameron's platform chat 16 Nov) | - | - | - |
 | q26 | Mail search endpoint across all connected mailboxes (for call prep) | Not started | - | - | - |
 | q27 | Nonprod staff seed, then point Hub previews at nonprod | Not started | - | - | - |
-| q28 | CI: stop the type check dying silently | In progress | `fix/ci-tsc-memory` | (this PR) | - |
+| q28 | CI: stop the type check dying silently | DONE 16 Nov | `fix/ci-tsc-memory` | #51 merged (`96623f1`) | - |
 | q29 | Count off-platform payments (check, cash) as paid sales | Waiting on the platform's field names | - | - | - |
 | c01 | hub_235 go, then merge PR #47 | DONE 16 Nov | `feat/metrics-targets` | #47 merged (`744bbd9`) | hub_235 applied 16 Nov 15:58 |
 | c02 | Heather Bauer into Sales | DONE 16 Nov | - | - | - |
@@ -59,5 +59,5 @@ not in this repo), as of 16 Nov 2026, updated with the Hub chat's applied state 
 | Branch | PR | Migration |
 |--------|----|-----------|
 | `feat/scheduling-agent-phase3` | #46 open | hub_234 proposed |
-| `fix/ci-tsc-memory` | (this PR) | - |
+| `feat/contact-comms-history` | (this PR) | none (q02) |
 | `feat/speed-to-lead` | #48 merged | hub_236 applied 16 Nov |

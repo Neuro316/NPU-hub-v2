@@ -7,14 +7,14 @@ Last updated: 2026-11-16 afternoon, by the Code session on Shane's Mac. Applied 
 ## Session
 
 - **Running:** Code session on Shane's Mac (NPU-hub-v2).
-- **Live branch:** `fix/ci-tsc-memory` (Running List q28).
+- **Live branch:** `feat/contact-comms-history` (Running List q02).
 - **Cameron:** no Code session recorded on this repo. Say so here before starting one.
 
 ## Production
 
-- **Main:** `744bbd9` (merge of #47, Growth Dashboard targets). Before it: `3af023f` (#50), `3a80963` (#44), `53e2788` (#49).
-- **Last production deployment:** GitHub deployment `7838277623` for `744bbd9`, state success,
-  2026-11-16 22:32 UTC, `npu-hub-v2-ce7qultha-cameronsensoriumneus-projects.vercel.app`.
+- **Main:** `96623f1` (merge of #51, verify: type check heap and failure reporting). Before it: `744bbd9` (#47), `3af023f` (#50), `3a80963` (#44), `53e2788` (#49).
+- **Last production deployment:** GitHub deployment `7839297484` for `96623f1`, state success,
+  2026-11-16 23:25 UTC, `npu-hub-v2-lw91srntf-cameronsensoriumneus-projects.vercel.app`.
   The Vercel `dpl_` id is not readable from this machine (the local Vercel CLI is on a different account).
 
 ## Open PRs
@@ -26,7 +26,8 @@ Last updated: 2026-11-16 afternoon, by the Code session on Shane's Mac. Applied 
 
 Merged 16 Nov: #49 (`53e2788`, standing practices, STATE and BACKLOG, nonprod catch-up), #44 (`3a80963`,
 team_profiles lockdown, every settings save through a server route), #50 (`3af023f`, lifecycle engine, dry run)
-and #47 (`744bbd9`, Growth Dashboard targets both ways, product-line scorecard, coaching load).
+#47 (`744bbd9`, Growth Dashboard targets both ways, product-line scorecard, coaching load) and #51 (`96623f1`,
+verify gives tsc a 4 GB heap and reports its exit code and signal).
 
 ## Applied on 16 Nov (Hub chat)
 

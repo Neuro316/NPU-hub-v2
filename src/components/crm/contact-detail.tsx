@@ -32,6 +32,7 @@ import { LeadValueEditor } from '@/components/crm/lead-value'
 import { AddNamePrompt } from '@/components/crm/add-name-prompt'
 import { needsName } from '@/lib/call-new-number'
 import { BookingAnswers } from '@/components/crm/booking-answers'
+import { CommunicationsHistory } from '@/components/crm/communications-history'
 import { DeviceAnswers } from '@/components/crm/device-answers'
 import { SendResources } from '@/components/crm/send-resources'
 
@@ -1482,6 +1483,8 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                       {contact.guardian_email && <p className="text-[10px] text-gray-500">{contact.guardian_email}</p>}
                     </div>
                   )}
+
+                  {contactId && <CommunicationsHistory contactId={contactId} />}
 
                   {contactId && <BookingAnswers contactId={contactId} />}
 
