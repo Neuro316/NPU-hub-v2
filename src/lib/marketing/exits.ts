@@ -20,6 +20,14 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 export const PAYMENT_GRACE_MINUTES = 60
 
+/**
+ * A campaign test drive (POST /api/marketing/test-enroll). Its enrollments skip every exit rule and every step delay
+ * (src/lib/marketing/engine.ts), so a staff member sees each step at once, still through the send gate. The test
+ * contact's own history (an old cancelled booking, a past payment) must not end the test.
+ */
+export const TEST_DRIVE_SOURCE = 'manual:test_drive'
+export const isTestDrive = (sourceKey: unknown): boolean => sourceKey === TEST_DRIVE_SOURCE
+
 export interface ExitRules {
   left_entry_stage?: boolean
   stages?: string[]
@@ -191,8 +199,10 @@ export async function sweepCampaignExits(db: SupabaseClient, now: Date, limit = 
   for (const c of camps ?? []) {
     const rules = parseExitRules((c as any).goal)
     if (!hasExitRules(rules) || budget <= 0) continue
+    // test drives are never swept: exit rules do not apply to them
     const { data: ens, error: eErr } = await db.from('campaign_enrollments').select('id, contact_id, enrolled_at')
-      .eq('campaign_id', (c as any).id).eq('status', 'active').order('enrolled_at', { ascending: true }).limit(budget)
+      .eq('campaign_id', (c as any).id).eq('status', 'active').neq('source_key', TEST_DRIVE_SOURCE)
+      .order('enrolled_at', { ascending: true }).limit(budget)
     if (eErr) throw new Error(`exit sweep enrollments read: ${eErr.code ?? 'unknown'}`)
     for (const e of ens ?? []) {
       budget--
