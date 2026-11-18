@@ -28,11 +28,9 @@
 --      copy).
 --   B1. Client onboarding's 4 email steps: kind 'marketing' -> 'service' (Shane, 2026-11-18), so every paying client
 --      gets them without a marketing opt-in. Service emails carry no unsubscribe footer (src/lib/marketing/render.ts).
---   B2. The org's sender: from_address "Cameron Allen <cameron.allen@neuroprogeny.com>", from_domain
---      neuroprogeny.com (Shane, 2026-11-18). This is org wide: it is the sender for every campaign email, not only
---      these 20. PREREQUISITE before any live send: neuroprogeny.com itself must be a verified sending domain in
---      Resend (today the sender is on mail.neuroprogeny.com). Until it is, a live send fails at Resend and nothing is
---      delivered; dry runs are unaffected. Set c_switch_sender to false below to leave the sender as it is.
+--   B2. The org's sender: NOT changed (c_switch_sender is false). Decided 2026-11-18 by Shane: the sender stays
+--      Cameron Allen <hello@mail.neuroprogeny.com>; replies already go to cameron.allen@neuroprogeny.com (reply_to).
+--      Switching the sender needs neuroprogeny.com verified in Resend first.
 --   B3. Post-discovery follow-up: confirmed, no change. Its 3 enroll buttons ("Thank you for today", "A couple of days
 --      after our call", "A simple picture of what we train") already link to
 --      https://university.neuroprogeny.com/checkout/capacity-protocol. The 4th email, "Checking in one last time",
@@ -56,7 +54,7 @@ begin;
 do $copy$
 declare
   c_mode          constant text := 'apply';   -- 'apply', or 'rollback' to restore what this file changed
-  c_switch_sender constant boolean := true;   -- false: leave the org sender as it is (B2)
+  c_switch_sender constant boolean := false;  -- false: leave the org sender as it is (B2, Shane 2026-11-18)
   v_org           constant uuid := '00000000-0000-0000-0000-000000000001';
   v_campaigns     constant text[] := array['Checkout recovery', 'Discovery booked', 'Discovery no-show',
                     'Post-discovery follow-up', 'Signed up, no purchase', 'Client onboarding', 'Drop-off nudge'];
