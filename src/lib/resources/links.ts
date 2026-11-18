@@ -60,6 +60,33 @@ export async function createShareLink(db: SupabaseClient, i: ShareInput): Promis
   return { ok: true, id: linkId, code, url: linkUrl(i.origin, code) }
 }
 
+export const DEFAULT_TIME_ZONE = 'America/New_York'
+
+/** A valid IANA zone name, else null. */
+function validZone(tz: unknown): string | null {
+  if (typeof tz !== 'string' || !tz) return null
+  try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); return tz } catch { return null }
+}
+
+/**
+ * The org's time zone for times people read: org_settings hub_send_policy.default_timezone (Marketing settings,
+ * "Time zone for people with none on file"), else America/New_York. Read only; an unreadable or unknown value
+ * falls back.
+ */
+export async function orgTimeZone(db: SupabaseClient, orgId: string): Promise<string> {
+  const { data } = await db.from('org_settings').select('setting_value').eq('org_id', orgId).eq('setting_key', 'hub_send_policy').maybeSingle()
+  return validZone((data as any)?.setting_value?.default_timezone) ?? DEFAULT_TIME_ZONE
+}
+
+/** A click time for people: "Nov 18, 12:12 PM EST" in the given zone (America/New_York when the zone is unknown). */
+export function clickTimeLabel(iso: string, timeZone: string = DEFAULT_TIME_ZONE): string {
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: validZone(timeZone) ?? DEFAULT_TIME_ZONE, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+  })
+  // newer ICU puts a narrow no-break space before AM/PM; a plain space reads the same everywhere
+  return fmt.format(new Date(iso)).replace(/[\u202f\u00a0]/g, ' ')
+}
+
 export type ClickTarget = { kind: 'url'; url: string } | { kind: 'file'; storagePath: string }
 export type ClickResult = { ok: true; target: ClickTarget } | { ok: false; reason: 'unknown' | 'retired' }
 
@@ -84,7 +111,8 @@ export async function recordClick(db: SupabaseClient, code: string, now: Date): 
   if (upErr) console.error(`[resources/links] click record failed: ${upErr.code ?? 'unknown'}`)
 
   const metadata = { link_id: l.id, resource_id: r.id, first_clicked_at: l.first_clicked_at ?? at, last_clicked_at: at, clicks }
-  const description = clicks === 1 ? 'Opened once.' : `Opened ${clicks} times. Latest: ${at}.`
+  // `at` (ISO) stays in the columns and metadata; people read the latest click in the org's time zone
+  const description = clicks === 1 ? 'Opened once.' : `Opened ${clicks} times. Latest: ${clickTimeLabel(at, await orgTimeZone(db, l.org_id))}.`
   if (first) {
     const { error } = await db.from('contact_timeline').insert({
       org_id: l.org_id, contact_id: l.contact_id, event_type: 'resource_link_opened', title: `Opened ${r.name}`.slice(0, 300),

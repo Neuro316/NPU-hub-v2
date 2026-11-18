@@ -14,13 +14,17 @@
 //              sit behind withStaff
 //   R_NOIP     the redirect reads nothing about the visitor (no headers, IP, user agent, referrer, geo) and a
 //              click writes only the click time and count
+//   R_TIME     the timeline text shows the latest click as a readable time in the org's time zone
+//              (hub_send_policy.default_timezone, else America/New_York), never the raw ISO string; the columns
+//              and metadata keep the ISO time
 //
 //   retiredgo     a retired resource still redirects                       {R_ACTIVE}
 //   wrongcontact  the click's timeline entry goes to another contact       {R_CONTACT}
 //   sends         making a link also queues a text                         {R_NOSEND}
 //   openread      the share route drops the superadmin rule                {R_STAFF}
 //   storeip       the redirect saves the visitor's address                 {R_NOIP}
-// TAMPER=1 reddens the sum (5).
+//   rawtime       the timeline text shows the raw ISO click time           {R_TIME}
+// TAMPER=1 reddens the sum (6).
 const fs = require('fs'), path = require('path')
 const H = require('../agent/lib/harness.cjs')
 
@@ -30,9 +34,10 @@ const TAMPERS = {
   wrongcontact: [[L, "      org_id: l.org_id, contact_id: l.contact_id, event_type: 'resource_link_opened'", "      org_id: l.org_id, contact_id: l.created_by, event_type: 'resource_link_opened'"]],
   sends: [[L, "  const linkId = (link as any).id as string\n", "  const linkId = (link as any).id as string\n  await db.from('hub_sms_outbox').insert({ org_id: i.orgId, contact_id: i.contactId, body: linkUrl(i.origin, code) })\n"]],
   openread: [[ROUTE, "export const GET = withStaff(async (req: NextRequest, ctx) => {\n  if (!ctx.isSuperadmin) return forbidden(ONLY_SUPERADMIN)\n", "export const GET = withStaff(async (req: NextRequest, ctx) => {\n"]],
+  rawtime: [[L, 'Latest: ${clickTimeLabel(at, await orgTimeZone(db, l.org_id))}.', 'Latest: ${at}.']],
   storeip: [[R, '  const r = await recordClick(db, code, new Date())\n', "  const r = await recordClick(db, code, new Date())\n  await db.from('hub_resource_links').update({ last_ip: _req.headers.get('x-forwarded-for') }).eq('code', code)\n"]],
 }
-const RED_OF = { retiredgo: ['R_ACTIVE'], wrongcontact: ['R_CONTACT'], sends: ['R_NOSEND'], openread: ['R_STAFF'], storeip: ['R_NOIP'] }
+const RED_OF = { retiredgo: ['R_ACTIVE'], wrongcontact: ['R_CONTACT'], sends: ['R_NOSEND'], openread: ['R_STAFF'], storeip: ['R_NOIP'], rawtime: ['R_TIME'] }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-resources')
 const load = H.install(out, {
@@ -162,6 +167,23 @@ const strip = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\
     const meta = writes.filter((w) => w.table === 'contact_timeline').flatMap((w) => Object.keys(w.payload.metadata || {}))
     const metaOk = meta.every((k) => ['link_id', 'resource_id', 'first_clicked_at', 'last_clicked_at', 'clicks'].includes(k))
     check('R_NOIP', !visitor && keys.length > 0 && keys.every((k) => allowed.includes(k)) && metaOk, { visitor, keys, meta })
+  }
+
+  // R_TIME
+  {
+    const ISO = '2026-11-18T17:12:55.131Z'
+    const labels = { ny: links.clickTimeLabel(ISO, 'America/New_York'), chi: links.clickTimeLabel(ISO, 'America/Chicago'), bad: links.clickTimeLabel(ISO, 'Not/AZone') }
+    const { db, T, writes } = memDb()
+    T.org_settings = [{ org_id: ORG, setting_key: 'hub_send_policy', setting_value: { default_timezone: 'America/Chicago' } }]
+    await links.recordClick(db, 'AAAAbbbb1111', NOW)
+    await links.recordClick(db, 'AAAAbbbb1111', new Date(NOW.getTime() + 60_000))
+    // what the second click WRITES to the timeline (independent of which row it lands on: that is R_CONTACT)
+    const tlWrite = writes.filter((w) => w.table === 'contact_timeline' && w.op === 'update').pop()?.payload ?? {}
+    const linkWrite = writes.filter((w) => w.table === 'hub_resource_links' && w.op === 'update').pop()?.payload ?? {}
+    const isoKept = linkWrite.last_clicked_at === '2026-11-18T15:01:00.000Z' && tlWrite.metadata?.last_clicked_at === '2026-11-18T15:01:00.000Z'
+    check('R_TIME', labels.ny === 'Nov 18, 12:12 PM EST' && labels.chi === 'Nov 18, 11:12 AM CST' && labels.bad === labels.ny
+      && tlWrite.description === 'Opened 2 times. Latest: Nov 18, 9:01 AM CST.' && !/\d{4}-\d\d-\d\dT/.test(tlWrite.description || '') && isoKept,
+      { labels, description: tlWrite.description, isoKept })
   }
 
   delete global.__ctx
