@@ -46,7 +46,9 @@ const G1_REVIEWED_PUBLIC = {
 }
 // verifyTwilioWebhook: the click-to-call webhooks (always enforced, fail closed). That it
 // runs before the first database call is proved by scripts/click-to-call/c2c-tamper.cjs.
-const G1_WRAPPERS = /\bwithStaff\s*\(|\bcronAuthorized\s*\(|\bverifySvix\s*\(|\bverifyUnsubscribeToken\s*\(|\bverifyTwilioWebhook\s*\(/
+// withMailSearchAuth: a superadmin session or a constant-time Bearer secret mapped to one owner (src/lib/mail/search-auth.ts,
+// proved by scripts/mail/mail-search-tamper.cjs).
+const G1_WRAPPERS = /\bwithStaff\s*\(|\bwithMailSearchAuth\s*\(|\bcronAuthorized\s*\(|\bverifySvix\s*\(|\bverifyUnsubscribeToken\s*\(|\bverifyTwilioWebhook\s*\(/
 function g1(tree) {
   const out = []
   for (const [f, src] of Object.entries(tree)) {

@@ -172,6 +172,9 @@ const Q34_FILES = new Set(['src/app/api/voice/token/route.ts', 'src/app/api/sms/
 // Running List q33 added the public /r/<code> path to the middleware's public list
 const RESOURCE_LINKS_BASE = process.env.RESOURCE_LINKS_BASE || 'e0df5c0'
 const RESOURCE_LINKS_FILES = new Set(['src/lib/supabase-middleware.ts'])
+// Running List q26 added the exact public path /api/agent/mail-search (its own auth is withMailSearchAuth)
+const MAIL_SEARCH_BASE = process.env.MAIL_SEARCH_BASE || '46dffc3'
+const MAIL_SEARCH_FILES = new Set(['src/lib/supabase-middleware.ts'])
 const base = (f, ref = BASE) => {
   if (MULTI_PIPELINE_FILES.has(f)) ref = MULTI_PIPELINE_BASE
   if (ORG_VAULT_FILES.has(f)) ref = ORG_VAULT_BASE
@@ -179,6 +182,7 @@ const base = (f, ref = BASE) => {
   if (CONTACT_LINK_FILES.has(f)) ref = CONTACT_LINK_BASE
   if (Q34_FILES.has(f)) ref = Q34_BASE
   if (RESOURCE_LINKS_FILES.has(f)) ref = RESOURCE_LINKS_BASE
+  if (MAIL_SEARCH_FILES.has(f)) ref = MAIL_SEARCH_BASE
   try { return norm(execFileSync('git', ['show', `${ref}:${f}`], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })) }
   catch (e) { console.error(`git show ${ref}:${f} failed (is the history fetched?)`); process.exit(2) }
 }

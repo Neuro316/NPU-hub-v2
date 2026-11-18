@@ -37,6 +37,9 @@ export async function updateSession(request: NextRequest) {
     // anything without a valid Svix signature.
     pathname === '/api/intake' ||
     pathname === '/api/email/unsubscribe' ||
+    // Mail search (Running List q26): exact path only. Not public: withMailSearchAuth answers 401 without a
+    // superadmin session or the Bearer secret. Listed here so the scheduled task (no cookie) is not sent to /login.
+    pathname === '/api/agent/mail-search' ||
     /^\/a\/[A-Za-z0-9_-]+$/.test(pathname) ||
     // A tracked resource link (Running List q33): exact shape only, /r/ and a 12-character code. The route accepts
     // only an existing, unrevoked code whose resource is active, rate-limits, and stores no visitor data.
