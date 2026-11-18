@@ -32,7 +32,7 @@ export const POST = withStaff(async (req: NextRequest, ctx) => {
 
   if (body.missing === true) {
     const [{ data: rows, error }, existing] = await Promise.all([
-      ctx.db.from('hub_resources').select('id, storage_path, mime_type').eq('org_id', orgId).order('sort_order'),
+      ctx.db.from('hub_resources').select('id, storage_path, mime_type').eq('org_id', orgId).not('storage_path', 'is', null).order('sort_order'),
       existingThumbs(ctx.db, orgId),
     ])
     if (error || !existing) return NextResponse.json({ error: 'The library could not be read.' }, { status: 500 })
@@ -51,7 +51,7 @@ export const POST = withStaff(async (req: NextRequest, ctx) => {
 
   if (!isUuid(body.id)) return bad('Choose a resource.')
   const { data: row } = await ctx.db.from('hub_resources').select('id, storage_path, mime_type')
-    .eq('id', body.id).eq('org_id', orgId).maybeSingle()
+    .eq('id', body.id).eq('org_id', orgId).not('storage_path', 'is', null).maybeSingle()
   if (!row) return NextResponse.json({ error: 'Not found.' }, { status: 404 })
   const state = await generateThumbnail(ctx.db, row)
   if (state === 'tile' && thumbKind(row.mime_type) !== 'tile') console.error('[resources-thumbnail] rendering failed; kept the tile')

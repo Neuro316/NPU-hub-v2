@@ -17,7 +17,8 @@ export const GET = withStaff(async (req: NextRequest, ctx) => {
   if (orgId instanceof Response) return orgId
   const id = req.nextUrl.searchParams.get('id')
   if (!isUuid(id)) return NextResponse.json({ error: 'Not found.' }, { status: 404 })
-  const { data: row } = await ctx.db.from('hub_resources').select('storage_path').eq('id', id).eq('org_id', orgId).maybeSingle()
+  // files only: a link resource (hub_240) opens its own address from the page
+  const { data: row } = await ctx.db.from('hub_resources').select('storage_path').eq('id', id).eq('org_id', orgId).not('storage_path', 'is', null).maybeSingle()
   if (!row) return NextResponse.json({ error: 'Not found.' }, { status: 404 })
   const { data, error } = await ctx.db.storage.from(RESOURCE_BUCKET).createSignedUrl(row.storage_path, PREVIEW_SECONDS)
   if (error || !data?.signedUrl) return NextResponse.json({ error: 'The file could not be opened.' }, { status: 500 })

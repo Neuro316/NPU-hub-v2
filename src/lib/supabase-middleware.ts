@@ -38,6 +38,9 @@ export async function updateSession(request: NextRequest) {
     pathname === '/api/intake' ||
     pathname === '/api/email/unsubscribe' ||
     /^\/a\/[A-Za-z0-9_-]+$/.test(pathname) ||
+    // A tracked resource link (Running List q33): exact shape only, /r/ and a 12-character code. The route accepts
+    // only an existing, unrevoked code whose resource is active, rate-limits, and stores no visitor data.
+    /^\/r\/[A-Za-z0-9]{12}$/.test(pathname) ||
     // A landing page (agent ruling 12): renders only when published AND the org's `pages`
     // flag is on, and is otherwise a plain not-found.
     /^\/p\/[a-z0-9]+(-[a-z0-9]+)*$/.test(pathname)

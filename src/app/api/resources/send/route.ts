@@ -70,8 +70,9 @@ export const GET = withStaff(async (req: NextRequest, ctx) => {
   const orgId = requireOrg(ctx, contact.org_id)
   if (orgId instanceof Response) return orgId
   const [resources, sends, mailboxes] = await Promise.all([
+    // files only: a link resource (hub_240) has no file to attach; it is shared from Share a resource
     ctx.db.from('hub_resources').select('id, name, description, file_name, mime_type, size_bytes, is_default_followup, storage_path')
-      .eq('org_id', orgId).is('archived_at', null).order('sort_order').order('created_at'),
+      .eq('org_id', orgId).is('archived_at', null).not('storage_path', 'is', null).order('sort_order').order('created_at'),
     ctx.db.from('hub_resource_sends').select('id, sent_by, from_address, to_address, subject, attached, linked, sent_at')
       .eq('contact_id', contact.id).order('sent_at', { ascending: false }).limit(10),
     fromOptions(ctx),
@@ -114,7 +115,7 @@ export const POST = withStaff(async (req: NextRequest, ctx) => {
 
   const { data: rows, error } = await ctx.db.from('hub_resources')
     .select('id, name, file_name, mime_type, size_bytes, storage_path, is_default_followup')
-    .eq('org_id', orgId).is('archived_at', null).in('id', ids as string[])
+    .eq('org_id', orgId).is('archived_at', null).not('storage_path', 'is', null).in('id', ids as string[])
   if (error) return NextResponse.json({ error: 'Resources could not be loaded.' }, { status: 500 })
   const byId = new Map((rows ?? []).map(r => [r.id, r as ResourceRow]))
   if (byId.size !== ids.length) return bad('One of the checked resources is no longer in the library. Reload and try again.')
