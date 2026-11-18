@@ -124,24 +124,8 @@ export async function POST(request: NextRequest) {
       });
     } catch (e: any) { console.warn('SMS logging failed:', e.message); }
 
-    // ── Direct counter increment (admin bypasses RLS) ──
-    try {
-      const now = new Date().toISOString()
-      const { data: cur } = await admin
-        .from('contacts')
-        .select('total_texts, total_outbound_texts')
-        .eq('id', contact_id)
-        .single()
-
-      if (cur) {
-        await admin.from('contacts').update({
-          total_texts: (cur.total_texts || 0) + 1,
-          total_outbound_texts: (cur.total_outbound_texts || 0) + 1,
-          last_text_at: now,
-          last_contacted_at: now,
-        }).eq('id', contact_id)
-      }
-    } catch (e) { console.warn('Counter increment skipped:', e) }
+    // contacts.total_texts, total_outbound_texts and last_text_at are written by the crm_messages insert trigger
+    // (trg_increment_text_counter), the one writer. This route used to add them again (Running List q34).
 
     return NextResponse.json({ success: true, message_id: messageId });
   } catch (e: any) {

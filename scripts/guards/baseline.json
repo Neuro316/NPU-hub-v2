@@ -18,7 +18,6 @@
     "src/app/api/contacts/merge/route.ts",
     "src/app/api/crm/cross-org-contacts/route.ts",
     "src/app/api/crm/stage-emails/route.ts",
-    "src/app/api/cron/crm-due-dates/route.ts",
     "src/app/api/cron/sms-outbox/route.ts",
     "src/app/api/email/webhook-inbound/route.ts",
     "src/app/api/equipment/checkin/route.ts",
@@ -76,7 +75,6 @@
     "src/app/api/webhooks/read-ai/route.ts"
   ],
   "G2": [
-    "/api/cron/crm-due-dates: does not fail closed when CRON_SECRET is unset",
     "/api/inbox/process-unsnooze: does not fail closed when CRON_SECRET is unset",
     "/api/inbox/process-unsnooze: unreachable, middleware redirects a cookieless cron to /login",
     "/api/integrations/process-pending-participants: does not fail closed when CRON_SECRET is unset",

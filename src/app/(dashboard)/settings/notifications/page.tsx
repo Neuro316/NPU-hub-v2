@@ -8,7 +8,7 @@ import { useWorkspace } from '@/lib/workspace-context'
 
 type Urgency = 'urgent' | 'brief' | 'off'
 interface Rule { recipient: string | null; urgency: Urgency }
-interface Data { mode: 'off' | 'preview' | 'live'; rules: Record<string, Rule>; types: Array<{ key: string; label: string; note: string }>; staff: Array<{ user_id: string; name: string }> }
+interface Data { mode: 'off' | 'preview' | 'live'; rules: Record<string, Rule>; types: Array<{ key: string; label: string; note: string }>; staff: Array<{ user_id: string; name: string; email: string; label: string }> }
 
 const URGENCY: Array<{ v: Urgency; label: string }> = [
   { v: 'urgent', label: 'Urgent: text now' }, { v: 'brief', label: '8 AM brief' }, { v: 'off', label: 'Off' },
@@ -70,7 +70,7 @@ export default function NotificationSettingsPage() {
                   <td className="pr-2">
                     <select value={data.rules[t.key]?.recipient ?? ''} onChange={e => setRule(t.key, { recipient: e.target.value || null })} className="border rounded px-2 py-1 text-sm w-full">
                       <option value="">Nobody</option>
-                      {data.staff.map(s => <option key={s.user_id} value={s.user_id}>{s.name}</option>)}
+                      {data.staff.map(s => <option key={s.user_id} value={s.user_id}>{s.label}</option>)}
                     </select>
                   </td>
                   <td>

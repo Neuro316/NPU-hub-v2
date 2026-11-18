@@ -27,7 +27,8 @@ const ROOT = path.resolve(__dirname, '..', '..')
 const BASE = process.env.PARITY_BASE || '3492d97'
 // inbound-sms stopped logging message content on Cameron's ruling, so its unmarked lines are compared
 // with that commit.
-const INBOUND_BASE = process.env.INBOUND_BASE || '1319978'
+// re-pinned to 0e36f40: Running List q34 removed inbound-sms's app-side total_texts increment (was 1319978)
+const INBOUND_BASE = process.env.INBOUND_BASE || '0e36f40'
 const UNTOUCHED = {
   'stage-emails': 'src/app/api/crm/stage-emails/route.ts',
   'sms-outbox-cron': 'src/app/api/cron/sms-outbox/route.ts',

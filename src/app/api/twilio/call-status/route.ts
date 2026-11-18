@@ -75,21 +75,10 @@ export async function POST(request: NextRequest) {
     console.log('call-status:', JSON.stringify({ call_log_id: row.id, from: row.status, ...change.updates, rows_updated: count ?? 0 }));
     if (!count || !change.becameFinal) return twiml();
 
-    // Once per call. voice/token already counted the call itself
-    // (total_calls, total_outbound_calls) when it was placed; this adds the
-    // talk time.
+    // Talk time: the duration_seconds update above fires the call_logs update trigger (trg_update_call_duration),
+    // which moves contacts.total_call_duration_seconds by the change. That trigger is the one writer; this route used
+    // to add the seconds again (Running List q34).
     const seconds = Number(change.updates.duration_seconds) || 0;
-    if (row.contact_id && seconds > 0) {
-      try {
-        const { data: cur } = await supabase.from('contacts')
-          .select('total_call_duration_seconds').eq('id', row.contact_id).maybeSingle();
-        if (cur) {
-          await supabase.from('contacts')
-            .update({ total_call_duration_seconds: (cur.total_call_duration_seconds || 0) + seconds })
-            .eq('id', row.contact_id);
-        }
-      } catch (e) { console.warn('call-status: talk time skipped:', e); }
-    }
     if (row.org_id && row.contact_id) {
       try {
         await logActivity(supabase, {
