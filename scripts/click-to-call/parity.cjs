@@ -166,11 +166,15 @@ const TEAM_LOCK_FILES = new Set(['src/lib/api-guard.ts'])
 // by ?id= on purpose, so it is compared with that commit instead of its earlier pin.
 const CONTACT_LINK_BASE = process.env.CONTACT_LINK_BASE || '40eb8da'
 const CONTACT_LINK_FILES = new Set(['src/app/(dashboard)/crm/conversations/page.tsx'])
+// Running List q34 removed the app-side contact total increments from these four (the triggers are the one writer)
+const Q34_BASE = process.env.Q34_BASE || '0e36f40'
+const Q34_FILES = new Set(['src/app/api/voice/token/route.ts', 'src/app/api/sms/send/route.ts', 'src/app/api/twilio/inbound-sms/route.ts', 'src/app/api/twilio/call-status/route.ts'])
 const base = (f, ref = BASE) => {
   if (MULTI_PIPELINE_FILES.has(f)) ref = MULTI_PIPELINE_BASE
   if (ORG_VAULT_FILES.has(f)) ref = ORG_VAULT_BASE
   if (TEAM_LOCK_FILES.has(f)) ref = TEAM_LOCK_BASE
   if (CONTACT_LINK_FILES.has(f)) ref = CONTACT_LINK_BASE
+  if (Q34_FILES.has(f)) ref = Q34_BASE
   try { return norm(execFileSync('git', ['show', `${ref}:${f}`], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })) }
   catch (e) { console.error(`git show ${ref}:${f} failed (is the history fetched?)`); process.exit(2) }
 }
