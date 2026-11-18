@@ -51,6 +51,7 @@ const HARNESSES = [
   { file: 'scripts/settings/browser-writes-tamper.cjs', selectors: ['plantorg', 'plantteam', 'clientimport', 'weak', '1'] },
   { file: 'scripts/notify/notify-tamper.cjs', selectors: ['early', 'normaltext', 'holdurgent', 'twice', 'noowner', 'subject', 'sendpreview', 'allmail', 'closedbadge', '1'] },
   { file: 'scripts/notify/q34-tamper.cjs', selectors: ['appcount', 'stuckanyorg', 'cronback', 'noemail', '1'] },
+  { file: 'scripts/resources/resource-tamper.cjs', selectors: ['retiredgo', 'wrongcontact', 'sends', 'openread', 'storeip', 'rawtime', '1'] },
   { file: 'scripts/crm/contact-fixes-tamper.cjs', selectors: ['olderwins', 'rawquery', 'oldcounts', 'countprivate', 'noswitch', 'ignoreid', '1'] },
   { file: 'scripts/comms/comms-tamper.cjs', selectors: ['privateopen', 'body', 'browserread', 'lifecycleall', 'nomerged', 'noalt', '1'] },
   { file: 'scripts/lifecycle/lifecycle-tamper.cjs', selectors: ['liveany', 'leadnostage', 'tagover', 'phasemix', 'backward', 'coachbuys', 'closeall', 'early', 'idle4', 'dryapply', '1'] },

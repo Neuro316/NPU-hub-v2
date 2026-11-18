@@ -35,6 +35,7 @@ const TAMPER = process.env.TAMPER || ''
 const G1_REVIEWED_PUBLIC = {
   'src/app/api/intake/route.ts': 'published form + intake flag + honeypot + rate limit',
   'src/app/a/[token]/route.ts': 'hashed single-purpose expiring token, redirect to the University only',
+  'src/app/r/[code]/route.ts': 'exact path /r/ + 12-char random code; only an existing, unrevoked link whose resource is active; rate limited per code; reads and stores no visitor data (scripts/resources/resource-tamper.cjs)',
   'src/app/lead-device/[slug]/route.ts': 'exact public host only, live device or signed preview, reads no identity',
   'src/app/lead-device/[slug]/file/route.ts': 'exact public host only, live approved version or signed preview, sandboxed',
   'src/app/lead-device/[slug]/submit/route.ts': 'exact public host only, origin check, rate limit, honeypot, Turnstile that refuses when unset',

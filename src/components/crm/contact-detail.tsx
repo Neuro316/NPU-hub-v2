@@ -37,6 +37,7 @@ import { countTouches, commsTileAction } from '@/lib/comms/counts'
 import { conversationHref } from '@/lib/comms/conversation-link'
 import { DeviceAnswers } from '@/components/crm/device-answers'
 import { SendResources } from '@/components/crm/send-resources'
+import { ShareResource } from '@/components/crm/share-resource'
 
 interface PipelineCustomField {
   id: string
@@ -1533,6 +1534,8 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                   {contactId && <BookingAnswers contactId={contactId} />}
 
                   {contactId && <SendResources contactId={contactId} />}
+
+                  {contactId && <ShareResource contactId={contactId} />}
 
                   <div className="space-y-2">
                     <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">

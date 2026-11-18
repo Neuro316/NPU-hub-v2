@@ -45,7 +45,6 @@ Exempt routes, one per line, each starting with a slash:
 /media-appearances
 /meetings
 /platform-advisor
-/resources
 /rocks
 /settings
 /shipit

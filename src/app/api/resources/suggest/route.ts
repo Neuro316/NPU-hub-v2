@@ -31,7 +31,8 @@ export const GET = withStaff(async (req: NextRequest, ctx) => {
   if (orgId instanceof Response) return orgId
 
   const [{ data: resources }, { data: me }] = await Promise.all([
-    ctx.db.from('hub_resources').select('id, name, description').eq('org_id', orgId).is('archived_at', null).order('sort_order'),
+    // files only (hub_240 link rows are not sent by email)
+    ctx.db.from('hub_resources').select('id, name, description').eq('org_id', orgId).is('archived_at', null).not('storage_path', 'is', null).order('sort_order'),
     ctx.db.from('profiles').select('full_name').eq('id', ctx.userId).maybeSingle(),
   ])
   // An "Unknown" placeholder contact has no real first name to use.
