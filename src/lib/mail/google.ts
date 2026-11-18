@@ -25,6 +25,35 @@ export class MailError extends Error {
   constructor(message: string, readonly code: string) { super(message) }
 }
 
+// ─── what a failure means (fix/mail-token-errors, 2026-11-18) ────────────────────────
+// PERMANENT: will not heal on retry; the mailbox is set to 'error' until a Check succeeds, and people are told to
+// reconnect. Everything else leaves the status alone. TRANSIENT failures are retried (once in the same sync run,
+// then on the next run) and people are told it will be tried again.
+export const PERMANENT_CODES = ['invalid_grant', 'no_secret']
+export const TRANSIENT_CODES = ['vault_unavailable', 'google_unavailable', 'network']
+export const isPermanent = (code: string) => PERMANENT_CODES.includes(code)
+export const isTransient = (code: string) => TRANSIENT_CODES.includes(code)
+
+const CODE_TEXT: Record<string, string> = {
+  invalid_grant: 'Google no longer accepts this sign-in',
+  no_secret: 'no sign-in is stored for this mailbox',
+  vault_unavailable: 'could not read the stored sign-in, will retry',
+  google_unavailable: "Google's sign-in service did not answer, will retry",
+  network: 'Google could not be reached, will retry',
+}
+
+/** What hub_mail_connections.last_error records: the code and a short plain description. Never a token. */
+export function lastErrorText(code: string, fallback?: string): string {
+  return `${code}: ${CODE_TEXT[code] ?? fallback ?? 'the mailbox request failed'}`.slice(0, 300)
+}
+
+/** A refresh token fit to store: a non-empty string, or null. Nothing empty is ever written over a stored token. */
+export function storableRefreshToken(v: unknown): string | null {
+  if (typeof v !== 'string') return null
+  const t = v.trim()
+  return t.length > 0 ? t : null
+}
+
 function oauthClient(): { id: string; secret: string } {
   const id = process.env.GOOGLE_OAUTH_CLIENT_ID
   const secret = process.env.GOOGLE_OAUTH_CLIENT_SECRET
@@ -102,9 +131,15 @@ async function tokenRequest(params: Record<string, string>): Promise<any> {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ client_id: id, client_secret: secret, ...params }),
       cache: 'no-store',
+      signal: AbortSignal.timeout(15_000),
     })
   } catch {
+    // unreachable, or no answer within 15 s
     throw new MailError('Google could not be reached. Try again.', 'network')
+  }
+  // Google's own trouble (5xx) or a rate limit (429) says nothing about the grant: transient.
+  if (res.status >= 500 || res.status === 429) {
+    throw new MailError("Google's sign-in service did not answer. It will be tried again.", 'google_unavailable')
   }
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
@@ -231,10 +266,30 @@ export async function listVisible(ctx: StaffContext): Promise<MailConnectionRow[
   return ((data ?? []) as MailConnectionRow[]).filter(r => canSee(ctx, r))
 }
 
+/**
+ * The stored refresh token. Two different failures, kept apart:
+ *   - the vault call itself failed (an error or a timeout): vault_unavailable, TRANSIENT. The token may be fine.
+ *   - the call worked and returned no token: no_secret, PERMANENT. Only this one means "reconnect".
+ */
+const VAULT_TIMEOUT_MS = 10_000
+
 export async function refreshTokenFor(db: SupabaseClient, id: string): Promise<string> {
-  const { data, error } = await db.rpc('hub_mail_token_get', { p_connection_id: id })
-  if (error || typeof data !== 'string' || !data) throw new MailError('The stored credential for this mailbox is missing. Reconnect it.', 'no_secret')
-  return data
+  let res: { data: unknown; error: unknown }
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    res = await Promise.race([
+      db.rpc('hub_mail_token_get', { p_connection_id: id }) as unknown as Promise<{ data: unknown; error: unknown }>,
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('vault timeout')), VAULT_TIMEOUT_MS) }),
+    ])
+  } catch {
+    throw new MailError('The stored sign-in could not be read just now. It will be tried again.', 'vault_unavailable')
+  } finally {
+    clearTimeout(timer)
+  }
+  if (res.error) throw new MailError('The stored sign-in could not be read just now. It will be tried again.', 'vault_unavailable')
+  const token = storableRefreshToken(res.data)
+  if (!token) throw new MailError('No sign-in is stored for this mailbox. Reconnect it.', 'no_secret')
+  return token
 }
 
 export function safeMessage(e: unknown): string {

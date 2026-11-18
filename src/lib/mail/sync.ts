@@ -9,16 +9,21 @@
 //      to lead. Its own cursor; skipped quietly until hub_236 is applied. A failure here never affects 1-3.
 // Mailboxes run independently: one failing never stops the others.
 // The result carries connection ids, counts and short codes only.
+//
+// FAILURES (fix/mail-token-errors): only a PERMANENT code (invalid_grant, a truly missing token) sets the mailbox to
+// 'error'. A TRANSIENT one (the vault could not be read, Google 5xx or 429, a timeout, the network) is retried once in
+// the same run; if it still fails, last_error records it and the status is left as it is, so the next run tries
+// again. last_error is always "<code>: <short description>" (lastErrorText), never a token.
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { accessTokenFor, refreshTokenFor, MailError } from '@/lib/mail/google'
+import { accessTokenFor, refreshTokenFor, MailError, isPermanent, isTransient, lastErrorText } from '@/lib/mail/google'
 import { currentHistoryId, getMessageForTriage, inboxAddedSince, sentAddedSince, getSentMetadata } from '@/lib/mail/gmail'
 import { classifyEmail } from '@/lib/mail/triage'
 
 export const TRIAGE_PER_MAILBOX = 10
 const TRIAGE_CONCURRENCY = 3
 const MAX_ATTEMPTS = 3
-/** Codes that will not heal on retry; the mailbox is set to 'error' until a Check succeeds. */
-const DEAD = ['invalid_grant', 'no_secret']
+/** Wait before the one same-run retry of a transient token failure. */
+export const TOKEN_RETRY_MS = 1500
 
 export interface MailboxResult {
   connection_id: string
@@ -39,10 +44,21 @@ const code = (e: unknown) => (e instanceof MailError ? e.code : 'unknown')
 
 async function recordError(db: SupabaseClient, id: string, e: unknown) {
   const c = code(e)
-  const message = e instanceof MailError ? e.message : 'The mailbox sync failed.'
+  const fallback = e instanceof MailError ? e.message : 'the mailbox sync failed'
   await db.from('hub_mail_connections')
-    .update({ last_error: message.slice(0, 300), ...(DEAD.includes(c) ? { status: 'error' } : {}) })
+    .update({ last_error: lastErrorText(c, fallback), ...(isPermanent(c) ? { status: 'error' } : {}) })
     .eq('id', id)
+}
+
+/** An access token for the mailbox. A transient failure is retried once, after TOKEN_RETRY_MS. */
+async function tokenWithRetry(db: SupabaseClient, id: string, waitMs: number): Promise<string> {
+  try {
+    return await accessTokenFor(await refreshTokenFor(db, id))
+  } catch (e) {
+    if (!isTransient(code(e))) throw e
+    await new Promise(r => setTimeout(r, waitMs))
+    return accessTokenFor(await refreshTokenFor(db, id))
+  }
 }
 
 async function triageOne(db: SupabaseClient, accessToken: string, row: { id: string; gmail_message_id: string; triage_attempts: number }): Promise<boolean> {
@@ -108,11 +124,11 @@ async function syncSent(db: SupabaseClient, accessToken: string, connId: string,
   }
 }
 
-async function syncMailbox(db: SupabaseClient, conn: Conn, deadline: number, sentDeadline: number): Promise<MailboxResult> {
+async function syncMailbox(db: SupabaseClient, conn: Conn, deadline: number, sentDeadline: number, retryMs: number): Promise<MailboxResult> {
   const out: MailboxResult = { connection_id: conn.id, first_run: false, imported: 0, triaged: 0, triage_failed: 0, waiting: 0, error: null, sent: 0, sent_error: null }
   let accessToken: string
   try {
-    accessToken = await accessTokenFor(await refreshTokenFor(db, conn.id))
+    accessToken = await tokenWithRetry(db, conn.id, retryMs)
   } catch (e) {
     out.error = code(e)
     await recordError(db, conn.id, e)
@@ -175,10 +191,10 @@ async function syncMailbox(db: SupabaseClient, conn: Conn, deadline: number, sen
 /** Sent-mail work may run this long past the triage deadline (the route's maxDuration is 60 s). */
 const SENT_EXTRA_MS = 12_000
 
-export async function runMailSync(db: SupabaseClient, deadline: number): Promise<MailboxResult[]> {
+export async function runMailSync(db: SupabaseClient, deadline: number, retryMs: number = TOKEN_RETRY_MS): Promise<MailboxResult[]> {
   const { data, error } = await db.from('hub_mail_connections').select('id, gmail_history_id').eq('status', 'active')
   if (error) throw new Error(`hub_mail_connections read failed: ${error.code ?? 'unknown'}`)
-  const settled = await Promise.allSettled(((data ?? []) as Conn[]).map(c => syncMailbox(db, c, deadline, deadline + SENT_EXTRA_MS)))
+  const settled = await Promise.allSettled(((data ?? []) as Conn[]).map(c => syncMailbox(db, c, deadline, deadline + SENT_EXTRA_MS, retryMs)))
   return settled.map((s, i) => s.status === 'fulfilled' ? s.value : {
     connection_id: (data as Conn[])[i].id, first_run: false, imported: 0, triaged: 0, triage_failed: 0, waiting: 0, error: 'unknown', sent: 0, sent_error: null,
   })
