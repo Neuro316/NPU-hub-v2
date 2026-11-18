@@ -66,7 +66,8 @@ export function brandName(brand: Brand): string {
 }
 
 export const defaultResultText = () => 'Email me my result.'
-export const defaultEmailText = (b: Brand) => `Also email me news and offers from ${brandName(b)}. I can unsubscribe at any time.`
+// Cameron's wording (2026-11-18, Running List c15), the same sentence the website forms use (PR #61)
+export const defaultEmailText = (b: Brand) => `Email me news and offers from ${brandName(b)}. I can unsubscribe at any time.`
 export const defaultSmsText = (b: Brand) => `Text me reminders and offers from ${brandName(b)}. Message and data rates may apply. Reply STOP to opt out.`
 
 function labelled(raw: unknown, keyOk: RegExp, lower: boolean): Labelled[] {
