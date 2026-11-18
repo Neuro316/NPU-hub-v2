@@ -1,19 +1,29 @@
 // /api/settings/notifications?org_id=  Hub › Settings › Notifications (Running List q22). Org admins only
 // (strictOrgAdmin, which does not trust team_profiles), service role behind it.
-//   GET  the rules (defaults filled in), the mode, and the org's active staff to choose recipients from
+//   GET  the rules (defaults filled in), the mode, and the org's active staff to choose recipients from, each with
+//        its login's email (one person can hold several logins)
 //   PUT  { org_id, mode, rules }: every recipient must be active staff of the org. Live cannot be switched on here:
 //        it is a separate go after Cameron sees a preview (set by the Hub chat). A live org can be turned down.
 import { NextRequest, NextResponse } from 'next/server'
 import { withStaff, requireOrg, strictOrgAdmin, forbidden, bad } from '@/lib/api-guard'
 import { loadSettings, DEFAULT_OWNER } from '@/lib/notify/settings'
 import { NOTIFICATION_TYPES, parseSettings } from '@/lib/notify/rules'
+import { recipientOptions, STAFF_ROLES, type TeamRow } from '@/lib/notify/recipients'
 
 export const dynamic = 'force-dynamic'
 
+/** The org's active staff as recipient choices, each with its login's email (src/lib/notify/recipients.ts). */
 async function staff(db: any, orgId: string) {
-  const { data } = await db.from('team_profiles').select('user_id, display_name, role').eq('org_id', orgId).eq('status', 'active')
-    .in('role', ['super_admin', 'admin', 'team_member'])
-  return ((data ?? []) as any[]).filter((t) => t.user_id).map((t) => ({ user_id: t.user_id as string, name: (t.display_name as string) || 'Team member' }))
+  const { data } = await db.from('team_profiles').select('user_id, display_name, email, role, status').eq('org_id', orgId).eq('status', 'active')
+    .in('role', STAFF_ROLES)
+  const rows = (data ?? []) as TeamRow[]
+  const missing = rows.filter((r) => r.user_id && !r.email).map((r) => r.user_id as string)
+  const profileEmail: Record<string, string> = {}
+  if (missing.length) {
+    const { data: profs } = await db.from('profiles').select('id, email').in('id', missing)
+    for (const p of (profs ?? []) as any[]) if (p.email) profileEmail[p.id] = p.email
+  }
+  return recipientOptions(rows, profileEmail)
 }
 
 export const GET = withStaff(async (req: NextRequest, ctx) => {

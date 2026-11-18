@@ -122,24 +122,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ── Direct counter increment (admin bypasses RLS) ──
-    try {
-      const now = new Date().toISOString()
-      const { data: cur } = await admin
-        .from('contacts')
-        .select('total_calls, total_outbound_calls')
-        .eq('id', contact_id)
-        .single()
-
-      if (cur) {
-        await admin.from('contacts').update({
-          total_calls: (cur.total_calls || 0) + 1,
-          total_outbound_calls: (cur.total_outbound_calls || 0) + 1,
-          last_call_at: now,
-          last_contacted_at: now,
-        }).eq('id', contact_id)
-      }
-    } catch (e) { console.warn('Call counter increment skipped:', e) }
+    // contacts.total_calls, total_outbound_calls and last_call_at are written by the call_logs insert trigger
+    // (trg_increment_call_counter), the one writer. This route used to add them again (Running List q34).
 
     return NextResponse.json({
       token, call_log_id: callLogId, contact_phone: contact.phone, caller_id: callerId,

@@ -209,24 +209,8 @@ export async function POST(request: NextRequest) {
     occurred_at: new Date().toISOString(),
   });
 
-  // ── Direct counter increment (admin bypasses RLS) ──
-  try {
-    const now = new Date().toISOString()
-    const { data: cur } = await supabase
-      .from('contacts')
-      .select('total_texts, total_inbound_texts')
-      .eq('id', contact.id)
-      .single()
-
-    if (cur) {
-      await supabase.from('contacts').update({
-        total_texts: (cur.total_texts || 0) + 1,
-        total_inbound_texts: (cur.total_inbound_texts || 0) + 1,
-        last_text_at: now,
-        last_contacted_at: now,
-      }).eq('id', contact.id)
-    }
-  } catch (e) { console.warn('Counter increment skipped:', e) }
+  // contacts.total_texts, total_inbound_texts and last_text_at are written by the crm_messages insert trigger
+  // (trg_increment_text_counter), the one writer. This route used to add them again (Running List q34).
 
   return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
     headers: { 'Content-Type': 'text/xml' },

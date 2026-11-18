@@ -11,6 +11,8 @@ import { HUB_URL, loadSettings } from './settings'
 import { isClosedColumn } from './board'
 
 export { DEFAULT_OWNER, HUB_URL, loadSettings } from './settings'
+/** The one org hub_metrics_daily describes (it has no org column). */
+export const METRICS_ORG = '00000000-0000-0000-0000-000000000001'
 const fail = (what: string, e: { code?: string } | null) => new Error(`${what} read: ${e?.code ?? 'unknown'}`)
 
 /** People who get a brief: every recipient of a rule that is not off. */
@@ -46,7 +48,9 @@ export async function gatherBrief(db: SupabaseClient, orgId: string, userId: str
     if (error) throw fail('tasks', error)
     for (const t of (data ?? []) as any[]) { if (t.due_date < day.start) input.tasksOverdue++; else input.tasksDueToday++ }
   }
-  if (mine(s, userId, 'stuck_onboarding')) {
+  // hub_metrics_daily has no org column (its numbers are Neuro Progeny's), so the stuck line is only built for
+  // Neuro Progeny until metrics are per org (Running List q34). Any other org's brief leaves it out.
+  if (orgId === METRICS_ORG && mine(s, userId, 'stuck_onboarding')) {
     const { data, error } = await db.from('hub_metrics_daily').select('date, value').eq('metric_key', 'onboarding_stuck').eq('dimension_key', '')
       .order('date', { ascending: false }).limit(1)
     if (error) throw fail('hub_metrics_daily', error)
