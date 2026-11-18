@@ -14,7 +14,7 @@ import { getFlags, type Flags } from './flags'
 import { getSendPolicy, senderProblem } from './policy'
 import { mergeStage, renderStep } from './render'
 import { mintUnsubscribeToken, newAssetToken, byteaHex } from './tokens'
-import { endAsExited, exitReason, parseExitRules } from './exits'
+import { endAsExited, exitReason, parseExitRules, isTestDrive } from './exits'
 import { BOOKING_TOKEN, CHECKOUT_TOKEN, applyLinks, checkoutUrl, parseEntryPaywalls, paywallEligible, usesToken } from './links'
 import { discoveryBookingUrl, resolveCheckoutPaywall } from './checkout-link'
 import type { EmailProvider, SmsProvider } from './providers/types'
@@ -41,6 +41,18 @@ export interface StepOutcome {
   outcome: string
   mode?: string
   send?: string | null
+}
+
+/** What one step of a test drive did, for its timeline record (filled by runOne, read by processCampaignSteps). */
+interface TestNote {
+  testDrive: boolean
+  orgId?: string
+  contactId?: string
+  campaignId?: string
+  campaignEnrollmentId?: string
+  channel?: string
+  decision?: string
+  reason?: string
 }
 
 type Gate = { decision: 'allow' | 'deny' | 'defer'; mode: 'live' | 'dry_run'; reason: string; step: string;
@@ -84,14 +96,15 @@ async function stageForMerge(db: SupabaseClient, orgId: string, contactId: strin
     .map((r: any) => ({ pipeline_id: r.pipeline_id, stage_name: names.get(r.stage_id)! })), pipelineId)
 }
 
-async function advance(db: SupabaseClient, enr: any, now: Date): Promise<'advanced' | 'completed'> {
+/** Moves to the next step after its delay. A test drive (noDelay) runs the next step on the next engine pass. */
+async function advance(db: SupabaseClient, enr: any, now: Date, noDelay = false): Promise<'advanced' | 'completed'> {
   const { data: next, error } = await db.from('sequence_steps').select('step_order, delay_minutes')
     .eq('sequence_id', enr.sequence_id).gt('step_order', enr.current_step)
     .order('step_order', { ascending: true }).limit(1)
   if (error) throw new Error(`next step read failed: ${error.code ?? 'unknown'}`)
   if (next && next.length) {
     await one(db.from('sequence_enrollments').update({
-      current_step: next[0].step_order, next_step_at: minutes(now, next[0].delay_minutes || 0),
+      current_step: next[0].step_order, next_step_at: minutes(now, noDelay ? 0 : next[0].delay_minutes || 0),
     }).eq('id', enr.id).select('id'), 'advance')
     return 'advanced'
   }
@@ -128,8 +141,11 @@ export async function processCampaignSteps(deps: EngineDeps, limit = 25): Promis
       .update({ next_step_at: minutes(now, STEP_LEASE_MINUTES) })
       .eq('id', enr.id).eq('next_step_at', enr.next_step_at).eq('status', 'active').select('id')
     if ((leased?.length ?? 0) !== 1) { out.push({ enrollment: enr.id, step: enr.current_step, outcome: 'not_leased' }); continue }
+    const note: TestNote = { testDrive: false }
     try {
-      out.push(await runOne(deps, enr, now, flagCache))
+      const r = await runOne(deps, enr, now, flagCache, note)
+      out.push(r)
+      if (note.testDrive) await recordTestStep(db, note, r, now)
     } catch (e: any) {
       console.error(`[engine] enrollment=${enr.id} step=${enr.current_step} threw ${e?.name ?? 'Error'}: ${String(e?.message ?? '').slice(0, 200)}`)
       out.push({ enrollment: enr.id, step: enr.current_step, outcome: 'error' })
@@ -139,10 +155,32 @@ export async function processCampaignSteps(deps: EngineDeps, limit = 25): Promis
   return out
 }
 
-async function runOne(deps: EngineDeps, enr: any, now: Date, flagCache: Map<string, Flags>): Promise<StepOutcome> {
+/**
+ * A test drive's step, written to the test contact's timeline so the campaign page can show exactly what each step
+ * did (decision, reason, the dry-run message), even after the test drive has ended. Only steps that reached a
+ * message, or ended the enrollment, are recorded. Never an address or a body: the message lives in message_sends.
+ */
+async function recordTestStep(db: SupabaseClient, n: TestNote, r: StepOutcome, now: Date): Promise<void> {
+  if (!n.orgId || !n.contactId || !n.campaignEnrollmentId) return
+  if (!n.channel && !/^(exited_|campaign_enrollment_ended)/.test(r.outcome)) return
+  const { error } = await db.from('contact_timeline').insert({
+    org_id: n.orgId, contact_id: n.contactId, event_type: 'campaign_test_step',
+    title: `Test drive step ${r.step ?? ''}: ${r.outcome.replace(/_/g, ' ')}`.slice(0, 300),
+    metadata: { campaign_id: n.campaignId, campaign_enrollment_id: n.campaignEnrollmentId, step_order: r.step, channel: n.channel ?? null,
+      outcome: r.outcome, mode: r.mode ?? null, decision: n.decision ?? null, reason: n.reason ?? null, send_id: r.send ?? null },
+    source_table: 'campaign_enrollments', source_id: n.campaignEnrollmentId, actor_type: 'system', occurred_at: now.toISOString(),
+  })
+  if (error) console.error(`[engine] test drive step record failed: ${error.code ?? 'unknown'}`)
+}
+
+async function runOne(deps: EngineDeps, enr: any, now: Date, flagCache: Map<string, Flags>, note: TestNote = { testDrive: false }): Promise<StepOutcome> {
   const { db } = deps
   const base = { enrollment: enr.id, step: enr.current_step as number }
-  const { data: ce } = await db.from('campaign_enrollments').select('id, status, campaign_id, org_id, enrolled_at').eq('id', enr.campaign_enrollment_id).maybeSingle()
+  const { data: ce } = await db.from('campaign_enrollments').select('id, status, campaign_id, org_id, enrolled_at, source_key').eq('id', enr.campaign_enrollment_id).maybeSingle()
+  // A test drive skips every exit rule and every step delay; everything else (the gate, dry runs) is unchanged.
+  const testDrive = isTestDrive((ce as any)?.source_key)
+  if (ce) Object.assign(note, { testDrive, orgId: ce.org_id, contactId: enr.contact_id, campaignId: ce.campaign_id, campaignEnrollmentId: ce.id })
+  const next = () => advance(db, enr, now, testDrive)
   const { data: camp } = ce ? await db.from('funnel_campaigns').select('id, status, name, entry_pipeline_id, entry_stage_id, goal').eq('id', ce.campaign_id).maybeSingle() : { data: null }
   if (!ce || !camp || ce.status !== 'active') {
     await one(db.from('sequence_enrollments').update({ status: 'completed', completed_at: now.toISOString(), next_step_at: null }).eq('id', enr.id).select('id'), 'end enrollment')
@@ -162,7 +200,7 @@ async function runOne(deps: EngineDeps, enr: any, now: Date, flagCache: Map<stri
 
   // ── exit rules (src/lib/marketing/exits.ts): checked before every step, so a person who paid, replied, moved on
   //    or cancelled is never sent another one. A read error throws and the step is retried, never sent. ──
-  const exit = await exitReason(db, { orgId, contactId: enr.contact_id, enrolledAt: ce.enrolled_at,
+  const exit = testDrive ? null : await exitReason(db, { orgId, contactId: enr.contact_id, enrolledAt: ce.enrolled_at,
     entryPipelineId: (camp as any).entry_pipeline_id ?? null, entryStageId: (camp as any).entry_stage_id ?? null }, parseExitRules((camp as any).goal))
   if (exit) {
     await endAsExited(db, ce.id, exit, now)
@@ -171,8 +209,8 @@ async function runOne(deps: EngineDeps, enr: any, now: Date, flagCache: Map<stri
 
   const { data: step } = await db.from('sequence_steps').select('*')
     .eq('sequence_id', enr.sequence_id).eq('step_order', enr.current_step).maybeSingle()
-  if (!step) return { ...base, outcome: await advance(db, enr, now) }
-  if (step.channel === 'wait' || step.channel === 'task') return { ...base, outcome: `${step.channel}_${await advance(db, enr, now)}` }
+  if (!step) return { ...base, outcome: await next() }
+  if (step.channel === 'wait' || step.channel === 'task') return { ...base, outcome: `${step.channel}_${await next()}` }
 
   // ── links (src/lib/marketing/links.ts). {{checkout_link}} and a campaign's entry paywall limit resolve from the
   //    person's most recent University seat hold; {{discovery_booking_url}} from one org setting. Nothing is guessed:
@@ -185,7 +223,7 @@ async function runOne(deps: EngineDeps, enr: any, now: Date, flagCache: Map<stri
     const { data: who, error: wErr } = await db.from('contacts').select('email').eq('id', enr.contact_id).maybeSingle()
     if (wErr) throw new Error(`checkout link contact read: ${wErr.code ?? 'unknown'}`)
     const pick = await resolveCheckoutPaywall(db, (who as any)?.email, ce.enrolled_at ?? null, now)
-    if (pick.ok && !paywallEligible(pick.slug, entryLimit)) {
+    if (pick.ok && !paywallEligible(pick.slug, entryLimit) && !testDrive) {
       await endAsExited(db, ce.id, 'paywall_not_eligible', now)
       return { ...base, outcome: 'exited_paywall_not_eligible' }
     }
@@ -199,20 +237,23 @@ async function runOne(deps: EngineDeps, enr: any, now: Date, flagCache: Map<stri
   }
 
   const channel = step.channel as 'email' | 'sms'
+  note.channel = channel
   const kind = (step.kind as 'marketing' | 'service' | null) ?? 'marketing'   // unlabelled steps are treated as marketing, the stricter rule
   const { data: gate, error: gErr } = await db.rpc('gate_check', {
     p_contact: enr.contact_id, p_channel: channel, p_kind: kind, p_campaign: camp.id, p_now: now.toISOString(),
   })
   if (gErr || !gate) throw new Error(`gate_check failed: ${gErr?.code ?? 'no result'}`)
   const g = gate as Gate
+  note.decision = g.decision
+  note.reason = g.reason
   if (g.decision === 'defer') {
     await db.from('sequence_enrollments').update({ next_step_at: g.retry_at ?? minutes(now, 60) }).eq('id', enr.id)
     return { ...base, outcome: `defer_${g.reason}`, mode: g.mode }
   }
-  if (g.decision === 'deny') return { ...base, outcome: `deny_${g.reason}_${await advance(db, enr, now)}`, mode: g.mode }
+  if (g.decision === 'deny') return { ...base, outcome: `deny_${g.reason}_${await next()}`, mode: g.mode }
 
   if (step.step_type === 'deliver_asset' && (!flags.deliver_asset || !step.asset_id)) {
-    return { ...base, outcome: `deliver_asset_unavailable_${await advance(db, enr, now)}`, mode: g.mode }
+    return { ...base, outcome: `deliver_asset_unavailable_${await next()}`, mode: g.mode }
   }
 
   const contactId: string = g.contact_id ?? enr.contact_id
@@ -221,11 +262,11 @@ async function runOne(deps: EngineDeps, enr: any, now: Date, flagCache: Map<stri
     .eq('contact_id', contactId).eq('dedupe_key', dedupe).in('status', ['failed', 'skipped'])
   // an earlier attempt whose outcome is unknown may have reached the person: never retry it
   if ((prior ?? []).some((x: any) => x.skip_reason === 'outcome_unknown')) {
-    return { ...base, outcome: `outcome_unknown_not_retried_${await advance(db, enr, now)}`, mode: g.mode }
+    return { ...base, outcome: `outcome_unknown_not_retried_${await next()}`, mode: g.mode }
   }
   // a transient provider failure frees the claim; stop retrying after MAX_SEND_ATTEMPTS
   if ((prior ?? []).filter((x: any) => x.status === 'failed').length >= MAX_SEND_ATTEMPTS) {
-    return { ...base, outcome: `gave_up_${await advance(db, enr, now)}`, mode: g.mode }
+    return { ...base, outcome: `gave_up_${await next()}`, mode: g.mode }
   }
 
   const { data: sendId, error: cErr } = await db.rpc('claim_send', {
@@ -235,7 +276,7 @@ async function runOne(deps: EngineDeps, enr: any, now: Date, flagCache: Map<stri
     p_snapshot: { gate: g, step_type: step.step_type, step_order: step.step_order },
   })
   if (cErr) throw new Error(`claim_send failed: ${cErr.code ?? 'unknown'}`)
-  if (!sendId) return { ...base, outcome: `already_claimed_${await advance(db, enr, now)}`, mode: g.mode }
+  if (!sendId) return { ...base, outcome: `already_claimed_${await next()}`, mode: g.mode }
   const sid = sendId as string
 
   // Everything before the provider call can fail safely: the row is marked failed (which
@@ -274,22 +315,22 @@ async function runOne(deps: EngineDeps, enr: any, now: Date, flagCache: Map<stri
     if (linkProblem) {
       console.warn(`[engine] send=${sid} campaign=${camp.id} skipped: ${linkProblem}`)
       await one(db.from('message_sends').update({ status: 'skipped', skip_reason: linkProblem }).eq('id', sid).select('id'), 'mark link unresolved')
-      return { ...base, outcome: `skipped_${linkProblem}_${await advance(db, enr, now)}`, mode: g.mode, send: sid }
+      return { ...base, outcome: `skipped_${linkProblem}_${await next()}`, mode: g.mode, send: sid }
     }
 
     // an unfilled [[placeholder]] is never sent, live or dry run, so a dry run shows the same refusal
     if (PLACEHOLDER.test(`${r.subject}\n${r.text}`)) {
       await one(db.from('message_sends').update({ status: 'skipped', skip_reason: 'unfilled_placeholder' }).eq('id', sid).select('id'), 'mark placeholder')
-      return { ...base, outcome: `skipped_unfilled_placeholder_${await advance(db, enr, now)}`, mode: g.mode, send: sid }
+      return { ...base, outcome: `skipped_unfilled_placeholder_${await next()}`, mode: g.mode, send: sid }
     }
 
     // checked after merge tags and the STOP line, so a dry run shows what a live send would hit
     if (channel === 'sms' && r.text.length > SMS_PART_MAX) {
       await one(db.from('message_sends').update({ status: 'skipped', skip_reason: 'sms_too_long' }).eq('id', sid).select('id'), 'mark too long')
-      return { ...base, outcome: `skipped_sms_too_long_${await advance(db, enr, now)}`, mode: g.mode, send: sid }
+      return { ...base, outcome: `skipped_sms_too_long_${await next()}`, mode: g.mode, send: sid }
     }
     if (g.mode === 'dry_run') {
-      return { ...base, outcome: `dry_run_${await advance(db, enr, now)}`, mode: 'dry_run', send: sid }
+      return { ...base, outcome: `dry_run_${await next()}`, mode: 'dry_run', send: sid }
     }
 
     // ── live: provider gates, then the one send ──
@@ -302,7 +343,7 @@ async function runOne(deps: EngineDeps, enr: any, now: Date, flagCache: Map<stri
     } else if (!flags.provider_sms) problem = 'provider_sms_off'
     if (problem) {
       await one(db.from('message_sends').update({ status: 'skipped', skip_reason: problem }).eq('id', sid).eq('status', 'sending').select('id'), 'mark skipped')
-      return { ...base, outcome: `skipped_${problem}_${await advance(db, enr, now)}`, mode: 'live', send: sid }
+      return { ...base, outcome: `skipped_${problem}_${await next()}`, mode: 'live', send: sid }
     }
     providerCalled = true
     const res = channel === 'email'
@@ -313,7 +354,7 @@ async function runOne(deps: EngineDeps, enr: any, now: Date, flagCache: Map<stri
     if (res.ok) {
       await one(db.from('message_sends').update({ status: 'sent', provider: res.provider, external_message_id: res.externalId,
         sent_at: new Date().toISOString(), attempts: 1 }).eq('id', sid).eq('status', 'sending').select('id'), 'mark sent')
-      return { ...base, outcome: `sent_${await advance(db, enr, now)}`, mode: 'live', send: sid }
+      return { ...base, outcome: `sent_${await next()}`, mode: 'live', send: sid }
     }
     // An SMS whose request may have reached Twilio cannot be retried safely (Twilio has no
     // idempotency key), so it is recorded as outcome_unknown. An email can be retried: the
@@ -321,11 +362,11 @@ async function runOne(deps: EngineDeps, enr: any, now: Date, flagCache: Map<stri
     if (res.ambiguous && channel === 'sms') {
       await one(db.from('message_sends').update({ status: 'skipped', skip_reason: 'outcome_unknown', provider: res.provider, error_code: res.code })
         .eq('id', sid).eq('status', 'sending').select('id'), 'mark outcome unknown')
-      return { ...base, outcome: `outcome_unknown_${await advance(db, enr, now)}`, mode: 'live', send: sid }
+      return { ...base, outcome: `outcome_unknown_${await next()}`, mode: 'live', send: sid }
     }
     await one(db.from('message_sends').update({ status: 'failed', provider: res.provider, error_code: res.code, attempts: 1 })
       .eq('id', sid).eq('status', 'sending').select('id'), 'mark failed')
-    if (res.permanent) return { ...base, outcome: `failed_permanent_${await advance(db, enr, now)}`, mode: 'live', send: sid }
+    if (res.permanent) return { ...base, outcome: `failed_permanent_${await next()}`, mode: 'live', send: sid }
     await db.from('sequence_enrollments').update({ next_step_at: minutes(now, RETRY_MINUTES) }).eq('id', enr.id)
     return { ...base, outcome: 'failed_will_retry', mode: 'live', send: sid }
   } catch (e) {

@@ -15,7 +15,7 @@ export const HELP = {
   kind: 'Marketing messages only go to people who agreed to hear from you on that channel. Service messages, such as confirmations and reminders, need only their agreement to service messages. A step left unlabelled is treated as marketing, the stricter rule.',
   whatItDoes: 'Send a message, or deliver a free University resource as a private link that expires after two weeks.',
   preview: 'Shows the message as a person would see it, with a sample name. Nothing is sent.',
-  testDrive: 'Puts your own test contact into this campaign through the real engine. Within five minutes the first step runs, and while live sending is off it is a dry run: the Hub records what it would have sent and sends nothing. The campaign must be Active.',
+  testDrive: 'Puts your own test contact into this campaign through the real engine, skipping its waits and exit rules: each step runs on the next engine run, about five minutes apart. While live sending is off it is a dry run: the Hub records what it would have sent and sends nothing. The campaign must be Active.',
   live: 'When this is on, people who agreed to hear from you receive real messages. When it is off, only your test contacts can receive real messages, and everyone else gets a dry run. Only a platform superadmin can turn it on.',
   sending: 'Every message is checked first for agreement, do not contact, quiet hours and how many marketing messages the person had recently. The reason for each decision is recorded.',
 }

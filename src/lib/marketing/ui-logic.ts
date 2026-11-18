@@ -126,6 +126,15 @@ const REASONS: Record<string, string> = {
   sender_is_placeholder: 'No sending address is set yet, so no email can go out. Set one in CRM Settings, Campaign Sending.',
   unsubscribe_secret_missing: 'The unsubscribe link cannot be made yet, so no marketing email can go out.',
   outcome_unknown: 'The message may or may not have gone out, so it is not tried again, to avoid sending it twice.',
+  // how an enrollment ended (campaign_enrollments.end_reason)
+  sequence_finished: 'Every step ran.',
+  exit_booking_cancelled: 'It ended early because the contact\'s latest booking is cancelled (an exit rule).',
+  exit_payment: 'It ended early because the contact has paid (an exit rule).',
+  exit_enrollment: 'It ended early because the contact is already enrolled at the University (an exit rule).',
+  exit_reply: 'It ended early because the contact replied (an exit rule).',
+  exit_stage_reached: 'It ended early because the contact reached a stage that ends this campaign (an exit rule).',
+  exit_left_entry_stage: 'It ended early because the contact left the campaign\'s entry stage (an exit rule).',
+  exit_paywall_not_eligible: 'It ended early because the contact\'s checkout is not one this campaign is for (an exit rule).',
 }
 
 export function reasonText(reason: string | null | undefined): string {
@@ -186,4 +195,66 @@ export const TEMPLATES: Record<Template, { label: string; why: string; step: { c
   asset: { label: 'University asset delivery', why: 'Sends the free resource they asked for, with a private link that expires. It is a service message because they requested it.',
     step: { channel: 'email', kind: 'service', step_type: 'deliver_asset', delay_minutes: 0, subject: 'Your free resource is ready',
       body: 'Hi {{first_name}},\n\nHere is the resource you asked for: {{asset_link}}\n\nThe link is private to you and works for two weeks.\n\n{{org_name}}' } },
+}
+
+// ── the latest test drive on the campaign page ──
+export interface TestDriveStep {
+  at: string; step_order: number | null; channel: string | null; outcome: string | null; mode: string | null
+  decision: string | null; reason: string | null; send_status: string | null; skip_reason: string | null
+  subject: string | null; rendered_body: string | null
+}
+export interface TestDrive { enrollment_id: string; status: string; enrolled_at: string; ended_at: string | null; end_reason: string | null; steps: TestDriveStep[] }
+export interface TestDriveStepView { key: string; label: string; verdict: string; why: string; subject: string | null; preview: string | null; notSent: string | null }
+export type TestDriveView =
+  | { state: 'none' }
+  | { state: 'waiting'; startedAt: string }
+  | { state: 'running' | 'finished' | 'ended_early'; startedAt: string; endedAt: string | null; ending: string | null; steps: TestDriveStepView[] }
+
+export const PREVIEW_LINES = 3
+export const PREVIEW_CHARS = 280
+
+/** Pure: the first lines of a rendered message as plain text (enough to see "Hi Cameron," rather than a merge tag). */
+export function previewText(body: string | null | undefined, channel: string | null): string | null {
+  if (!body) return null
+  const text = channel === 'email'
+    ? body.replace(/<\/(p|div|h[1-6]|li|tr)>|<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')
+        .replace(/&nbsp;/g, ' ').replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+    : body
+  const lines = text.split('\n').map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, PREVIEW_LINES)
+  const out = lines.join('\n')
+  return out.length > PREVIEW_CHARS ? `${out.slice(0, PREVIEW_CHARS - 1).trimEnd()}...` : out || null
+}
+
+function stepVerdict(s: TestDriveStep): string {
+  if (s.outcome?.startsWith('exited_')) return 'Ended the test drive.'
+  if (s.decision === 'defer') return 'Waiting. It will try again when it may send.'
+  if (s.decision === 'deny') return 'Refused. Nothing was sent.'
+  if (s.decision === 'allow') {
+    if (s.send_status === 'skipped' || s.outcome?.startsWith('skipped_')) return 'Allowed, but not sent.'
+    return s.mode === 'dry_run' ? 'Allowed, as a dry run. Nothing was sent.' : 'Allowed and sent for real.'
+  }
+  return s.outcome ? `Recorded: ${s.outcome.replace(/_/g, ' ')}.` : 'No decision was recorded.'
+}
+
+/**
+ * Pure: what the campaign page shows for the latest test drive. A test drive that has ended is still shown, with each
+ * step's decision, reason and message, or the reason it ended, so an early end is never hidden as "no test drive".
+ */
+export function testDriveView(td: TestDrive | null | undefined): TestDriveView {
+  if (!td) return { state: 'none' }
+  if (td.status === 'active' && !td.steps.length) return { state: 'waiting', startedAt: td.enrolled_at }
+  const state = td.status === 'active' ? 'running' : td.status === 'completed' && (!td.end_reason || td.end_reason === 'sequence_finished') ? 'finished' : 'ended_early'
+  return {
+    state, startedAt: td.enrolled_at, endedAt: td.ended_at,
+    ending: state === 'running' ? null : reasonText(td.end_reason ?? (state === 'finished' ? 'sequence_finished' : null)),
+    steps: td.steps.map((s, i) => ({
+      key: `${s.at}:${i}`,
+      label: `Step ${s.step_order ?? i + 1}${s.channel ? `, ${s.channel === 'sms' ? 'text message' : s.channel}` : ''}`,
+      verdict: stepVerdict(s),
+      why: reasonText(s.reason ?? (s.outcome?.startsWith('exited_') ? s.outcome.replace(/^exited_/, 'exit_') : s.outcome)),
+      subject: s.subject,
+      preview: previewText(s.rendered_body, s.channel),
+      notSent: s.skip_reason ? reasonText(s.skip_reason) : null,
+    })),
+  }
 }
