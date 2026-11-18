@@ -50,8 +50,11 @@ const MULTI_PIPELINE_FILES = new Set(['src/lib/marketing/engine.ts', 'src/app/ap
 // entry paywall limit (K_LINKS), so they are compared with that commit.
 const SPEED_TO_LEAD_BASE = process.env.SPEED_TO_LEAD_BASE || '1c166f1'
 const SPEED_TO_LEAD_FILES = new Set(['src/lib/marketing/engine.ts', 'src/app/api/cron/campaign-steps/route.ts'])
+// fix/test-drive-run-now changed the engine (test drives skip exit rules and step delays); re-pinned to that commit
+const TEST_DRIVE_BASE = process.env.TEST_DRIVE_BASE || '0711520'
+const TEST_DRIVE_FILES = new Set(['src/lib/marketing/engine.ts'])
 const base = (f) => {
-  const ref = SPEED_TO_LEAD_FILES.has(f) ? SPEED_TO_LEAD_BASE : MULTI_PIPELINE_FILES.has(f) ? MULTI_PIPELINE_BASE : f === 'src/app/api/intake/route.ts' ? INTAKE_BASE : BASE
+  const ref = TEST_DRIVE_FILES.has(f) ? TEST_DRIVE_BASE : SPEED_TO_LEAD_FILES.has(f) ? SPEED_TO_LEAD_BASE : MULTI_PIPELINE_FILES.has(f) ? MULTI_PIPELINE_BASE : f === 'src/app/api/intake/route.ts' ? INTAKE_BASE : BASE
   try { return norm(execFileSync('git', ['show', `${ref}:${f}`], { cwd: H.ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })) }
   catch { console.error(`git show ${ref}:${f} failed (is the history fetched?)`); process.exit(2) }
 }
