@@ -29,12 +29,19 @@ Content-Type: application/json
 
 - Every value is a string of at most 500 characters. `phone` is any US or international number the visitor types;
   the Hub normalises it. `quiz_outcome` is the result key or name the quiz shows (for example `steady`).
-- **Consent checkboxes** show this wording exactly, unticked by default. The Hub records its own copy of the
-  wording, so the page must match it word for word:
-  - `email_marketing`: "Also email me news and offers from Neuro Progeny. I can unsubscribe at any time."
-  - `sms_marketing`: "Text me reminders and offers from Neuro Progeny. Message and data rates may apply. Reply STOP to opt out."
-  - The wording is pending Cameron's approval for these forms. If it changes, the Hub form changes first and this
-    file is updated.
+- **Consent checkboxes** show this wording exactly (approved by Cameron, 18 Nov 2026). The Hub records its own copy
+  of the wording, so the page must match it word for word:
+
+  | Box | Wording | Starts |
+  |---|---|---|
+  | `email_marketing` | "Email me news and offers from Neuro Progeny. I can unsubscribe at any time." | **Ticked** |
+  | `sms_marketing` | "Text me reminders and offers from Neuro Progeny. Message and data rates may apply. Reply STOP to opt out." | **Unticked** |
+
+  - **The default is set on the website, not in the Hub.** The Hub's form has no "starts ticked" setting; it only
+    receives the ids of the boxes the visitor left ticked in `consents`. A visitor can untick the email box, and
+    then `email_marketing` is simply not sent.
+  - Cameron accepted on 18 Nov that a pre-ticked email box is not valid consent for visitors in the EU or the UK.
+  - If the wording changes, the Hub form changes first and this file is updated.
 - Show the `sms_marketing` box only next to a phone field.
 
 ## The body
@@ -59,7 +66,7 @@ Content-Type: application/json
 |---|---|---|
 | `form` | yes | One of the slugs above |
 | `values` | yes | Keyed by the field keys above. Unknown keys are ignored |
-| `consents` | no | The ids of the boxes the visitor actually ticked. Leave out or send `[]` when none |
+| `consents` | no | The ids of the boxes that are ticked when the visitor submits (the email box starts ticked, the text box unticked). Leave out or send `[]` when none |
 | `website` | yes | The **honeypot**: a text input hidden from people (off-screen, `tabindex="-1"`, `autocomplete="off"`), always sent, normally `""`. When a bot fills it, the Hub answers 200 and drops the submission |
 | `utm` | yes when present | Every `utm_*` parameter **from the page URL** (`utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term`), at most 200 characters each. Keys that do not start with `utm_` are dropped. Carry them from the landing URL to the form page (for example in `sessionStorage`) so a visitor who browses first is still attributed |
 
@@ -88,6 +95,33 @@ Newsletter body:
 ```
 
 ## A working example
+
+The two consent boxes, with their starting state and exact wording (show the text box only on forms with a phone
+field):
+
+```html
+<label>
+  <input type="checkbox" name="consent" value="email_marketing" checked>
+  Email me news and offers from Neuro Progeny. I can unsubscribe at any time.
+</label>
+<label>
+  <input type="checkbox" name="consent" value="sms_marketing">
+  Text me reminders and offers from Neuro Progeny. Message and data rates may apply. Reply STOP to opt out.
+</label>
+<!-- the honeypot: hidden from people, always sent -->
+<input type="text" name="website" value="" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px">
+```
+
+Collect the ticked ones when the form is submitted:
+`const consents = [...form.querySelectorAll('input[name="consent"]:checked')].map((b) => b.value)`.
+
+On success the Hub answers with the form's own message, which the page shows as it is:
+
+| Form | `message` on success |
+|---|---|
+| `np-website-contact` | "Thank you. We have your message and will be in touch soon." |
+| `np-transitions-quiz` | "Thank you. This is a great first step toward identifying the patterns that may be keeping you from living in alignment with your true self." |
+| `np-newsletter` | "Thank you for signing up." |
 
 ```js
 async function sendToHub(form, values, consents, honeypot) {
