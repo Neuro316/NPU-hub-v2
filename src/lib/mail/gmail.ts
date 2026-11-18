@@ -181,3 +181,57 @@ export async function getSentMetadata(accessToken: string, id: string): Promise<
   const internal = Number(data.internalDate)
   return { recipients, sentAt: Number.isFinite(internal) && internal > 0 ? new Date(internal).toISOString() : null }
 }
+
+// ─── Mail search (Running List q26, /api/agent/mail-search) ─────────────────────
+// Read only. Nothing returned here is stored or logged by the caller (src/lib/mail/search.ts).
+
+/** Message ids matching a Gmail search query, newest first, at most `max`. */
+export async function searchMessageIds(accessToken: string, q: string, max: number): Promise<AddedMessage[]> {
+  const params = new URLSearchParams({ q, maxResults: String(Math.max(1, Math.min(max, 100))) })
+  const { status, data } = await gmailGet(accessToken, `/messages?${params}`)
+  if (status !== 200) throw new MailError(`Gmail refused the search (HTTP ${status}).`, 'gmail_error')
+  return ((data.messages ?? []) as any[])
+    .filter(m => /^[0-9a-f]{1,32}$/.test(m.id ?? '') && /^[0-9a-f]{1,32}$/.test(m.threadId ?? ''))
+    .map(m => ({ id: m.id, threadId: m.threadId }))
+}
+
+export interface MessageMeta {
+  id: string; threadId: string; date: string | null; from: string | null; to: string | null; subject: string | null
+  labels: string[]; snippet: string
+}
+
+function metaFrom(data: any): MessageMeta {
+  const headers: { name: string; value: string }[] = data.payload?.headers ?? []
+  const header = (n: string) => headers.find(h => h.name?.toLowerCase() === n)?.value ?? null
+  const internal = Number(data.internalDate)
+  const to = [header('to'), header('cc')].filter(Boolean).join(', ') || null
+  return {
+    id: String(data.id ?? ''), threadId: String(data.threadId ?? ''),
+    date: Number.isFinite(internal) && internal > 0 ? new Date(internal).toISOString() : null,
+    from: header('from')?.slice(0, 500) ?? null, to: to ? to.slice(0, 1000) : null, subject: header('subject')?.slice(0, 500) ?? null,
+    labels: Array.isArray(data.labelIds) ? data.labelIds : [], snippet: String(data.snippet ?? ''),
+  }
+}
+
+/** One message's headers and Gmail's own snippet (format=metadata: no body is fetched). */
+export async function getMessageMeta(accessToken: string, id: string): Promise<MessageMeta> {
+  const q = new URLSearchParams({ format: 'metadata' })
+  for (const h of ['From', 'To', 'Cc', 'Subject', 'Date']) q.append('metadataHeaders', h)
+  const { status, data } = await gmailGet(accessToken, `/messages/${encodeURIComponent(id)}?${q}`)
+  if (status === 404) throw new MailError('The message is no longer in Gmail.', 'message_gone')
+  if (status !== 200) throw new MailError(`Gmail refused the message request (HTTP ${status}).`, 'gmail_error')
+  return metaFrom(data)
+}
+
+export const THREAD_BODY_CHARS = 20000
+
+/** Every message in one thread, with its plain-text body (in memory only, at most THREAD_BODY_CHARS each). */
+export async function getThreadFull(accessToken: string, threadId: string): Promise<Array<MessageMeta & { body: string }>> {
+  const { status, data } = await gmailGet(accessToken, `/threads/${encodeURIComponent(threadId)}?format=full`)
+  if (status === 404) throw new MailError('The thread is no longer in Gmail.', 'message_gone')
+  if (status !== 200) throw new MailError(`Gmail refused the thread request (HTTP ${status}).`, 'gmail_error')
+  return ((data.messages ?? []) as any[]).map(m => {
+    const plain = findBody(m.payload, 'text/plain') || htmlToText(findBody(m.payload, 'text/html'))
+    return { ...metaFrom(m), body: plain.replace(/[ \t\f\v\r]+/g, ' ').replace(/\n\s*\n+/g, '\n\n').trim().slice(0, THREAD_BODY_CHARS) }
+  })
+}
