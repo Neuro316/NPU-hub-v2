@@ -1,8 +1,8 @@
 -- 2026-11-18_campaign_copy.sql  (data, Running List c05; not a migration: no schema change)
 --
--- STATUS: PROPOSED 2026-11-18. NOT RUN. Needs a go. Production (htfrfaxlcuyawtlztxxm) only: the step ids are
--- production's. Nothing here switches anything on: every campaign stays draft, live_enabled stays false, every route
--- stays inactive.
+-- STATUS: APPLIED 2026-11-18 15:40 CST on production by the Hub chat (Shane's go), with the campaign_routes alias fix.
+-- Production (htfrfaxlcuyawtlztxxm) only: the step ids are production's. Nothing here switches anything on: every
+-- campaign stays draft, live_enabled stays false, every route stays inactive.
 --
 -- WHERE THE COPY LIVES (read only on production, 2026-11-18):
 --   funnel_campaigns   (org_id, name, status, live_enabled, sequence_id): the 7 campaigns, all status 'draft',
@@ -76,8 +76,8 @@ begin
               and (status <> 'draft' or live_enabled)) then
     raise exception 'campaign copy: a campaign is active or live; stop and look';
   end if;
-  if exists (select 1 from public.campaign_routes r join public.funnel_campaigns f on f.id = r.campaign_id
-              where f.org_id = v_org and f.name = any(v_campaigns) and r.active) then
+  if exists (select 1 from public.campaign_routes cr join public.funnel_campaigns f on f.id = cr.campaign_id
+              where f.org_id = v_org and f.name = any(v_campaigns) and cr.active) then
     raise exception 'campaign copy: a campaign route is active; stop and look';
   end if;
   if exists (select 1 from public.campaign_enrollments e join public.funnel_campaigns f on f.id = e.campaign_id
