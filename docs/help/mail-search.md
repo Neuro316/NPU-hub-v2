@@ -13,11 +13,11 @@ related: [notification-settings]
 2. It searches by email address, phone number or name, in the last 365 days unless a date range is given. It looks at received and sent mail in every mailbox you may see.
 3. Each match comes back with its mailbox, thread, date, sender, recipients, subject and a short excerpt of at most 300 characters.
 4. To read one conversation in full, ask for that thread and its mailbox. Only then are the message texts returned.
-5. Mailboxes that could not be searched are listed under not searched with the reason, such as a sign-in that needs reconnecting in Settings, Mailboxes.
+5. Mailboxes that could not be searched are listed under not searched with the reason. "Google no longer accepts this sign-in" means reconnect it in Settings, Mailboxes. "Could not be read just now" means a passing problem, and it is tried again on the next search.
 6. The Morning Call Prep task calls it with its own key, which acts as Cameron only, so it sees what Cameron sees and nothing more.
 
 ## Common mistakes
 - A private mailbox is searched only for its owner. Nobody else sees it, superadmin or not. Shared mailboxes are searched for superadmins of their organization.
 - Nothing read from Gmail is saved in the Hub. Each search is logged with who ran it, when, which mailboxes and how many results, and a scrambled form of what was searched for, never the words themselves.
 - There is a limit of 10 searches every 10 minutes for each person.
-- A mailbox listed under not searched needs reconnecting before its mail can be found.
+- Only a mailbox whose reason says Google no longer accepts the sign-in needs reconnecting. A mailbox shown with an error in Settings is still tried, because the error may have cleared.

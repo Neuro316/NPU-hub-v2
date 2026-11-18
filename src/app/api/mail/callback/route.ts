@@ -6,7 +6,7 @@
 // carrying only a fixed outcome code.
 import { NextResponse } from 'next/server'
 import { withStaff } from '@/lib/api-guard'
-import { exchangeCode, revokeToken, verifyState, MailError, STATE_COOKIE } from '@/lib/mail/google'
+import { exchangeCode, revokeToken, verifyState, storableRefreshToken, MailError, STATE_COOKIE } from '@/lib/mail/google'
 
 export const dynamic = 'force-dynamic'
 
@@ -39,11 +39,17 @@ export const GET = withStaff(async (req, ctx) => {
     return back(c)
   }
 
+  // Never write an empty token over a stored one (hub_mail_connection_put also refuses an empty secret).
+  const refreshToken = storableRefreshToken(grant.refreshToken)
+  if (!refreshToken) {
+    console.error('[mail/callback] store skipped: no_refresh_token')
+    return back('no_refresh_token')
+  }
   const { error } = await ctx.db.rpc('hub_mail_connection_put', {
     p_org_id: orgId,
     p_owner: ctx.userId,
     p_email: grant.email,
-    p_secret: grant.refreshToken,
+    p_secret: refreshToken,
     p_scopes: grant.scopes,
   })
   if (error) {

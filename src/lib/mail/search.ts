@@ -13,11 +13,11 @@
 // the database or a log line. The only write is the search log (hub_mail_search_log, hub_242): who, when, which
 // mailbox ids, counts, and an HMAC of the query terms (MAIL_SEARCH_LOG_KEY), never the terms themselves.
 //
-// BROKEN MAILBOXES: a visible mailbox that is revoked, in error, or whose sign-in or search fails is listed in
-// not_searched with a fixed reason, so the call prep note can say what it could not read.
+// BROKEN MAILBOXES: a visible mailbox that is revoked, or whose sign-in or search fails, is listed in not_searched
+// with a fixed reason, so the call prep note can say what it could not read. A mailbox marked 'error' is still tried.
 import { createHmac } from 'crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { listVisible, canSee, accessTokenFor, refreshTokenFor, MailError, type MailConnectionRow } from '@/lib/mail/google'
+import { listVisible, canSee, accessTokenFor, refreshTokenFor, MailError, isPermanent, type MailConnectionRow } from '@/lib/mail/google'
 import { searchMessageIds, getMessageMeta, getThreadFull, type MessageMeta } from '@/lib/mail/gmail'
 import type { SearchCaller } from '@/lib/mail/search-auth'
 
@@ -107,12 +107,14 @@ export interface Hit { mailbox: string; connection_id: string; thread_id: string
 export interface NotSearched { mailbox: string; connection_id: string; reason: string }
 export interface SearchResult { mode: 'search' | 'thread'; results: Hit[]; mailboxes_searched: string[]; not_searched: NotSearched[]; searched_ids: string[] }
 
-const REASON = {
+// Reasons by what actually happened (fix/mail-token-errors). "Reconnect" only when Google no longer accepts the
+// sign-in or no sign-in is stored (PERMANENT_CODES); any other failure may clear by itself.
+export const REASON = {
   revoked: 'Access to this mailbox was revoked. Reconnect it in Settings, Mailboxes.',
-  error: 'This mailbox needs reconnecting in Settings, Mailboxes.',
-  token: 'The stored sign-in for this mailbox was refused. Reconnect it in Settings, Mailboxes.',
-  gmail: 'Gmail refused the search for this mailbox. Try again later.',
+  reconnect: 'Google no longer accepts this sign-in. Reconnect it in Settings, Mailboxes.',
+  later: 'Could not be read just now; it will be tried again.',
 }
+const reasonFor = (e: unknown) => (e instanceof MailError && isPermanent(e.code) ? REASON.reconnect : REASON.later)
 
 /** The mailboxes the caller may search: listVisible, then canSee again, so a private mailbox is its owner's only. */
 export async function visibleConnections(caller: SearchCaller): Promise<MailConnectionRow[] | null> {
@@ -156,12 +158,13 @@ export async function runSearch(caller: SearchCaller, input: SearchInput, io: Io
 
   const usable: Array<{ row: MailConnectionRow; token: string }> = []
   for (const r of targets) {
+    // Revoked mailboxes have no stored sign-in and stay skipped. A mailbox marked 'error' is still tried: the
+    // mark may be stale (a passing failure), so the token refresh decides.
     if (r.status === 'revoked') { skip(r, REASON.revoked); continue }
-    if (r.status !== 'active') { skip(r, REASON.error); continue }
     try {
       usable.push({ row: r, token: await io.accessTokenFor(await io.refreshTokenFor(caller.db, r.id)) })
-    } catch {
-      skip(r, REASON.token)
+    } catch (e) {
+      skip(r, reasonFor(e))
     }
   }
 
@@ -178,7 +181,7 @@ export async function runSearch(caller: SearchCaller, input: SearchInput, io: Io
         }
       } catch (e) {
         if (e instanceof MailError && e.code === 'message_gone') { searched.push(u.row); continue }
-        skip(u.row, REASON.gmail)
+        skip(u.row, REASON.later)
       }
     }
   } else {
@@ -190,7 +193,7 @@ export async function runSearch(caller: SearchCaller, input: SearchInput, io: Io
     }))
     per.forEach((p, k) => {
       const row = usable[k].row
-      if (p.status === 'rejected') { skip(row, REASON.gmail); return }
+      if (p.status === 'rejected') { skip(row, REASON.later); return }
       searched.push(row)
       for (const m of p.value.metas) if (m.status === 'fulfilled') results.push(hitOf(row, m.value))
     })

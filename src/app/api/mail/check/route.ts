@@ -4,7 +4,7 @@
 // emailAddress and messagesTotal. Superadmin + visibility.
 import { NextResponse } from 'next/server'
 import { withStaff, forbidden } from '@/lib/api-guard'
-import { accessTokenFor, gmailProfile, loadVisible, refreshTokenFor, safeMessage, MailError } from '@/lib/mail/google'
+import { accessTokenFor, gmailProfile, loadVisible, refreshTokenFor, safeMessage, MailError, isPermanent, lastErrorText } from '@/lib/mail/google'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,10 +28,10 @@ export const POST = withStaff(async (req, ctx) => {
     const code = e instanceof MailError ? e.code : 'unknown'
     const message = safeMessage(e)
     console.error('[mail/check] failed:', code)
-    // A dead grant or missing secret will not heal on retry; a network blip might.
-    const dead = ['invalid_grant', 'no_secret', 'address_mismatch'].includes(code)
+    // A dead grant, a truly missing token or the wrong address will not heal on retry; a vault or network blip might.
+    const dead = isPermanent(code) || code === 'address_mismatch'
     await ctx.db.from('hub_mail_connections')
-      .update({ last_error: message.slice(0, 300), ...(dead ? { status: 'error' } : {}) })
+      .update({ last_error: lastErrorText(code, message), ...(dead ? { status: 'error' } : {}) })
       .eq('id', row.id)
     return NextResponse.json({ error: message }, { status: 502 })
   }

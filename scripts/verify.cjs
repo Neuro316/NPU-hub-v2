@@ -53,6 +53,7 @@ const HARNESSES = [
   { file: 'scripts/notify/q34-tamper.cjs', selectors: ['appcount', 'stuckanyorg', 'cronback', 'noemail', '1'] },
   { file: 'scripts/resources/resource-tamper.cjs', selectors: ['retiredgo', 'wrongcontact', 'sends', 'openread', 'storeip', 'rawtime', '1'] },
   { file: 'scripts/mail/mail-search-tamper.cjs', selectors: ['otherowner', 'storesbody', 'bodyinlist', 'nosecretcheck', 'logsterms', 'hidesbroken', 'norate', '1'] },
+  { file: 'scripts/mail/mail-token-tamper.cjs', selectors: ['vaultblip', 'transientbroken', 'grantignored', 'skiperror', 'wrongreason', 'emptytoken', '1'] },
   { file: 'scripts/crm/contact-fixes-tamper.cjs', selectors: ['olderwins', 'rawquery', 'oldcounts', 'countprivate', 'noswitch', 'ignoreid', '1'] },
   { file: 'scripts/comms/comms-tamper.cjs', selectors: ['privateopen', 'body', 'browserread', 'lifecycleall', 'nomerged', 'noalt', '1'] },
   { file: 'scripts/lifecycle/lifecycle-tamper.cjs', selectors: ['liveany', 'leadnostage', 'tagover', 'phasemix', 'backward', 'coachbuys', 'closeall', 'early', 'idle4', 'dryapply', '1'] },

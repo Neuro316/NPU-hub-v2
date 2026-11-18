@@ -12,8 +12,9 @@
 //   S_SECRET   the Bearer path accepts only the exact secret, mapped to its one owner; a wrong, missing-prefix, short
 //              or unset secret, or a malformed owner id, is refused, and a refused call reads no mailbox
 //   S_NOTERMS  the query terms appear in no database write and no log line; the log row carries only their HMAC
-//   S_BROKEN   every visible mailbox that is revoked, in error, refuses its sign-in or fails at Gmail is listed in
-//              not_searched with a reason; none goes silently missing
+//   S_BROKEN   every visible mailbox that is revoked, refuses its sign-in or fails at Gmail is listed in
+//              not_searched with a reason; none goes silently missing. A mailbox marked 'error' is tried, not skipped
+//              (fix/mail-token-errors), and is searched when its sign-in works
 //   S_RATE     the per-caller limit holds: once the log shows RATE_MAX searches in the window, the next is refused 429
 //              and reads nothing
 //
@@ -35,7 +36,7 @@ const TAMPERS = {
   bodyinlist: [[S, "      for (const m of p.value.metas) if (m.status === 'fulfilled') results.push(hitOf(row, m.value))", "      for (const m of p.value.metas) if (m.status === 'fulfilled') results.push({ ...hitOf(row, m.value), body: m.value.snippet })"]],
   nosecretcheck: [[A, '  return timingSafeEqual(sha(m[1]), sha(secret.trim())) ? ownerId : null', '  return ownerId']],
   logsterms: [[ROUTE, 'messages=${r.results.length}`)', 'messages=${r.results.length} terms=${JSON.stringify(parsed.input)}`)']],
-  hidesbroken: [[S, '    } catch {\n      skip(r, REASON.token)\n    }', '    } catch {\n      // dropped\n    }']],
+  hidesbroken: [[S, '    } catch (e) {\n      skip(r, reasonFor(e))\n    }', '    } catch (e) {\n      void e // dropped\n    }']],
   norate: [[S, "  if ((count ?? 0) >= RATE_MAX) return 'limited'\n", '']],
 }
 const RED_OF = { otherowner: ['S_OWNER'], storesbody: ['S_NOSTORE'], bodyinlist: ['S_LISTBODY'], nosecretcheck: ['S_SECRET'], logsterms: ['S_NOTERMS'], hidesbroken: ['S_BROKEN'], norate: ['S_RATE'] }
@@ -196,7 +197,7 @@ const check = (id, ok, got) => rows.push({ id, ok: !!ok, got })
     const ns = shane.res.body.not_searched
     const ids = ns.map((n) => n.connection_id).sort()
     const covered = new Set([...shane.res.body.mailboxes_searched.map((m) => m.replace('@example.com', '')), ...ids])
-    check('S_BROKEN', JSON.stringify(ids) === JSON.stringify(['c-bad', 'c-err', 'c-gf', 'c-rev']) && ns.every((n) => n.reason && n.reason.length > 10)
+    check('S_BROKEN', JSON.stringify(ids) === JSON.stringify(['c-bad', 'c-gf', 'c-rev']) && shane.res.body.mailboxes_searched.includes('c-err@example.com') && ns.every((n) => n.reason && n.reason.length > 10)
       && ['c-own', 'c-ops', 'c-rev', 'c-err', 'c-bad', 'c-gf'].every((c) => covered.has(c)), { not_searched: ids })
   }
 
