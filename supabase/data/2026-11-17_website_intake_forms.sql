@@ -1,7 +1,10 @@
 -- 2026-11-17_website_intake_forms.sql  (data, not a migration: no schema change)
 --
--- STATUS: PROPOSED 2026-11-17. NOT RUN. Needs a go. Production (htfrfaxlcuyawtlztxxm) only: the org and pipeline
--- ids are production's. Running List q08, Hub half: neuroprogeny.com posts its leads to POST /api/intake.
+-- STATUS: PROPOSED. NOT RUN. Needs a go. Written 2026-11-17; wording, defaults and success messages decided by
+-- Cameron on 2026-11-18 (Running List c15) and applied here the same day. Production (htfrfaxlcuyawtlztxxm) only:
+-- the org and pipeline ids are production's. Running List q08, Hub half: neuroprogeny.com posts its leads to
+-- POST /api/intake. Checked read only on 2026-11-18: none of the three forms, no hub_form_routes row and no intake
+-- flag exist on production yet.
 --
 -- WHAT IT WRITES (Neuro Progeny org only):
 --   1. form_definitions, status published:
@@ -14,12 +17,19 @@
 --      (contacts.acquisition_source) and the stage move's source as form:<slug>.
 --   3. org_settings 'hub_marketing_flags': intake switched on (engine is already on; nothing else changes).
 --
--- CONSENTS: the wording is reused EXACTLY from the only consent text the Hub holds today, the draft lead device
--- sample-stress-quiz (lead_devices.manifest email_consent_text and sms_consent_text). Cameron must approve it for
--- these forms before the go; the email sentence begins with "Also", which reads oddly on the newsletter form. The
--- consent ids (email_marketing, sms_marketing) are new. Every box is unticked by default on the site.
+-- CONSENTS (Cameron, 2026-11-18): the text is set here directly; it is no longer reused from the sample-stress-quiz
+-- lead device, and that check is gone. The Hub records this exact text with each consent, so the website's boxes
+-- must read the same, word for word:
+--   email_marketing  "Email me news and offers from Neuro Progeny. I can unsubscribe at any time."
+--   sms_marketing    "Text me reminders and offers from Neuro Progeny. Message and data rates may apply. Reply STOP to opt out."
 --
--- SUCCESS MESSAGES are placeholders for Cameron to approve (short, no em dashes).
+-- DEFAULTS ON THE SITE (Cameron, 2026-11-18): the email box starts TICKED, the text box starts UNTICKED. Cameron
+-- accepted that a pre-ticked email box is not valid consent for EU or UK visitors. The default lives in the website
+-- form, not here: a consent item in form_definitions.consents is { id, channel, kind, text, required }
+-- (src/lib/marketing/intake.ts FormConsent) and has no default, and the Hub only ever receives the ids of the boxes
+-- the visitor left ticked. No schema change was made for this.
+--
+-- SUCCESS MESSAGES (Cameron, 2026-11-18): as written below, no em dashes.
 --
 -- NOTHING IS SENT: no campaign route listens on these source keys, so route_and_enroll enrolls nobody. Adding a
 -- route is a separate go.
@@ -34,6 +44,7 @@
 --   update public.org_settings set setting_value = setting_value - 'intake'
 --    where org_id = '00000000-0000-0000-0000-000000000001' and setting_key = 'hub_marketing_flags';
 --   commit;
+--   (Nothing else to undo: this file writes only the three form rows and the two org_settings changes above.)
 
 begin;
 
@@ -41,15 +52,10 @@ do $fix$
 declare
   v_org   constant uuid := '00000000-0000-0000-0000-000000000001';
   v_sales constant uuid := 'd2aa430f-84fb-45e1-be3c-95958403d4d6';
-  v_email constant text := 'Also email me news and offers from Neuro Progeny. I can unsubscribe at any time.';
+  -- Cameron's approved wording, 2026-11-18 (Running List c15)
+  v_email constant text := 'Email me news and offers from Neuro Progeny. I can unsubscribe at any time.';
   v_sms   constant text := 'Text me reminders and offers from Neuro Progeny. Message and data rates may apply. Reply STOP to opt out.';
-  v_dev   jsonb;
 begin
-  -- the consent text must still be exactly what the lead device holds
-  select manifest into v_dev from public.lead_devices where slug = 'sample-stress-quiz';
-  if v_dev is null or v_dev ->> 'email_consent_text' <> v_email or v_dev ->> 'sms_consent_text' <> v_sms then
-    raise exception 'website forms: the reused consent text changed or is missing; stop and look';
-  end if;
   if not exists (select 1 from public.pipeline_stages where pipeline_id = v_sales and name = 'New Lead' and archived_at is null)
      or not exists (select 1 from public.pipelines where id = v_sales and legacy_key = 'default' and org_id = v_org and archived_at is null) then
     raise exception 'website forms: Sales Pipeline › New Lead not found; stop and look';
@@ -83,7 +89,7 @@ begin
    jsonb_build_array(
      jsonb_build_object('id', 'email_marketing', 'channel', 'email', 'kind', 'marketing', 'text', v_email, 'required', false),
      jsonb_build_object('id', 'sms_marketing', 'channel', 'sms', 'kind', 'marketing', 'text', v_sms, 'required', false)),
-   'website:np-transitions-quiz', 'Thank you. We have your answers.'),
+   'website:np-transitions-quiz', 'Thank you. This is a great first step toward identifying the patterns that may be keeping you from living in alignment with your true self.'),
   (v_org, 'np-newsletter', 'Website: newsletter signup', 'published', 1,
    jsonb_build_array(
      jsonb_build_object('key', 'first_name', 'label', 'First name', 'type', 'text', 'required', false, 'maps_to', 'first_name'),
