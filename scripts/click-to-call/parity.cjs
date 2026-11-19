@@ -175,6 +175,10 @@ const RESOURCE_LINKS_FILES = new Set(['src/lib/supabase-middleware.ts'])
 // Running List q26 added the exact public path /api/agent/mail-search (its own auth is withMailSearchAuth)
 const MAIL_SEARCH_BASE = process.env.MAIL_SEARCH_BASE || '46dffc3'
 const MAIL_SEARCH_FILES = new Set(['src/lib/supabase-middleware.ts'])
+// The WNW holiday checklist added the exact public path /api/public/lead-capture (its own checks are in
+// src/lib/marketing/lead-capture.ts, proved by scripts/marketing/lead-capture-tamper.cjs)
+const LEAD_CAPTURE_BASE = process.env.LEAD_CAPTURE_BASE || '60a5f93'
+const LEAD_CAPTURE_FILES = new Set(['src/lib/supabase-middleware.ts'])
 const base = (f, ref = BASE) => {
   if (MULTI_PIPELINE_FILES.has(f)) ref = MULTI_PIPELINE_BASE
   if (ORG_VAULT_FILES.has(f)) ref = ORG_VAULT_BASE
@@ -183,6 +187,7 @@ const base = (f, ref = BASE) => {
   if (Q34_FILES.has(f)) ref = Q34_BASE
   if (RESOURCE_LINKS_FILES.has(f)) ref = RESOURCE_LINKS_BASE
   if (MAIL_SEARCH_FILES.has(f)) ref = MAIL_SEARCH_BASE
+  if (LEAD_CAPTURE_FILES.has(f)) ref = LEAD_CAPTURE_BASE
   try { return norm(execFileSync('git', ['show', `${ref}:${f}`], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })) }
   catch (e) { console.error(`git show ${ref}:${f} failed (is the history fetched?)`); process.exit(2) }
 }
