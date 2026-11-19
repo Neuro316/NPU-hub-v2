@@ -37,6 +37,9 @@ export async function updateSession(request: NextRequest) {
     // anything without a valid Svix signature.
     pathname === '/api/intake' ||
     pathname === '/api/email/unsubscribe' ||
+    // Partner page sign-ups (WNW holiday checklist): exact path only. The route allows only the declared origins,
+    // drops a filled honeypot, validates, and rate-limits per address (src/lib/marketing/lead-capture.ts).
+    pathname === '/api/public/lead-capture' ||
     // Mail search (Running List q26): exact path only. Not public: withMailSearchAuth answers 401 without a
     // superadmin session or the Bearer secret. Listed here so the scheduled task (no cookie) is not sent to /login.
     pathname === '/api/agent/mail-search' ||

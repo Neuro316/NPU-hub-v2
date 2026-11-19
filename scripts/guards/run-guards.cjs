@@ -34,6 +34,7 @@ const TAMPER = process.env.TAMPER || ''
 // Reviewed public service-role routes, each with its own check (ruling 14).
 const G1_REVIEWED_PUBLIC = {
   'src/app/api/intake/route.ts': 'published form + intake flag + honeypot + rate limit',
+  'src/app/api/public/lead-capture/route.ts': 'exact path; declared origins only (CORS, no Origin refused); honeypot; validated source, email and phone; per-address rate limit; fills blanks only (scripts/marketing/lead-capture-tamper.cjs)',
   'src/app/a/[token]/route.ts': 'hashed single-purpose expiring token, redirect to the University only',
   'src/app/r/[code]/route.ts': 'exact path /r/ + 12-char random code; only an existing, unrevoked link whose resource is active; rate limited per code; reads and stores no visitor data (scripts/resources/resource-tamper.cjs)',
   'src/app/lead-device/[slug]/route.ts': 'exact public host only, live device or signed preview, reads no identity',

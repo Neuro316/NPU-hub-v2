@@ -1,13 +1,13 @@
 # Hub session state
 
 One Code session per repo, across machines. Update this file whenever any line below changes.
-Last updated: 2026-11-16 afternoon, by the Code session on Shane's Mac. Applied times are as reported by the Hub chat
+Last updated: 2026-11-19, by the Code session on Shane's Mac. Applied times are as reported by the Hub chat
 (CST).
 
 ## Session
 
 - **Running:** Code session on Shane's Mac (NPU-hub-v2).
-- **Live branch:** `fix/contacts-card-search` (Running List q30).
+- **Live branch:** `feat/wnw-holiday-lead-capture` (WNW holiday checklist sign-ups, POST /api/public/lead-capture).
 - **Cameron:** no Code session recorded on this repo. Say so here before starting one.
 
 ## Production
@@ -21,6 +21,7 @@ Last updated: 2026-11-16 afternoon, by the Code session on Shane's Mac. Applied 
 
 | PR | Branch | What | Migration |
 |----|--------|------|-----------|
+| #67 | `feat/wnw-holiday-lead-capture` | WNW holiday checklist lead capture | none |
 | #46 | `feat/scheduling-agent-phase3` | Scheduling agent stage 1 | hub_234 (proposed) |
 | #18 | `revert/release-2026-10-31` | Draft rollback, do not merge | none |
 

@@ -28,6 +28,7 @@ const HARNESSES = [
   { file: 'scripts/marketing/pipeline-positions-tamper.cjs', selectors: ['loosename', 'guess', 'keeparch', 'orgopen', 'actorbody', 'removeall', 'nowarn', 'payfail', 'mirrorloop', 'mirrorall', 'nosignedup', 'viewopts', 'idcols', '1'] },
   { file: 'scripts/marketing/lead-origin-tamper.cjs', selectors: ['anyhost', 'hubhost', 'anypath', 'looseorg', 'keepcook', 'noapi', '1'] },
   { file: 'scripts/marketing/form-placement-tamper.cjs', selectors: ['noplace', 'existing', 'anyoutcome', 'fallback', '1'] },
+  { file: 'scripts/marketing/lead-capture-tamper.cjs', selectors: ['anyorigin', 'nohoneypot', 'anysource', 'looseemail', 'loosephone', 'blankwins', 'rawlike', '1'] },
   { file: 'scripts/marketing/speed-to-lead-tamper.cjs', selectors: ['quietoff', 'urgentall', 'noescape', 'truthy', 'resend', 'logname', 'widen', 'noexit', 'placelive', '1'] },
   { file: 'scripts/marketing/flags-off-parity.cjs', selectors: ['outside', 'untouched', '1'] },
   { file: 'scripts/agent/claims-tamper.cjs', selectors: ['emdash', 'certified', 'noboundary', 'stopline', 'program', 'version', '1'] },
