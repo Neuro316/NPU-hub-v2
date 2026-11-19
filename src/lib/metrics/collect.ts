@@ -13,6 +13,7 @@ import { nyDay, addDays, daysBetween, daysInMonth, eachDay, queryFrom, queryTo }
 import { loadPositions, type Position } from '@/lib/pipelines/positions'
 import { COACHING_HOURS_PER_MONTH, COMMITTED_WEEKS, STEP_TARGET_DEFAULTS } from './registry'
 import { targetFor, type Target } from './targets'
+import { firstTouches } from '@/lib/touch/first-touch'
 
 export interface Rec { id: string; label: string; sub?: string; href?: string; amount?: number }
 export interface Item { metric: string; day: string; value: number; dims?: Record<string, string>; rec?: Rec }
@@ -153,37 +154,10 @@ const contactsLoader: Loader = async ctx => {
   // speed to lead: the first outbound touch after the contact was created (inbound leads only)
   const ids = inbound.map(c => c.id)
   if (ids.length) {
-    const firstTouch = new Map<string, number>()
-    const touch = (id: string | null, at: string | null) => {
-      if (!id || !at) return
-      const t = new Date(at).getTime()
-      if (!firstTouch.has(id) || t < firstTouch.get(id)!) firstTouch.set(id, t)
-    }
-    const convs = await inChunks(ids, ch => db.from('conversations').select('id, contact_id').in('contact_id', ch), 'conversations')
-    const convContact = new Map(convs.map(c => [c.id, c.contact_id]))
-    const msgs = await inChunks(Array.from(convContact.keys()), ch => db.from('crm_messages').select('conversation_id, sent_at, created_at').eq('direction', 'outbound').in('conversation_id', ch), 'crm_messages')
-    for (const m of msgs) touch(convContact.get(m.conversation_id) ?? null, m.sent_at ?? m.created_at)
-    const calls = await inChunks(ids, ch => db.from('call_logs').select('contact_id, started_at, created_at').eq('direction', 'outbound').in('contact_id', ch), 'call_logs')
-    for (const c of calls) touch(c.contact_id, c.started_at ?? c.created_at)
-    const sends = await inChunks(ids, ch => db.from('message_sends').select('contact_id, sent_at').eq('dry_run', false).not('sent_at', 'is', null).in('contact_id', ch), 'message_sends')
-    for (const s of sends) touch(s.contact_id, s.sent_at)
-    const emails = await inChunks(ids, ch => db.from('email_sends').select('contact_id, sent_at').not('sent_at', 'is', null).in('contact_id', ch), 'email_sends')
-    for (const e of emails) touch(e.contact_id, e.sent_at)
-
-    // Gmail sent from connected mailboxes (metadata only: recipient address and sent time), SHARED mailboxes only:
-    // the mail privacy rule (2026-11-09) keeps private mailboxes out of every metric. Absent until hub_236.
-    const byEmail = new Map<string, string[]>()
-    for (const c of inbound) { const e = lower(c.email); if (e) byEmail.set(e, [...(byEmail.get(e) ?? []), c.id]) }
-    const leadEmails = Array.from(byEmail.keys())
-    if (leadEmails.length) {
-      const { data: shared } = await db.from('hub_mail_connections').select('id').eq('visibility', 'shared')
-      const sharedIds = (shared ?? []).map((c: any) => c.id as string)
-      if (sharedIds.length) {
-        const sent = await inChunks(leadEmails, ch => db.from('hub_mail_sent').select('to_address, sent_at').in('connection_id', sharedIds).in('to_address', ch), 'hub_mail_sent')
-          .catch(() => [] as any[])  // table absent before hub_236
-        for (const m of sent) for (const id of byEmail.get(lower(m.to_address)) ?? []) touch(id, m.sent_at)
-      }
-    }
+    // the one touch rule (src/lib/touch/first-touch.ts), the same function lead_no_touch_24h uses: texts, calls,
+    // sends that went out, client confirmations, booking links, and replies from any connected mailbox (metadata only)
+    const firstTouch = await firstTouches(db, inbound.map(c => ({ id: c.id, email: c.email, since: c.created_at })))
+    const leadEmails = Array.from(new Set(inbound.map(c => lower(c.email)).filter(Boolean)))
 
     // the lead's own booking (nr_bookings matched by email to the guest or participant), any time
     const bookedAll = new Map<string, number[]>()
@@ -204,7 +178,7 @@ const contactsLoader: Loader = async ctx => {
     for (const c of inbound) {
       const created = new Date(c.created_at).getTime()
       const t = firstTouch.get(c.id)
-      const touched = t !== undefined && t >= created
+      const touched = t !== undefined
       const label = fullName(c.first_name, c.last_name) || c.email || 'Unnamed contact'
       const bk = bookedAll.get(lower(c.email)) ?? []
       // handled by their own booking: one made at or before the lead (0 minutes), or after it and before any touch

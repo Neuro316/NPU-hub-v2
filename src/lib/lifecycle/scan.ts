@@ -8,6 +8,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { contactByEmail } from '@/lib/lead-alerts/sources'
 import { leadChannel, SCORECARD_CHANNELS } from '@/lib/metrics/collect'
 import { bookingComplete } from '@/lib/bookings/placement'
+import { firstTouches } from '@/lib/touch/first-touch'
 import { recordEvent, closeTasks, type LifecycleEvent } from './ledger'
 import {
   classifyProduct, inactivityDue, inactivityKey, INACTIVE_DAYS, leadOwedTask, CHECKOUT_UNPAID_HOURS, HELD_NO_PURCHASE_DAYS,
@@ -253,38 +254,9 @@ export async function scanEnrolled(ctx: ScanCtx) {
   }
 }
 
-/** The first outbound touch to a contact at or after `since`: texts, calls, campaign sends, emails, shared Gmail. */
+/** The first touch to a contact at or after `since`, by the one touch rule the speed to lead tiles use. */
 export async function firstTouchSince(db: SupabaseClient, contactId: string, email: string | null, since: string): Promise<number | null> {
-  const t: number[] = []
-  const { data: convs, error: cErr } = await db.from('conversations').select('id').eq('contact_id', contactId)
-  if (cErr) throw fail('conversations', cErr)
-  if (convs?.length) {
-    const { data, error } = await db.from('crm_messages').select('created_at').eq('direction', 'outbound')
-      .in('conversation_id', convs.map((c: any) => c.id)).gte('created_at', since).order('created_at').limit(1)
-    if (error) throw fail('crm_messages', error)
-    for (const m of data ?? []) t.push(Date.parse((m as any).created_at))
-  }
-  const [calls, sends, emails] = await Promise.all([
-    db.from('call_logs').select('created_at').eq('contact_id', contactId).eq('direction', 'outbound').gte('created_at', since).order('created_at').limit(1),
-    db.from('message_sends').select('sent_at').eq('contact_id', contactId).eq('dry_run', false).gte('sent_at', since).order('sent_at').limit(1),
-    db.from('email_sends').select('sent_at').eq('contact_id', contactId).gte('sent_at', since).order('sent_at').limit(1),
-  ])
-  if (calls.error) throw fail('call_logs', calls.error)
-  if (sends.error) throw fail('message_sends', sends.error)
-  if (emails.error) throw fail('email_sends', emails.error)
-  for (const r of [...(calls.data ?? []), ...(sends.data ?? []), ...(emails.data ?? [])] as any[]) t.push(Date.parse(r.created_at ?? r.sent_at))
-  const e = (email ?? '').trim().toLowerCase()
-  if (e.includes('@')) {
-    // shared mailboxes only (the 2026-11-09 mail privacy rule); absent until hub_236 is applied
-    const { data: shared } = await db.from('hub_mail_connections').select('id').eq('visibility', 'shared')
-    const ids = (shared ?? []).map((c: any) => c.id)
-    if (ids.length) {
-      const { data, error } = await db.from('hub_mail_sent').select('sent_at').in('connection_id', ids).eq('to_address', e).gte('sent_at', since).order('sent_at').limit(1)
-      if (!error) for (const m of data ?? []) t.push(Date.parse((m as any).sent_at))
-    }
-  }
-  const ok = t.filter((n) => !Number.isNaN(n))
-  return ok.length ? Math.min(...ok) : null
+  return (await firstTouches(db, [{ id: contactId, email, since }])).get(contactId) ?? null
 }
 
 /** Inbound leads 24 hours old with no outbound touch and no booking of their own. */
