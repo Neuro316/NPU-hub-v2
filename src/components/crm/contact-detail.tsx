@@ -33,6 +33,7 @@ import { needsName } from '@/lib/call-new-number'
 import { BookingAnswers } from '@/components/crm/booking-answers'
 import { CommunicationsHistory, type CommsFilter } from '@/components/crm/communications-history'
 import { useCommunications } from '@/components/crm/use-communications'
+import { RecentEmail } from '@/components/crm/recent-email'
 import { countTouches, commsTileAction } from '@/lib/comms/counts'
 import { conversationHref } from '@/lib/comms/conversation-link'
 import { DeviceAnswers } from '@/components/crm/device-answers'
@@ -1521,6 +1522,7 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                           <p className="text-[9px] text-gray-400">Emails{commCounts.privateEmails ? ` +${commCounts.privateEmails} private` : ''}</p>
                         </button>
                       </div>
+                      <RecentEmail contactId={contactId} />
                       <CommunicationsHistory state={comms} open={commsOpen} onOpenChange={setCommsOpen} filter={commsFilter} onFilterChange={setCommsFilter} />
                       {/* message text, recordings and transcripts live in Conversations (the removed Stats tab showed them read-only) */}
                       {conversations.length > 0 && (

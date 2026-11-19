@@ -14,6 +14,7 @@ related: [consent-unsubscribe, send-log, campaigns-hub]
 3. Choose Consent to see, for email and text, whether they may receive marketing and service messages, and the record each answer comes from.
 4. To record a decision made outside a form, such as on a call, use Record a decision made outside a form: choose the channel, the kind, and whether they agreed or withdrew, write what they agreed to, and press Save record.
 5. Choose Campaigns to see where they came from, which campaigns they are in, and the send decisions made for them.
+6. Above Communications, Recent email lists their last 7 email conversations across the connected mailboxes, newest first: the subject, the date, the mailbox and who replied last. It never shows the message itself. A conversation in someone else's private mailbox shows only as 1 private conversation with its date. With no email conversations, the block does not appear.
 
 ## Common mistakes
 - The Consent tab reads the consent record, not the older yes or no fields on the contact.
