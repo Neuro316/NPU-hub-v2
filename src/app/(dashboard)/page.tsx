@@ -5,6 +5,7 @@ import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
 import { readOrgSettingValue, saveTeamSetting } from '@/lib/org-settings-client'
 import Link from 'next/link'
+import { HubHealthCard } from '@/components/health/hub-health-tiles'
 import {
   Route, CheckSquare, Megaphone, Target, Brain, Image, BarChart3, Users,
   Lightbulb, ArrowRight, Sparkles, TrendingUp, Zap, Pencil, X, Save,
@@ -156,6 +157,9 @@ export default function DashboardPage() {
         <h1 className="text-2xl font-bold text-np-dark">{greeting}, {firstName}</h1>
         <p className="text-sm text-gray-500 mt-1">{currentOrg?.name} · NPU Hub</p>
       </div>
+
+      {/* Hub Health (q23): superadmins only; renders nothing for anyone else */}
+      <HubHealthCard />
 
       {/* ======= COMPANY OVERVIEW ======= */}
       <div className="bg-white border border-gray-100 rounded-2xl mb-8 overflow-hidden">

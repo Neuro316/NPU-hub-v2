@@ -58,6 +58,7 @@ const HARNESSES = [
   { file: 'scripts/marketing/test-drive-tamper.cjs', selectors: ['exitfortest', 'delayfortest', 'realskip', 'skipgate', 'norecord', 'hideended', '1'] },
   { file: 'scripts/marketing/gate-cap-tamper.cjs', selectors: ['capall', 'livetoo', 'anyone', 'otherchange', 'badrollback', '1'] },
   { file: 'scripts/crm/contact-fixes-tamper.cjs', selectors: ['olderwins', 'rawquery', 'oldcounts', 'countprivate', 'noswitch', 'ignoreid', '1'] },
+  { file: 'scripts/health/hub-health-tamper.cjs', selectors: ['ciok', 'deploywarn', 'prsgreen', 'oneway', 'guardsok', 'xregslow', 'crmok', 'smsmiss', 'emailmiss', 'slackmiss', 'mailwarn', 'platslow', 'realert', 'changequiet', 'noclear', 'platcompare', '1'] },
   { file: 'scripts/comms/recent-email-tamper.cjs', selectors: ['eight', 'oldest', 'permessage', 'showall', 'summary', 'noalt', '1'] },
   { file: 'scripts/comms/comms-tamper.cjs', selectors: ['privateopen', 'body', 'browserread', 'lifecycleall', 'nomerged', 'noalt', '1'] },
   { file: 'scripts/metrics/touch-tamper.cjs', selectors: ['sharedonly', 'readbody', 'countdry', 'nodelivered', 'tilebefore', '1'] },
@@ -74,6 +75,9 @@ report(tsc.code === 0, `tsc --noEmit${tsc.code !== 0 ? ` (${why(tsc)})\n${tsc.ou
 // the agent's bundled copies of the voice guide and the help articles must match their sources
 const gen = run(process.execPath, ['scripts/agent/gen-content.cjs', '--check'])
 report(gen.code === 0, `generated agent content is current${gen.code ? `\n${gen.out.slice(0, 500)}` : ''}`)
+// Hub Health's build-time repo facts (migration names, guard results) must match the repo
+const facts = run(process.execPath, ['scripts/health/gen-repo-facts.cjs', '--check'])
+report(facts.code === 0, `Hub Health repo facts are current${facts.code ? `\n${facts.out.slice(0, 500)}` : ''}`)
 
 // the Growth Dashboard's pure rules (targets both ways, product lines, coaching load, work back)
 const mc = run(process.execPath, ['scripts/metrics/metrics-check.cjs'])

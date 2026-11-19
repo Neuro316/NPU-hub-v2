@@ -7,7 +7,7 @@ Last updated: 2026-11-19, by the Code session on Shane's Mac. Applied times are 
 ## Session
 
 - **Running:** Code session on Shane's Mac (NPU-hub-v2).
-- **Live branch:** `feat/card-last-7-conversations` (q31: the contact card's last 7 email conversations).
+- **Live branch:** `feat/hub-health` (q23: Hub Health tiles, alerts and the bell).
 - **Cameron:** no Code session recorded on this repo. Say so here before starting one.
 
 ## Production
@@ -21,7 +21,7 @@ Last updated: 2026-11-19, by the Code session on Shane's Mac. Applied times are 
 
 | PR | Branch | What | Migration |
 |----|--------|------|-----------|
-| #69 | `feat/card-last-7-conversations` | q31 contact card: last 7 email conversations | none |
+| #70 | `feat/hub-health` | q23 Hub Health: tiles, 30-minute capture, alerts, bell | hub_244 (proposed) |
 | #46 | `feat/scheduling-agent-phase3` | Scheduling agent stage 1 | hub_234 (proposed) |
 | #18 | `revert/release-2026-10-31` | Draft rollback, do not merge | none |
 
