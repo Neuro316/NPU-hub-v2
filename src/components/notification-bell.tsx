@@ -10,6 +10,7 @@ import { createClient } from '@/lib/supabase-browser'
 import { useWorkspace } from '@/lib/workspace-context'
 import { usePermissions } from '@/lib/hooks/use-permissions'
 import { loadActivity, fromActivityRow, type ActivityEntry as NotifEntry } from '@/lib/activity-log'
+import { HealthAlertsSection, useHealthAlerts } from '@/components/health/health-alerts'
 
 const ICON_MAP: Record<string, { icon: any; color: string }> = {
   contact_created: { icon: UserPlus, color: '#2A9D8F' },
@@ -63,6 +64,9 @@ export function NotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0)
   const [lastSeen, setLastSeen] = useState<string | null>(null)
   const ref = useRef<HTMLDivElement>(null)
+  // health alerts (q23): unacknowledged ones stay in the badge until someone acknowledges them
+  const health = useHealthAlerts()
+  const badge = unreadCount + health.alerts.length
 
   // Load recent activity
   useEffect(() => {
@@ -141,10 +145,10 @@ export function NotificationBell() {
     <div ref={ref} className="relative">
       <button onClick={handleOpen}
         className="relative p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
-        <Bell size={16} className={unreadCount > 0 ? 'text-np-blue' : 'text-gray-400'} />
-        {unreadCount > 0 && (
+        <Bell size={16} className={badge > 0 ? 'text-np-blue' : 'text-gray-400'} />
+        {badge > 0 && (
           <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
-            {unreadCount > 9 ? '9+' : unreadCount}
+            {badge > 9 ? '9+' : badge}
           </span>
         )}
       </button>
@@ -158,6 +162,7 @@ export function NotificationBell() {
           </div>
 
           <div className="max-h-80 overflow-y-auto">
+            <HealthAlertsSection alerts={health.alerts} ack={health.ack} onNavigate={() => setOpen(false)} />
             {entries.length === 0 ? (
               <div className="text-center py-8">
                 <Activity size={24} className="mx-auto text-gray-400/30 mb-2" />

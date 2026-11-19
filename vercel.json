@@ -20,6 +20,7 @@
     { "path": "/api/cron/lead-alerts", "schedule": "* * * * *" },
     { "path": "/api/cron/lifecycle", "schedule": "2-59/5 * * * *" },
     { "path": "/api/cron/brief", "schedule": "5,35 12,13 * * 1-5" },
-    { "path": "/api/cron/form-placement", "schedule": "1-59/5 * * * *" }
+    { "path": "/api/cron/form-placement", "schedule": "1-59/5 * * * *" },
+    { "path": "/api/cron/hub-health", "schedule": "*/30 * * * *" }
   ]
 }
