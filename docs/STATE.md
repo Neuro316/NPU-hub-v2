@@ -21,7 +21,7 @@ Last updated: 2026-11-19, by the Code session on Shane's Mac. Applied times are 
 
 | PR | Branch | What | Migration |
 |----|--------|------|-----------|
-| (new) | `feat/wnw-holiday-lead-capture` | WNW holiday checklist lead capture | none |
+| #67 | `feat/wnw-holiday-lead-capture` | WNW holiday checklist lead capture | none |
 | #46 | `feat/scheduling-agent-phase3` | Scheduling agent stage 1 | hub_234 (proposed) |
 | #18 | `revert/release-2026-10-31` | Draft rollback, do not merge | none |
 
