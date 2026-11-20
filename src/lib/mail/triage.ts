@@ -86,7 +86,8 @@ export function validateTriage(raw: unknown): Triage | null {
   return { category, priority, summary, suggested_action }
 }
 
-export async function classifyEmail(msg: MessageForTriage): Promise<Triage> {
+/** guide: plain lines from the Inbox priority pill (src/lib/mail/priority.ts): category and priorities only. */
+export async function classifyEmail(msg: MessageForTriage, guide: string[] = []): Promise<Triage> {
   const apiKey = (process.env.ANTHROPIC_API_KEY || '').trim()
   if (!apiKey) throw new MailError('The AI key is not configured on this deployment.', 'ai_not_configured')
   const client = new Anthropic({ apiKey, timeout: 30_000, maxRetries: 1 })
@@ -105,7 +106,10 @@ export async function classifyEmail(msg: MessageForTriage): Promise<Triage> {
     reply = await client.beta.messages.create({
       model: TRIAGE_MODEL,
       max_tokens: 2000,
-      system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
+      system: [
+        { type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } },
+        ...(guide.length ? [{ type: 'text', text: `Staff corrected the priority of earlier mail from this same sender (newest first). Follow these when the category matches:\n${guide.join('\n')}` }] : []),
+      ],
       messages: [{ role: 'user', content: `<email_data>\n${fence(email)}\n</email_data>` }],
       output_config: { effort: 'low', format: { type: 'json_schema', schema: SCHEMA } },
       betas: ['server-side-fallback-2026-07-01'],

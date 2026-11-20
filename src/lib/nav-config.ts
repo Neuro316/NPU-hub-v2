@@ -17,6 +17,8 @@ export interface NavItem {
   /** Shown only to platform superadmins (profiles.role), which the client learns from the
    *  mail API answering 200; the page and its API enforce the same rule server-side. */
   superadminOnly?: boolean
+  /** a live count beside the label: 'mail_review' is the Inbox's Needs review count (/api/mail/drafts?view=count) */
+  badge?: 'mail_review'
 }
 
 export interface NavCategory {
@@ -69,7 +71,7 @@ export const navCategories: NavCategory[] = [
     label: 'OPERATE',
     collapsible: true,
     items: [
-      { label: 'Inbox', href: '/mail', icon: Inbox, moduleKey: 'mail_inbox', superadminOnly: true },
+      { label: 'Inbox', href: '/mail', icon: Inbox, moduleKey: 'mail_inbox', superadminOnly: true, badge: 'mail_review' },
       { label: 'Resources', href: '/resources', icon: FolderOpen, moduleKey: 'resources', superadminOnly: true },
       { label: 'Meetings', href: '/meetings', icon: Calendar, moduleKey: 'meetings' },
       { label: 'Rocks', href: '/rocks', icon: Target, moduleKey: 'rocks' },
