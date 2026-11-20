@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Inbox, ExternalLink, Check, Eye, RotateCcw, AlertTriangle, Loader2 } from 'lucide-react'
+import { DraftsTab } from '@/components/mail/drafts-tab'
 
 interface Mailbox { id: string; email_address: string; visibility: 'private' | 'shared'; status: string }
 interface Message {
@@ -45,6 +46,7 @@ export default function MailInboxPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const [tab, setTab] = useState<'inbox' | 'drafts'>('inbox')
 
   const load = useCallback(async (before?: string) => {
     setLoading(true); setError(null)
@@ -105,12 +107,22 @@ export default function MailInboxPage() {
         <div>
           <h1 className="text-lg font-bold text-np-dark">Inbox</h1>
           <p className="text-xs text-gray-400 mt-0.5">
-            New mail from connected mailboxes, sorted by AI. Checked every 5 minutes. Read-only: nothing is sent or changed in Gmail.
+            New mail from connected mailboxes, sorted by AI. Checked every 5 minutes. The Hub never sends: reply drafts wait in Gmail for you.
           </p>
         </div>
         <Link href="/settings?section=mailboxes" className="text-xs text-np-blue hover:underline flex-shrink-0">Manage mailboxes</Link>
       </div>
 
+      <div className="flex gap-1 border-b border-gray-100">
+        {(['inbox', 'drafts'] as const).map(t => (
+          <button key={t} onClick={() => setTab(t)}
+            className={`px-3 py-1.5 text-xs font-medium border-b-2 -mb-px ${tab === t ? 'border-np-blue text-np-blue' : 'border-transparent text-gray-400 hover:text-np-dark'}`}>
+            {t === 'inbox' ? 'Inbox' : 'Drafts'}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'drafts' ? <DraftsTab /> : <>
       <div className="flex flex-wrap gap-2">
         <select className={select} value={filters.mailbox} onChange={e => setFilters(f => ({ ...f, mailbox: e.target.value }))}>
           <option value="">All mailboxes</option>
@@ -202,6 +214,7 @@ export default function MailInboxPage() {
           <button onClick={() => load(next)} className="px-3 py-1.5 text-xs border border-gray-100 rounded-lg hover:bg-gray-50">Load more</button>
         </div>
       )}
+      </>}
     </div>
   )
 }

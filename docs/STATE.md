@@ -7,7 +7,7 @@ Last updated: 2026-11-19, by the Code session on Shane's Mac. Applied times are 
 ## Session
 
 - **Running:** Code session on Shane's Mac (NPU-hub-v2).
-- **Live branch:** `feat/touchpoint-monitor` (q35 Part 1: the waiting-on-us monitor and the review queue).
+- **Live branch:** `feat/drafts-review` (q10 and q35 Part 2, PR 1: drafting core, support drafts, the Drafts review tab).
 - **Cameron:** no Code session recorded on this repo. Say so here before starting one.
 
 ## Production
@@ -21,7 +21,7 @@ Last updated: 2026-11-19, by the Code session on Shane's Mac. Applied times are 
 
 | PR | Branch | What | Migration |
 |----|--------|------|-----------|
-| #71 | `feat/touchpoint-monitor` | q35 Part 1: touchpoint monitor and Follow-ups to review | hub_245 (proposed); hub_244 (proposed, #70) |
+| #72 | `feat/drafts-review` | Drafts and review PR 1: drafting core, support drafts, Drafts tab, learning loop | hub_246 (proposed); hub_244 (#70) and hub_245 (#71) also proposed |
 | #46 | `feat/scheduling-agent-phase3` | Scheduling agent stage 1 | hub_234 (proposed) |
 | #18 | `revert/release-2026-10-31` | Draft rollback, do not merge | none |
 

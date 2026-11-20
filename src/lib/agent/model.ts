@@ -17,6 +17,8 @@ export interface ModelRequest {
   system: TextBlockParam[]
   tools: Tool[]
   messages: MessageParam[]
+  /** structured output (drafts, q10): a JSON schema reply, used with no tools */
+  output_config?: { effort?: 'low' | 'medium' | 'high'; format?: { type: 'json_schema'; schema: Record<string, unknown> } }
 }
 
 export interface ModelReply {
@@ -40,14 +42,17 @@ export function liveClient(): ModelClient {
       const apiKey = (process.env.ANTHROPIC_API_KEY || '').trim()
       if (!apiKey) throw new ModelMisconfigured('missing_key')
       const client = new Anthropic({ apiKey, timeout: MODEL_TIMEOUT_MS, maxRetries: 1 })
+      // tool_choice is only valid with tools; a structured-output request (drafts) sends none
+      const { tools, ...rest } = req
+      const body = tools.length ? { ...req, tool_choice: { type: 'auto' } } : rest
       try {
         if (FALLBACK_MODELS.has(req.model)) {
           // a declined request is re-run on another model inside the same call; the reply's
           // `model` says which model answered, and cost is priced from that (pricing.ts)
-          const r = await client.beta.messages.create({ ...req, tool_choice: { type: 'auto' }, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } as any)
+          const r = await client.beta.messages.create({ ...body, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } as any)
           return r as unknown as ModelReply
         }
-        const r = await client.messages.create({ ...req, tool_choice: { type: 'auto' } })
+        const r = await client.messages.create(body as any)
         return r as unknown as ModelReply
       } catch (e) {
         if (e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError) throw new ModelMisconfigured('auth')
