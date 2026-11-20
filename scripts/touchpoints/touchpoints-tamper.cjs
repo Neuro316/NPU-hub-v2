@@ -19,11 +19,14 @@
 //   S_DIGEST   the daily Slack suggestion goes once per recipient on the first run after 8 AM ET, never again that day,
 //              and never before 8 AM
 //   S_STAFF2   a staff member's second address (their auth user email, not their profile's) gets no card, nor does the
-//              address of a platform admin profile with no team row
+//              address of a platform admin profile that is an owner or admin of THIS Hub org (org_members) with no team row
 //   S_MAILBOX  a contact whose email is a connected mailbox address gets no card
 //   S_DUP      two contacts sharing an email (case and spaces aside) are one person: ONE situation per kind, on the more
 //              recently active contact (its own when it has one), with the other's id in detail.duplicate_of
 //   S_CLEARSTAFF an open situation whose contact turns out to be staff is cleared as staff_or_duplicate, with that note
+//   S_OTHERORG a platform admin of ANOTHER org (a client running their own University org) is not staff: still eligible
+//   S_REOPEN   a situation cleared as staff_or_duplicate reopens, the same row and a new card, once its contact is no
+//              longer excluded (the key is unique per org, so it is the same row, not a second one)
 //
 //   bookskip     the booking-link wait is 100 times longer                 {S_BOOK}
 //   mailskip     the email wait is 100 times longer                        {S_MAIL}
@@ -39,7 +42,9 @@
 //   staff_mailbox_address  connected mailbox addresses are not staff      {S_MAILBOX}
 //   duplicate_pair         duplicates are not collapsed                   {S_DUP}
 //   clear_on_staff         open rows of staff contacts are not cleared as staff_or_duplicate  {S_CLEARSTAFF}
-// TAMPER=1 reddens the sum (14).
+//   other_org_admin        an admin of any org counts as staff            {S_OTHERORG}
+//   reopen_after_clear     a staff_or_duplicate clear blocks the key for good  {S_REOPEN}
+// TAMPER=1 reddens the sum (16).
 const H = require('../agent/lib/harness.cjs')
 
 const D = 'lib/touchpoints/detect.ts', RUN = 'lib/touchpoints/run.ts', RU = 'lib/touchpoints/rules.ts'
@@ -56,12 +61,15 @@ const TAMPERS = {
   staff_mailbox_address: [[RUN, '  for (const b of (boxes ?? []) as any[]) addE(b.email_address)\n', '']],
   duplicate_pair: [[RUN, "    return dups?.length ? { ...f, detail: { ...f.detail, duplicate_of: dups.join(',') } } : f", '    return f']],
   clear_on_staff: [[RUN, 'const reason = elig.excluded.has(r.contact_id) ? STAFF_OR_DUPLICATE : clearReason(', 'const reason = clearReason(']],
+  other_org_admin: [[RUN, ".from('org_members').select('user_id').eq('organization_id', orgId).eq('status', 'active')", ".from('org_members').select('user_id').eq('status', 'active')"]],
+  reopen_after_clear: [[RUN, '.filter((r) => r.cleared_reason === STAFF_OR_DUPLICATE)', '.filter(() => false)']],
   readsubject: [[D, "export const INBOUND_COLUMNS = 'id, connection_id, gmail_thread_id, from_address, received_at'", "export const INBOUND_COLUMNS = 'id, connection_id, gmail_thread_id, from_address, received_at, subject'"]],
   dailyagain: [[RU, '  return claimedDays.includes(day) ? null : day', '  return day']],
 }
 const RED_OF = { bookskip: ['S_BOOK'], mailskip: ['S_MAIL'], textskip: ['S_TEXT'], courseskip: ['S_COURSE'], discskip: ['S_DISC'], twice: ['S_ONCE'],
   noclearmove: ['S_CLEAR'], letin: ['S_EXCLUDE'], readsubject: ['S_NOCONTENT'], dailyagain: ['S_DIGEST'],
-  staff_second_email: ['S_STAFF2'], staff_mailbox_address: ['S_MAILBOX'], duplicate_pair: ['S_DUP'], clear_on_staff: ['S_CLEARSTAFF'] }
+  staff_second_email: ['S_STAFF2'], staff_mailbox_address: ['S_MAILBOX'], duplicate_pair: ['S_DUP'], clear_on_staff: ['S_CLEARSTAFF'],
+  other_org_admin: ['S_OTHERORG'], reopen_after_clear: ['S_REOPEN'] }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-touchpoints')
 const load = H.install(out)
@@ -76,12 +84,14 @@ function world() {
   return {
     contacts: [contact('cbook'), contact('cmail'), contact('ctext'), contact('ccourse'), contact('cdisc'),
       contact('ctest', { tags: ['Test'] }), contact('cstaff', { email: 'staff@neuroprogeny.com' }),
-      contact('csecond', { email: 'staff.second@gmail.com' }), contact('cadmin', { email: 'admin.person@gmail.com' }), contact('cbox', { email: 'admin@neuroprogeny.com' }),
+      contact('csecond', { email: 'staff.second@gmail.com' }), contact('cadmin', { email: 'admin.person@gmail.com' }), contact('cbox', { email: 'admin@neuroprogeny.com' }), contact('cother', { email: 'other.admin@gmail.com' }),
       contact('cdupa', { email: 'dup@example.com', last_email_at: ago(1) }), contact('cdupb', { email: ' DUP@Example.com ', last_email_at: ago(200) })],
     team_profiles: [{ org_id: ORG, user_id: STAFF_USER, role: 'team_member', status: 'active', display_name: 'Staff' },
       { org_id: ORG, user_id: OWNER, role: 'super_admin', status: 'active', display_name: 'Owner' }],
     profiles: [{ id: STAFF_USER, email: 'staff@neuroprogeny.com', role: 'participant' }, { id: 'u-course', email: 'ccourse@example.com', role: 'participant' },
-      { id: 'u-admin2', email: 'admin.person@gmail.com', role: 'admin' }],
+      { id: 'u-admin2', email: 'admin.person@gmail.com', role: 'admin' }, { id: 'u-other', email: 'other.admin@gmail.com', role: 'admin' }],
+    // u-admin2 runs THIS Hub org; u-other is an admin of another org only (a client with their own University org)
+    org_members: [{ user_id: 'u-admin2', organization_id: ORG, role: 'owner', status: 'active' }, { user_id: 'u-other', organization_id: 'org-client', role: 'admin', status: 'active' }],
     auth_users: [{ id: STAFF_USER, email: 'staff.second@gmail.com' }],
     hub_mail_connections: [{ id: 'box1', org_id: ORG, email_address: 'admin@neuroprogeny.com', owner_user_id: OWNER, visibility: 'private' }],
     hub_resources: [{ id: 'res-book', org_id: ORG, kind: 'booking_link' }],
@@ -142,7 +152,7 @@ function memDb(T) {
           T[table].push(...list)
           return { data: mode === 'one' ? list[0] : list, error: null }
         }
-        if (upd) { const rows = filt(T[table]); for (const r of rows) Object.assign(r, upd[1][0]); return { data: rows, error: null } }
+        if (upd) { const rows = filt(T[table]); for (const r of rows) Object.assign(r, upd[1][0]); return mode === "one" ? (rows[0] ? { data: rows[0], error: null } : { data: null, error: { code: "PGRST116" } }) : { data: rows, error: null } }
         let rows = filt(T[table].slice())
         const ord = ops.find((o) => o[0] === 'order')
         if (ord) rows.sort((x, y) => (ord[1][1]?.ascending === false ? -1 : 1) * cmp(x[ord[1][0]], y[ord[1][0]]))
@@ -268,6 +278,25 @@ const check = (id, ok, got) => rows.push({ id, ok: !!ok, got })
     await run.runTouchpoints(deps(T))
     const s = T.hub_touchpoint_situations.find((x) => x.id === 'open-s'), c = T.kanban_tasks.find((x) => x.id === 'card-s')
     check('S_CLEARSTAFF', s.cleared_at && s.cleared_reason === 'staff_or_duplicate' && /staff, or a duplicate/.test(c.description), { reason: s.cleared_reason, note: c.description })
+  }
+
+  // ── an admin of another org is not staff; a staff_or_duplicate clear reopens ──
+  {
+    const e = await run.eligibleContacts(deps(world()))
+    check('S_OTHERORG', e.contacts.has('cother') && !e.excluded.has('cother'), { cother: e.excluded.get('cother') ?? 'eligible' })
+  }
+  {
+    const T = world()
+    T.kanban_tasks.push({ id: 'card-old', org_id: ORG, column_id: 'col-done', title: 'cother: emailed us', description: 'Cleared on its own' })
+    T.hub_touchpoint_situations.push({ id: 'was', org_id: ORG, contact_id: 'cother', kind: 'inbound_no_reply', situation_key: 'cother:inbound_no_reply:mo1',
+      waiting_since: ago(50), opened_at: ago(20), cleared_at: ago(5), cleared_reason: 'staff_or_duplicate', severity: 'low', detail: {}, task_id: 'card-old' })
+    // the raise step itself, on the situation the detector finds for cother (independent of the detectors)
+    const f = { contactId: 'cother', kind: 'inbound_no_reply', key: 'cother:inbound_no_reply:mo1', triggerId: 'mo1', since: ago(50), detail: { message_id: 'mo1' } }
+    const n = await run.raiseCandidates(deps(T), [f], new Set(), new Map([['cother', 'Other Admin']]))
+    const rowsFor = T.hub_touchpoint_situations.filter((x) => x.situation_key === f.key)
+    const card = T.kanban_tasks.find((t) => t.id === rowsFor[0]?.task_id)
+    check('S_REOPEN', n === 1 && rowsFor.length === 1 && rowsFor[0].id === 'was' && rowsFor[0].cleared_at === null && rowsFor[0].cleared_reason === null
+      && card && card.id !== 'card-old' && card.column_id === reviewCol(T)?.id, { n, rows: rowsFor.map((r) => ({ id: r.id, cleared: r.cleared_at, task: r.task_id })) })
   }
 
   H.report(rows, active, RED_OF)

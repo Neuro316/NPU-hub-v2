@@ -31,6 +31,8 @@ const MISSING = ['42P01', 'PGRST205']
 export const STAFF_OR_DUPLICATE = 'staff_or_duplicate'
 /** team_profiles roles that make a person staff (the same list as api-guard's STAFF_TEAM_ROLES). */
 const STAFF_TEAM_ROLES = ['super_admin', 'admin', 'team_member']
+/** org_members roles that make a platform admin staff of the Hub org the run is for. */
+const HUB_ORG_ADMIN_ROLES = ['owner', 'admin']
 
 export interface RunDeps {
   db: SupabaseClient
@@ -68,10 +70,11 @@ const activity = (c: any) => Math.max(...['last_contacted_at', 'last_call_at', '
  * Every address and phone that belongs to staff, built once per run. A person is staff when an ACTIVE team_profiles
  * row (any org) names them, and any of these is theirs: the team_profiles email or phone, their profile email or
  * phone, their auth user email (auth.users, through the service client), or a connected mailbox address. A platform
- * profile with role admin or superadmin is staff too: a staff member's second account (Shane's second address on
- * 2026-11-20 was one) has no team_profiles row.
+ * profile is staff too when its role is superadmin, or its role is admin AND it is an active owner or admin of THIS Hub
+ * org (org_members, organization_id = the run's org). An admin of any other org is not staff: a client who runs their
+ * own University org is an admin there (one was cleared as staff on 2026-11-20 until this rule was narrowed).
  */
-export async function staffAddresses(db: SupabaseClient): Promise<{ emails: Set<string>; phones: Set<string> }> {
+export async function staffAddresses(db: SupabaseClient, orgId: string): Promise<{ emails: Set<string>; phones: Set<string> }> {
   const emails = new Set<string>(), phones = new Set<string>()
   const addE = (e: unknown) => { if (lower(e).includes('@')) emails.add(lower(e)) }
   const addP = (p: unknown) => { if (last10(p)) phones.add(last10(p)) }
@@ -83,9 +86,22 @@ export async function staffAddresses(db: SupabaseClient): Promise<{ emails: Set<
   const { data: ps, error: pErr } = ids.length ? await db.from('profiles').select('id, email, phone').in('id', ids) : { data: [], error: null } as any
   if (pErr) throw fail('profiles', pErr)
   for (const p of (ps ?? []) as any[]) { addE(p.email); addP(p.phone) }
-  const { data: admins, error: aErr } = await db.from('profiles').select('id, email, phone').in('role', ['admin', 'superadmin'])
+  // platform profiles: a superadmin is staff; an admin is staff ONLY as an owner or admin of THIS Hub org (an active
+  // org_members row). An admin of another org, such as a client who runs their own University org, is not staff.
+  const { data: admins, error: aErr } = await db.from('profiles').select('id, email, phone, role').in('role', ['admin', 'superadmin'])
   if (aErr) throw fail('profiles admins', aErr)
-  for (const p of (admins ?? []) as any[]) { addE(p.email); addP(p.phone); if (p.id && !ids.includes(p.id)) ids.push(p.id) }
+  const adminIds = ((admins ?? []) as any[]).filter((p) => p.role === 'admin').map((p) => p.id)
+  const hubAdmins = new Set<string>()
+  if (adminIds.length) {
+    const { data: om, error: oErr } = await db.from('org_members').select('user_id').eq('organization_id', orgId).eq('status', 'active')
+      .in('role', HUB_ORG_ADMIN_ROLES).in('user_id', adminIds)
+    if (oErr) throw fail('org_members', oErr)
+    for (const m of (om ?? []) as any[]) hubAdmins.add(m.user_id)
+  }
+  for (const p of (admins ?? []) as any[]) {
+    if (p.role !== 'superadmin' && !hubAdmins.has(p.id)) continue
+    addE(p.email); addP(p.phone); if (p.id && !ids.includes(p.id)) ids.push(p.id)
+  }
   for (const id of ids) {
     const r = await (db as any).auth?.admin?.getUserById?.(id)
     addE(r?.data?.user?.email)
@@ -100,7 +116,7 @@ export async function staffAddresses(db: SupabaseClient): Promise<{ emails: Set<
 /** The contacts that may be raised, the staff and duplicate exclusions, and each duplicate group's primary. */
 export async function eligibleContacts(d: RunDeps): Promise<Eligible> {
   const { db, orgId } = d
-  const staff = await staffAddresses(db)
+  const staff = await staffAddresses(db, orgId)
   const out: Eligible = { contacts: new Map(), names: new Map(), excluded: new Map(), primaryOf: new Map(), duplicatesOf: new Map() }
   const kept: any[] = []
   for (let from = 0; ; from += 1000) {
@@ -190,13 +206,19 @@ async function columnId(db: SupabaseClient, orgId: string, title: string): Promi
   return (data as any[] | null)?.[0]?.id ?? null
 }
 
-async function raise(d: RunDeps, s: Found, name: string, colId: string, ownerName: string | null): Promise<boolean> {
+/**
+ * Raises one situation: a new row, or (reopenId) the same row again when it was cleared only because its contact was
+ * taken for staff or a duplicate. The key is unique per org, so a reopen updates that row rather than inserting.
+ */
+async function raise(d: RunDeps, s: Found, name: string, colId: string, ownerName: string | null, reopenId: string | null = null): Promise<boolean> {
   const { db, orgId, now } = d
   const sev = severity(s.kind, now - Date.parse(s.since))
-  const { data: row, error } = await db.from(TABLE).insert({
-    org_id: orgId, contact_id: s.contactId, kind: s.kind, situation_key: s.key, waiting_since: s.since, opened_at: iso(now), severity: sev, detail: s.detail,
-  }).select('id').single()
-  if (error?.code === '23505') return false // raised before, or one already open for this contact and situation
+  const fields = { contact_id: s.contactId, kind: s.kind, waiting_since: s.since, opened_at: iso(now), severity: sev, detail: s.detail }
+  const { data: row, error } = reopenId
+    ? await db.from(TABLE).update({ ...fields, cleared_at: null, cleared_reason: null, task_id: null, updated_at: iso(now) })
+      .eq('id', reopenId).eq('cleared_reason', STAFF_OR_DUPLICATE).select('id').single()
+    : await db.from(TABLE).insert({ org_id: orgId, situation_key: s.key, ...fields }).select('id').single()
+  if (error?.code === '23505' || (reopenId && error?.code === 'PGRST116')) return false // one is already open, or nothing to reopen
   if (error || !row) throw fail('situation write', error)
   const why = whyLine(s.kind, now - Date.parse(s.since))
   const { data: card, error: kErr } = await db.from('kanban_tasks').insert({
@@ -274,20 +296,33 @@ export async function runTouchpoints(d: RunDeps): Promise<RunOut> {
 
   // raise: never a key seen before (open or cleared), one open per contact and situation, new ones inside the lookback
   const candidates = found.filter((f) => Date.parse(f.since) >= now - LOOKBACK_DAYS * DAY && contacts.has(f.contactId) && !elig.excluded.has(f.contactId))
-  if (candidates.length) {
-    const { data: seen, error: sErr } = await db.from(TABLE).select('situation_key').eq('org_id', orgId).in('situation_key', candidates.map((c) => c.key))
-    if (sErr) throw fail('situations keys', sErr)
-    const known = new Set(((seen ?? []) as any[]).map((r) => r.situation_key as string))
-    const list = toRaise(candidates, known, stillOpen)
-    if (list.length) {
-      const col = await ensureReviewColumn(db, orgId)
-      const { data: who } = await db.from('team_profiles').select('display_name').eq('org_id', orgId).eq('user_id', d.owner).maybeSingle()
-      for (const s of list) if (await raise(d, s, names.get(s.contactId) ?? 'Contact', col, (who as any)?.display_name ?? null)) out.raised++
-    }
-  }
+  out.raised += await raiseCandidates(d, candidates, stillOpen, names)
 
   out.digest = await dailyDigest(d, out)
   return out
+}
+
+/**
+ * Raises the candidates: never a key raised before (open or cleared), except one cleared only as staff_or_duplicate,
+ * which reopens; one open per contact and situation.
+ */
+export async function raiseCandidates(d: RunDeps, candidates: Found[], stillOpen: Set<string>, names: Map<string, string>): Promise<number> {
+  const { db, orgId } = d
+  if (!candidates.length) return 0
+  let raised = 0
+  const { data: seen, error: sErr } = await db.from(TABLE).select('id, situation_key, cleared_reason').eq('org_id', orgId).in('situation_key', candidates.map((c) => c.key))
+  if (sErr) throw fail('situations keys', sErr)
+  // a key cleared only as staff_or_duplicate is not "raised before": its contact was wrongly taken for staff or a
+  // duplicate, so it may reopen (the same row) once the contact is eligible again
+  const reopenable = new Map(((seen ?? []) as any[]).filter((r) => r.cleared_reason === STAFF_OR_DUPLICATE).map((r) => [r.situation_key as string, r.id as string]))
+  const known = new Set(((seen ?? []) as any[]).map((r) => r.situation_key as string).filter((k) => !reopenable.has(k)))
+  const list = toRaise(candidates, known, stillOpen)
+  if (list.length) {
+    const col = await ensureReviewColumn(db, orgId)
+    const { data: who } = await db.from('team_profiles').select('display_name').eq('org_id', orgId).eq('user_id', d.owner).maybeSingle()
+    for (const s of list) if (await raise(d, s, names.get(s.contactId) ?? 'Contact', col, (who as any)?.display_name ?? null, reopenable.get(s.key) ?? null)) raised++
+  }
+  return raised
 }
 
 /** Once a day, first run at or after 8 AM ET: claim the day, count the last 7 days, and DM each recipient. */
