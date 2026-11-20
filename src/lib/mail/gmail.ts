@@ -74,6 +74,9 @@ export interface MessageForTriage {
   receivedAt: string | null
   /** first BODY_CHARS of plain text; in memory only, never stored or logged */
   body: string
+  /** the RFC 822 Message-ID and References headers, for a reply drafted in the same thread (q10 drafts); never stored */
+  rfcMessageId?: string | null
+  references?: string | null
 }
 
 function decodePart(data: string | undefined): string {
@@ -124,6 +127,8 @@ export async function getMessageForTriage(accessToken: string, id: string): Prom
     subject: (header('subject') ?? '').slice(0, 500) || null,
     receivedAt: Number.isFinite(internal) && internal > 0 ? new Date(internal).toISOString() : null,
     body: plain.replace(/[ \t\f\v\r]+/g, ' ').replace(/\n\s*\n+/g, '\n\n').trim().slice(0, BODY_CHARS),
+    rfcMessageId: (header('message-id') ?? '').trim().slice(0, 500) || null,
+    references: (header('references') ?? '').trim().slice(0, 2000) || null,
   }
 }
 

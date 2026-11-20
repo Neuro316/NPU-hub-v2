@@ -64,6 +64,7 @@ export const REPO_FACTS: RepoFacts = {
     'hub_243_test_contact_cap_exempt',
     'hub_244_migration_ledger_reader',
     'hub_245_touchpoint_situations',
+    'hub_246_drafts',
     'shipit_projects'
   ],
   guards: [
@@ -142,6 +143,7 @@ export const REPO_FACTS: RepoFacts = {
     '242',
     '243',
     '244',
-    '245'
+    '245',
+    '246'
   ]
 }
