@@ -2,7 +2,7 @@
 // One funnel campaign: where people enter the pipeline, what starts it, its steps, its
 // goal, and how it sends. Every message is a dry run until live sending is switched on.
 import { useMemo, useState } from 'react'
-import { Play, ShieldCheck, Link2, X, Target, Wand2 } from 'lucide-react'
+import { Play, ShieldCheck, Link2, X, Target, Wand2, Square } from 'lucide-react'
 import { api } from '@/lib/marketing/client'
 import { useToast } from '@/components/ui/toast'
 import { describeSource, sourceGapText } from '@/lib/marketing/ui-logic'
@@ -26,6 +26,7 @@ export function FunnelDetail({ orgId, data, campaign, reload, onGuided, tasks = 
   const [c, setC] = useState(campaign)
   const [busy, setBusy] = useState(false)
   const [drive, setDrive] = useState<{ at: number; result: any } | null>(null)
+  const [driveActive, setDriveActive] = useState(false)
   const stages = useMemo(() => data.stages.filter((s) => s.pipeline_id === c.entry_pipeline_id && !s.archived_at).sort((a, b) => a.position - b.position), [data.stages, c.entry_pipeline_id])
   const routes = data.routes.filter((r) => r.campaign_id === c.id)
   const steps = data.steps.filter((s) => s.sequence_id === c.sequence_id).sort((a, b) => (a.step_order ?? 0) - (b.step_order ?? 0))
@@ -47,6 +48,12 @@ export function FunnelDetail({ orgId, data, campaign, reload, onGuided, tasks = 
   async function live(on: boolean) {
     try { const r = await api('/api/marketing/campaigns/live', { org_id: orgId, id: c.id, live: on }); setC({ ...c, live_enabled: r.campaign.live_enabled }); toast.show(on ? 'Live sending is on for this campaign.' : 'This campaign is back to dry runs.'); reload() }
     catch (e: any) { toast.show(e.message, 'error') }
+  }
+  async function stopTestDrive() {
+    try {
+      await api('/api/marketing/test-drive-stop', { org_id: orgId, campaign_id: c.id })
+      setDriveActive(false); setDrive({ at: Date.now(), result: null }); toast.show('The test drive is stopped. No further step will run.')
+    } catch (e: any) { toast.show(e.message, 'error') }
   }
   async function testDrive() {
     try {
@@ -132,6 +139,7 @@ export function FunnelDetail({ orgId, data, campaign, reload, onGuided, tasks = 
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center"><button type="button" data-help-id="funnel.test-drive" onClick={testDrive} className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium hover:bg-gray-50"><Play className="h-3.5 w-3.5" aria-hidden />Test drive with my test contact</button><Help topic="Test drive" k="testDrive" /></span>
+          {driveActive && data.can_go_live && <button type="button" onClick={stopTestDrive} className="inline-flex items-center gap-1 rounded-lg border border-gold/40 px-3 py-1.5 text-xs font-medium text-np-dark hover:bg-gold-light"><Square className="h-3.5 w-3.5" aria-hidden />Stop test drive</button>}
           <span className="flex-1" />
           <label className="inline-flex items-center gap-2 text-xs text-gray-600">
             <input type="checkbox" data-help-id="funnel.live" checked={c.live_enabled} disabled={!data.can_go_live} onChange={(e) => live(e.target.checked)} />
@@ -140,7 +148,7 @@ export function FunnelDetail({ orgId, data, campaign, reload, onGuided, tasks = 
         </div>
         {c.status !== 'active' && <p className="mt-1 text-[11px] text-gray-500">A test drive only runs on an active campaign. Set the status to Active and save first.</p>}
         {!data.can_go_live && <p className="mt-1 text-right text-[11px] text-gray-400">Only a platform superadmin can switch live sending on.</p>}
-        <TestDriveResult campaignId={c.id} startedAt={drive?.at ?? null} enrollResult={drive?.result ?? null} />
+        <TestDriveResult campaignId={c.id} startedAt={drive?.at ?? null} enrollResult={drive?.result ?? null} onActive={setDriveActive} />
       </div>
       <CampaignTasks orgId={orgId} tasks={tasks} reload={reload} />
     </div>

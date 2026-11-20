@@ -14,7 +14,8 @@ related: [dry-run-vs-live, send-log, campaigns-hub]
 3. In the Sending section, press Test drive with my test contact.
 4. Wait for the engine's next run, about five minutes. Each step then runs on the next run after the one before, without the campaign's waits, and the result appears below the button on its own.
 5. For each step, read the decision and its reason, and the subject and first lines of what would have been sent, with your test contact's name filled in.
-6. The latest test drive stays on the page after it ends, with when it ran and, if it ended early, why.
+6. The latest test drive stays on the page after it ends, with when it ran and, if it ended early, why, in plain words such as Stopped by staff or Ended: booking cancelled.
+   While a test drive is running, a superadmin sees Stop test drive beside the test drive button. It ends the test drive at once and no further step runs.
 7. To test what starts the campaign, submit its form yourself, or move your test contact into the stage it listens for.
 8. When you are done, set the campaign back to Draft or Paused if it is not ready for real people.
 

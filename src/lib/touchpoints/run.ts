@@ -1,8 +1,9 @@
 // src/lib/touchpoints/run.ts
 // One touchpoint monitor run for one org (Running List q35, Part 1). Server only (service role).
 //   1. the contacts that may be raised: not merged or archived, not do-not-contact, not test (the shared test filter:
-//      a "test" tag, campaign_test_contacts, the exclusion list), and not staff (an active staff member's profile
-//      email, or a connected mailbox's address)
+//      a "test" tag, campaign_test_contacts, the exclusion list), and not staff under any known address or phone
+//      (staffAddresses). Contacts sharing an email or a phone are one person: at most one card per person per kind,
+//      on the contact with the most recent activity (collapseDuplicates)
 //   2. detect (detect.ts), then raise new situations: one row in hub_touchpoint_situations (hub_245) and ONE card in
 //      the board column "Follow-ups to review" (made here on first use, placed before Action Steps)
 //   3. clear open situations that cleared on their own: the row gets cleared_at and the reason, the card moves to Done
@@ -26,6 +27,8 @@ const iso = (t: number) => new Date(t).toISOString()
 const fail = (what: string, e: { code?: string } | null) => new Error(`${what}: ${e?.code ?? 'unknown'}`)
 const lower = (s: unknown) => String(s ?? '').trim().toLowerCase()
 const MISSING = ['42P01', 'PGRST205']
+/** cleared_reason for a situation whose contact is now known to be staff, or a duplicate of another contact. */
+export const STAFF_OR_DUPLICATE = 'staff_or_duplicate'
 /** team_profiles roles that make a person staff (the same list as api-guard's STAFF_TEAM_ROLES). */
 const STAFF_TEAM_ROLES = ['super_admin', 'admin', 'team_member']
 
@@ -41,35 +44,127 @@ export interface RunDeps {
 }
 export interface RunOut { skipped?: string; raised: number; cleared: number; digest: string | null; counts: Record<string, number> }
 
-/** The contacts that may be raised, by id. */
-export async function eligibleContacts(d: RunDeps): Promise<{ contacts: Map<string, Contact>; names: Map<string, string> }> {
-  const { db, orgId } = d
-  const staff = new Set<string>()
-  const { data: tps, error } = await db.from('team_profiles').select('user_id, role').eq('org_id', orgId).eq('status', 'active')
+export type Excluded = 'staff' | 'duplicate'
+export interface Eligible {
+  /** contacts detection looks at: not merged, archived, do-not-contact, test or staff (duplicates are kept, see dupes) */
+  contacts: Map<string, Contact>
+  names: Map<string, string>
+  /** every contact in the org that is staff, or a duplicate that is not its person's primary contact */
+  excluded: Map<string, Excluded>
+  /** contact id -> the primary contact of its person (only for contacts that have duplicates) */
+  primaryOf: Map<string, string>
+  /** primary contact id -> the other contact ids of the same person */
+  duplicatesOf: Map<string, string[]>
+}
+
+const last10 = (p: unknown) => { const d = String(p ?? '').replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : '' }
+const altEmails = (cf: unknown) => {
+  const v = cf && typeof cf === 'object' ? (cf as Record<string, unknown>).alt_emails : null
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').map(lower).filter((x) => x.includes('@')) : []
+}
+const activity = (c: any) => Math.max(...['last_contacted_at', 'last_call_at', 'last_text_at', 'last_email_at', 'updated_at', 'created_at'].map((k) => Date.parse(c[k] ?? '') || 0))
+
+/**
+ * Every address and phone that belongs to staff, built once per run. A person is staff when an ACTIVE team_profiles
+ * row (any org) names them, and any of these is theirs: the team_profiles email or phone, their profile email or
+ * phone, their auth user email (auth.users, through the service client), or a connected mailbox address. A platform
+ * profile with role admin or superadmin is staff too: a staff member's second account (Shane's second address on
+ * 2026-11-20 was one) has no team_profiles row.
+ */
+export async function staffAddresses(db: SupabaseClient): Promise<{ emails: Set<string>; phones: Set<string> }> {
+  const emails = new Set<string>(), phones = new Set<string>()
+  const addE = (e: unknown) => { if (lower(e).includes('@')) emails.add(lower(e)) }
+  const addP = (p: unknown) => { if (last10(p)) phones.add(last10(p)) }
+  const { data: tps, error } = await db.from('team_profiles').select('user_id, role, email, phone').eq('status', 'active')
   if (error) throw fail('team_profiles', error)
-  const staffIds = ((tps ?? []) as any[]).filter((t) => STAFF_TEAM_ROLES.includes(t.role)).map((t) => t.user_id)
-  if (staffIds.length) {
-    const { data: ps, error: pErr } = await db.from('profiles').select('email').in('id', staffIds)
-    if (pErr) throw fail('profiles', pErr)
-    for (const p of (ps ?? []) as any[]) if (lower(p.email)) staff.add(lower(p.email))
+  const staffTps = ((tps ?? []) as any[]).filter((t) => STAFF_TEAM_ROLES.includes(t.role))
+  for (const t of staffTps) { addE(t.email); addP(t.phone) }
+  const ids = Array.from(new Set(staffTps.map((t) => t.user_id).filter(Boolean)))
+  const { data: ps, error: pErr } = ids.length ? await db.from('profiles').select('id, email, phone').in('id', ids) : { data: [], error: null } as any
+  if (pErr) throw fail('profiles', pErr)
+  for (const p of (ps ?? []) as any[]) { addE(p.email); addP(p.phone) }
+  const { data: admins, error: aErr } = await db.from('profiles').select('id, email, phone').in('role', ['admin', 'superadmin'])
+  if (aErr) throw fail('profiles admins', aErr)
+  for (const p of (admins ?? []) as any[]) { addE(p.email); addP(p.phone); if (p.id && !ids.includes(p.id)) ids.push(p.id) }
+  for (const id of ids) {
+    const r = await (db as any).auth?.admin?.getUserById?.(id)
+    addE(r?.data?.user?.email)
+    addP(r?.data?.user?.phone)
   }
   const { data: boxes, error: bErr } = await db.from('hub_mail_connections').select('email_address')
   if (bErr) throw fail('hub_mail_connections', bErr)
-  for (const b of (boxes ?? []) as any[]) if (lower(b.email_address)) staff.add(lower(b.email_address))
+  for (const b of (boxes ?? []) as any[]) addE(b.email_address)
+  return { emails, phones }
+}
 
-  const contacts = new Map<string, Contact>(), names = new Map<string, string>()
+/** The contacts that may be raised, the staff and duplicate exclusions, and each duplicate group's primary. */
+export async function eligibleContacts(d: RunDeps): Promise<Eligible> {
+  const { db, orgId } = d
+  const staff = await staffAddresses(db)
+  const out: Eligible = { contacts: new Map(), names: new Map(), excluded: new Map(), primaryOf: new Map(), duplicatesOf: new Map() }
+  const kept: any[] = []
   for (let from = 0; ; from += 1000) {
-    const { data, error: cErr } = await db.from('contacts').select('id, first_name, last_name, email, phone, tags, do_not_contact')
+    const { data, error: cErr } = await db.from('contacts')
+      .select('id, first_name, last_name, email, phone, tags, do_not_contact, custom_fields, last_contacted_at, last_call_at, last_text_at, last_email_at, updated_at, created_at')
       .eq('org_id', orgId).is('merged_into_id', null).is('archived_at', null).range(from, from + 999)
     if (cErr) throw fail('contacts', cErr)
     for (const c of (data ?? []) as any[]) {
-      if (c.do_not_contact || d.isTest(c) || staff.has(lower(c.email))) continue
-      contacts.set(c.id, { id: c.id, email: c.email ?? null })
-      names.set(c.id, [c.first_name, c.last_name].filter(Boolean).join(' ').trim() || 'Unnamed contact')
+      const mails = [lower(c.email), ...altEmails(c.custom_fields)].filter((e) => e.includes('@'))
+      if (mails.some((e) => staff.emails.has(e)) || (last10(c.phone) && staff.phones.has(last10(c.phone)))) { out.excluded.set(c.id, 'staff'); continue }
+      if (c.do_not_contact || d.isTest(c)) continue
+      kept.push({ ...c, mails })
     }
     if ((data ?? []).length < 1000) break
   }
-  return { contacts, names }
+  // duplicates: contacts sharing a normalised email or the last 10 digits of a phone are one person (union-find)
+  const parent = new Map<string, string>(kept.map((c) => [c.id, c.id]))
+  const root = (x: string): string => { while (parent.get(x) !== x) x = parent.get(x)!; return x }
+  const owner = new Map<string, string>()
+  for (const c of kept) {
+    for (const k of [...c.mails.map((e: string) => `e:${e}`), ...(last10(c.phone) ? [`p:${last10(c.phone)}`] : [])]) {
+      const o = owner.get(k)
+      if (o) parent.set(root(c.id), root(o)); else owner.set(k, c.id)
+    }
+  }
+  const groups = new Map<string, any[]>()
+  for (const c of kept) groups.set(root(c.id), [...(groups.get(root(c.id)) ?? []), c])
+  for (const list of Array.from(groups.values())) {
+    // the primary is the contact with the most recent activity (ties: the lowest id, so it is stable)
+    const sorted = list.slice().sort((a, b) => activity(b) - activity(a) || String(a.id).localeCompare(String(b.id)))
+    const primary = sorted[0]
+    for (const c of list) {
+      out.contacts.set(c.id, { id: c.id, email: c.email ?? null })
+      out.names.set(c.id, [c.first_name, c.last_name].filter(Boolean).join(' ').trim() || 'Unnamed contact')
+    }
+    if (list.length < 2) continue
+    out.duplicatesOf.set(primary.id, sorted.slice(1).map((c) => c.id))
+    for (const c of list) {
+      out.primaryOf.set(c.id, primary.id)
+      if (c.id !== primary.id) out.excluded.set(c.id, 'duplicate')
+    }
+  }
+  return out
+}
+
+/**
+ * One situation per person per kind: a situation found on a duplicate moves to its person's primary contact, keeping
+ * the primary's own situation when it has one, and names the other contacts in detail.duplicate_of.
+ */
+export function collapseDuplicates(found: Found[], e: Pick<Eligible, 'primaryOf' | 'duplicatesOf'>): Found[] {
+  const out = new Map<string, Found>()
+  const primaryOf = (id: string) => e.primaryOf.get(id) ?? id
+  const tag = (f: Found): Found => {
+    const dups = e.duplicatesOf.get(f.contactId)
+    return dups?.length ? { ...f, detail: { ...f.detail, duplicate_of: dups.join(',') } } : f
+  }
+  // first the primary contacts' own situations, then the duplicates' (moved to the primary) where none was found
+  for (const f of found) if (primaryOf(f.contactId) === f.contactId && !out.has(`${f.contactId}:${f.kind}`)) out.set(`${f.contactId}:${f.kind}`, tag(f))
+  for (const f of found) {
+    const primary = primaryOf(f.contactId)
+    if (primary === f.contactId || out.has(`${primary}:${f.kind}`)) continue
+    out.set(`${primary}:${f.kind}`, tag({ ...f, contactId: primary, key: `${primary}:${f.kind}:${f.triggerId}`.slice(0, 200) }))
+  }
+  return Array.from(out.values())
 }
 
 /** The review column, made on first use and placed directly before Action Steps. */
@@ -122,7 +217,8 @@ async function clear(d: RunDeps, row: any, reason: string, doneCol: string | nul
   if (!row.task_id) return
   const { data: card } = await db.from('kanban_tasks').select('id, column_id, description').eq('id', row.task_id).maybeSingle()
   if (!card || (trashCol && (card as any).column_id === trashCol)) return
-  const patch: Record<string, unknown> = { description: `${(card as any).description ?? ''}\n\nCleared on its own: ${reason}.`.trim(), completed_at: iso(now), updated_at: iso(now) }
+  const note = reason === STAFF_OR_DUPLICATE ? 'this contact is staff, or a duplicate of another contact' : reason
+  const patch: Record<string, unknown> = { description: `${(card as any).description ?? ''}\n\nCleared on its own: ${note}.`.trim(), completed_at: iso(now), updated_at: iso(now) }
   if (doneCol) patch.column_id = doneCol
   const { error: kErr } = await db.from('kanban_tasks').update(patch).eq('id', row.task_id)
   if (kErr) console.error(`[touchpoints] card move failed: ${kErr.code ?? 'unknown'}`)
@@ -149,17 +245,22 @@ export async function runTouchpoints(d: RunDeps): Promise<RunOut> {
   if (error) throw fail('situations read', error)
   const openRows = (open ?? []) as any[]
 
-  const { contacts, names } = await eligibleContacts(d)
+  const elig = await eligibleContacts(d)
+  const { contacts, names } = elig
   const oldestOpen = openRows.reduce((m, r) => Math.min(m, Date.parse(r.waiting_since) || m), now)
   const from = Math.min(now - LOOKBACK_DAYS * DAY, oldestOpen - DAY)
-  const { found, resolved } = await detect({ db, orgId, now, from, enrolledPipeline: d.enrolledPipeline, contacts })
+  const detected = await detect({ db, orgId, now, from, enrolledPipeline: d.enrolledPipeline, contacts })
+  const resolved = detected.resolved
+  // one situation per person per kind, on the person's primary contact (duplicates named in detail.duplicate_of)
+  const found = collapseDuplicates(detected.found, elig)
   const foundKeys = new Set(found.map((f) => f.key))
 
   // clear first, so a contact whose old situation cleared can be raised again for a new one
   const [doneCol, trashCol] = await Promise.all([columnId(db, orgId, 'Done'), columnId(db, orgId, 'Trash')])
   const stillOpen = new Set<string>()
   for (const r of openRows) {
-    const reason = clearReason(r, foundKeys, found, resolved)
+    // a contact that is now staff, or a duplicate that is not its person's primary contact, is cleared outright
+    const reason = elig.excluded.has(r.contact_id) ? STAFF_OR_DUPLICATE : clearReason(r, foundKeys, found, resolved)
     if (reason === null) {
       stillOpen.add(`${r.contact_id}:${r.kind}`)
       const f = found.find((x) => x.key === r.situation_key)!
@@ -172,7 +273,7 @@ export async function runTouchpoints(d: RunDeps): Promise<RunOut> {
   }
 
   // raise: never a key seen before (open or cleared), one open per contact and situation, new ones inside the lookback
-  const candidates = found.filter((f) => Date.parse(f.since) >= now - LOOKBACK_DAYS * DAY && contacts.has(f.contactId))
+  const candidates = found.filter((f) => Date.parse(f.since) >= now - LOOKBACK_DAYS * DAY && contacts.has(f.contactId) && !elig.excluded.has(f.contactId))
   if (candidates.length) {
     const { data: seen, error: sErr } = await db.from(TABLE).select('situation_key').eq('org_id', orgId).in('situation_key', candidates.map((c) => c.key))
     if (sErr) throw fail('situations keys', sErr)

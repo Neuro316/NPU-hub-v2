@@ -21,7 +21,7 @@ Last updated: 2026-11-19, by the Code session on Shane's Mac. Applied times are 
 
 | PR | Branch | What | Migration |
 |----|--------|------|-----------|
-| #72 | `feat/drafts-review` | Drafts and review PR 1: drafting core, support drafts, Drafts tab, learning loop | hub_246 (proposed); hub_244 (#70) and hub_245 (#71) also proposed |
+| #72 | `feat/drafts-review` | Drafts and review PR 1: drafting core, support drafts, Drafts tab, learning loop | hub_246 applied on nonprod and production 20 Nov; hub_244 (#70) applied 19 Nov and hub_245 (#71) applied 20 Nov, both on nonprod and production |
 | #46 | `feat/scheduling-agent-phase3` | Scheduling agent stage 1 | hub_234 (proposed) |
 | #18 | `revert/release-2026-10-31` | Draft rollback, do not merge | none |
 
