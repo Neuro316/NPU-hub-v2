@@ -13,7 +13,7 @@ interface Activity { latest_test_drive: TestDrive | null }
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '')
 const POLL_FOR_MS = 20 * 60_000
 
-export function TestDriveResult({ campaignId, startedAt, enrollResult }: { campaignId: string; startedAt: number | null; enrollResult: any | null }) {
+export function TestDriveResult({ campaignId, startedAt, enrollResult, onActive }: { campaignId: string; startedAt: number | null; enrollResult: any | null; onActive?: (active: boolean) => void }) {
   const [a, setA] = useState<Activity | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const load = useCallback(async () => {
@@ -24,6 +24,8 @@ export function TestDriveResult({ campaignId, startedAt, enrollResult }: { campa
 
   const view = testDriveView(a?.latest_test_drive)
   const live = view.state === 'waiting' || view.state === 'running'
+  // the campaign page shows Stop test drive while the latest test drive is still active
+  useEffect(() => { onActive?.(a?.latest_test_drive?.status === 'active') }, [a, onActive])
   const recent = view.state !== 'none' && Date.now() - new Date(view.startedAt).getTime() < POLL_FOR_MS
   useEffect(() => {
     if (!live || !recent) return
@@ -41,7 +43,7 @@ export function TestDriveResult({ campaignId, startedAt, enrollResult }: { campa
     <p className="mt-3 flex items-center gap-2 rounded-lg bg-np-light p-3 text-xs text-gray-600" role="status"><Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
       Test drive started {when(view.startedAt)}. Your test contact is in, and the first step runs on the next engine pass (every five minutes). This updates on its own.</p>)
 
-  const headline = view.state === 'running' ? 'Test drive in progress' : view.state === 'finished' ? 'Test drive finished' : 'Test drive ended early'
+  const headline = view.state === 'running' ? 'Test drive in progress' : view.state === 'finished' ? 'Test drive finished' : `Test drive ended early (${view.endLabel ?? 'no reason recorded'})`
   return (
     <div className={`mt-3 rounded-lg border p-3 text-xs ${view.state === 'ended_early' ? 'border-gold/30 bg-gold-light' : 'border-teal/30 bg-teal-light'}`} role="status">
       <p className="flex items-center gap-1.5 font-semibold text-np-dark">

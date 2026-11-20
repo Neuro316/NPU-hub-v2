@@ -18,6 +18,12 @@
 //   S_NOCONTENT the inbound_no_reply check selects no subject, body, snippet or summary, and stores none
 //   S_DIGEST   the daily Slack suggestion goes once per recipient on the first run after 8 AM ET, never again that day,
 //              and never before 8 AM
+//   S_STAFF2   a staff member's second address (their auth user email, not their profile's) gets no card, nor does the
+//              address of a platform admin profile with no team row
+//   S_MAILBOX  a contact whose email is a connected mailbox address gets no card
+//   S_DUP      two contacts sharing an email (case and spaces aside) are one person: ONE situation per kind, on the more
+//              recently active contact (its own when it has one), with the other's id in detail.duplicate_of
+//   S_CLEARSTAFF an open situation whose contact turns out to be staff is cleared as staff_or_duplicate, with that note
 //
 //   bookskip     the booking-link wait is 100 times longer                 {S_BOOK}
 //   mailskip     the email wait is 100 times longer                        {S_MAIL}
@@ -29,7 +35,11 @@
 //   letin        test and staff contacts are eligible                      {S_EXCLUDE}
 //   readsubject  the inbound check also reads the subject                  {S_NOCONTENT}
 //   dailyagain   the daily message ignores today's claim                   {S_DIGEST}
-// TAMPER=1 reddens the sum (10).
+//   staff_second_email     auth user emails are not read                  {S_STAFF2}
+//   staff_mailbox_address  connected mailbox addresses are not staff      {S_MAILBOX}
+//   duplicate_pair         duplicates are not collapsed                   {S_DUP}
+//   clear_on_staff         open rows of staff contacts are not cleared as staff_or_duplicate  {S_CLEARSTAFF}
+// TAMPER=1 reddens the sum (14).
 const H = require('../agent/lib/harness.cjs')
 
 const D = 'lib/touchpoints/detect.ts', RUN = 'lib/touchpoints/run.ts', RU = 'lib/touchpoints/rules.ts'
@@ -41,12 +51,17 @@ const TAMPERS = {
   discskip: [[D, 'if (now - Date.parse(h.at) < THRESHOLDS.discovery_no_followup) continue', 'if (now - Date.parse(h.at) < THRESHOLDS.discovery_no_followup * 100) continue']],
   twice: [[RU, '    if (knownKeys.has(s.key)) continue\n', '']],
   noclearmove: [[RUN, '  if (doneCol) patch.column_id = doneCol\n', '']],
-  letin: [[RUN, 'if (c.do_not_contact || d.isTest(c) || staff.has(lower(c.email))) continue', 'if (c.do_not_contact) continue']],
+  letin: [[RUN, 'if (c.do_not_contact || d.isTest(c)) continue', 'if (c.do_not_contact) continue']],
+  staff_second_email: [[RUN, '    addE(r?.data?.user?.email)\n', '']],
+  staff_mailbox_address: [[RUN, '  for (const b of (boxes ?? []) as any[]) addE(b.email_address)\n', '']],
+  duplicate_pair: [[RUN, "    return dups?.length ? { ...f, detail: { ...f.detail, duplicate_of: dups.join(',') } } : f", '    return f']],
+  clear_on_staff: [[RUN, 'const reason = elig.excluded.has(r.contact_id) ? STAFF_OR_DUPLICATE : clearReason(', 'const reason = clearReason(']],
   readsubject: [[D, "export const INBOUND_COLUMNS = 'id, connection_id, gmail_thread_id, from_address, received_at'", "export const INBOUND_COLUMNS = 'id, connection_id, gmail_thread_id, from_address, received_at, subject'"]],
   dailyagain: [[RU, '  return claimedDays.includes(day) ? null : day', '  return day']],
 }
 const RED_OF = { bookskip: ['S_BOOK'], mailskip: ['S_MAIL'], textskip: ['S_TEXT'], courseskip: ['S_COURSE'], discskip: ['S_DISC'], twice: ['S_ONCE'],
-  noclearmove: ['S_CLEAR'], letin: ['S_EXCLUDE'], readsubject: ['S_NOCONTENT'], dailyagain: ['S_DIGEST'] }
+  noclearmove: ['S_CLEAR'], letin: ['S_EXCLUDE'], readsubject: ['S_NOCONTENT'], dailyagain: ['S_DIGEST'],
+  staff_second_email: ['S_STAFF2'], staff_mailbox_address: ['S_MAILBOX'], duplicate_pair: ['S_DUP'], clear_on_staff: ['S_CLEARSTAFF'] }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-touchpoints')
 const load = H.install(out)
@@ -60,10 +75,14 @@ const contact = (id, extra = {}) => ({ id, org_id: ORG, first_name: id, last_nam
 function world() {
   return {
     contacts: [contact('cbook'), contact('cmail'), contact('ctext'), contact('ccourse'), contact('cdisc'),
-      contact('ctest', { tags: ['Test'] }), contact('cstaff', { email: 'staff@neuroprogeny.com' })],
+      contact('ctest', { tags: ['Test'] }), contact('cstaff', { email: 'staff@neuroprogeny.com' }),
+      contact('csecond', { email: 'staff.second@gmail.com' }), contact('cadmin', { email: 'admin.person@gmail.com' }), contact('cbox', { email: 'admin@neuroprogeny.com' }),
+      contact('cdupa', { email: 'dup@example.com', last_email_at: ago(1) }), contact('cdupb', { email: ' DUP@Example.com ', last_email_at: ago(200) })],
     team_profiles: [{ org_id: ORG, user_id: STAFF_USER, role: 'team_member', status: 'active', display_name: 'Staff' },
       { org_id: ORG, user_id: OWNER, role: 'super_admin', status: 'active', display_name: 'Owner' }],
-    profiles: [{ id: STAFF_USER, email: 'staff@neuroprogeny.com' }, { id: 'u-course', email: 'ccourse@example.com' }],
+    profiles: [{ id: STAFF_USER, email: 'staff@neuroprogeny.com', role: 'participant' }, { id: 'u-course', email: 'ccourse@example.com', role: 'participant' },
+      { id: 'u-admin2', email: 'admin.person@gmail.com', role: 'admin' }],
+    auth_users: [{ id: STAFF_USER, email: 'staff.second@gmail.com' }],
     hub_mail_connections: [{ id: 'box1', org_id: ORG, email_address: 'admin@neuroprogeny.com', owner_user_id: OWNER, visibility: 'private' }],
     hub_resources: [{ id: 'res-book', org_id: ORG, kind: 'booking_link' }],
     hub_resource_links: [
@@ -71,7 +90,8 @@ function world() {
       { id: 'link-test', org_id: ORG, resource_id: 'res-book', contact_id: 'ctest', created_at: ago(72), revoked_at: null },
     ],
     hub_booking_syncs: [{ org_id: ORG, booking_id: 'bk1', contact_id: 'cdisc', appointment_type: 'Discovery Call', starts_at: ago(73), ends_at: ago(72), status: 'arrived', first_synced_at: ago(100) }],
-    hub_mail_messages: [{ id: 'mm1', connection_id: 'box1', gmail_thread_id: 'th1', from_address: 'cmail@example.com', received_at: ago(48), subject: 'SECRET', body: 'SECRET', summary: 'SECRET' }],
+    hub_mail_messages: [{ id: 'mm1', connection_id: 'box1', gmail_thread_id: 'th1', from_address: 'cmail@example.com', received_at: ago(48), subject: 'SECRET', body: 'SECRET', summary: 'SECRET' },
+      ...['staff.second@gmail.com', 'admin.person@gmail.com', 'admin@neuroprogeny.com', 'dup@example.com'].map((a, i) => ({ id: `mx${i}`, connection_id: 'box1', gmail_thread_id: `tx${i}`, from_address: a, received_at: ago(50) }))],
     hub_mail_sent: [],
     conversations: [{ id: 'cv1', org_id: ORG, contact_id: 'ctext', last_message_at: ago(48) }, { id: 'cv2', org_id: ORG, contact_id: 'cstaff', last_message_at: ago(48) }],
     crm_messages: [{ id: 'tx0', conversation_id: 'cv1', direction: 'outbound', created_at: ago(60) }, { id: 'tx1', conversation_id: 'cv1', direction: 'inbound', created_at: ago(48) },
@@ -93,6 +113,7 @@ function memDb(T) {
   const cmp = (a, b) => { const x = Date.parse(a), y = Date.parse(b); return Number.isNaN(x) || Number.isNaN(y) ? String(a).localeCompare(String(b)) : x - y }
   return {
     calls,
+    auth: { admin: { getUserById: async (id) => ({ data: { user: (T.auth_users || []).find((u) => u.id === id) ?? null }, error: null }) } },
     rpc: async () => ({ data: null, error: null }),
     from(table) {
       const ops = []
@@ -223,6 +244,30 @@ const check = (id, ok, got) => rows.push({ id, ok: !!ok, got })
     const users = sent.map((s) => s.user).sort()
     check('S_DIGEST', sentEarly.length === 0 && sent.length === 2 && new Set(users).size === 2 && /texted us, no reply yet: [3-9] in the last 7 days/.test(sent[0].text)
       && /Suggested fix:/.test(sent[0].text), { early: sentEarly.length, sent: sent.length })
+  }
+
+  // ── staff under any known address, duplicates, and clearing ──
+  {
+    // staff is decided by eligibility, before any detector runs, so these checks do not depend on what was detected
+    const e = await run.eligibleContacts(deps(world()))
+    const isStaff = (c) => !e.contacts.has(c) && e.excluded.get(c) === 'staff'
+    check('S_STAFF2', isStaff('csecond') && isStaff('cadmin'), { csecond: e.excluded.get('csecond') ?? null, cadmin: e.excluded.get('cadmin') ?? null })
+    check('S_MAILBOX', isStaff('cbox'), { cbox: e.excluded.get('cbox') ?? null })
+    // the grouping, then the collapse on the found situations of both contacts (independent of which detector ran)
+    const f = (c, t) => ({ contactId: c, kind: 'inbound_no_reply', key: `${c}:inbound_no_reply:${t}`, triggerId: t, since: ago(50), detail: { message_id: t } })
+    const one = run.collapseDuplicates([f('cdupb', 'm-b'), f('cdupa', 'm-a')], e)
+    const moved = run.collapseDuplicates([f('cdupb', 'm-b')], e)
+    check('S_DUP', e.primaryOf.get('cdupb') === 'cdupa' && e.excluded.get('cdupb') === 'duplicate' && one.length === 1 && one[0].contactId === 'cdupa' && one[0].triggerId === 'm-a'
+      && String(one[0].detail.duplicate_of) === 'cdupb' && moved.length === 1 && moved[0].contactId === 'cdupa' && String(moved[0].detail.duplicate_of) === 'cdupb', { one, moved })
+  }
+  {
+    const T = world()
+    T.kanban_tasks.push({ id: 'card-s', org_id: ORG, column_id: 'col-act', title: 'csecond: emailed us', description: 'x' })
+    T.hub_touchpoint_situations.push({ id: 'open-s', org_id: ORG, contact_id: 'cstaff', kind: 'text_no_reply', situation_key: 'cstaff:text_no_reply:tx9',
+      waiting_since: ago(48), opened_at: ago(20), cleared_at: null, cleared_reason: null, severity: 'low', detail: {}, task_id: 'card-s' })
+    await run.runTouchpoints(deps(T))
+    const s = T.hub_touchpoint_situations.find((x) => x.id === 'open-s'), c = T.kanban_tasks.find((x) => x.id === 'card-s')
+    check('S_CLEARSTAFF', s.cleared_at && s.cleared_reason === 'staff_or_duplicate' && /staff, or a duplicate/.test(c.description), { reason: s.cleared_reason, note: c.description })
   }
 
   H.report(rows, active, RED_OF)

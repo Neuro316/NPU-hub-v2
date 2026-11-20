@@ -15,6 +15,9 @@
 //                tried again
 //   T_EMPTY      an empty or blank refresh token is never stored or used: storableRefreshToken refuses it, the callback
 //                stores only what it returns, and the database function refuses an empty secret
+//   T_RECHECK    a mailbox marked error is rechecked at most once a day by the mail-sync cron (src/lib/mail/recheck.ts):
+//                a failed recheck keeps the error and records the code, a second run the same day does not check
+//                again, and a recheck a day later that passes clears the error; no token is ever written
 //
 //   vaultblip        a vault read error becomes no_secret again                 {T_VAULT}
 //   transientbroken  Google 5xx and 429 are read as invalid_grant              {T_TRANSIENT}
@@ -22,11 +25,12 @@
 //   skiperror        search skips a mailbox in error without trying it         {T_SKIP}
 //   wrongreason      every token failure tells the user to reconnect          {T_REASON}
 //   emptytoken       an empty refresh token passes as storable                 {T_EMPTY}
-// TAMPER=1 reddens the sum (6).
+//   recheck_once_per_day  the day's earlier recheck is ignored                 {T_RECHECK}
+// TAMPER=1 reddens the sum (7).
 const fs = require('fs'), path = require('path')
 const H = require('../agent/lib/harness.cjs')
 
-const G = 'lib/mail/google.ts', SY = 'lib/mail/sync.ts', SE = 'lib/mail/search.ts'
+const G = 'lib/mail/google.ts', SY = 'lib/mail/sync.ts', SE = 'lib/mail/search.ts', RC = 'lib/mail/recheck.ts'
 const TAMPERS = {
   vaultblip: [[G, "  if (res.error) throw new MailError('The stored sign-in could not be read just now. It will be tried again.', 'vault_unavailable')",
     "  if (res.error) throw new MailError('The stored credential for this mailbox is missing. Reconnect it.', 'no_secret')"]],
@@ -37,8 +41,9 @@ const TAMPERS = {
   wrongreason: [[SE, 'const reasonFor = (e: unknown) => (e instanceof MailError && isPermanent(e.code) ? REASON.reconnect : REASON.later)',
     'const reasonFor = (e: unknown) => (e instanceof MailError ? REASON.reconnect : REASON.later)']],
   emptytoken: [[G, '  const t = v.trim()\n  return t.length > 0 ? t : null', '  return v']],
+  recheck_once_per_day: [[RC, '    if (done.has(row.id)) continue\n', '']],
 }
-const RED_OF = { vaultblip: ['T_VAULT'], transientbroken: ['T_TRANSIENT'], grantignored: ['T_GRANT'], skiperror: ['T_SKIP'], wrongreason: ['T_REASON'], emptytoken: ['T_EMPTY'] }
+const RED_OF = { vaultblip: ['T_VAULT'], transientbroken: ['T_TRANSIENT'], grantignored: ['T_GRANT'], skiperror: ['T_SKIP'], wrongreason: ['T_REASON'], emptytoken: ['T_EMPTY'], recheck_once_per_day: ['T_RECHECK'] }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-mailtoken')
 
@@ -70,7 +75,7 @@ const load = H.install(out, {
   },
   '@/lib/mail/triage': { classifyEmail: async () => { throw new Error('no triage expected') } },
 })
-const google = load(G), sync = load(SY), search = load(SE)
+const google = load(G), sync = load(SY), search = load(SE), recheck = load(RC)
 
 /** A database for one sync run: the vault answers from `vault` (one entry per read), writes are recorded. */
 function syncDb(vault) {
@@ -182,6 +187,45 @@ const check = (id, ok, got) => rows.push({ id, ok: !!ok, got })
     const sql = fs.readFileSync(path.join(H.ROOT, 'supabase/migrations/hub_216_mail_connections.sql'), 'utf8')
     const dbRefuses = /if p_secret is null or length\(p_secret\) = 0 then\s+raise exception 'mailbox_secret_missing'/.test(sql)
     check('T_EMPTY', pure.every(Boolean) && blank === 'no_secret' && wired && dbRefuses, { pure, blank, wired, dbRefuses })
+  }
+
+  // T_RECHECK
+  {
+    const T = { hub_mail_connections: [{ id: 'mbx1', email_address: 'box@neuroprogeny.com', status: 'error', last_error: 'invalid_grant: old' }], job_runs: [] }
+    const writes = []
+    const cmp = (a, b) => Date.parse(a) - Date.parse(b)
+    const db = {
+      rpc: async (name) => { writes.push(`rpc:${name}`); return { data: null, error: null } },
+      from(table) {
+        const ops = []
+        const b = {}
+        for (const m of ['select', 'eq', 'gte', 'insert', 'update']) b[m] = (...a) => { ops.push([m, a]); return b }
+        const exec = (one) => {
+          const filt = (rows) => ops.reduce((r, [m, a]) => m === 'eq' ? r.filter((x) => x[a[0]] === a[1]) : m === 'gte' ? r.filter((x) => x[a[0]] && cmp(x[a[0]], a[1]) >= 0) : r, rows)
+          const ins = ops.find((o) => o[0] === 'insert'), upd = ops.find((o) => o[0] === 'update')
+          if (ins) { const row = { id: `jr${T.job_runs.length + 1}`, ...ins[1][0] }; T[table].push(row); writes.push(`${table}:insert`); return { data: one ? row : [row], error: null } }
+          if (upd) { const r = filt(T[table]); r.forEach((x) => Object.assign(x, upd[1][0])); writes.push(`${table}:update:${Object.keys(upd[1][0]).join(',')}`); return { data: r, error: null } }
+          return { data: filt(T[table].slice()), error: null }
+        }
+        b.single = () => ({ then: (res, rej) => Promise.resolve(exec(true)).then(res, rej) })
+        b.then = (res, rej) => Promise.resolve(exec(false)).then(res, rej)
+        return b
+      },
+    }
+    const t0 = Date.parse('2026-11-20T15:00:00Z')
+    let checks = 0
+    const failing = async () => { checks++; throw new google.MailError('Google no longer accepts this sign-in.', 'invalid_grant') }
+    const passing = async () => { checks++ }
+    const r1 = await recheck.recheckErrored(db, t0, failing)
+    const box = T.hub_mail_connections[0]
+    const afterFail = { status: box.status, err: box.last_error }
+    const r2 = await recheck.recheckErrored(db, t0 + 3_600_000, failing)
+    const checksSameDay = checks
+    const r3 = await recheck.recheckErrored(db, t0 + 25 * 3_600_000, passing)
+    const tokenWrites = writes.filter((w) => /token|secret|vault/i.test(w))
+    check('T_RECHECK', r1.length === 1 && r1[0].code === 'invalid_grant' && afterFail.status === 'error' && /^invalid_grant/.test(afterFail.err)
+      && r2.length === 0 && checksSameDay === 1 && r3.length === 1 && r3[0].ok && box.status === 'active' && box.last_error === null && tokenWrites.length === 0,
+    { r1, r2, checksSameDay, r3, box, tokenWrites })
   }
 
   H.report(rows, active, RED_OF, () => fs.rmSync(out, { recursive: true, force: true }))

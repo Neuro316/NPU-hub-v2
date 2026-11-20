@@ -135,6 +135,29 @@ const REASONS: Record<string, string> = {
   exit_stage_reached: 'It ended early because the contact reached a stage that ends this campaign (an exit rule).',
   exit_left_entry_stage: 'It ended early because the contact left the campaign\'s entry stage (an exit rule).',
   exit_paywall_not_eligible: 'It ended early because the contact\'s checkout is not one this campaign is for (an exit rule).',
+  test_drive_stopped: 'A staff member stopped this test drive before it finished.',
+}
+
+/** How an enrollment ended, in a few plain words (campaign_enrollments.end_reason), wherever enrollments are listed. */
+export const END_LABEL: Record<string, string> = {
+  sequence_finished: 'Finished: every step ran',
+  test_drive_stopped: 'Stopped by staff',
+  exit_booking_cancelled: 'Ended: booking cancelled',
+  exit_payment: 'Ended: they paid',
+  exit_enrollment: 'Ended: already enrolled at the University',
+  exit_reply: 'Ended: they replied',
+  exit_stage_reached: 'Ended: reached a stage that ends this campaign',
+  exit_left_entry_stage: 'Ended: left the entry stage',
+  exit_paywall_not_eligible: 'Ended: checkout not one this campaign is for',
+}
+export function endReasonLabel(reason: string | null | undefined): string | null {
+  if (!reason) return null
+  if (END_LABEL[reason]) return END_LABEL[reason]
+  // lifecycle exits are written as exit_lifecycle_<event>
+  const lc = /^exit_lifecycle_(.+)$/.exec(reason)
+  if (lc) return `Ended: ${lc[1].replace(/_/g, ' ')}`
+  if (reason.startsWith('exit_')) return `Ended: ${reason.slice(5).replace(/_/g, ' ')}`
+  return `Ended: ${reason.replace(/_/g, ' ')}`
 }
 
 export function reasonText(reason: string | null | undefined): string {
@@ -208,7 +231,7 @@ export interface TestDriveStepView { key: string; label: string; verdict: string
 export type TestDriveView =
   | { state: 'none' }
   | { state: 'waiting'; startedAt: string }
-  | { state: 'running' | 'finished' | 'ended_early'; startedAt: string; endedAt: string | null; ending: string | null; steps: TestDriveStepView[] }
+  | { state: 'running' | 'finished' | 'ended_early'; startedAt: string; endedAt: string | null; ending: string | null; endLabel: string | null; steps: TestDriveStepView[] }
 
 export const PREVIEW_LINES = 3
 export const PREVIEW_CHARS = 280
@@ -247,6 +270,7 @@ export function testDriveView(td: TestDrive | null | undefined): TestDriveView {
   return {
     state, startedAt: td.enrolled_at, endedAt: td.ended_at,
     ending: state === 'running' ? null : reasonText(td.end_reason ?? (state === 'finished' ? 'sequence_finished' : null)),
+    endLabel: state === 'running' ? null : endReasonLabel(td.end_reason ?? (state === 'finished' ? 'sequence_finished' : null)),
     steps: td.steps.map((s, i) => ({
       key: `${s.at}:${i}`,
       label: `Step ${s.step_order ?? i + 1}${s.channel ? `, ${s.channel === 'sms' ? 'text message' : s.channel}` : ''}`,

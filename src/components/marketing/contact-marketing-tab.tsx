@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Loader2, ShieldCheck, ShieldOff, Megaphone, MapPin } from 'lucide-react'
 import { api } from '@/lib/marketing/client'
+import { endReasonLabel } from '@/lib/marketing/ui-logic'
 import { useToast } from '@/components/ui/toast'
 
 const when = (s: string | null) => (s ? new Date(s).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '')
@@ -84,7 +85,7 @@ export function ContactMarketingTab({ contactId, mode }: { contactId: string; mo
         {d.enrollments.map((e: any) => (
           <div key={e.id} className="rounded-lg border border-gray-100 p-2 text-[11px]">
             <div className="flex items-center gap-1"><Megaphone className="h-3.5 w-3.5 text-np-blue" aria-hidden /><b className="text-np-dark">{e.funnel_campaigns?.name ?? 'Campaign'}</b><span className="flex-1" /><span className="rounded-full bg-np-light px-1.5 text-gray-600">{words(e.status)}</span></div>
-            <p className="text-gray-500">Started by {e.source_key} on {when(e.enrolled_at)}{e.end_reason ? `. Ended: ${words(e.end_reason)}` : ''}</p>
+            <p className="text-gray-500">Started by {e.source_key} on {when(e.enrolled_at)}{e.end_reason ? `. ${endReasonLabel(e.end_reason)}` : ''}</p>
           </div>
         ))}
       </div>
