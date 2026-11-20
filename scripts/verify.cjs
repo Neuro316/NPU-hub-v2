@@ -58,6 +58,7 @@ const HARNESSES = [
   { file: 'scripts/marketing/test-drive-tamper.cjs', selectors: ['exitfortest', 'delayfortest', 'realskip', 'skipgate', 'norecord', 'hideended', '1'] },
   { file: 'scripts/marketing/gate-cap-tamper.cjs', selectors: ['capall', 'livetoo', 'anyone', 'otherchange', 'badrollback', '1'] },
   { file: 'scripts/crm/contact-fixes-tamper.cjs', selectors: ['olderwins', 'rawquery', 'oldcounts', 'countprivate', 'noswitch', 'ignoreid', '1'] },
+  { file: 'scripts/touchpoints/touchpoints-tamper.cjs', selectors: ['bookskip', 'mailskip', 'textskip', 'courseskip', 'discskip', 'twice', 'noclearmove', 'letin', 'readsubject', 'dailyagain', '1'] },
   { file: 'scripts/health/hub-health-tamper.cjs', selectors: ['ciok', 'deploywarn', 'prsgreen', 'oneway', 'guardsok', 'xregslow', 'crmok', 'smsmiss', 'emailmiss', 'slackmiss', 'mailwarn', 'platslow', 'realert', 'changequiet', 'noclear', 'platcompare', '1'] },
   { file: 'scripts/comms/recent-email-tamper.cjs', selectors: ['eight', 'oldest', 'permessage', 'showall', 'summary', 'noalt', '1'] },
   { file: 'scripts/comms/comms-tamper.cjs', selectors: ['privateopen', 'body', 'browserread', 'lifecycleall', 'nomerged', 'noalt', '1'] },

@@ -34,6 +34,7 @@ import { BookingAnswers } from '@/components/crm/booking-answers'
 import { CommunicationsHistory, type CommsFilter } from '@/components/crm/communications-history'
 import { useCommunications } from '@/components/crm/use-communications'
 import { RecentEmail } from '@/components/crm/recent-email'
+import { WaitingOnUs } from '@/components/crm/waiting-on-us'
 import { countTouches, commsTileAction } from '@/lib/comms/counts'
 import { conversationHref } from '@/lib/comms/conversation-link'
 import { DeviceAnswers } from '@/components/crm/device-answers'
@@ -936,6 +937,8 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
                   className="text-[10px] text-red-400 hover:text-red-700 flex-shrink-0">Dismiss</button>
               </div>
             )}
+            {/* q35: open touchpoint situations, above everything else on the card */}
+            <WaitingOnUs contactId={contactId} />
             {/* Header */}
             <div className="px-5 py-4 border-b border-gray-100 flex-shrink-0">
               <div className="flex items-start justify-between">

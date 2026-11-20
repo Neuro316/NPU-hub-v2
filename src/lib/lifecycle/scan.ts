@@ -165,7 +165,12 @@ export async function scanTimedFollowUps(ctx: ScanCtx) {
 
 /** A client's activity times: lessons, practice, HRV, lesson events, held coaching sessions. */
 async function activityTimes(ctx: ScanCtx, userId: string): Promise<number[]> {
-  const db = ctx.db
+  return clientActivityTimes(ctx.db, userId, ctx.now)
+}
+
+/** The same activity sources, for anything else that must agree with inactive_5d (the touchpoint monitor, q35). */
+export async function clientActivityTimes(db: SupabaseClient, userId: string, now: number): Promise<number[]> {
+  const ctx = { now }
   const [lp, ps, hrv, ev, bk] = await Promise.all([
     db.from('lesson_progress').select('started_at, completed_at').eq('user_id', userId).order('started_at', { ascending: false }).limit(5),
     db.from('practice_sessions').select('started_at').eq('profile_id', userId).order('started_at', { ascending: false }).limit(1),

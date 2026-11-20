@@ -7,7 +7,7 @@ Last updated: 2026-11-19, by the Code session on Shane's Mac. Applied times are 
 ## Session
 
 - **Running:** Code session on Shane's Mac (NPU-hub-v2).
-- **Live branch:** `feat/hub-health` (q23: Hub Health tiles, alerts and the bell).
+- **Live branch:** `feat/touchpoint-monitor` (q35 Part 1: the waiting-on-us monitor and the review queue).
 - **Cameron:** no Code session recorded on this repo. Say so here before starting one.
 
 ## Production
@@ -21,7 +21,7 @@ Last updated: 2026-11-19, by the Code session on Shane's Mac. Applied times are 
 
 | PR | Branch | What | Migration |
 |----|--------|------|-----------|
-| #70 | `feat/hub-health` | q23 Hub Health: tiles, 30-minute capture, alerts, bell | hub_244 (proposed) |
+| #71 | `feat/touchpoint-monitor` | q35 Part 1: touchpoint monitor and Follow-ups to review | hub_245 (proposed); hub_244 (proposed, #70) |
 | #46 | `feat/scheduling-agent-phase3` | Scheduling agent stage 1 | hub_234 (proposed) |
 | #18 | `revert/release-2026-10-31` | Draft rollback, do not merge | none |
 
