@@ -18,6 +18,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { accessTokenFor, refreshTokenFor, MailError, isPermanent, isTransient, lastErrorText } from '@/lib/mail/google'
 import { currentHistoryId, getMessageForTriage, inboxAddedSince, sentAddedSince, getSentMetadata } from '@/lib/mail/gmail'
 import { classifyEmail } from '@/lib/mail/triage'
+import { applyGuide, guideLines, loadGuide } from '@/lib/mail/priority'
 
 export const TRIAGE_PER_MAILBOX = 10
 const TRIAGE_CONCURRENCY = 3
@@ -61,12 +62,15 @@ async function tokenWithRetry(db: SupabaseClient, id: string, waitMs: number): P
   }
 }
 
-async function triageOne(db: SupabaseClient, accessToken: string, row: { id: string; gmail_message_id: string; triage_attempts: number }): Promise<boolean> {
+/** One message. The priority follows the org's Inbox corrections for the same sender and category (priority.ts). */
+export async function triageOne(db: SupabaseClient, accessToken: string, row: { id: string; connection_id: string; gmail_message_id: string; triage_attempts: number }): Promise<boolean> {
   let meta: Record<string, unknown> = {}
   try {
     const msg = await getMessageForTriage(accessToken, row.gmail_message_id)
     meta = { from_address: msg.fromAddress, from_name: msg.fromName, subject: msg.subject, received_at: msg.receivedAt }
-    const t = await classifyEmail(msg)
+    const guide = await loadGuide(db, row.connection_id, msg.fromAddress, Date.now()).catch(() => [])
+    const g = applyGuide(await classifyEmail(msg, guideLines(guide)), guide)
+    const t = { category: g.category, priority: g.priority, summary: g.summary, suggested_action: g.suggested_action }
     const { error } = await db.from('hub_mail_messages').update({
       ...meta, ...t, triaged_at: new Date().toISOString(), triage_attempts: row.triage_attempts + 1, triage_error: null,
     }).eq('id', row.id)
@@ -169,7 +173,7 @@ async function syncMailbox(db: SupabaseClient, conn: Conn, deadline: number, sen
 
   // 3: triage what is waiting (including rows left over from earlier runs)
   const { data: queue } = await db.from('hub_mail_messages')
-    .select('id, gmail_message_id, triage_attempts')
+    .select('id, connection_id, gmail_message_id, triage_attempts')
     .eq('connection_id', conn.id).is('triaged_at', null).lt('triage_attempts', MAX_ATTEMPTS)
     .order('created_at').limit(TRIAGE_PER_MAILBOX)
   const rows = queue ?? []

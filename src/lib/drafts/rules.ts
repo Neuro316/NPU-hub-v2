@@ -164,3 +164,51 @@ export function validateLesson(raw: unknown, ...sources: string[]): string | nul
 export const draftUrl = (mailbox: string, draftMessageId: string | null, threadId: string) => draftMessageId
   ? `https://mail.google.com/mail/?authuser=${encodeURIComponent(mailbox)}#drafts?compose=${encodeURIComponent(draftMessageId)}`
   : `https://mail.google.com/mail/?authuser=${encodeURIComponent(mailbox)}#all/${encodeURIComponent(threadId)}`
+
+// ── the Inbox review (feat/drafts-inbox-review) ─────────────────────────────────────────────────────────────
+/** A message needs review while its draft row is in one of these, and only these. */
+export const REVIEW_STATUSES: DraftStatus[] = ['drafted', 'needs_person']
+
+export type Badge = 'Draft ready' | 'In Gmail as a draft' | 'Rejected' | 'Needs a person' | null
+export function badgeOf(status: string | null | undefined): Badge {
+  if (status === 'drafted') return 'Draft ready'
+  if (status === 'approved' || status === 'edited') return 'In Gmail as a draft'
+  if (status === 'rejected') return 'Rejected'
+  if (status === 'needs_person') return 'Needs a person'
+  return null
+}
+
+export const REJECT_CHIPS = ['wrong_tone', 'wrong_facts', 'should_not_reply', 'will_handle'] as const
+export type RejectChip = (typeof REJECT_CHIPS)[number]
+export const CHIP_TEXT: Record<RejectChip, string> = {
+  wrong_tone: 'wrong tone', wrong_facts: 'wrong facts', should_not_reply: 'should not reply', will_handle: 'I will handle it',
+}
+/** A person's line (reject reason, redraft note): optional, under 200 characters, no @ and no newline. undefined = refused. */
+export function personLine(raw: unknown): string | null | undefined {
+  if (raw === undefined || raw === null) return null
+  if (typeof raw !== 'string') return undefined
+  if (/[\r\n]/.test(raw) || raw.includes('@')) return undefined
+  const s = raw.replace(DASH, ',').replace(/\s+/g, ' ').trim()
+  if (s.length >= LESSON_MAX) return undefined
+  return s || null
+}
+/** The rejected row's lesson: the chip and the line, at most 200 characters. null when the chip or the line is refused. */
+export function rejectLesson(chip: unknown, line: unknown): string | null {
+  const c = REJECT_CHIPS.find((x) => x === chip)
+  const l = personLine(line)
+  if (!c || l === undefined) return null
+  const s = `Rejected, ${CHIP_TEXT[c]}${l ? `: ${l}` : '.'}`
+  return s.length <= LESSON_MAX ? s : `${s.slice(0, LESSON_MAX - 1).replace(/\s+\S*$/, '')}.`
+}
+
+/** "Why I wrote it this way", from the draft's shape (counts only). */
+export function whyLine(shape: Partial<Shape> | null | undefined): string | null {
+  if (!shape || typeof shape.words !== 'number') return null
+  const len = shape.words <= 90 ? 'Short' : shape.words <= 180 ? 'Medium length' : 'Longer'
+  const parts = [`${len} (${shape.words} words, ${shape.paragraphs ?? 1} paragraph${shape.paragraphs === 1 ? '' : 's'})`]
+  parts.push(shape.greeting === 'hi_name' ? 'greets them by first name' : shape.greeting === 'hi' ? 'a plain "Hi" because the first name is not known' : 'no greeting line')
+  if (shape.questions) parts.push(`asks ${shape.questions} question${shape.questions === 1 ? '' : 's'} back`)
+  parts.push(shape.links ? `${shape.links} link${shape.links === 1 ? '' : 's'}` : 'no links')
+  if (shape.signoff) parts.push('signed as Cameron')
+  return `${parts.join(', ')}.`
+}
