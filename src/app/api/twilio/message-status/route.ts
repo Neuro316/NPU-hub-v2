@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import twilio from 'twilio';
 import { createAdminSupabase } from '@/lib/supabase';
 import { resolveInboundTwilioAuth } from '@/lib/twilio-org';
+import { applyStatusCallback } from '@/lib/texts/status-callback';
 
 // ─── POST /api/twilio/message-status ───
 // Twilio message status callback.
@@ -21,32 +22,9 @@ import { resolveInboundTwilioAuth } from '@/lib/twilio-org';
 //      is ever reported. That is why the 2026-07-24 lost-inbound incident could
 //      only be reconstructed from the Twilio API and not from the Hub.
 //
-// Never sends, never replies, never inserts. Idempotent: keyed on twilio_sid.
+// Never sends, never replies, never inserts. Idempotent: keyed on twilio_sid. Forward only (see status-callback.ts).
 
-/**
- * Twilio's MessageStatus vocabulary is wider than the crm_messages_status_check
- * constraint, which allows only: queued | scheduled | sent | delivered | failed |
- * received. Writing a raw Twilio status would raise 23514 and the row would keep
- * its stale value — the exact silent failure this route exists to end.
- *
- * `undelivered` -> `failed` matters most: it is what a carrier rejection reports,
- * including the 30034 an unregistered number returns. The specific reason is not
- * lost, because error_code carries it.
- */
-const STATUS_MAP: Record<string, string> = {
-  accepted: 'queued',
-  scheduled: 'scheduled',
-  queued: 'queued',
-  sending: 'queued',
-  sent: 'sent',
-  delivered: 'delivered',
-  read: 'delivered',
-  receiving: 'received',
-  received: 'received',
-  undelivered: 'failed',
-  failed: 'failed',
-  canceled: 'failed',
-};
+// The status vocabulary and the forward-only rule live in src/lib/texts/status-callback.ts.
 
 export async function POST(request: NextRequest) {
   const params: Record<string, string> = {};
@@ -92,46 +70,14 @@ export async function POST(request: NextRequest) {
     return new NextResponse('Forbidden', { status: 403 });
   }
 
-  const sid = params.MessageSid || params.SmsSid || '';
-  if (!sid) return NextResponse.json({ ok: true, skipped: 'no message sid' });
-
-  const admin = createAdminSupabase();
-
-  // Identity columns are filled whenever Twilio reports them. `status` is NOT NULL
-  // and CHECK-constrained, so it is only written when the mapping recognises the
-  // value; an unknown status leaves the existing one intact rather than failing
-  // the whole update.
-  const update: Record<string, unknown> = {};
-  const mapped = STATUS_MAP[String(params.MessageStatus || '').toLowerCase()];
-  if (mapped) update.status = mapped;
-  else if (params.MessageStatus) {
-    console.warn('[message-status] unmapped Twilio status', params.MessageStatus, 'sid', sid);
+  // Forward only (q43): a late callback can never move a text back to queued, or out of delivered or failed. The rule
+  // is the where clause of the update itself; a backwards callback is logged and its error code still recorded.
+  try {
+    const r = await applyStatusCallback(createAdminSupabase(), params);
+    return NextResponse.json(r);
+  } catch (e: any) {
+    // Errors are surfaced, never swallowed (a 500 makes Twilio retry the callback).
+    console.error('[message-status] update failed for sid', params.MessageSid || params.SmsSid || '(none)', String(e?.message ?? e));
+    return NextResponse.json({ ok: false, error: 'update failed' }, { status: 500 });
   }
-  if (params.From) update.from_e164 = params.From;
-  if (params.To) update.to_e164 = params.To;
-  if (params.ErrorCode) update.error_code = params.ErrorCode;
-
-  if (!Object.keys(update).length) return NextResponse.json({ ok: true, skipped: 'nothing to set' });
-
-  // UPDATE only. A callback for a message the Hub has no row for is REPORTED, not
-  // invented: fabricating a row would put a message in a thread with no idea which
-  // conversation it belongs to.
-  const { data, error } = await admin
-    .from('crm_messages')
-    .update(update)
-    .eq('twilio_sid', sid)
-    .select('id');
-
-  // Errors are surfaced, never swallowed. A silently discarded logging error is
-  // how the email_sends gap stayed invisible for weeks.
-  if (error) {
-    console.error('[message-status] update failed for sid', sid, error);
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
-  }
-  if (!data?.length) {
-    console.warn('[message-status] no crm_messages row for sid', sid,
-      'status', params.MessageStatus, 'from', params.From, 'to', params.To);
-  }
-
-  return NextResponse.json({ ok: true, updated: data?.length ?? 0 });
 }
