@@ -11,9 +11,12 @@
 //   4. once a day, the first run at or after 8 AM ET: the 7-day counts and one automation-first suggestion per
 //      situation with 3 or more, as ONE Slack DM to each recipient (the lead-alert Slack path), claimed first so it
 //      is never sent twice in a day
+//   5. unanswered text alerts (text-alerts.ts): every thread waiting an hour or more on a reply, in ONE post to
+//      #np-follow-ups, from 8 AM ET. Its rows are kind text_waiting_1h and are left alone by steps 2 and 3.
 // Until hub_245 is applied the table is missing and the run does nothing (it reports table_missing).
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { detect, courseworkCleared, type Contact, type Found } from './detect'
+import { textAlerts, type Line, type TextAlertOut } from './text-alerts'
 import {
   CLEARED, LOOKBACK_DAYS, NO_LONGER, PLAIN, SITUATIONS, digestDue, digestText, nyDayHour, severity, toRaise, whyLine, type SituationKind,
 } from './rules'
@@ -43,8 +46,11 @@ export interface RunDeps {
   hubUrl: string
   isTest: (c: { id: string; email?: string | null; phone?: string | null; tags?: string[] | null }) => boolean
   slack: (orgId: string, userId: string, text: string) => Promise<{ ok: boolean; code: string | null }>
+  /** the unanswered text alert's channel post; without it (and lines) the alert does not run */
+  slackChannel?: (orgId: string, channel: string, text: string) => Promise<{ ok: boolean; code: string | null }>
+  lines?: (orgId: string) => Promise<Line[]>
 }
-export interface RunOut { skipped?: string; raised: number; cleared: number; digest: string | null; counts: Record<string, number> }
+export interface RunOut { skipped?: string; raised: number; cleared: number; digest: string | null; counts: Record<string, number>; textAlert?: TextAlertOut }
 
 export type Excluded = 'staff' | 'duplicate'
 export interface Eligible {
@@ -262,7 +268,7 @@ export async function runTouchpoints(d: RunDeps): Promise<RunOut> {
   const { db, orgId, now } = d
   const out: RunOut = { raised: 0, cleared: 0, digest: null, counts: {} }
   const { data: open, error } = await db.from(TABLE).select('id, contact_id, kind, situation_key, waiting_since, severity, detail, task_id')
-    .eq('org_id', orgId).is('cleared_at', null)
+    .eq('org_id', orgId).in('kind', SITUATIONS as unknown as string[]).is('cleared_at', null)
   if (error && MISSING.includes(error.code ?? '')) return { ...out, skipped: 'table_missing' }
   if (error) throw fail('situations read', error)
   const openRows = (open ?? []) as any[]
@@ -299,7 +305,14 @@ export async function runTouchpoints(d: RunDeps): Promise<RunOut> {
   out.raised += await raiseCandidates(d, candidates, stillOpen, names)
 
   out.digest = await dailyDigest(d, out)
+  if (d.slackChannel && d.lines) out.textAlert = await textAlerts({ db, orgId, now, hubUrl: d.hubUrl, slackChannel: d.slackChannel, lines: d.lines }, elig)
   return out
+}
+
+/** The unanswered text alert on its own, for the cron's dry run (dry: the message only, no post and no writes). */
+export async function runTextAlerts(d: RunDeps & { slackChannel: NonNullable<RunDeps['slackChannel']>; lines: NonNullable<RunDeps['lines']> }, dry: boolean): Promise<TextAlertOut> {
+  const elig = await eligibleContacts(d)
+  return textAlerts({ db: d.db, orgId: d.orgId, now: d.now, hubUrl: d.hubUrl, slackChannel: d.slackChannel, lines: d.lines, dry }, elig)
 }
 
 /**
@@ -332,7 +345,7 @@ export async function dailyDigest(d: RunDeps, out: RunOut): Promise<string | nul
   if (error) throw fail('digest claims', error)
   const day = digestDue(now, ((claims ?? []) as any[]).filter((c) => c.detail?.org_id === orgId).map((c) => String(c.detail?.day ?? '')))
   if (!day) return null
-  const { data: rows, error: rErr } = await db.from(TABLE).select('kind').eq('org_id', orgId).gte('opened_at', iso(now - 7 * DAY))
+  const { data: rows, error: rErr } = await db.from(TABLE).select('kind').eq('org_id', orgId).in('kind', SITUATIONS as unknown as string[]).gte('opened_at', iso(now - 7 * DAY))
   if (rErr) throw fail('digest counts', rErr)
   for (const k of SITUATIONS) out.counts[k] = 0
   for (const r of (rows ?? []) as any[]) out.counts[r.kind] = (out.counts[r.kind] ?? 0) + 1

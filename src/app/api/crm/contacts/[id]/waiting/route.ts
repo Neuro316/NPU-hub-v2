@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { withStaff, requireOrg } from '@/lib/api-guard'
 import { subjectFor } from '@/lib/comms/history'
 import { mailView, type Mailbox } from '@/lib/comms/privacy'
-import { whyLine, type SituationKind } from '@/lib/touchpoints/rules'
+import { SITUATIONS, whyLine, type SituationKind } from '@/lib/touchpoints/rules'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,7 +22,7 @@ export const GET = withStaff<{ id: string }>(async (_req: NextRequest, ctx, para
     const orgId = requireOrg(ctx, subject.orgId)
     if (orgId instanceof Response) return orgId
     const { data, error } = await ctx.db.from('hub_touchpoint_situations').select('id, kind, waiting_since, severity, detail, task_id')
-      .eq('org_id', orgId).in('contact_id', subject.ids).is('cleared_at', null).order('waiting_since', { ascending: true }).limit(10)
+      .eq('org_id', orgId).in('contact_id', subject.ids).in('kind', SITUATIONS as unknown as string[]).is('cleared_at', null).order('waiting_since', { ascending: true }).limit(10)
     if (error) return NextResponse.json({ waiting: [] }) // absent before hub_245
     const rows = (data ?? []) as any[]
     const boxIds = Array.from(new Set(rows.map((r) => r.detail?.mailbox_id).filter(Boolean)))
