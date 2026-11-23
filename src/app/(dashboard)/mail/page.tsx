@@ -2,7 +2,10 @@
 
 // Inbox (superadmin only): new mail from connected Gmail mailboxes, triaged by AI, and its reply drafts reviewed in
 // place (feat/drafts-inbox-review). Tabs: Needs review (default: a draft ready or a question that needs a person),
-// All, Learning. Selecting a row opens the review pane beside the list (full screen on a phone).
+// All, Learning. Selecting a row opens the review pane beside the list (full screen on a phone). On a desktop the first
+// message is selected when the list loads, so the pane is open on arrival. /mail?message=<id> (the contact card's link)
+// opens the All tab with that message's pane; the pane's own route applies the mailbox rule, so a message the viewer may
+// not see shows the pane's normal not-found state.
 // The Hub never sends: an approved draft waits in Gmail. What is listed is decided by /api/mail/messages under the
 // mailbox visibility rules.
 import { useCallback, useEffect, useState } from 'react'
@@ -52,9 +55,18 @@ export default function MailInboxPage() {
   const [tab, setTab] = useState<'review' | 'all' | 'learning'>('review')
   const [needsReview, setNeedsReview] = useState<number | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
+  // ?message=<id>: decided once on arrival, before the first load, so the auto-select never overrides it
+  const [linked] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null
+    const id = new URLSearchParams(window.location.search).get('message')
+    return id && /^[0-9a-f-]{36}$/i.test(id) ? id : null
+  })
+  useEffect(() => { if (linked) { setTab('all'); setSelected(linked) } }, [linked])
+  const desktop = () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches
 
   const load = useCallback(async (before?: string) => {
     if (tab === 'learning') return
+    if (linked && tab !== 'all') return // the linked message opens on All; wait for the tab switch
     setLoading(true); setError(null)
     const q = new URLSearchParams()
     q.set('view', tab === 'review' ? 'review' : 'all')
@@ -70,12 +82,15 @@ export default function MailInboxPage() {
       if (!res.ok) { setError(data.error || 'The inbox could not be loaded.'); return }
       setMailboxes(data.mailboxes ?? [])
       setMessages(prev => (before ? [...prev, ...(data.messages ?? [])] : data.messages ?? []))
+      // the pane opens on arrival: on a desktop, a fresh list with nothing selected selects its first message
+      const first = (data.messages ?? [])[0]?.id as string | undefined
+      if (!before && first && desktop()) setSelected(s => s ?? first)
       setNext(data.next ?? null)
       if (typeof data.needs_review === 'number') setNeedsReview(data.needs_review)
     } finally {
       setLoading(false)
     }
-  }, [filters, tab])
+  }, [filters, tab, linked])
 
   useEffect(() => { load() }, [load])
 

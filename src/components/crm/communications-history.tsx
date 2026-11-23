@@ -4,8 +4,10 @@
 // type. The touches come from the parent (useCommunications), the same data the Communication Activity counts use
 // (q30). The route applies mail privacy on the server; this component never reads a mail, message, call or campaign
 // table and never sees a message body. Open state and filter can be driven by the parent (a count tile opens the
-// section filtered to its type).
+// section filtered to its type). A received email the viewer may read links to it in the Inbox (/mail?message=<id>).
 import { useMemo, useState } from 'react'
+import Link from 'next/link'
+import { touchHref } from '@/lib/comms/privacy'
 import { ArrowDownLeft, ArrowUpRight, CalendarCheck, ChevronDown, ChevronRight, Lock, Mail, MessageSquare, Megaphone, Phone, Sparkles } from 'lucide-react'
 import type { CommunicationsState } from './use-communications'
 
@@ -68,7 +70,9 @@ export function CommunicationsHistory({ state, open: openProp, onOpenChange, fil
                 <li key={t.id} className={`py-1.5 flex items-start gap-2 ${t.muted ? 'opacity-50 italic' : ''}`}>
                   <Icon className="w-3.5 h-3.5 mt-0.5 text-gray-400 flex-shrink-0" />
                   <div className="min-w-0 flex-1">
-                    <p className="text-[11px] text-np-dark truncate" title={t.summary}>{t.summary}</p>
+                    {touchHref(t)
+                      ? <Link href={touchHref(t)!} className="block text-[11px] text-np-blue hover:underline truncate" title={`Open in the Inbox: ${t.summary}`}>{t.summary}</Link>
+                      : <p className="text-[11px] text-np-dark truncate" title={t.summary}>{t.summary}</p>}
                     <p className="text-[9px] text-gray-400 flex items-center gap-1">
                       {t.direction === 'in' && <><ArrowDownLeft className="w-2.5 h-2.5" /> In</>}
                       {t.direction === 'out' && <><ArrowUpRight className="w-2.5 h-2.5" /> Out</>}

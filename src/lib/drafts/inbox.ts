@@ -13,8 +13,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { listVisible, loadVisible, type MailConnectionRow } from '@/lib/mail/google'
 import { priorityWhy } from '@/lib/mail/priority'
 import { getDraft } from './gmail-drafts'
-import type { Mailbox } from './support'
-import { REVIEW_STATUSES, STOP_TEXT, badgeOf, draftUrl, whyLine, type Badge, type StopClass } from './rules'
+import { draftsMode, type Mailbox } from './support'
+import { NO_DRAFT_CATEGORIES, REVIEW_STATUSES, STOP_TEXT, badgeOf, draftUrl, whyLine, type Badge, type StopClass } from './rules'
 
 export interface InboxViewer { db: SupabaseClient; userId: string; isSuperadmin: boolean; orgIds: string[]; orgRoles?: Record<string, string> }
 
@@ -72,6 +72,10 @@ export interface Pane {
     lesson: string | null
     lesson_pending: boolean
   }
+  /** drafting mode is on for the mailbox's org */
+  drafting: boolean
+  /** Draft a reply is offered: drafting on, no hub_drafts row for this message at all, and a category that may be drafted */
+  can_draft: boolean
 }
 
 const fmtDay = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/New_York' })
@@ -163,7 +167,9 @@ export async function reviewPane(v: InboxViewer, messageId: string, mailbox: (co
       lesson: draftRow.lesson ?? null, lesson_pending: !draftRow.lesson && ['approved', 'edited'].includes(draftRow.status),
     }
   }
-  return { email, looked_at: looked, draft }
+  const drafting = (await draftsMode(db, box.org_id)) === 'on'
+  const can_draft = drafting && !draftRow && !NO_DRAFT_CATEGORIES.includes(String(msg.category ?? ''))
+  return { email, looked_at: looked, draft, drafting, can_draft }
 }
 
 export interface Learning {

@@ -3,8 +3,10 @@
 // Contact card › Recent email (Running List q31): the last 7 email conversations, newest first, one line per thread.
 // Subject, date, mailbox and who replied last; never a body or a summary. The route applies mail privacy on the
 // server: a thread this viewer may not read arrives as "1 private conversation" with its date only. No lines (or an
-// error) shows nothing at all. There is no thread filter in Communications to link to, so the lines are not links.
+// error) shows nothing at all. A line the viewer may read links to its newest received message in the Inbox
+// (/mail?message=<id>, same tab); a hidden line, or a sent-only thread, is not a link.
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { Lock, Mail } from 'lucide-react'
 import type { RecentEmailLine } from '@/lib/comms/recent-email'
 
@@ -35,7 +37,9 @@ export function RecentEmail({ contactId }: { contactId: string | null | undefine
           <li key={l.key} className="py-1.5 flex items-start gap-2">
             {l.hidden ? <Lock className="w-3.5 h-3.5 mt-0.5 text-gray-400 flex-shrink-0" /> : <Mail className="w-3.5 h-3.5 mt-0.5 text-gray-400 flex-shrink-0" />}
             <div className="min-w-0 flex-1">
-              <p className={`text-[11px] truncate ${l.hidden ? 'text-gray-500 italic' : 'text-np-dark'}`} title={l.label}>{l.label}</p>
+              {l.href && !l.hidden
+                ? <Link href={l.href} className="block text-[11px] truncate text-np-blue hover:underline" title={`Open in the Inbox: ${l.label}`}>{l.label}</Link>
+                : <p className={`text-[11px] truncate ${l.hidden ? 'text-gray-500 italic' : 'text-np-dark'}`} title={l.label}>{l.label}</p>}
               <p className="text-[9px] text-gray-400 flex items-center gap-1 min-w-0">
                 <span className="flex-shrink-0">{when(l.at)}</span>
                 {l.mailbox && <span className="truncate">· {l.mailbox}</span>}

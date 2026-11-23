@@ -5,7 +5,7 @@
 // written that way, then Approve, Edit, Redraft and Reject. The Hub never sends: an approved draft waits in Gmail.
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, ArrowLeft, Check, ExternalLink, Lightbulb, Loader2, Pencil, RefreshCw, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Check, ExternalLink, Lightbulb, Loader2, Pencil, PenLine, RefreshCw, X } from 'lucide-react'
 import { PriorityPill, type Priority } from './priority-pill'
 
 interface Pane {
@@ -14,6 +14,10 @@ interface Pane {
   looked_at: { contact: { id: string; name: string } | null; pipelines: Array<{ pipeline: string; stage: string }>; university: string | null; calendar: string | null; recent_threads: number }
   draft: null | { id: string; status: string; badge: string | null; reason: string | null; url: string | null; live: { from: string; to: string; text: string } | null
     live_error: string | null; why: string | null; lesson: string | null; lesson_pending: boolean }
+  /** drafting mode is on for this mailbox's org (the Draft a reply button shows only then) */
+  drafting: boolean
+  /** decided by the server: drafting on, no draft row for this message, and a category that may be drafted */
+  can_draft: boolean
 }
 
 const CHIPS = [
@@ -61,6 +65,22 @@ export function ReviewPane({ messageId, onClose, onChanged }: {
       onChanged({ draft_status: data.status })
       if (action === 'edit') setLearned(true)
       setMode('view')
+      await load()
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  // Draft a reply: the same pipeline as the cron, for this one message (hard stops included)
+  const draftNow = async () => {
+    if (!pane) return
+    setBusy('draft'); setError(null)
+    try {
+      const res = await fetch('/api/mail/drafts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message_id: pane.email.id }) })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setError(data.error || 'A draft could not be written.'); return }
+      if (data.status) onChanged({ draft_status: data.status })
+      if (data.message) setError(data.message)
       await load()
     } finally {
       setBusy(null)
@@ -129,7 +149,13 @@ export function ReviewPane({ messageId, onClose, onChanged }: {
               <p className={heading + ' mb-0'}>The draft</p>
               {d?.badge && <span className={`px-1.5 py-0.5 rounded border text-[10px] ${BADGE_STYLE[d.badge] ?? ''}`}>{d.badge}</span>}
             </div>
-            {!d && <p className="text-xs text-gray-500">No draft for this email. Drafts are written only for participant support questions, while drafting is on.</p>}
+            {!d && <p className="text-xs text-gray-500">{pane.drafting ? 'No draft for this email yet.' : 'No draft for this email. Drafting is off for this organization.'}</p>}
+            {!d && pane.can_draft && (
+              <div className="flex flex-wrap items-center gap-1.5 mt-3">
+                <button onClick={draftNow} disabled={!!busy} className={primary}>{busy === 'draft' ? <Loader2 size={11} className="animate-spin" /> : <PenLine size={11} />} Draft a reply</button>
+                <p className="w-full text-[10px] text-gray-400">Saved as a Gmail draft in this thread. Clinical, legal, money and crisis questions are never drafted.</p>
+              </div>
+            )}
             {d?.status === 'needs_person' && (
               <div className="px-3 py-2 rounded-lg bg-red-50 text-red-700 text-xs">
                 <p className="font-semibold">Needs a person: {d.reason}</p>
