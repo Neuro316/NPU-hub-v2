@@ -2,9 +2,10 @@
 
 // Settings › Mailboxes (superadmin only). Gmail mailboxes connected through Google
 // OAuth for the inbox agent. The server decides what is listed: a private mailbox is
-// returned only to the person who connected it.
+// returned only to the person who connected it, and to the teammates they listed in
+// Also visible to (hub_249). Only the owner sees, and can change, that list.
 import { useCallback, useEffect, useState } from 'react'
-import { Mail, Plus, RefreshCw, Unplug, Lock, Users, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { Mail, Plus, RefreshCw, Unplug, Lock, Users, CheckCircle2, AlertTriangle, Eye, X } from 'lucide-react'
 
 interface Connection {
   id: string
@@ -15,6 +16,9 @@ interface Connection {
   last_checked_at: string | null
   last_error: string | null
   is_owner: boolean
+  /** owner only: who else sees this mailbox exactly as the owner does, and the staff who could be added */
+  also_visible_to?: Array<{ user_id: string; name: string }>
+  can_list?: Array<{ user_id: string; name: string }>
 }
 
 const OUTCOMES: Record<string, { ok: boolean; text: string }> = {
@@ -33,6 +37,7 @@ const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : 'Nev
 
 export function MailboxesSection({ orgId }: { orgId: string | undefined }) {
   const [rows, setRows] = useState<Connection[]>([])
+  const [alsoReady, setAlsoReady] = useState(false)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null)
@@ -40,7 +45,7 @@ export function MailboxesSection({ orgId }: { orgId: string | undefined }) {
   const load = useCallback(async () => {
     const res = await fetch('/api/mail/connections', { cache: 'no-store' })
     const data = await res.json().catch(() => ({}))
-    if (res.ok) setRows(data.connections ?? [])
+    if (res.ok) { setRows(data.connections ?? []); setAlsoReady(!!data.also_ready) }
     else setNotice({ ok: false, text: data.error || 'Mailboxes could not be loaded.' })
     setLoading(false)
   }, [])
@@ -72,6 +77,10 @@ export function MailboxesSection({ orgId }: { orgId: string | undefined }) {
     () => `${c.email_address} disconnected and access revoked at Google.`)
   const setVisibility = (c: Connection, visibility: Connection['visibility']) => call(c.id, '/api/mail/connections',
     { method: 'PATCH', body: JSON.stringify({ id: c.id, visibility }) }, () => `${c.email_address} is now ${visibility}.`)
+  const addViewer = (c: Connection, p: { user_id: string; name: string }) => call(c.id, '/api/mail/connections',
+    { method: 'PATCH', body: JSON.stringify({ id: c.id, add_viewer: p.user_id }) }, () => `${p.name} now sees ${c.email_address} as you do.`)
+  const removeViewer = (c: Connection, p: { user_id: string; name: string }) => call(c.id, '/api/mail/connections',
+    { method: 'PATCH', body: JSON.stringify({ id: c.id, remove_viewer: p.user_id }) }, () => `${p.name} no longer sees ${c.email_address}.`)
 
   return (
     <div className="space-y-4">
@@ -79,7 +88,7 @@ export function MailboxesSection({ orgId }: { orgId: string | undefined }) {
         <div>
           <h3 className="text-sm font-bold text-np-dark">Mailboxes</h3>
           <p className="text-xs text-gray-400 mt-1">
-            Gmail accounts connected for the inbox agent. Private mailboxes are visible only to the person who connected them.
+            Gmail accounts connected for the inbox agent. Private mailboxes are visible only to the person who connected them, and to anyone they add under Also visible to.
           </p>
         </div>
         <button
@@ -142,6 +151,27 @@ export function MailboxesSection({ orgId }: { orgId: string | undefined }) {
                   </>
                 )}
               </div>
+              {c.is_owner && alsoReady && c.also_visible_to && (
+                <div className="mt-2 pl-11 flex items-center gap-1.5 flex-wrap">
+                  <span className="flex items-center gap-1 text-[10px] font-semibold text-gray-500"><Eye size={10} /> Also visible to</span>
+                  {c.also_visible_to.length === 0 && <span className="text-[10px] text-gray-400">nobody else</span>}
+                  {c.also_visible_to.map(p => (
+                    <span key={p.user_id} className="flex items-center gap-1 px-2 py-0.5 text-[10px] rounded-full bg-np-light text-np-dark">
+                      {p.name}
+                      <button onClick={() => removeViewer(c, p)} disabled={busy === c.id} aria-label={`Remove ${p.name}`} className="text-gray-400 hover:text-red-500 disabled:opacity-40"><X size={10} /></button>
+                    </span>
+                  ))}
+                  {(c.can_list?.length ?? 0) > 0 && (
+                    <select value="" disabled={busy === c.id}
+                      onChange={e => { const p = c.can_list?.find(x => x.user_id === e.target.value); if (p) addViewer(c, p) }}
+                      className="px-2 py-0.5 text-[10px] border border-gray-100 rounded-lg bg-white">
+                      <option value="">Add a teammate...</option>
+                      {c.can_list?.map(p => <option key={p.user_id} value={p.user_id}>{p.name}</option>)}
+                    </select>
+                  )}
+                  <span className="w-full text-[10px] text-gray-400">They see this mailbox exactly as you do, private mail included. Only you can change this list.</span>
+                </div>
+              )}
               {c.last_error && c.status !== 'revoked' && (
                 <p className="text-[10px] text-red-500 mt-2 pl-11">{c.last_error}</p>
               )}

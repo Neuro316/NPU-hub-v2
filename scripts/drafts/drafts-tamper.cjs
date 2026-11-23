@@ -45,12 +45,34 @@
 //   panesees     the Inbox treats every mailbox of the org as visible {D_PRIVATE_PANE}
 //   retiredback  retired lessons still go to compose                 {D_PIN_RETIRE}
 //   guideanycat  a correction for any category steers triage         {D_PRIORITY_GUIDE}
-// TAMPER=1 reddens the sum (15).
+//
+// The per-mailbox also-visible-to list (hub_249, decision 2026-11-23; ownerEquivalent in src/lib/mail/access.ts):
+//   V_LISTED           a superadmin listed on a private mailbox sees it as the owner does on every surface: the Inbox list
+//                      and its messages, the review pane, mail search, the drafts list, visibleBoxes, Learning lessons and
+//                      scorecard, Communications and Recent email
+//   V_UNLISTED         listing someone grants nothing to anyone else: a superadmin NOT listed sees every surface exactly as
+//                      they would with the list empty, and the contact card (Communications, Recent email) stays redacted
+//                      for them (that every mailbox is not simply visible is D_PRIVATE's and D_PRIVATE_PANE's)
+//   V_OWNER_ONLY_EDITS a listed non-owner cannot change the list (refused, nothing written) and is never shown it; the owner
+//                      can, and the change is logged in job_runs (who, mailbox, user, added)
+//   V_ONE_RULE         every surface decides through ownerEquivalent: a helper replaced at run time to grant one more user
+//                      opens every surface to that user
+//
+//   listedignored  the helper ignores also_visible_to                              {V_LISTED}
+//   listedanyone   mailView opens a mailbox with anyone listed to everyone        {V_UNLISTED}
+//   listededits    a listed user passes the edit check                            {V_OWNER_ONLY_EDITS}
+//   inlinerule     mailView restates the rule inline instead of calling the helper  {V_ONE_RULE}
+// TAMPER=1 reddens the sum (19).
 const H = require('../agent/lib/harness.cjs')
 
 const S = 'lib/drafts/support.ts', C = 'lib/drafts/compose.ts', G = 'lib/drafts/gmail-drafts.ts', R = 'lib/drafts/rules.ts', V = 'lib/drafts/review.ts'
 const I = 'lib/drafts/inbox.ts', MG = 'lib/mail/google.ts', MP = 'lib/mail/priority.ts', SY = 'lib/mail/sync.ts'
+const AC = 'lib/mail/access.ts', AV = 'lib/mail/also-visible.ts', PV = 'lib/comms/privacy.ts'
 const TAMPERS = {
+  listedignored: [[AC, '  return Array.isArray(box.also_visible_to) && box.also_visible_to.includes(viewer.userId)', '  return false']],
+  listedanyone: [[PV, "  if (owner) return 'full'", "  if (owner || (box.also_visible_to ?? []).length > 0) return 'full'"]],
+  listededits: [[AV, '  if (!isOwner(ctx, row)) return forbidden(', '  if (!isOwner(ctx, row) && !(row.also_visible_to ?? []).includes(ctx.userId)) return forbidden(']],
+  inlinerule: [[PV, '  const owner = ownerEquivalent(viewer, box)', '  const owner = box.owner_user_id === viewer.userId || (Array.isArray(box.also_visible_to) && box.also_visible_to.includes(viewer.userId))']],
   wrongthread: [[S, 'const made = await createDraft(box.gmail, raw, m.gmail_thread_id)', "const made = await createDraft(box.gmail, raw, '')"]],
   sends: [[G, "const { status, data } = await gmail('POST', '/drafts', { message: { raw, threadId } })", "const { status, data } = await gmail('POST', '/drafts/send', { message: { raw, threadId } })"]],
   storetext: [[S, 'draft_shape: shapeOf(r.draft.body, contact?.first_name ?? null) })', 'draft_shape: { ...shapeOf(r.draft.body, contact?.first_name ?? null), preview: r.draft.body.slice(0, 80) } })']],
@@ -69,7 +91,8 @@ const TAMPERS = {
 }
 const RED_OF = { wrongthread: ['D_THREAD'], sends: ['D_NOSEND'], storetext: ['D_NOTEXT'], nothanks: ['D_SKIP'], noscreen: ['D_STOP'], keepquote: ['D_LESSON'],
   showprivate: ['D_PRIVATE'], ignoremode: ['D_OFF'], needsall: ['D_NEEDS_REVIEW'], editsends: ['D_EDIT_UPDATES'], redraftblind: ['D_REDRAFT_HARDSTOP'],
-  rejectat: ['D_REJECT_LESSON'], panesees: ['D_PRIVATE_PANE'], retiredback: ['D_PIN_RETIRE'], guideanycat: ['D_PRIORITY_GUIDE'] }
+  rejectat: ['D_REJECT_LESSON'], panesees: ['D_PRIVATE_PANE'], retiredback: ['D_PIN_RETIRE'], guideanycat: ['D_PRIORITY_GUIDE'],
+  listedignored: ['V_LISTED'], listedanyone: ['V_UNLISTED'], listededits: ['V_OWNER_ONLY_EDITS'], inlinerule: ['V_ONE_RULE'] }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-drafts')
 // triage (sync.triageOne) reads Gmail and the model through these two modules: both are fakes here
@@ -431,6 +454,76 @@ const raw = (b) => Buffer.from(String(b?.message?.raw ?? ''), 'base64url').toStr
     const lines = TRIAGE.calls[0] ?? []
     check('D_PRIORITY_GUIDE', prio('new1') === 'low' && prio('new2') === 'normal' && prio('new3') === 'normal' && lines.length === 2 && lines.some((l) => /lead: changed from normal to low/.test(l))
       && !lines.some((l) => /@|SECRETBODY/.test(l)) && (TRIAGE.calls[2] ?? []).length === 0, { new1: prio('new1'), new2: prio('new2'), new3: prio('new3'), lines })
+  }
+
+  // ── the also-visible-to list ──
+  {
+    const LISTED = '00000000-0000-4000-8000-0000000000c3', PROBE = '00000000-0000-4000-8000-0000000000d4'
+    const google = load(MG), search = load('lib/mail/search.ts'), history = load('lib/comms/history.ts'), recent = load('lib/comms/recent-email.ts')
+    const access = load(AC), also = load(AV)
+    const vWorld = () => {
+      const W = world('on')
+      W.hub_mail_connections.find((b) => b.id === PRIV).also_visible_to = [LISTED]
+      W.hub_mail_connections.find((b) => b.id === SHARED).also_visible_to = []
+      W.hub_drafts.push(dRow('vp1', PRIV, 'm8', 'drafted', { gmail_thread_id: 'aa08', gmail_draft_id: 'gv1' }),
+        dRow('vl1', PRIV, 'm2', 'sent', { lesson: 'VLESSON Cameron keeps it short.', reviewed_at: ago(2) }))
+      W.team_profiles = [OWNER, LISTED, OTHER, PROBE].map((u, i) => ({ org_id: ORG, user_id: u, role: 'super_admin', status: 'active', display_name: `Person ${i}` }))
+      W.job_runs = []
+      return W
+    }
+    const subj = { ids: ['c-pat'], orgId: ORG, emails: ['pat@example.com'], phones: [] }
+    // every surface, as one user: does it show the private mailbox (or its messages, drafts, lessons)?
+    const surfaces = async (userId, withList = true) => {
+      const W = vWorld()
+      if (!withList) W.hub_mail_connections.find((b) => b.id === PRIV).also_visible_to = []
+      const db = memDb(W, []), ctx = { db, userId, isSuperadmin: true, orgIds: [ORG] }, viewer = { userId, isSuperadmin: true }
+      const dr = new Map([['gv1', {}]])
+      return {
+        inbox_list: ((await google.listVisible(ctx)) ?? []).some((b) => b.id === PRIV),
+        message: !!(await google.loadVisible(ctx, PRIV)),
+        review_queue: (await inbox.reviewQueue(ctx)).messageIds.includes('m8'),
+        pane: !!(await inbox.reviewPane(ctx, 'm8', fakeGmail([], dr), NOW)),
+        search: ((await search.visibleConnections({ ...ctx, via: 'session' })) ?? []).some((b) => b.id === PRIV),
+        drafts: (await review.listDrafts(db, viewer, [ORG])).drafts.some((d) => d.mailbox === 'owner@neuroprogeny.com'),
+        act_boxes: (await review.visibleBoxes(db, viewer, [ORG])).has(PRIV),
+        lessons: (await inbox.learning(ctx, NOW)).lessons.some((l) => l.lesson.startsWith('VLESSON')),
+        scorecard: (await inbox.learning(ctx, NOW)).mailboxes.some((b) => b.id === PRIV),
+        communications: (await history.loadCommunications(db, viewer, subj)).some((t) => t.type === 'email' && !t.redacted),
+        recent_email: (await recent.loadRecentEmail(db, viewer, subj)).some((l) => !l.hidden),
+      }
+    }
+    const all = (o) => Object.values(o).every(Boolean)
+    const listed = await surfaces(LISTED), other = await surfaces(OTHER), owner = await surfaces(OWNER)
+    check('V_LISTED', all(listed) && all(owner), { listed })
+    const otherNoList = await surfaces(OTHER, false)
+    check('V_UNLISTED', JSON.stringify(other) === JSON.stringify(otherNoList) && !other.communications && !other.recent_email, { other, otherNoList })
+
+    // edits: the listed user is refused and never shown the list; the owner can add, and it is logged
+    {
+      const W = vWorld()
+      const as = (userId) => ({ db: memDb(W, []), userId, isSuperadmin: true, orgIds: [ORG] })
+      const tryL = await also.changeList(as(LISTED), { id: PRIV, add_viewer: OTHER })
+      const tryRemove = await also.changeList(as(LISTED), { id: PRIV, remove_viewer: LISTED })
+      const afterListed = [...W.hub_mail_connections.find((b) => b.id === PRIV).also_visible_to]
+      const shown = also.view(W.hub_mail_connections.find((b) => b.id === PRIV), LISTED, [{ user_id: OTHER, name: 'x' }])
+      const ownerTry = await also.changeList(as(OWNER), { id: PRIV, add_viewer: OTHER })
+      const afterOwner = W.hub_mail_connections.find((b) => b.id === PRIV).also_visible_to
+      const log = W.job_runs.filter((j) => j.job === 'mailbox-also-visible-to')
+      const refused = (r) => r.status === 403 || r.status === 404
+      check('V_OWNER_ONLY_EDITS', refused(tryL) && refused(tryRemove) && afterListed.join(',') === LISTED && shown.also_visible_to === undefined && shown.can_list === undefined
+        && ownerTry.status === 200 && afterOwner.includes(OTHER) && log.length === 1 && log[0].detail.by === OWNER && log[0].detail.user_id === OTHER && log[0].detail.change === 'added'
+        && log[0].detail.connection_id === PRIV, { listed: tryL.status, remove: tryRemove.status, owner: ownerTry.status, after: afterOwner, log: log.map((j) => j.detail) })
+    }
+
+    // one rule: replace the helper at run time so it also grants PROBE; every surface must follow (on a mailbox with an empty
+    // list, so nothing but the helper can open it)
+    {
+      const orig = access.ownerEquivalent
+      access.ownerEquivalent = (v, b) => v.userId === PROBE || orig(v, b)
+      let probe
+      try { probe = await surfaces(PROBE, false) } finally { access.ownerEquivalent = orig }
+      check('V_ONE_RULE', all(probe), { probe })
+    }
   }
 
   H.report(rows, active, RED_OF)

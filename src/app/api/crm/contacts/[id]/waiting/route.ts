@@ -6,7 +6,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { withStaff, requireOrg } from '@/lib/api-guard'
 import { subjectFor } from '@/lib/comms/history'
-import { mailView, type Mailbox } from '@/lib/comms/privacy'
+import { mailView, MAILBOX_COLUMNS, type Mailbox } from '@/lib/comms/privacy'
+import { withAlso } from '@/lib/mail/access'
 import { SITUATIONS, whyLine, type SituationKind } from '@/lib/touchpoints/rules'
 
 export const dynamic = 'force-dynamic'
@@ -28,7 +29,7 @@ export const GET = withStaff<{ id: string }>(async (_req: NextRequest, ctx, para
     const boxIds = Array.from(new Set(rows.map((r) => r.detail?.mailbox_id).filter(Boolean)))
     const boxes = new Map<string, Mailbox>()
     if (boxIds.length) {
-      const { data: b } = await ctx.db.from('hub_mail_connections').select('id, owner_user_id, email_address, visibility').in('id', boxIds)
+      const { data: b } = await withAlso(MAILBOX_COLUMNS, (cols) => ctx.db.from('hub_mail_connections').select(cols).in('id', boxIds))
       for (const x of (b ?? []) as Mailbox[]) boxes.set(x.id, x)
     }
     const viewer = { userId: ctx.userId, isSuperadmin: ctx.isSuperadmin }

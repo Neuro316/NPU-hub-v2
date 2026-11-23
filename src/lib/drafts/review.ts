@@ -11,7 +11,8 @@
 //   pin / unpin / retire / restore   the Learning tab's controls on a lesson (hub_247)
 // Reached from the Inbox's review pane (feat/drafts-inbox-review).
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { mailView, type Mailbox as Box, type Viewer } from '@/lib/comms/privacy'
+import { mailView, MAILBOX_COLUMNS, type Mailbox as Box, type Viewer } from '@/lib/comms/privacy'
+import { withAlso } from '@/lib/mail/access'
 import type { ModelClient } from '@/lib/agent/model'
 import { compose, loadVoice } from './compose'
 import { buildReplyMime, createDraft, deleteDraft, getDraft, updateDraft } from './gmail-drafts'
@@ -24,7 +25,7 @@ export interface DraftView {
 }
 
 export async function visibleBoxes(db: SupabaseClient, viewer: Viewer, orgIds: string[]): Promise<Map<string, Box>> {
-  const { data, error } = await db.from('hub_mail_connections').select('id, owner_user_id, email_address, visibility').in('org_id', orgIds)
+  const { data, error } = await withAlso(MAILBOX_COLUMNS, (cols) => db.from('hub_mail_connections').select(cols).in('org_id', orgIds))
   if (error) throw new Error(`hub_mail_connections read: ${error.code ?? 'unknown'}`)
   return new Map(((data ?? []) as Box[]).filter((b) => mailView(viewer, b, null) === 'full').map((b) => [b.id, b]))
 }

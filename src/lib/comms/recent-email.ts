@@ -9,7 +9,8 @@
 // strictest view of any of its messages. Any view other than 'full' gives a line with the date only: no subject, no
 // mailbox, no last reply.
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { mailView, type Mailbox, type MailView, type Viewer } from './privacy'
+import { mailView, MAILBOX_COLUMNS, type Mailbox, type MailView, type Viewer } from './privacy'
+import { withAlso } from '@/lib/mail/access'
 import type { Subject } from './history'
 
 export const RECENT_EMAIL_LIMIT = 7
@@ -80,7 +81,7 @@ const PER_QUERY = 200
  *  records (custom_fields.alt_emails), and those of every contact merged into it. */
 export async function loadRecentEmail(db: SupabaseClient, viewer: Viewer, s: Subject): Promise<RecentEmailLine[]> {
   if (!s.emails.length) return []
-  const { data: boxes, error } = await db.from('hub_mail_connections').select('id, owner_user_id, email_address, visibility').eq('org_id', s.orgId)
+  const { data: boxes, error } = await withAlso(MAILBOX_COLUMNS, (cols) => db.from('hub_mail_connections').select(cols).eq('org_id', s.orgId))
   if (error) throw fail('hub_mail_connections', error)
   const list = (boxes ?? []) as Mailbox[]
   if (!list.length) return []

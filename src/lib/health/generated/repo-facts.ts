@@ -67,6 +67,7 @@ export const REPO_FACTS: RepoFacts = {
     'hub_246_drafts',
     'hub_247_priority_feedback',
     'hub_248_text_waiting_kind',
+    'hub_249_mailbox_also_visible_to',
     'shipit_projects'
   ],
   guards: [
@@ -148,6 +149,7 @@ export const REPO_FACTS: RepoFacts = {
     '245',
     '246',
     '247',
-    '248'
+    '248',
+    '249'
   ]
 }

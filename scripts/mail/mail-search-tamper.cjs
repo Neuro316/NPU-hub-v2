@@ -90,7 +90,8 @@ function memDb(logRows = []) {
 
 // ── stubs: the real google.ts rules, fake sign-ins; fake Gmail; the stub db; a session user ───────────────────
 global.fetch = async () => { throw new Error('network must not be reached') }
-const realGoogle = require(path.join(out, 'lib/mail/google.js'))
+// the '@/' resolver first: google.ts imports the mailbox rule (@/lib/mail/access)
+const realGoogle = H.install(out)('lib/mail/google.ts')
 const gmailCalls = []
 let current = memDb()
 const realGuard = { STAFF_TEAM_ROLES: ['super_admin', 'admin', 'team_member'] }

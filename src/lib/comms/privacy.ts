@@ -1,9 +1,10 @@
 // src/lib/comms/privacy.ts
-// The pure rules of the contact card's Communications section (Running List q02). No imports, so the harness
-// (scripts/comms/comms-tamper.cjs) runs them directly. The server route applies them; the browser never sees a row
+// The pure rules of the contact card's Communications section (Running List q02). One import, the mailbox rule
+// (src/lib/mail/access.ts, itself pure), so the harness (scripts/comms/comms-tamper.cjs) runs them directly. The server route applies them; the browser never sees a row
 // before they have been applied.
 //
 // Mail privacy (the mail rule of 2026-11-09, extended here):
+//   owner             the owner, or a user the owner listed in also_visible_to (ownerEquivalent, hub_249), sees all
 //   private mailbox   subject and summary to the mailbox's OWNER only; everyone else sees "Email (private inbox)"
 //                     with the date and direction, no subject, no summary, no address, no mailbox name
 //   shared mailbox    subject and summary to superadmins and the owner (the inbox rule); other staff see
@@ -11,6 +12,8 @@
 //   sensitive         a message triaged clinical, legal_financial or vendor_billing shows "Private email" with no
 //                     subject to anyone but the owner, superadmins included
 // Bodies are never read, so no row can carry one: a Touch has exactly the fields below.
+
+import { ownerEquivalent } from '@/lib/mail/access'
 
 export type TouchType = 'email' | 'text' | 'call' | 'meeting' | 'campaign' | 'lifecycle'
 export type Direction = 'in' | 'out' | null
@@ -31,7 +34,9 @@ export interface Touch {
 export const TOUCH_KEYS = ['id', 'type', 'direction', 'at', 'who', 'summary', 'muted', 'redacted'] as const
 
 export interface Viewer { userId: string; isSuperadmin: boolean }
-export interface Mailbox { id: string; owner_user_id: string; email_address: string; visibility: string }
+export interface Mailbox { id: string; owner_user_id: string; email_address: string; visibility: string; also_visible_to?: string[] | null }
+/** The columns a Mailbox is read with; also_visible_to is added by withAlso (src/lib/mail/access.ts). */
+export const MAILBOX_COLUMNS = 'id, owner_user_id, email_address, visibility'
 
 export const SENSITIVE_CATEGORIES = ['clinical', 'legal_financial', 'vendor_billing']
 
@@ -39,7 +44,7 @@ export type MailView = 'full' | 'private_inbox' | 'shared_inbox' | 'private_emai
 
 /** What a viewer may see of one mail row. Unknown visibility is treated as private. */
 export function mailView(viewer: Viewer, box: Mailbox, category: string | null | undefined): MailView {
-  const owner = box.owner_user_id === viewer.userId
+  const owner = ownerEquivalent(viewer, box)
   if (owner) return 'full'
   if (category && SENSITIVE_CATEGORIES.includes(category)) return 'private_email'
   if (box.visibility === 'shared') return viewer.isSuperadmin ? 'full' : 'shared_inbox'
