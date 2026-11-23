@@ -197,7 +197,7 @@ export default function MailInboxPage() {
       <div className="rounded-xl border border-gray-100 bg-white divide-y divide-gray-50">
         {messages.length === 0 && !loading && (
           <p className="text-xs text-gray-400 p-6 text-center">
-            {!mailboxes.length ? 'No mailboxes connected yet.' : tab === 'review' ? 'Nothing needs review. New drafts and questions that need a person show here.' : 'No messages match these filters.'}
+            {!mailboxes.length ? 'No mailboxes connected yet.' : tab === 'review' ? 'Nothing needs review. Leads and participant support questions are drafted on their own and show here, with questions that need a person. Every other email is drafted when you press Draft a reply.' : 'No messages match these filters.'}
           </p>
         )}
         {messages.map(m => (

@@ -1,7 +1,8 @@
 // src/lib/drafts/support.ts
 // Reply drafts (Running List q10, Cameron's decision 2026-11-18; every email a person would answer, Shane 2026-11-23).
-// Server only (service role). For each recent hub_mail_messages row triaged participant_support, lead, scheduling or
-// partner_outreach (DRAFT_CATEGORIES), in an org whose org_settings 'hub_drafts_mode' is 'on', and only when ALL hold
+// Server only (service role). For each recent hub_mail_messages row triaged lead or participant_support (the default
+// AUTO_DRAFT_CATEGORIES, Shane 2026-11-23; org_settings 'hub_drafts_mode' "auto": [...] replaces it for an org, [] meaning
+// on demand only), in an org whose org_settings 'hub_drafts_mode' is 'on', and only when ALL hold
 // (plan B2 and A1):
 //   - no hub_drafts row for that message yet (one draft per message, ever)
 //   - the sender is not ours (a connected mailbox, @neuroprogeny.com) and not an automated sender
@@ -13,7 +14,8 @@
 // hard stop stores needs_person with the class, and makes no draft. The Hub never sends.
 //
 // draftOnDemand runs the SAME pipeline (draftMessage) for one message, from the review pane's Draft a reply: superadmin,
-// the mailbox rule (loadVisible), drafting mode on, any category but NO_DRAFT_CATEGORIES. Every draft keeps kind 'support'.
+// the mailbox rule (loadVisible), drafting mode on, any category but NO_DRAFT_CATEGORIES (the "auto" list does not apply).
+// Every draft keeps kind 'support'.
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ModelClient } from '@/lib/agent/model'
 import type { MessageForTriage } from '@/lib/mail/gmail'
@@ -21,7 +23,7 @@ import { loadVisible } from '@/lib/mail/google'
 import type { StaffContext } from '@/lib/api-guard'
 import { compose, loadVoice, type Voice } from './compose'
 import { buildReplyMime, createDraft, deleteDraft, type GmailCall } from './gmail-drafts'
-import { DEFAULT_SIGNER, DRAFT_CATEGORIES, NO_DRAFT_CATEGORIES, STOP_TEXT, draftsOn, hardStop, replySubject, senderSkip, shapeOf, type SkipReason, type StopClass } from './rules'
+import { DEFAULT_SIGNER, NO_DRAFT_CATEGORIES, autoCategories, STOP_TEXT, draftsOn, hardStop, replySubject, senderSkip, shapeOf, type SkipReason, type StopClass } from './rules'
 
 export const LOOKBACK_HOURS = 72
 export const MAX_PER_RUN = 10
@@ -43,10 +45,15 @@ const fail = (what: string, e: { code?: string } | null) => new Error(`${what}: 
 const lower = (s: unknown) => String(s ?? '').trim().toLowerCase()
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-export async function draftsMode(db: SupabaseClient, orgId: string): Promise<'on' | 'off'> {
+/** org_settings 'hub_drafts_mode', one query: whether drafting is on, and the categories the cron drafts (autoCategories). */
+export async function draftsSetting(db: SupabaseClient, orgId: string): Promise<{ mode: 'on' | 'off'; auto: string[] }> {
   const { data, error } = await db.from('org_settings').select('setting_value').eq('org_id', orgId).eq('setting_key', 'hub_drafts_mode').maybeSingle()
-  if (error) return 'off'
-  return draftsOn((data as any)?.setting_value) ? 'on' : 'off'
+  if (error) return { mode: 'off', auto: [] }
+  const raw = (data as any)?.setting_value
+  return { mode: draftsOn(raw) ? 'on' : 'off', auto: autoCategories(raw) }
+}
+export async function draftsMode(db: SupabaseClient, orgId: string): Promise<'on' | 'off'> {
+  return (await draftsSetting(db, orgId)).mode
 }
 
 async function record(db: SupabaseClient, row: Record<string, unknown>): Promise<boolean> {
@@ -150,14 +157,16 @@ export async function draftMessage(d: SupportDeps, m: any, env: Env, pre: { mb: 
 
 export async function runSupportDrafts(d: SupportDeps): Promise<SupportOut> {
   const { db, orgId, now } = d
-  const out: SupportOut = { mode: await draftsMode(db, orgId), drafted: 0, needs_person: 0, skipped: {}, failed: 0 }
+  const setting = await draftsSetting(db, orgId)
+  const out: SupportOut = { mode: setting.mode, drafted: 0, needs_person: 0, skipped: {}, failed: 0 }
   if (out.mode !== 'on') return out
+  if (!setting.auto.length) return out // on demand only
   const skip = (r: SkipReason | string) => { out.skipped[r] = (out.skipped[r] ?? 0) + 1 }
 
   const env = await orgEnv(db, orgId)
   if (!env.boxes.size) return out
   const { data: msgs, error: mErr } = await db.from('hub_mail_messages').select(MESSAGE_COLUMNS)
-    .in('connection_id', Array.from(env.boxes.keys())).in('category', DRAFT_CATEGORIES)
+    .in('connection_id', Array.from(env.boxes.keys())).in('category', setting.auto)
     .gte('received_at', new Date(now - LOOKBACK_HOURS * 3_600_000).toISOString()).order('received_at', { ascending: true }).limit(200)
   if (mErr) throw fail('hub_mail_messages', mErr)
   const list = (msgs ?? []) as any[]
