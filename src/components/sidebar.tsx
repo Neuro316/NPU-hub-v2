@@ -59,6 +59,18 @@ export function Sidebar() {
   useEffect(() => {
     fetch('/api/mail/connections', { cache: 'no-store' }).then(r => setIsPlatformSuperadmin(r.ok)).catch(() => {})
   }, [])
+  // the Inbox's Needs review count, refreshed on navigation and when the Inbox reviews a draft
+  const [mailReview, setMailReview] = useState(0)
+  useEffect(() => {
+    if (!isPlatformSuperadmin) return
+    const refresh = () => {
+      fetch('/api/mail/drafts?view=count', { cache: 'no-store' }).then(r => (r.ok ? r.json() : null))
+        .then(d => { if (d && typeof d.needs_review === 'number') setMailReview(d.needs_review) }).catch(() => {})
+    }
+    refresh()
+    window.addEventListener('hub:mail-review-changed', refresh)
+    return () => window.removeEventListener('hub:mail-review-changed', refresh)
+  }, [isPlatformSuperadmin, pathname])
 
   const orderedCategories = useMemo(
     () => applySidebarOrder(navCategories, sidebarOrder),
@@ -250,7 +262,15 @@ export function Sidebar() {
                             }`}
                         >
                           <Icon className="w-4 h-4 flex-shrink-0" />
-                          {showLabels && <span>{item.label}</span>}
+                          {showLabels && <span className={item.badge ? 'flex-1' : undefined}>{item.label}</span>}
+                          {item.badge === 'mail_review' && mailReview > 0 && (
+                            <span className={showLabels
+                              ? 'min-w-[18px] px-1 rounded-full bg-np-blue text-white text-[10px] leading-[16px] text-center'
+                              : 'absolute ml-5 -mt-4 w-2 h-2 rounded-full bg-np-blue'}
+                              title={`${mailReview} need review`}>
+                              {showLabels ? mailReview : null}
+                            </span>
+                          )}
                         </Link>
                       )
                     })}
