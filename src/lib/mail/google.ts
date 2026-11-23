@@ -9,6 +9,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { StaffContext } from '@/lib/api-guard'
+import { ownerEquivalent, withAlso } from '@/lib/mail/access'
 
 export const MAIL_DOMAIN = 'neuroprogeny.com'
 export const MAIL_SCOPES = [
@@ -233,15 +234,19 @@ export interface MailConnectionRow {
   connected_at: string
   last_checked_at: string | null
   last_error: string | null
+  /** hub_249: users the owner lets see this mailbox exactly as the owner does (absent before it is applied) */
+  also_visible_to?: string[] | null
 }
 
+/** The columns every read returns; also_visible_to is added by withAlso (src/lib/mail/access.ts). */
 export const CONNECTION_COLUMNS =
   'id, org_id, owner_user_id, email_address, visibility, status, scopes, connected_at, last_checked_at, last_error'
 
-/** Private: owner only. Shared: any superadmin who belongs to the row's org. */
-export function canSee(ctx: StaffContext, row: Pick<MailConnectionRow, 'owner_user_id' | 'visibility' | 'org_id'>): boolean {
+/** Private: the owner, or a user listed in also_visible_to (ownerEquivalent, the one rule). Shared: also any superadmin
+ *  who belongs to the row's org. */
+export function canSee(ctx: StaffContext, row: Pick<MailConnectionRow, 'owner_user_id' | 'visibility' | 'org_id' | 'also_visible_to'>): boolean {
   if (!ctx.isSuperadmin) return false
-  if (row.owner_user_id === ctx.userId) return true
+  if (ownerEquivalent(ctx, row)) return true
   return row.visibility === 'shared' && ctx.orgIds.includes(row.org_id)
 }
 
@@ -249,19 +254,15 @@ export function canSee(ctx: StaffContext, row: Pick<MailConnectionRow, 'owner_us
  *  private mailbox's existence is not confirmed to anyone but its owner). */
 export async function loadVisible(ctx: StaffContext, id: unknown): Promise<MailConnectionRow | null> {
   if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/i.test(id)) return null
-  const { data } = await ctx.db.from('hub_mail_connections').select(CONNECTION_COLUMNS).eq('id', id).maybeSingle()
+  const { data } = await withAlso(CONNECTION_COLUMNS, (cols) => ctx.db.from('hub_mail_connections').select(cols).eq('id', id).maybeSingle())
   return data && canSee(ctx, data as MailConnectionRow) ? (data as MailConnectionRow) : null
 }
 
-/** Every connection the caller may see (null on a read error). Same rule as canSee,
- *  applied in the query and again in code. */
+/** Every connection the caller may see (null on a read error). canSee decides, and nothing else: the query does not
+ *  restate the rule (the table holds a handful of rows), so the rule lives in one place. */
 export async function listVisible(ctx: StaffContext): Promise<MailConnectionRow[] | null> {
   if (!ctx.isSuperadmin) return []
-  const { data, error } = await ctx.db
-    .from('hub_mail_connections')
-    .select(CONNECTION_COLUMNS)
-    .or(`owner_user_id.eq.${ctx.userId},and(visibility.eq.shared,org_id.in.(${ctx.orgIds.join(',')}))`)
-    .order('email_address')
+  const { data, error } = await withAlso(CONNECTION_COLUMNS, (cols) => ctx.db.from('hub_mail_connections').select(cols).order('email_address'))
   if (error) return null
   return ((data ?? []) as MailConnectionRow[]).filter(r => canSee(ctx, r))
 }

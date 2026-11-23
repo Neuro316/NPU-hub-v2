@@ -17,6 +17,7 @@
 // with a fixed reason, so the call prep note can say what it could not read. A mailbox marked 'error' is still tried.
 import { createHmac } from 'crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { ownerEquivalent } from '@/lib/mail/access'
 import { listVisible, canSee, accessTokenFor, refreshTokenFor, MailError, isPermanent, type MailConnectionRow } from '@/lib/mail/google'
 import { searchMessageIds, getMessageMeta, getThreadFull, type MessageMeta } from '@/lib/mail/gmail'
 import type { SearchCaller } from '@/lib/mail/search-auth'
@@ -116,11 +117,12 @@ export const REASON = {
 }
 const reasonFor = (e: unknown) => (e instanceof MailError && isPermanent(e.code) ? REASON.reconnect : REASON.later)
 
-/** The mailboxes the caller may search: listVisible, then canSee again, so a private mailbox is its owner's only. */
+/** The mailboxes the caller may search: listVisible, then canSee again, so a private mailbox is its owner's (and the users
+ *  the owner listed in also_visible_to) only. */
 export async function visibleConnections(caller: SearchCaller): Promise<MailConnectionRow[] | null> {
   const rows = await listVisible(caller)
   if (!rows) return null
-  return rows.filter((r) => canSee(caller, r) && (r.visibility === 'shared' || r.owner_user_id === caller.userId))
+  return rows.filter((r) => canSee(caller, r) && (r.visibility === 'shared' || ownerEquivalent(caller, r)))
 }
 
 async function pool<T, R>(items: T[], n: number, fn: (t: T) => Promise<R>): Promise<PromiseSettledResult<R>[]> {

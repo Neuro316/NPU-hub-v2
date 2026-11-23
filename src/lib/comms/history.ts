@@ -9,7 +9,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { toE164 } from '@/lib/phone'
 import { EVENT_TITLE, type EventType } from '@/lib/lifecycle/rules'
-import { inboundEmail, outboundEmail, sortTouches, touch, type Mailbox, type Touch, type Viewer } from './privacy'
+import { inboundEmail, outboundEmail, sortTouches, touch, MAILBOX_COLUMNS, type Mailbox, type Touch, type Viewer } from './privacy'
+import { withAlso } from '@/lib/mail/access'
 
 const LIMIT = 200
 const fail = (what: string, e: { code?: string } | null) => new Error(`${what} read: ${e?.code ?? 'unknown'}`)
@@ -53,7 +54,7 @@ async function names(db: SupabaseClient, table: 'team_profiles' | 'team_members'
 
 async function mail(db: SupabaseClient, viewer: Viewer, s: Subject): Promise<Touch[]> {
   if (!s.emails.length) return []
-  const { data: boxes, error } = await db.from('hub_mail_connections').select('id, owner_user_id, email_address, visibility').eq('org_id', s.orgId)
+  const { data: boxes, error } = await withAlso(MAILBOX_COLUMNS, (cols) => db.from('hub_mail_connections').select(cols).eq('org_id', s.orgId))
   if (error) throw fail('hub_mail_connections', error)
   const box = new Map(((boxes ?? []) as Mailbox[]).map((b) => [b.id, b]))
   if (!box.size) return []
