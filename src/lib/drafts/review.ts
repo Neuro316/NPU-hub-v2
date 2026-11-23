@@ -16,7 +16,7 @@ import { withAlso } from '@/lib/mail/access'
 import type { ModelClient } from '@/lib/agent/model'
 import { compose, loadVoice } from './compose'
 import { buildReplyMime, createDraft, deleteDraft, getDraft, updateDraft } from './gmail-drafts'
-import { MESSAGE_COLUMNS, type Mailbox } from './support'
+import { MESSAGE_COLUMNS, composeExtras, signerFor, type Mailbox } from './support'
 import { STOP_TEXT, draftUrl, draftsOn, hardStop, personLine, rejectLesson, replySubject, shapeOf, type ComposeOut, type StopClass } from './rules'
 
 export interface DraftView {
@@ -148,10 +148,12 @@ export async function act(db: SupabaseClient, viewer: Viewer, orgIds: string[], 
   const msg = await mb.read((m as any).gmail_message_id)   // body in memory only
   const { data: c } = row.contact_id ? await db.from('contacts').select('first_name').eq('id', row.contact_id).maybeSingle() : { data: null }
   const firstName = (c as any)?.first_name ?? null
+  const signer = await signerFor(db, row.org_id, box.owner_user_id ?? null)
   // the email is screened here first, before any model call; compose screens it again
   const early = hardStop(msg.subject, msg.body)
   const out: ComposeOut = early ? { ok: false, stop: early }
-    : await compose(input.model, 'support', { fromName: msg.fromName, fromAddress: msg.fromAddress, subject: msg.subject, body: msg.body, firstName, note }, await loadVoice(db, row.org_id))
+    : await compose(input.model, 'support', { fromName: msg.fromName, fromAddress: msg.fromAddress, subject: msg.subject, body: msg.body, firstName, note,
+      category: (m as any).category ?? null, signer, extra: await composeExtras(db, row.org_id, (m as any).category ?? null, box.owner_user_id ?? null) }, await loadVoice(db, row.org_id))
   if (!out.ok && 'stop' in out) {
     if (row.gmail_draft_id) await deleteDraft(mb.gmail, row.gmail_draft_id)
     const { error } = await db.from('hub_drafts').update({ status: 'needs_person', reason: out.stop, gmail_draft_id: null, gmail_draft_message_id: null, draft_shape: {},
@@ -165,7 +167,7 @@ export async function act(db: SupabaseClient, viewer: Viewer, orgIds: string[], 
   const made = await createDraft(mb.gmail, raw, row.gmail_thread_id)
   if (row.gmail_draft_id) await deleteDraft(mb.gmail, row.gmail_draft_id)
   const { error } = await db.from('hub_drafts').update({ status: 'drafted', gmail_draft_id: made.draftId, gmail_draft_message_id: made.messageId,
-    draft_shape: shapeOf(out.draft.body, firstName), reviewed_at: null, reviewed_by: null, updated_at: iso }).eq('id', id)
+    draft_shape: shapeOf(out.draft.body, firstName, signer), reviewed_at: null, reviewed_by: null, updated_at: iso }).eq('id', id)
   if (error) return { status: 500, body: { error: 'Gmail has the new draft, but the Hub could not record it.' } }
   return { status: 200, body: { status: 'drafted', url: link(made.messageId) } }
 }

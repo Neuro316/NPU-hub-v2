@@ -64,7 +64,11 @@
 //   beforeeight       the 8 AM ET gate is gone                           {S_TXT_8AM}
 //   textletin         every conversation's contact is looked at          {S_TXT_EXCLUDE}
 //   timelineeveryrun  the timeline entry is written on every run         {S_TXT_TIMELINE}
-// TAMPER=1 reddens the sum (23).
+//   S_TXT_PAUSED   org_settings hub_text_alerts {"enabled": false}: no post, no rows, skipped 'paused'; any other value
+//                  (here the string "false") still posts
+//
+//   pauseignored      the pause setting is not read                      {S_TXT_PAUSED}
+// TAMPER=1 reddens the sum (24).
 const H = require('../agent/lib/harness.cjs')
 
 const D = 'lib/touchpoints/detect.ts', RUN = 'lib/touchpoints/run.ts', RU = 'lib/touchpoints/rules.ts', TA = 'lib/touchpoints/text-alerts.ts'
@@ -76,6 +80,7 @@ const TAMPERS = {
   beforeeight: [[TA, "  if (nyDayHour(now).hour < DIGEST_HOUR_ET) return { ...out, skipped: 'before_8am_et' }\n", '']],
   textletin: [[TA, 'const mine = ((convs ?? []) as any[]).filter((c) => people.contacts.has(c.contact_id))', 'const mine = ((convs ?? []) as any[]).filter(() => true)']],
   timelineeveryrun: [[TA, '  for (const w of list.filter((x) => x.isNew)) {', '  for (const w of list) {']],
+  pauseignored: [[TA, "  if (await readPause(db, orgId)) return { ...out, skipped: 'paused' }\n", '']],
   bookskip: [[D, 'if (now - Date.parse(l.created_at) < THRESHOLDS.booking_link_not_booked) continue', 'if (now - Date.parse(l.created_at) < THRESHOLDS.booking_link_not_booked * 100) continue']],
   mailskip: [[D, 'now - Date.parse(waiting.received_at) < THRESHOLDS.inbound_no_reply)', 'now - Date.parse(waiting.received_at) < THRESHOLDS.inbound_no_reply * 100)']],
   textskip: [[D, 'now - Date.parse(last.created_at) < THRESHOLDS.text_no_reply)', 'now - Date.parse(last.created_at) < THRESHOLDS.text_no_reply * 100)']],
@@ -98,7 +103,7 @@ const RED_OF = { bookskip: ['S_BOOK'], mailskip: ['S_MAIL'], textskip: ['S_TEXT'
   staff_second_email: ['S_STAFF2'], staff_mailbox_address: ['S_MAILBOX'], duplicate_pair: ['S_DUP'], clear_on_staff: ['S_CLEARSTAFF'],
   other_org_admin: ['S_OTHERORG'], reopen_after_clear: ['S_REOPEN'],
   txtpostempty: ['S_TXT_NONE'], allnew: ['S_TXT_ONE'], callnoclear: ['S_TXT_CLEAR'], oldclock: ['S_TXT_RESTART'], beforeeight: ['S_TXT_8AM'],
-  textletin: ['S_TXT_EXCLUDE'], timelineeveryrun: ['S_TXT_TIMELINE'] }
+  textletin: ['S_TXT_EXCLUDE'], timelineeveryrun: ['S_TXT_TIMELINE'], pauseignored: ['S_TXT_PAUSED'] }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-touchpoints')
 const load = H.install(out)
@@ -441,6 +446,19 @@ const check = (id, ok, got) => rows.push({ id, ok: !!ok, got })
     const tb = tl.find((e) => e.contact_id === 'tb')
     check('S_TXT_TIMELINE', after1 === 2 && tl.length === 2 && posts.length === 3 && !/SECRETBODY/.test(stored) && tb && tb.metadata.line === 'WNW Office' && tb.metadata.waited_minutes === 180
       && Object.keys(tb.metadata).sort().join(',') === 'line,situation_id,waited_minutes', { after1, total: tl.length, meta: tb?.metadata })
+  }
+
+  {
+    const T = textWorld(), posts = []
+    threeWaiting(T)
+    T.org_settings = [{ org_id: ORG, setting_key: 'hub_text_alerts', setting_value: { enabled: false } }]
+    const r = await run.runTouchpoints(tdeps(T, NOW, posts))
+    const T2 = textWorld(), posts2 = []
+    threeWaiting(T2)
+    T2.org_settings = [{ org_id: ORG, setting_key: 'hub_text_alerts', setting_value: 'false' }]
+    await run.runTouchpoints(tdeps(T2, NOW, posts2))
+    check('S_TXT_PAUSED', posts.length === 0 && textRows(T).length === 0 && T.contact_timeline.length === 0 && r.textAlert?.skipped === 'paused' && posts2.length === 1,
+      { posts: posts.length, rows: textRows(T).length, alert: r.textAlert, on: posts2.length })
   }
 
   H.report(rows, active, RED_OF)

@@ -62,20 +62,42 @@
 //   listedanyone   mailView opens a mailbox with anyone listed to everyone        {V_UNLISTED}
 //   listededits    a listed user passes the edit check                            {V_OWNER_ONLY_EDITS}
 //   inlinerule     mailView restates the rule inline instead of calling the helper  {V_ONE_RULE}
-// TAMPER=1 reddens the sum (19).
+//
+// Drafts for every email, owner sign-off, card links (Shane, 2026-11-23):
+//   D_ALL_CATEGORIES  the cron drafts lead, scheduling and partner_outreach messages; never newsletter or vendor_billing
+//   D_ON_DEMAND       Draft a reply on an uncategorised message makes exactly one draft (a second press is refused); a
+//                     hard-stopped message becomes needs_person with no model call; with drafting mode off the route
+//                     answers 409 and writes nothing
+//   D_SCHED_MAX3      a scheduling draft offering four times is not kept, three is; the prompt carries the Rules page
+//                     windows of the mailbox owner and the limit
+//   D_SIGNOFF_OWNER   a draft from shane@ signs "Warmly, Shane"; one from ops@ (Cameron's) signs "Warmly, Cameron"
+//   D_CARD_LINK       a Recent email line links to /mail?message=<id> only when the viewer may read the mailbox; a hidden
+//                     line and a sent-only thread have no link; an email touch links only when not redacted
+//
+//   supportonly    the cron drafts participant_support only                {D_ALL_CATEGORIES}
+//   ondemandoff    Draft a reply ignores the drafting mode                  {D_ON_DEMAND}
+//   fourtimes      the time limit is four                                   {D_SCHED_MAX3}
+//   cameronalways  the signer is always Cameron                             {D_SIGNOFF_OWNER}
+//   linkhidden     a hidden Recent email line links to the message too      {D_CARD_LINK}
+// TAMPER=1 reddens the sum (24).
 const H = require('../agent/lib/harness.cjs')
 
 const S = 'lib/drafts/support.ts', C = 'lib/drafts/compose.ts', G = 'lib/drafts/gmail-drafts.ts', R = 'lib/drafts/rules.ts', V = 'lib/drafts/review.ts'
 const I = 'lib/drafts/inbox.ts', MG = 'lib/mail/google.ts', MP = 'lib/mail/priority.ts', SY = 'lib/mail/sync.ts'
-const AC = 'lib/mail/access.ts', AV = 'lib/mail/also-visible.ts', PV = 'lib/comms/privacy.ts'
+const AC = 'lib/mail/access.ts', AV = 'lib/mail/also-visible.ts', PV = 'lib/comms/privacy.ts', RE = 'lib/comms/recent-email.ts'
 const TAMPERS = {
+  supportonly: [[R, "export const DRAFT_CATEGORIES = ['participant_support', 'lead', 'scheduling', 'partner_outreach']", "export const DRAFT_CATEGORIES = ['participant_support']"]],
+  ondemandoff: [[S, "  if ((await draftsMode(db, box.org_id)) !== 'on') return { status: 409,", "  if (false as boolean) return { status: 409,"]],
+  fourtimes: [[R, 'export const MAX_TIMES = 3', 'export const MAX_TIMES = 4']],
+  cameronalways: [[S, '  if (fromTeam) return fromTeam\n', '  if (fromTeam) return DEFAULT_SIGNER\n']],
+  linkhidden: [[RE, "label: HIDDEN_LABEL[view], mailbox: null, lastReply: null, href: null } }", "label: HIDDEN_LABEL[view], mailbox: null, lastReply: null, href: msgs.find((m) => m.id) ? inboxHref(msgs.find((m) => m.id)!.id!) : null } }"]],
   listedignored: [[AC, '  return Array.isArray(box.also_visible_to) && box.also_visible_to.includes(viewer.userId)', '  return false']],
   listedanyone: [[PV, "  if (owner) return 'full'", "  if (owner || (box.also_visible_to ?? []).length > 0) return 'full'"]],
   listededits: [[AV, '  if (!isOwner(ctx, row)) return forbidden(', '  if (!isOwner(ctx, row) && !(row.also_visible_to ?? []).includes(ctx.userId)) return forbidden(']],
   inlinerule: [[PV, '  const owner = ownerEquivalent(viewer, box)', '  const owner = box.owner_user_id === viewer.userId || (Array.isArray(box.also_visible_to) && box.also_visible_to.includes(viewer.userId))']],
-  wrongthread: [[S, 'const made = await createDraft(box.gmail, raw, m.gmail_thread_id)', "const made = await createDraft(box.gmail, raw, '')"]],
+  wrongthread: [[S, 'const made = await createDraft(mb.gmail, raw, m.gmail_thread_id)', "const made = await createDraft(mb.gmail, raw, '')"]],
   sends: [[G, "const { status, data } = await gmail('POST', '/drafts', { message: { raw, threadId } })", "const { status, data } = await gmail('POST', '/drafts/send', { message: { raw, threadId } })"]],
-  storetext: [[S, 'draft_shape: shapeOf(r.draft.body, contact?.first_name ?? null) })', 'draft_shape: { ...shapeOf(r.draft.body, contact?.first_name ?? null), preview: r.draft.body.slice(0, 80) } })']],
+  storetext: [[S, 'draft_shape: shapeOf(r.draft.body, contact?.first_name ?? null, signer) })', 'draft_shape: { ...shapeOf(r.draft.body, contact?.first_name ?? null, signer), preview: r.draft.body.slice(0, 80) } })']],
   nothanks: [[C, "if (kind === 'support' && thanksOnly(ctx.body)) return { ok: false, skip: 'thanks_only' }", "if (false as boolean) return { ok: false, skip: 'thanks_only' }"]],
   noscreen: [[C, 'const stop = hardStop(ctx.subject, ctx.body)', 'const stop = null as ReturnType<typeof hardStop>']],
   keepquote: [[R, '  if (sources.some((src) => quotes(s, src))) return null\n', '']],
@@ -92,7 +114,8 @@ const TAMPERS = {
 const RED_OF = { wrongthread: ['D_THREAD'], sends: ['D_NOSEND'], storetext: ['D_NOTEXT'], nothanks: ['D_SKIP'], noscreen: ['D_STOP'], keepquote: ['D_LESSON'],
   showprivate: ['D_PRIVATE'], ignoremode: ['D_OFF'], needsall: ['D_NEEDS_REVIEW'], editsends: ['D_EDIT_UPDATES'], redraftblind: ['D_REDRAFT_HARDSTOP'],
   rejectat: ['D_REJECT_LESSON'], panesees: ['D_PRIVATE_PANE'], retiredback: ['D_PIN_RETIRE'], guideanycat: ['D_PRIORITY_GUIDE'],
-  listedignored: ['V_LISTED'], listedanyone: ['V_UNLISTED'], listededits: ['V_OWNER_ONLY_EDITS'], inlinerule: ['V_ONE_RULE'] }
+  listedignored: ['V_LISTED'], listedanyone: ['V_UNLISTED'], listededits: ['V_OWNER_ONLY_EDITS'], inlinerule: ['V_ONE_RULE'],
+  supportonly: ['D_ALL_CATEGORIES'], ondemandoff: ['D_ON_DEMAND'], fourtimes: ['D_SCHED_MAX3'], cameronalways: ['D_SIGNOFF_OWNER'], linkhidden: ['D_CARD_LINK'] }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-drafts')
 // triage (sync.triageOne) reads Gmail and the model through these two modules: both are fakes here
@@ -126,6 +149,14 @@ const MAIL = {
   g6: { from: 'kim@example.com', name: 'Kim', subject: 'Question', body: 'Should I keep taking my medication during the program? SECRETBODY' },
   g7: { from: 'lee@example.com', name: 'Lee', subject: 'Question', body: 'My lawyer asked about the agreement, can you send it? SECRETBODY' },
   g8: { from: 'pat@example.com', name: 'Pat', subject: 'Login SECRETSUBJECT', body: 'How do I log in to the new University site? SECRETBODY', rfc: '<orig-8@mail.example>' },
+  gl: { from: 'lead@example.com', name: 'Lou', subject: 'Your program', body: 'Hi, I heard about your program from a friend. How does it work and how do I start? SECRETBODY' },
+  gs: { from: 'sched@example.com', name: 'Sky', subject: 'Meeting', body: 'Could we find a time to talk next week? SECRETBODY' },
+  gp: { from: 'partner@example.com', name: 'Pia', subject: 'Collaboration', body: 'We run a wellness studio and would love to explore working together. Are you open to it? SECRETBODY' },
+  gn: { from: 'news@example.com', name: 'News', subject: 'Weekly digest', body: 'This week in wellness, what do you think? SECRETBODY' },
+  gv: { from: 'vendor@example.com', name: 'Vendor', subject: 'Statement', body: 'Your statement is ready, any questions? SECRETBODY' },
+  gu: { from: 'uma@example.com', name: 'Uma', subject: 'Hello', body: 'Hi, is the next cohort starting soon? SECRETBODY' },
+  gx: { from: 'xan@example.com', name: 'Xan', subject: 'Question', body: 'Can I keep taking my medication while I do this? SECRETBODY' },
+  gh: { from: 'hal@example.com', name: 'Hal', subject: 'Question', body: 'Where do I find the session recordings? SECRETBODY' },
   sA: { from: 'admin@neuroprogeny.com', name: 'Cameron', subject: 'Re: x', body: 'ALPHA Hi Jo, the Tuesday call link is in your welcome email and starts at noon eastern time. Warmly, Cameron SENTTEXT' },
   sB: { from: 'admin@neuroprogeny.com', name: 'Cameron', subject: 'Re: y', body: 'BRAVO Hi Pat, you can sign in with the same email you used before and your progress carries over. SENTTEXT' },
 }
@@ -219,6 +250,7 @@ function fakeGmail(log, drafts) {
   })
 }
 
+const FAKE_BODY = { next: null }
 function fakeModel(log, lessonFor = () => 'Cameron keeps replies short.') {
   return {
     async create(req) {
@@ -227,8 +259,11 @@ function fakeModel(log, lessonFor = () => 'Cameron keeps replies short.') {
       log.push({ kind: /compare a reply draft/.test(sys) ? 'lesson' : 'compose', user })
       if (/compare a reply draft/.test(sys)) return { stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ lesson: lessonFor(user) }) }] }
       const name = (user.match(/First name to greet: (\w+)/) ?? [])[1]
+      const signer = (sys.match(/sign-off on its own lines:\nWarmly,\n(\S+)/) ?? [])[1] ?? 'Cameron'
+      log[log.length - 1].system = sys
+      const middle = FAKE_BODY.next ?? 'DRAFTTEXT Thanks for asking. The details are on the way.'
       return { stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ hard_stop: 'none', is_question: true, subject: 'Re: your question',
-        body: `Hi ${name ?? 'there'},\n\nDRAFTTEXT Thanks for asking. The details are on the way.\n\nWarmly,\nCameron` }) }] }
+        body: `Hi ${name ?? 'there'},\n\n${middle}\n\nWarmly,\n${signer}` }) }] }
     },
   }
 }
@@ -523,6 +558,100 @@ const raw = (b) => Buffer.from(String(b?.message?.raw ?? ''), 'base64url').toStr
       let probe
       try { probe = await surfaces(PROBE, false) } finally { access.ownerEquivalent = orig }
       check('V_ONE_RULE', all(probe), { probe })
+    }
+  }
+
+  // ── drafts for every email, owner sign-off, card links ──
+  {
+    const SHANE = '00000000-0000-4000-8000-0000000000e5'
+    const SHANEBOX = '00000000-0000-4000-8000-00000000b0a3', OPSBOX = '00000000-0000-4000-8000-00000000b0a4'
+    const U = (n) => `00000000-0000-4000-8000-0000000001${String(n).padStart(2, '0')}`
+    const cat = (row, c) => ({ ...row, category: c })
+
+    // D_ALL_CATEGORIES: the cron, one run
+    {
+      const W = world('on'), g = [], m = []
+      W.hub_mail_messages = [cat(msgRow('n1', SHARED, 'ab01', 'gl', 3), 'lead'), cat(msgRow('n2', SHARED, 'ab02', 'gs', 3), 'scheduling'), cat(msgRow('n3', SHARED, 'ab03', 'gp', 3), 'partner_outreach'),
+        cat(msgRow('n4', SHARED, 'ab04', 'gn', 3), 'newsletter'), cat(msgRow('n5', SHARED, 'ab05', 'gv', 3), 'vendor_billing')]
+      await support.runSupportDrafts({ db: memDb(W, []), orgId: ORG, now: NOW, model: fakeModel(m), mailbox: fakeGmail(g, new Map()) })
+      const st = (id) => W.hub_drafts.find((x) => x.source_id === id)?.status ?? null
+      check('D_ALL_CATEGORIES', st('n1') === 'drafted' && st('n2') === 'drafted' && st('n3') === 'drafted' && st('n4') === null && st('n5') === null
+        && g.filter((c) => c.method === 'POST').length === 3, { n: ['n1', 'n2', 'n3', 'n4', 'n5'].map(st) })
+    }
+
+    // D_ON_DEMAND: Draft a reply
+    {
+      const W = world('on'), g = [], m = [], dr = new Map()
+      W.hub_mail_messages = [cat(msgRow(U(1), SHARED, 'ac01', 'gu', 3), null), cat(msgRow(U(2), SHARED, 'ac02', 'gx', 3), 'personal')]
+      const ctx = { db: memDb(W, []), userId: OWNER, isSuperadmin: true, orgIds: [ORG] }
+      const deps = { model: fakeModel(m), mailbox: fakeGmail(g, dr), now: NOW }
+      const first = await support.draftOnDemand(ctx, U(1), deps)
+      const again = await support.draftOnDemand(ctx, U(1), deps)
+      const rowsU1 = W.hub_drafts.filter((x) => x.source_id === U(1))
+      const posts = g.filter((c) => c.method === 'POST').length
+      const modelBefore = m.length
+      const stop = await support.draftOnDemand(ctx, U(2), deps)
+      const rowU2 = W.hub_drafts.find((x) => x.source_id === U(2))
+      // mode off: 409, nothing written, no Gmail or model call
+      const OFF = world('off'), offWrites = [], og = [], om = []
+      OFF.hub_mail_messages = [cat(msgRow(U(3), SHARED, 'ac03', 'gu', 3), null)]
+      const off = await support.draftOnDemand({ db: memDb(OFF, offWrites), userId: OWNER, isSuperadmin: true, orgIds: [ORG] }, U(3), { model: fakeModel(om), mailbox: fakeGmail(og, new Map()), now: NOW })
+      check('D_ON_DEMAND', first.status === 200 && first.body.status === 'drafted' && again.status === 409 && rowsU1.length === 1 && rowsU1[0].status === 'drafted' && rowsU1[0].kind === 'support' && posts === 1
+        && stop.status === 200 && stop.body.status === 'needs_person' && rowU2?.status === 'needs_person' && rowU2?.reason === 'clinical' && m.length === modelBefore
+        && off.status === 409 && offWrites.length === 0 && og.length === 0 && om.length === 0,
+      { first: first.status, again: again.status, rows: rowsU1.length, posts, stop: stop.body, off: off.status, offWrites: offWrites.length })
+    }
+
+    // D_SCHED_MAX3: four times refused, three kept; the prompt carries the owner's Rules page windows and the limit
+    {
+      const W = world('on')
+      W.hub_sched_category_windows = [{ owner_user_id: OWNER, category: 'one_on_one', day_kind: 'school', start_time: '10:00:00', end_time: '12:00:00' }]
+      W.hub_sched_settings = [{ owner_user_id: OWNER, timezone: 'America/New_York' }]
+      W.hub_resources = [{ org_id: ORG, kind: 'booking_link', name: 'Discovery call', url: 'https://cal.example.com/discovery', archived_at: null }]
+      const extra = await support.composeExtras(memDb(W, []), ORG, 'scheduling', OWNER)
+      const ctx = { fromName: 'Sky', fromAddress: 'sched@example.com', subject: 'Meeting', body: 'Could we find a time to talk next week?', firstName: 'Sky', category: 'scheduling', signer: 'Cameron', extra }
+      const voice = { campaignCopy: [], lessons: [] }
+      const m4 = [], m3 = []
+      FAKE_BODY.next = 'I can do Tuesday at 10am, 10:30am, 11am or 11:30 am.'
+      const four = await compose.compose(fakeModel(m4), 'support', ctx, voice)
+      FAKE_BODY.next = 'I can do Tuesday at 10am, 10:30 am or 11:15am.'
+      const three = await compose.compose(fakeModel(m3), 'support', ctx, voice)
+      FAKE_BODY.next = null
+      const sys = m3[0]?.system ?? ''
+      check('D_SCHED_MAX3', !four.ok && four.skip === 'invalid' && three.ok && /one on one, school days: 10:00 to 12:00/.test(sys) && /Never offer more than 3 times/.test(sys)
+        && /cal\.example\.com\/discovery/.test(sys), { four, three: three.ok, sysHasWindow: /10:00 to 12:00/.test(sys) })
+    }
+
+    // D_SIGNOFF_OWNER: shane@ signs Shane, ops@ (Cameron's) signs Cameron
+    {
+      const W = world('on'), g = [], m = []
+      W.hub_mail_connections.push({ id: SHANEBOX, org_id: ORG, owner_user_id: SHANE, email_address: 'shane@neuroprogeny.com', visibility: 'private', status: 'active' },
+        { id: OPSBOX, org_id: ORG, owner_user_id: OWNER, email_address: 'ops@neuroprogeny.com', visibility: 'private', status: 'active' })
+      W.team_profiles = [{ org_id: ORG, user_id: SHANE, display_name: 'Shane Granau', role: 'super_admin', status: 'active' }, { org_id: ORG, user_id: OWNER, display_name: 'Cameron Allen', role: 'super_admin', status: 'active' }]
+      W.hub_mail_messages = [msgRow('s1', SHANEBOX, 'ad01', 'gh', 3), msgRow('s2', OPSBOX, 'ad02', 'gu', 3)]
+      await support.runSupportDrafts({ db: memDb(W, []), orgId: ORG, now: NOW, model: fakeModel(m), mailbox: fakeGmail(g, new Map()) })
+      const bodyFor = (box) => { const c = g.find((x) => x.method === 'POST' && x.connectionId === box); const t = c ? raw(c.body) : ''; const i = t.indexOf('\r\n\r\n'); return i < 0 ? '' : t.slice(i + 4) }
+      const dec = (t) => { try { return Buffer.from(t.replace(/\s+/g, ''), 'base64').toString('utf8') } catch { return t } }
+      const shaneText = dec(bodyFor(SHANEBOX)), opsText = dec(bodyFor(OPSBOX))
+      check('D_SIGNOFF_OWNER', /Warmly,\r?\nShane\s*$/.test(shaneText) && !/Cameron/.test(shaneText.split(/\r?\n/).slice(-3).join(' ')) && /Warmly,\r?\nCameron\s*$/.test(opsText),
+        { shane: shaneText.slice(-30), ops: opsText.slice(-30) })
+    }
+
+    // D_CARD_LINK: Recent email lines link to the Inbox only when the viewer may read the mailbox
+    {
+      const recentL = load('lib/comms/recent-email.ts'), priv = load('lib/comms/privacy.ts')
+      const boxes = [{ id: PRIV, owner_user_id: OWNER, email_address: 'owner@neuroprogeny.com', visibility: 'private' }, { id: SHARED, owner_user_id: OWNER, email_address: 'admin@neuroprogeny.com', visibility: 'shared' }]
+      const received = [{ id: U(11), connection_id: PRIV, gmail_thread_id: 'ae01', subject: 'Private one', category: 'lead', received_at: ago(3) },
+        { id: U(12), connection_id: SHARED, gmail_thread_id: 'ae02', subject: 'Shared one', category: 'lead', received_at: ago(4) }]
+      const sent = [{ connection_id: SHARED, gmail_thread_id: 'ae03', sent_at: ago(5) }]
+      const other = recentL.recentEmail({ userId: OTHER, isSuperadmin: true }, boxes, received, sent, new Map())
+      const owner = recentL.recentEmail({ userId: OWNER, isSuperadmin: true }, boxes, received, sent, new Map())
+      const hiddenO = other.find((l) => l.hidden), sharedO = other.find((l) => l.label === 'Shared one'), sentO = other.find((l) => /not stored/.test(l.label))
+      const privOwner = owner.find((l) => l.label === 'Private one')
+      const tPriv = priv.inboundEmail({ userId: OTHER, isSuperadmin: true }, boxes[0], { id: U(11), subject: 'x', category: 'lead', received_at: ago(3) })
+      const tShared = priv.inboundEmail({ userId: OTHER, isSuperadmin: true }, boxes[1], { id: U(12), subject: 'x', category: 'lead', received_at: ago(4) })
+      check('D_CARD_LINK', hiddenO && hiddenO.href === null && sharedO?.href === `/mail?message=${U(12)}` && sentO && sentO.href === null && privOwner?.href === `/mail?message=${U(11)}`
+        && priv.touchHref(tPriv) === null && priv.touchHref(tShared) === `/mail?message=${U(12)}`, { other: other.map((l) => [l.label, l.href]), owner: privOwner?.href })
     }
   }
 

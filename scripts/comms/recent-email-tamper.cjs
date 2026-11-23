@@ -29,7 +29,7 @@ const TAMPERS = {
   oldest: [[RE, '.sort((a, b) => ms(b.line.at) - ms(a.line.at) || a.k.localeCompare(b.k))', '.sort((a, b) => ms(a.line.at) - ms(b.line.at) || a.k.localeCompare(b.k))']],
   permessage: [[RE, 'const k = `${connectionId}:${threadId}`', 'const k = `${connectionId}:${threadId}:${m.at}`']],
   showall: [[RE, "if (view !== 'full') return", "if (false as boolean) return"]],
-  summary: [[RE, "export const RECEIVED_COLUMNS = 'connection_id, gmail_thread_id, subject, category, received_at'", "export const RECEIVED_COLUMNS = 'connection_id, gmail_thread_id, subject, category, received_at, summary'"]],
+  summary: [[RE, "export const RECEIVED_COLUMNS = 'id, connection_id, gmail_thread_id, subject, category, received_at'", "export const RECEIVED_COLUMNS = 'id, connection_id, gmail_thread_id, subject, category, received_at, summary'"]],
   noalt: [[RE, '  for (const e of s.emails) {', '  for (const e of s.emails.slice(0, 1)) {'], [RE, ".in('to_address', s.emails)", ".in('to_address', s.emails.slice(0, 1))"]],
 }
 const RED_OF = { eight: ['R_SEVEN'], oldest: ['R_ORDER'], permessage: ['R_THREAD'], showall: ['R_PRIVATE'], summary: ['R_NOBODY'], noalt: ['R_ALT'] }

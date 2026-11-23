@@ -13,6 +13,8 @@
 //   state     one hub_touchpoint_situations row per waiting thread, kind text_waiting_1h (hub_248). detail holds ids,
 //             the line name and times only. alerted_at is set once the thread was in a post that Slack accepted; a row
 //             without it is New. The row clears as soon as the thread is answered.
+//   pause     org_settings 'hub_text_alerts' = {"enabled": false} pauses the alert: nothing posted, nothing written,
+//             skipped 'paused'. Missing, or any other value, means on.
 //   timeline  on a thread's first alert, one contact_timeline entry text_waiting_alert (line, waited minutes; no text).
 // The message text is read ONLY to build the 120 character preview in the Slack post. It is never stored or logged.
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -143,10 +145,21 @@ export async function findWaiting(d: TextAlertDeps, people: TextPeople): Promise
   return out
 }
 
+/** org_settings 'hub_text_alerts': paused ONLY when its value is exactly { enabled: false }. Missing or anything else is on. */
+export function textAlertsPaused(raw: unknown): boolean {
+  return !!raw && typeof raw === 'object' && !Array.isArray(raw) && (raw as Record<string, unknown>).enabled === false
+}
+export async function readPause(db: SupabaseClient, orgId: string): Promise<boolean> {
+  const { data, error } = await db.from('org_settings').select('setting_value').eq('org_id', orgId).eq('setting_key', 'hub_text_alerts').maybeSingle()
+  if (error) return false
+  return textAlertsPaused((data as any)?.setting_value)
+}
+
 /** One alert pass: clear answered threads, list the waiting ones in ONE post, mark them alerted, write first-alert timeline. */
 export async function textAlerts(d: TextAlertDeps, people: TextPeople): Promise<TextAlertOut> {
   const { db, orgId, now } = d
   const out: TextAlertOut = { waiting: 0, new: 0, cleared: 0, posted: false, code: null, message: null }
+  if (await readPause(db, orgId)) return { ...out, skipped: 'paused' }
   if (nyDayHour(now).hour < DIGEST_HOUR_ET) return { ...out, skipped: 'before_8am_et' }
   const waiting = await findWaiting(d, people)
   out.waiting = waiting.length

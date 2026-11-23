@@ -17,8 +17,10 @@ export function draftsOn(raw: unknown): boolean {
   return !!raw && typeof raw === 'object' && !Array.isArray(raw) && (raw as Record<string, unknown>).mode === 'on'
 }
 
-/** The only triage category drafted. */
-export const DRAFT_CATEGORIES = ['participant_support']
+/** The triage categories the 10-minute cron drafts (Shane, 2026-11-23: every email a person would answer). */
+export const DRAFT_CATEGORIES = ['participant_support', 'lead', 'scheduling', 'partner_outreach']
+/** Categories never drafted, not even on demand (Draft a reply in the review pane). */
+export const NO_DRAFT_CATEGORIES = ['newsletter', 'spam', 'security_alert', 'vendor_billing']
 
 // ── who never gets a draft (plan A1: our own replies and automated notices) ───────────────────────────────────
 export const OUR_DOMAINS = ['neuroprogeny.com']
@@ -82,22 +84,42 @@ export function fence(s: string): string {
 }
 
 // ── the voice (fixed style block; the voice guide and campaign copy are added by compose) ──────────────────────
-export const SIGN_OFF = 'Warmly,\nCameron'
-export const STYLE = [
-  'Write as Cameron Allen, founder of Neuro Progeny, to one person. Warm, direct and plain.',
+/** The sign-off: "Warmly," and the first name of the owner of the mailbox the email arrived in (2026-11-23). */
+export const signOff = (signer: string) => `Warmly,\n${signer}`
+export const DEFAULT_SIGNER = 'Cameron'
+export const SIGN_OFF = signOff(DEFAULT_SIGNER)
+/** The fixed style block, for the mailbox owner who signs. Cameron's wording is unchanged. */
+export const styleFor = (signer: string) => [
+  signer === DEFAULT_SIGNER ? 'Write as Cameron Allen, founder of Neuro Progeny, to one person. Warm, direct and plain.'
+    : `Write as ${signer} of the Neuro Progeny team, to one person. Warm, direct and plain.`,
   'Plain words, short paragraphs, one idea per sentence, ninth grade reading level.',
   'Never use an em dash or an en dash. Use a comma, a full stop or a colon.',
   'Never give clinical, medical, legal or financial advice, prices or refunds. If the email needs any of these, set hard_stop.',
-  'Answer only what was asked. If you do not know a fact (a date, a link, a time), say Cameron will confirm it rather than inventing it.',
-  `End with exactly this sign-off on its own lines:\n${SIGN_OFF}`,
+  `Answer only what was asked. If you do not know a fact (a date, a link, a time), say ${signer} will confirm it rather than inventing it.`,
+  `End with exactly this sign-off on its own lines:\n${signOff(signer)}`,
 ].join('\n')
+export const STYLE = styleFor(DEFAULT_SIGNER)
+
+// ── scheduling: never more than three times offered ─────────────────────────────────────────────────────────
+export const MAX_TIMES = 3
+const CLOCK = /\b(?:(1[0-2]|0?[1-9])(?::([0-5]\d))?\s?(a\.?m\.?|p\.?m\.?)|([01]?\d|2[0-3]):([0-5]\d))(?![\w:])/gi
+/** The distinct clock times a draft offers ("10am", "2:30 pm", "14:00" each count once). */
+export function offeredTimes(body: string): string[] {
+  const out = new Set<string>()
+  for (const m of Array.from(String(body ?? '').matchAll(CLOCK))) {
+    let h: number, min: number
+    if (m[1]) { h = Number(m[1]) % 12 + (/^p/i.test(m[3]) ? 12 : 0); min = Number(m[2] ?? 0) } else { h = Number(m[4]); min = Number(m[5]) }
+    out.add(`${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`)
+  }
+  return Array.from(out)
+}
 
 export interface Composed { subject: string; body: string }
 export type ComposeOut = { ok: true; draft: Composed } | { ok: false; stop: StopClass } | { ok: false; skip: 'thanks_only' | 'invalid' }
 
 const DASH = /[\u2013\u2014]/g
 /** The model's JSON, kept only when it is a usable draft. A hard stop from the model wins. The body is screened again. */
-export function validateCompose(raw: unknown, fallbackSubject: string): ComposeOut {
+export function validateCompose(raw: unknown, fallbackSubject: string, signer: string = DEFAULT_SIGNER, category: string | null = null): ComposeOut {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, skip: 'invalid' }
   const r = raw as Record<string, unknown>
   const stop = STOP_ORDER.find((c) => c === r.hard_stop)
@@ -108,8 +130,13 @@ export function validateCompose(raw: unknown, fallbackSubject: string): ComposeO
   if (body.length < 20) return { ok: false, skip: 'invalid' }
   const out = hardStop(body)
   if (out) return { ok: false, stop: out }
+  // a scheduling draft offering more than three times is not kept (the prompt asks for two or three)
+  if (category === 'scheduling' && offeredTimes(body).length > MAX_TIMES) return { ok: false, skip: 'invalid' }
   const subject = (typeof r.subject === 'string' && r.subject.trim() ? r.subject : fallbackSubject).replace(DASH, ',').replace(/[\r\n]+/g, ' ').trim().slice(0, 200)
-  return { ok: true, draft: { subject, body: body.includes('Cameron') ? body : `${body}\n\n${SIGN_OFF}` } }
+  // a model that signed as Cameron on someone else's mailbox is corrected to the owner's name
+  const text = signer === DEFAULT_SIGNER ? body : body.replace(/Warmly,[ \t]*\n[ \t]*Cameron[ \t]*$/i, signOff(signer))
+  const signed = new RegExp(`\\b${signer.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(text.split('\n').slice(-3).join(' '))
+  return { ok: true, draft: { subject, body: signed ? text : `${text}\n\n${signOff(signer)}` } }
 }
 
 export const replySubject = (s: string | null | undefined) => {
@@ -119,7 +146,7 @@ export const replySubject = (s: string | null | undefined) => {
 
 // ── the draft's shape: counts only, never text (what the learning loop compares when Gmail no longer has the draft) ─
 export interface Shape { words: number; paragraphs: number; questions: number; links: number; greeting: 'hi_name' | 'hi' | 'other' | 'none'; signoff: boolean }
-export function shapeOf(body: string, firstName: string | null = null): Shape {
+export function shapeOf(body: string, firstName: string | null = null, signer: string = DEFAULT_SIGNER): Shape {
   const t = String(body ?? '')
   const first = t.trim().split('\n')[0] ?? ''
   const greeting = /^(hi|hello|hey|dear)\b/i.test(first) ? (firstName && first.toLowerCase().includes(firstName.toLowerCase()) ? 'hi_name' : 'hi') : first ? 'other' : 'none'
@@ -129,7 +156,7 @@ export function shapeOf(body: string, firstName: string | null = null): Shape {
     questions: (t.match(/\?/g) ?? []).length,
     links: (t.match(/https?:\/\//g) ?? []).length,
     greeting,
-    signoff: /\bCameron\b/.test(t.split('\n').slice(-3).join(' ')),
+    signoff: t.split('\n').slice(-3).join(' ').includes(signer),
   }
 }
 
@@ -209,6 +236,6 @@ export function whyLine(shape: Partial<Shape> | null | undefined): string | null
   parts.push(shape.greeting === 'hi_name' ? 'greets them by first name' : shape.greeting === 'hi' ? 'a plain "Hi" because the first name is not known' : 'no greeting line')
   if (shape.questions) parts.push(`asks ${shape.questions} question${shape.questions === 1 ? '' : 's'} back`)
   parts.push(shape.links ? `${shape.links} link${shape.links === 1 ? '' : 's'}` : 'no links')
-  if (shape.signoff) parts.push('signed as Cameron')
+  if (shape.signoff) parts.push('signed with the mailbox owner\'s name')
   return `${parts.join(', ')}.`
 }

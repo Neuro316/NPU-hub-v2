@@ -75,6 +75,13 @@ export function outboundEmail(viewer: Viewer, box: Mailbox, s: { id: string; sen
   return touch({ id: `sent:${s.id}`, type: 'email', direction: 'out', at: s.sent_at, who: box.email_address, summary: `Email sent from ${box.email_address}` })
 }
 
+/** The Inbox link for an email touch: a received email the viewer may read in full (not redacted) opens its review
+ *  pane (/mail?message=<id>). A sent email or a redacted row has none. */
+export function touchHref(t: Pick<Touch, 'id' | 'type' | 'redacted'>): string | null {
+  if (t.type !== 'email' || t.redacted || !t.id.startsWith('mail:')) return null
+  return `/mail?message=${encodeURIComponent(t.id.slice(5))}`
+}
+
 /** Builds a Touch with exactly the allowed fields, whatever the caller passed. */
 export function touch(t: { id: string; type: TouchType; direction: Direction; at: string; who: string | null; summary: string; muted?: boolean; redacted?: boolean }): Touch {
   return { id: t.id, type: t.type, direction: t.direction, at: t.at, who: t.who ?? null, summary: oneLine(t.summary, 200), muted: !!t.muted, redacted: !!t.redacted }

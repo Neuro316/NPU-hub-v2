@@ -15,7 +15,7 @@ import type { Subject } from './history'
 
 export const RECENT_EMAIL_LIMIT = 7
 /** The only columns read. Neither list may ever name body, snippet or summary. */
-export const RECEIVED_COLUMNS = 'connection_id, gmail_thread_id, subject, category, received_at'
+export const RECEIVED_COLUMNS = 'id, connection_id, gmail_thread_id, subject, category, received_at'
 export const SENT_COLUMNS = 'connection_id, gmail_thread_id, sent_at'
 
 /** The only shape that leaves the server. */
@@ -27,10 +27,15 @@ export interface RecentEmailLine {
   label: string
   mailbox: string | null
   lastReply: string | null
+  /** the thread's newest received message in the Inbox (/mail?message=<id>), only when the viewer may read the mailbox
+   *  in full (mailView); null when hidden, and for a sent-only thread (no received message) */
+  href: string | null
 }
-export const LINE_KEYS = ['key', 'at', 'hidden', 'label', 'mailbox', 'lastReply'] as const
+export const LINE_KEYS = ['key', 'at', 'hidden', 'label', 'mailbox', 'lastReply', 'href'] as const
+/** The Inbox link for one received message (the Inbox page opens its review pane). */
+export const inboxHref = (messageId: string) => `/mail?message=${encodeURIComponent(messageId)}`
 
-export interface Received { connection_id: string; gmail_thread_id: string; subject?: string | null; category?: string | null; received_at: string }
+export interface Received { id?: string; connection_id: string; gmail_thread_id: string; subject?: string | null; category?: string | null; received_at: string }
 export interface Sent { connection_id: string; gmail_thread_id: string; sent_at: string }
 
 const HIDDEN_LABEL: Record<Exclude<MailView, 'full'>, string> = {
@@ -45,7 +50,7 @@ const ms = (iso: string) => Date.parse(iso) || 0
 /** Pure: group the messages into threads, apply privacy, keep the newest 7. ownerName maps a user id to a name. */
 export function recentEmail(viewer: Viewer, boxes: Mailbox[], received: Received[], sent: Sent[], ownerName: Map<string, string>): RecentEmailLine[] {
   const box = new Map(boxes.map((b) => [b.id, b]))
-  type Msg = { at: string; dir: 'in' | 'out'; subject: string; view: MailView }
+  type Msg = { at: string; dir: 'in' | 'out'; subject: string; view: MailView; id: string | null }
   const threads = new Map<string, { box: Mailbox; msgs: Msg[] }>()
   const add = (connectionId: string, threadId: string, m: Msg) => {
     const b = box.get(connectionId)
@@ -54,18 +59,19 @@ export function recentEmail(viewer: Viewer, boxes: Mailbox[], received: Received
     if (!threads.has(k)) threads.set(k, { box: b, msgs: [] })
     threads.get(k)!.msgs.push(m)
   }
-  for (const r of received) { const b = box.get(r.connection_id); if (b) add(r.connection_id, r.gmail_thread_id, { at: r.received_at, dir: 'in', subject: oneLine(r.subject), view: mailView(viewer, b, r.category) }) }
-  for (const s of sent) { const b = box.get(s.connection_id); if (b) add(s.connection_id, s.gmail_thread_id, { at: s.sent_at, dir: 'out', subject: '', view: mailView(viewer, b, null) }) }
+  for (const r of received) { const b = box.get(r.connection_id); if (b) add(r.connection_id, r.gmail_thread_id, { at: r.received_at, dir: 'in', subject: oneLine(r.subject), view: mailView(viewer, b, r.category), id: r.id ?? null }) }
+  for (const s of sent) { const b = box.get(s.connection_id); if (b) add(s.connection_id, s.gmail_thread_id, { at: s.sent_at, dir: 'out', subject: '', view: mailView(viewer, b, null), id: null }) }
 
   const lines = Array.from(threads.entries()).map(([k, t]) => {
     const msgs = t.msgs.slice().sort((a, b) => ms(b.at) - ms(a.at))
     const latest = msgs[0]
     const view = msgs.reduce<MailView>((v, m) => (STRICTNESS.indexOf(m.view) > STRICTNESS.indexOf(v) ? m.view : v), 'full')
-    if (view !== 'full') return { k, line: { key: '', at: latest.at, hidden: true, label: HIDDEN_LABEL[view], mailbox: null, lastReply: null } }
+    if (view !== 'full') return { k, line: { key: '', at: latest.at, hidden: true, label: HIDDEN_LABEL[view], mailbox: null, lastReply: null, href: null } }
     const subject = msgs.find((m) => m.dir === 'in' && m.subject)?.subject || 'Sent email (subject not stored)'
     const bothSides = msgs.some((m) => m.dir === 'in') && msgs.some((m) => m.dir === 'out')
     const lastReply = !bothSides ? 'No reply yet' : latest.dir === 'in' ? 'Contact' : ownerName.get(t.box.owner_user_id) || t.box.email_address
-    return { k, line: { key: '', at: latest.at, hidden: false, label: subject, mailbox: t.box.email_address, lastReply } }
+    const newestIn = msgs.find((m) => m.dir === 'in' && m.id)
+    return { k, line: { key: '', at: latest.at, hidden: false, label: subject, mailbox: t.box.email_address, lastReply, href: newestIn ? inboxHref(newestIn.id!) : null } }
   })
   return lines
     .sort((a, b) => ms(b.line.at) - ms(a.line.at) || a.k.localeCompare(b.k))
