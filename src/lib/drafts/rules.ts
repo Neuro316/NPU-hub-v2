@@ -17,10 +17,22 @@ export function draftsOn(raw: unknown): boolean {
   return !!raw && typeof raw === 'object' && !Array.isArray(raw) && (raw as Record<string, unknown>).mode === 'on'
 }
 
-/** The triage categories the 10-minute cron drafts (Shane, 2026-11-23: every email a person would answer). */
-export const DRAFT_CATEGORIES = ['participant_support', 'lead', 'scheduling', 'partner_outreach']
+/** The triage categories the 10-minute cron drafts by default (Shane, 2026-11-23: only emails that nearly always need a
+ *  reply). Every other allowed category is drafted on demand (Draft a reply in the review pane). */
+export const AUTO_DRAFT_CATEGORIES = ['lead', 'participant_support']
 /** Categories never drafted, not even on demand (Draft a reply in the review pane). */
 export const NO_DRAFT_CATEGORIES = ['newsletter', 'spam', 'security_alert', 'vendor_billing']
+
+/**
+ * The categories the cron drafts for one org: org_settings 'hub_drafts_mode' may carry "auto": [...] beside "mode". When
+ * it is an array it replaces AUTO_DRAFT_CATEGORIES (an empty array: on demand only); a never-drafted category in it is
+ * dropped. Missing, or anything else, means the default. Draft a reply ignores this list.
+ */
+export function autoCategories(raw: unknown): string[] {
+  const v = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>).auto : undefined
+  if (!Array.isArray(v)) return AUTO_DRAFT_CATEGORIES
+  return Array.from(new Set(v.filter((c): c is string => typeof c === 'string' && !!c && !NO_DRAFT_CATEGORIES.includes(c))))
+}
 
 // ── who never gets a draft (plan A1: our own replies and automated notices) ───────────────────────────────────
 export const OUR_DOMAINS = ['neuroprogeny.com']

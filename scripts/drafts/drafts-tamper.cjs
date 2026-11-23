@@ -64,7 +64,10 @@
 //   inlinerule     mailView restates the rule inline instead of calling the helper  {V_ONE_RULE}
 //
 // Drafts for every email, owner sign-off, card links (Shane, 2026-11-23):
-//   D_ALL_CATEGORIES  the cron drafts lead, scheduling and partner_outreach messages; never newsletter or vendor_billing
+//   D_ALL_CATEGORIES  the cron drafts lead and participant_support only (the default, Shane 2026-11-23): not scheduling,
+//                     partner_outreach, newsletter or vendor_billing; Draft a reply still drafts a scheduling message
+//   D_AUTO_SETTING    hub_drafts_mode "auto": [] makes the cron draft nothing while Draft a reply still works;
+//                     "auto": ["scheduling"] makes the cron draft scheduling only
 //   D_ON_DEMAND       Draft a reply on an uncategorised message makes exactly one draft (a second press is refused); a
 //                     hard-stopped message becomes needs_person with no model call; with drafting mode off the route
 //                     answers 409 and writes nothing
@@ -74,19 +77,21 @@
 //   D_CARD_LINK       a Recent email line links to /mail?message=<id> only when the viewer may read the mailbox; a hidden
 //                     line and a sent-only thread have no link; an email touch links only when not redacted
 //
-//   supportonly    the cron drafts participant_support only                {D_ALL_CATEGORIES}
+//   supportonly    the default auto list is participant_support only        {D_ALL_CATEGORIES}
+//   autoignored    the org's "auto" list is ignored                         {D_AUTO_SETTING}
 //   ondemandoff    Draft a reply ignores the drafting mode                  {D_ON_DEMAND}
 //   fourtimes      the time limit is four                                   {D_SCHED_MAX3}
 //   cameronalways  the signer is always Cameron                             {D_SIGNOFF_OWNER}
 //   linkhidden     a hidden Recent email line links to the message too      {D_CARD_LINK}
-// TAMPER=1 reddens the sum (24).
+// TAMPER=1 reddens the sum (25).
 const H = require('../agent/lib/harness.cjs')
 
 const S = 'lib/drafts/support.ts', C = 'lib/drafts/compose.ts', G = 'lib/drafts/gmail-drafts.ts', R = 'lib/drafts/rules.ts', V = 'lib/drafts/review.ts'
 const I = 'lib/drafts/inbox.ts', MG = 'lib/mail/google.ts', MP = 'lib/mail/priority.ts', SY = 'lib/mail/sync.ts'
 const AC = 'lib/mail/access.ts', AV = 'lib/mail/also-visible.ts', PV = 'lib/comms/privacy.ts', RE = 'lib/comms/recent-email.ts'
 const TAMPERS = {
-  supportonly: [[R, "export const DRAFT_CATEGORIES = ['participant_support', 'lead', 'scheduling', 'partner_outreach']", "export const DRAFT_CATEGORIES = ['participant_support']"]],
+  supportonly: [[R, "export const AUTO_DRAFT_CATEGORIES = ['lead', 'participant_support']", "export const AUTO_DRAFT_CATEGORIES = ['participant_support']"]],
+  autoignored: [[R, '  if (!Array.isArray(v)) return AUTO_DRAFT_CATEGORIES', '  if (true as boolean) return AUTO_DRAFT_CATEGORIES']],
   ondemandoff: [[S, "  if ((await draftsMode(db, box.org_id)) !== 'on') return { status: 409,", "  if (false as boolean) return { status: 409,"]],
   fourtimes: [[R, 'export const MAX_TIMES = 3', 'export const MAX_TIMES = 4']],
   cameronalways: [[S, '  if (fromTeam) return fromTeam\n', '  if (fromTeam) return DEFAULT_SIGNER\n']],
@@ -115,7 +120,7 @@ const RED_OF = { wrongthread: ['D_THREAD'], sends: ['D_NOSEND'], storetext: ['D_
   showprivate: ['D_PRIVATE'], ignoremode: ['D_OFF'], needsall: ['D_NEEDS_REVIEW'], editsends: ['D_EDIT_UPDATES'], redraftblind: ['D_REDRAFT_HARDSTOP'],
   rejectat: ['D_REJECT_LESSON'], panesees: ['D_PRIVATE_PANE'], retiredback: ['D_PIN_RETIRE'], guideanycat: ['D_PRIORITY_GUIDE'],
   listedignored: ['V_LISTED'], listedanyone: ['V_UNLISTED'], listededits: ['V_OWNER_ONLY_EDITS'], inlinerule: ['V_ONE_RULE'],
-  supportonly: ['D_ALL_CATEGORIES'], ondemandoff: ['D_ON_DEMAND'], fourtimes: ['D_SCHED_MAX3'], cameronalways: ['D_SIGNOFF_OWNER'], linkhidden: ['D_CARD_LINK'] }
+  supportonly: ['D_ALL_CATEGORIES'], ondemandoff: ['D_ON_DEMAND'], fourtimes: ['D_SCHED_MAX3'], cameronalways: ['D_SIGNOFF_OWNER'], linkhidden: ['D_CARD_LINK'], autoignored: ['D_AUTO_SETTING'] }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-drafts')
 // triage (sync.triageOne) reads Gmail and the model through these two modules: both are fakes here
@@ -568,15 +573,35 @@ const raw = (b) => Buffer.from(String(b?.message?.raw ?? ''), 'base64url').toStr
     const U = (n) => `00000000-0000-4000-8000-0000000001${String(n).padStart(2, '0')}`
     const cat = (row, c) => ({ ...row, category: c })
 
-    // D_ALL_CATEGORIES: the cron, one run
+    const ownerCtx = (W, w = []) => ({ db: memDb(W, w), userId: OWNER, isSuperadmin: true, orgIds: [ORG] })
+    // D_ALL_CATEGORIES: the cron, one run, with the default list; then Draft a reply on the scheduling message
     {
       const W = world('on'), g = [], m = []
-      W.hub_mail_messages = [cat(msgRow('n1', SHARED, 'ab01', 'gl', 3), 'lead'), cat(msgRow('n2', SHARED, 'ab02', 'gs', 3), 'scheduling'), cat(msgRow('n3', SHARED, 'ab03', 'gp', 3), 'partner_outreach'),
+      W.hub_mail_messages = [cat(msgRow('n1', SHARED, 'ab01', 'gl', 3), 'lead'), cat(msgRow('n0', SHARED, 'ab00', 'gh', 3), 'participant_support'),
+        cat(msgRow(U(21), SHARED, 'ab02', 'gs', 3), 'scheduling'), cat(msgRow('n3', SHARED, 'ab03', 'gp', 3), 'partner_outreach'),
         cat(msgRow('n4', SHARED, 'ab04', 'gn', 3), 'newsletter'), cat(msgRow('n5', SHARED, 'ab05', 'gv', 3), 'vendor_billing')]
       await support.runSupportDrafts({ db: memDb(W, []), orgId: ORG, now: NOW, model: fakeModel(m), mailbox: fakeGmail(g, new Map()) })
       const st = (id) => W.hub_drafts.find((x) => x.source_id === id)?.status ?? null
-      check('D_ALL_CATEGORIES', st('n1') === 'drafted' && st('n2') === 'drafted' && st('n3') === 'drafted' && st('n4') === null && st('n5') === null
-        && g.filter((c) => c.method === 'POST').length === 3, { n: ['n1', 'n2', 'n3', 'n4', 'n5'].map(st) })
+      const cron = ['n1', 'n0', U(21), 'n3', 'n4', 'n5'].map(st)
+      const onDemand = await support.draftOnDemand(ownerCtx(W), U(21), { model: fakeModel(m), mailbox: fakeGmail(g, new Map()), now: NOW })
+      check('D_ALL_CATEGORIES', cron[0] === 'drafted' && cron[1] === 'drafted' && cron.slice(2).every((x) => x === null)
+        && onDemand.status === 200 && onDemand.body.status === 'drafted' && st(U(21)) === 'drafted', { cron, onDemand: onDemand.body })
+    }
+
+    // D_AUTO_SETTING: "auto": [] drafts nothing on its own (Draft a reply still works); "auto": ["scheduling"] drafts scheduling only
+    {
+      const three = () => [cat(msgRow(U(31), SHARED, 'af01', 'gl', 3), 'lead'), cat(msgRow(U(32), SHARED, 'af02', 'gh', 3), 'participant_support'), cat(msgRow(U(33), SHARED, 'af03', 'gs', 3), 'scheduling')]
+      const E = world({ mode: 'on', auto: [] }), g = [], m = []
+      E.hub_mail_messages = three()
+      await support.runSupportDrafts({ db: memDb(E, []), orgId: ORG, now: NOW, model: fakeModel(m), mailbox: fakeGmail(g, new Map()) })
+      const emptyCron = E.hub_drafts.length
+      const od = await support.draftOnDemand(ownerCtx(E), U(31), { model: fakeModel(m), mailbox: fakeGmail(g, new Map()), now: NOW })
+      const S2 = world({ mode: 'on', auto: ['scheduling'] }), g2 = [], m2 = []
+      S2.hub_mail_messages = three()
+      await support.runSupportDrafts({ db: memDb(S2, []), orgId: ORG, now: NOW, model: fakeModel(m2), mailbox: fakeGmail(g2, new Map()) })
+      const drafted = S2.hub_drafts.filter((x) => x.status === 'drafted').map((x) => x.source_id)
+      check('D_AUTO_SETTING', emptyCron === 0 && od.status === 200 && od.body.status === 'drafted' && drafted.length === 1 && drafted[0] === U(33),
+        { emptyCron, onDemand: od.body, drafted })
     }
 
     // D_ON_DEMAND: Draft a reply
