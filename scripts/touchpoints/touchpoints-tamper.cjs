@@ -44,11 +44,38 @@
 //   clear_on_staff         open rows of staff contacts are not cleared as staff_or_duplicate  {S_CLEARSTAFF}
 //   other_org_admin        an admin of any org counts as staff            {S_OTHERORG}
 //   reopen_after_clear     a staff_or_duplicate clear blocks the key for good  {S_REOPEN}
-// TAMPER=1 reddens the sum (16).
+//
+// The unanswered text alert (text-alerts.ts, rules set 2026-11-23), run through runTouchpoints with a channel poster:
+//   S_TXT_NONE     nothing waiting (one text under an hour old, one answered): no post at all
+//   S_TXT_ONE      three threads waiting: exactly ONE post listing all three, newest first, with line, wait and link,
+//                  the preview cut to 120 characters; each New on the first run and Still waiting on the second
+//   S_TXT_CLEAR    a reply by text clears its thread, and a reply by call clears its thread: the rows clear, neither listed
+//   S_TXT_RESTART  a new text after a reply starts a fresh clock: a new key, New, waiting from the new text
+//   S_TXT_8AM      a 3 AM ET run posts nothing and writes nothing; the 8:10 AM ET run lists the overnight text as New
+//   S_TXT_EXCLUDE  staff, do-not-contact, archived and duplicate contacts are never listed, end to end (the duplicate's text is
+//                  its person's, listed once on the primary contact); a test contact, absent from eligibility, is not listed
+//   S_TXT_TIMELINE one contact_timeline entry per thread on its first alert, none on later runs, and no message text in
+//                  the timeline or the situation rows
+//
+//   txtpostempty      an empty list still makes a message                {S_TXT_NONE}
+//   allnew            every thread is labelled New                       {S_TXT_ONE}
+//   callnoclear       an outbound call is not a reply                    {S_TXT_CLEAR}
+//   oldclock          the clock starts at their first text ever          {S_TXT_RESTART}
+//   beforeeight       the 8 AM ET gate is gone                           {S_TXT_8AM}
+//   textletin         every conversation's contact is looked at          {S_TXT_EXCLUDE}
+//   timelineeveryrun  the timeline entry is written on every run         {S_TXT_TIMELINE}
+// TAMPER=1 reddens the sum (23).
 const H = require('../agent/lib/harness.cjs')
 
-const D = 'lib/touchpoints/detect.ts', RUN = 'lib/touchpoints/run.ts', RU = 'lib/touchpoints/rules.ts'
+const D = 'lib/touchpoints/detect.ts', RUN = 'lib/touchpoints/run.ts', RU = 'lib/touchpoints/rules.ts', TA = 'lib/touchpoints/text-alerts.ts'
 const TAMPERS = {
+  txtpostempty: [[TA, '  if (!list.length) return null\n', '']],
+  allnew: [[TA, "const label = w.isNew ? 'New' : 'Still waiting'", "const label = 'New'"]],
+  callnoclear: [[TA, ".filter((t) => t.kind === 'text' || t.kind === 'call')", ".filter((t) => t.kind === 'text')"]],
+  oldclock: [[TA, '    const first = after[0]\n', '    const first = sorted[0]\n']],
+  beforeeight: [[TA, "  if (nyDayHour(now).hour < DIGEST_HOUR_ET) return { ...out, skipped: 'before_8am_et' }\n", '']],
+  textletin: [[TA, 'const mine = ((convs ?? []) as any[]).filter((c) => people.contacts.has(c.contact_id))', 'const mine = ((convs ?? []) as any[]).filter(() => true)']],
+  timelineeveryrun: [[TA, '  for (const w of list.filter((x) => x.isNew)) {', '  for (const w of list) {']],
   bookskip: [[D, 'if (now - Date.parse(l.created_at) < THRESHOLDS.booking_link_not_booked) continue', 'if (now - Date.parse(l.created_at) < THRESHOLDS.booking_link_not_booked * 100) continue']],
   mailskip: [[D, 'now - Date.parse(waiting.received_at) < THRESHOLDS.inbound_no_reply)', 'now - Date.parse(waiting.received_at) < THRESHOLDS.inbound_no_reply * 100)']],
   textskip: [[D, 'now - Date.parse(last.created_at) < THRESHOLDS.text_no_reply)', 'now - Date.parse(last.created_at) < THRESHOLDS.text_no_reply * 100)']],
@@ -69,7 +96,9 @@ const TAMPERS = {
 const RED_OF = { bookskip: ['S_BOOK'], mailskip: ['S_MAIL'], textskip: ['S_TEXT'], courseskip: ['S_COURSE'], discskip: ['S_DISC'], twice: ['S_ONCE'],
   noclearmove: ['S_CLEAR'], letin: ['S_EXCLUDE'], readsubject: ['S_NOCONTENT'], dailyagain: ['S_DIGEST'],
   staff_second_email: ['S_STAFF2'], staff_mailbox_address: ['S_MAILBOX'], duplicate_pair: ['S_DUP'], clear_on_staff: ['S_CLEARSTAFF'],
-  other_org_admin: ['S_OTHERORG'], reopen_after_clear: ['S_REOPEN'] }
+  other_org_admin: ['S_OTHERORG'], reopen_after_clear: ['S_REOPEN'],
+  txtpostempty: ['S_TXT_NONE'], allnew: ['S_TXT_ONE'], callnoclear: ['S_TXT_CLEAR'], oldclock: ['S_TXT_RESTART'], beforeeight: ['S_TXT_8AM'],
+  textletin: ['S_TXT_EXCLUDE'], timelineeveryrun: ['S_TXT_TIMELINE'] }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-touchpoints')
 const load = H.install(out)
@@ -297,6 +326,121 @@ const check = (id, ok, got) => rows.push({ id, ok: !!ok, got })
     const card = T.kanban_tasks.find((t) => t.id === rowsFor[0]?.task_id)
     check('S_REOPEN', n === 1 && rowsFor.length === 1 && rowsFor[0].id === 'was' && rowsFor[0].cleared_at === null && rowsFor[0].cleared_reason === null
       && card && card.id !== 'card-old' && card.column_id === reviewCol(T)?.id, { n, rows: rowsFor.map((r) => ({ id: r.id, cleared: r.cleared_at, task: r.task_id })) })
+  }
+
+  // ── the unanswered text alert ──
+  const PRIMARY = '+15550000001', WNW = '+15550000002'
+  const LINES = [{ phone: PRIMARY, nickname: 'Primary' }, { phone: WNW, nickname: 'WNW Office' }]
+  const at = (t) => (typeof t === 'number' ? ago(t) : t)
+  const conv = (id, contactId, line = PRIMARY) => ({ id, org_id: ORG, contact_id: contactId, line_e164: line, last_message_at: ago(0.2) })
+  const inb = (id, cv, when, body = 'Hi, quick question about my sessions', line = PRIMARY) => ({ id, conversation_id: cv, direction: 'inbound', status: 'received', created_at: at(when), to_e164: line, from_e164: '+15557770000', body })
+  const outText = (id, cv, when) => ({ id, conversation_id: cv, direction: 'outbound', status: 'delivered', created_at: at(when), sent_at: at(when), body: 'reply' })
+  const textWorld = () => {
+    const T = world()
+    T.conversations = []; T.crm_messages = []; T.call_logs = []; T.contact_timeline = []
+    T.contacts.push(contact('ta', { phone: '+15550101001' }), contact('tb', { phone: '+15550101002' }), contact('tc', { phone: '+15550101003' }),
+      contact('cdnc', { do_not_contact: true }), contact('carch', { archived_at: ago(100) }))
+    return T
+  }
+  const tdeps = (T, now, posts) => ({ ...deps(T, now), slackChannel: async (org, channel, text) => { posts.push({ channel, text }); return { ok: true, code: null } }, lines: async () => LINES })
+  const textRows = (T) => T.hub_touchpoint_situations.filter((s) => s.kind === 'text_waiting_1h')
+  const count = (s, re) => (s.match(re) || []).length
+  const threeWaiting = (T) => {
+    T.conversations.push(conv('cva', 'ta'), conv('cvb', 'tb', WNW), conv('cvc', 'tc'))
+    T.crm_messages.push(inb('ma', 'cva', 2), inb('mb', 'cvb', 3, 'Can someone call me back about the WNW program please', WNW), inb('mc', 'cvc', 1.5, 'x'.repeat(130) + 'TAILEND' + 'y'.repeat(200)))
+  }
+
+  {
+    const T = textWorld(), posts = []
+    T.conversations.push(conv('cva', 'ta'), conv('cvb', 'tb'))
+    T.crm_messages.push(inb('ma', 'cva', 0.5), inb('mb', 'cvb', 3), outText('ob', 'cvb', 2))
+    const r = await run.runTouchpoints(tdeps(T, NOW, posts))
+    check('S_TXT_NONE', posts.length === 0 && r.textAlert && r.textAlert.waiting === 0 && textRows(T).length === 0, { posts: posts.length, alert: r.textAlert })
+  }
+  {
+    const T = textWorld(), posts = []
+    threeWaiting(T)
+    await run.runTouchpoints(tdeps(T, NOW, posts))
+    const first = posts[0]?.text ?? ''
+    await run.runTouchpoints(tdeps(T, NOW + 30 * 60_000, posts))
+    const second = posts[1]?.text ?? ''
+    const order = ['tc', 'ta', 'tb'].map((n) => first.indexOf(` ${n} `))
+    check('S_TXT_ONE', posts.length === 2 && posts.every((p) => p.channel === 'C0CM32JD6BS')
+      && count(first, /\*New\*/g) === 3 && count(first, /\*Still waiting\*/g) === 0
+      && count(second, /\*Still waiting\*/g) === 3 && count(second, /\*New\*/g) === 0
+      && order.every((i) => i > 0) && order[0] < order[1] && order[1] < order[2]
+      && /tb · WNW Office · waiting 180 min|tb · WNW Office · waiting 3 hours/.test(first) && /ta · Primary · waiting 120 min|ta · Primary · waiting 2 hours/.test(first)
+      && count(first, /crm\/conversations\?id=/g) === 3 && !/TAILEND/.test(first) && /x{100}/.test(first), { first, second })
+  }
+  {
+    const T = textWorld(), posts = []
+    threeWaiting(T)
+    await run.runTouchpoints(tdeps(T, NOW, posts))
+    T.crm_messages.push(outText('oa', 'cva', new Date(NOW + 10 * 60_000).toISOString()))
+    T.call_logs.push({ id: 'call-b', org_id: ORG, contact_id: 'tb', direction: 'outbound', status: 'no-answer', started_at: new Date(NOW + 12 * 60_000).toISOString(), created_at: new Date(NOW + 12 * 60_000).toISOString() })
+    await run.runTouchpoints(tdeps(T, NOW + 30 * 60_000, posts))
+    const second = posts[1]?.text ?? ''
+    const row = (c) => textRows(T).find((s) => s.contact_id === c)
+    check('S_TXT_CLEAR', posts.length === 2 && !/ ta · /.test(second) && !/ tb · /.test(second) && / tc · /.test(second)
+      && row('ta')?.cleared_at && row('tb')?.cleared_at && !row('tc')?.cleared_at, { second, rows: textRows(T).map((s) => [s.contact_id, s.cleared_at]) })
+  }
+  {
+    const T = textWorld(), posts = []
+    T.conversations.push(conv('cva', 'ta'), conv('cvb', 'tb'))
+    T.crm_messages.push(inb('m1', 'cva', 5), outText('o1', 'cva', 4), inb('m2', 'cva', 70 / 60), inb('mb', 'cvb', 2))
+    T.hub_touchpoint_situations.push({ id: 'old-ta', org_id: ORG, contact_id: 'ta', kind: 'text_waiting_1h', situation_key: 'ta:text_waiting_1h:m1', waiting_since: ago(5),
+      opened_at: ago(4.5), cleared_at: ago(4), cleared_reason: 'answered by text or call, or no longer eligible', severity: 'low', detail: { message_id: 'm1', alerted_at: ago(4.5) }, task_id: null })
+    await run.runTouchpoints(tdeps(T, NOW, posts))
+    const text = posts[0]?.text ?? ''
+    const open = textRows(T).filter((s) => s.contact_id === 'ta' && !s.cleared_at)
+    check('S_TXT_RESTART', posts.length === 1 && /\*New\* · ta · Primary · waiting 70 min/.test(text) && open.length === 1 && open[0].situation_key === 'ta:text_waiting_1h:m2'
+      && T.hub_touchpoint_situations.find((s) => s.id === 'old-ta').cleared_at, { text, open: open.map((s) => s.situation_key) })
+  }
+  {
+    const T = textWorld(), posts = []
+    T.conversations.push(conv('cva', 'ta'))
+    T.crm_messages.push(inb('mn', 'cva', '2026-11-20T06:30:00Z')) // 1:30 AM ET
+    await run.runTouchpoints(tdeps(T, Date.parse('2026-11-20T08:00:00Z'), posts)) // 3:00 AM ET
+    const early = posts.length, earlyRows = textRows(T).length
+    await run.runTouchpoints(tdeps(T, Date.parse('2026-11-20T13:10:00Z'), posts)) // 8:10 AM ET
+    check('S_TXT_8AM', early === 0 && earlyRows === 0 && posts.length === 1 && /\*New\* · ta · /.test(posts[0].text), { early, earlyRows, posts: posts.map((p) => p.text) })
+  }
+  {
+    const T = textWorld(), posts = []
+    // end to end through runTouchpoints: staff, do-not-contact, archived and a duplicate (on its primary, once)
+    const who = ['cstaff', 'cdnc', 'carch', 'cdupb', 'ta']
+    for (const c of who) { T.conversations.push(conv(`cv-${c}`, c)); T.crm_messages.push(inb(`m-${c}`, `cv-${c}`, 2)) }
+    await run.runTouchpoints(tdeps(T, NOW, posts))
+    const text = posts[0]?.text ?? ''
+    const listed = textRows(T).map((s) => s.contact_id).sort()
+    // a test contact: the alert looks only at the contacts eligibility kept. The eligibility result is given here as the
+    // shape eligibleContacts returns for a test-tagged contact (absent), so this part tests the alert's own filter and
+    // not the test filter itself, which S_EXCLUDE covers
+    const T2 = textWorld(), posts2 = []
+    T2.conversations.push(conv('cv-ctest', 'ctest'), conv('cv-ta', 'ta'))
+    T2.crm_messages.push(inb('m-ctest', 'cv-ctest', 2), inb('m-ta', 'cv-ta', 2))
+    const TAm = require(`${out}/lib/touchpoints/text-alerts.js`)
+    const people = { contacts: new Map([['ta', { id: 'ta', email: null }]]), names: new Map([['ta', 'ta']]), excluded: new Map(), primaryOf: new Map() }
+    const d2 = tdeps(T2, NOW, posts2)
+    await TAm.textAlerts({ db: d2.db, orgId: ORG, now: NOW, hubUrl: d2.hubUrl, slackChannel: d2.slackChannel, lines: d2.lines }, people)
+    const text2 = posts2[0]?.text ?? ''
+    check('S_TXT_EXCLUDE', posts.length === 1 && ['cstaff', 'cdnc', 'carch', 'cdupb'].every((c) => !text.includes(` ${c} `) && !listed.includes(c))
+      && / ta · /.test(text) && count(text, / cdupa · /g) === 1 && listed.join(',') === 'cdupa,ta' && !/\+15557770000/.test(text)
+      && posts2.length === 1 && / ta · /.test(text2) && !/\+15557770000|ctest/.test(text2) && textRows(T2).every((s) => s.contact_id !== 'ctest'), { text, listed, text2 })
+  }
+  {
+    const T = textWorld(), posts = []
+    T.conversations.push(conv('cva', 'ta'), conv('cvb', 'tb', WNW))
+    T.crm_messages.push(inb('ma', 'cva', 2, 'SECRETBODY one'), inb('mb', 'cvb', 3, 'SECRETBODY two', WNW))
+    await run.runTouchpoints(tdeps(T, NOW, posts))
+    const after1 = T.contact_timeline.filter((e) => e.event_type === 'text_waiting_alert').length
+    await run.runTouchpoints(tdeps(T, NOW + 30 * 60_000, posts))
+    await run.runTouchpoints(tdeps(T, NOW + 60 * 60_000, posts))
+    const tl = T.contact_timeline.filter((e) => e.event_type === 'text_waiting_alert')
+    const stored = JSON.stringify(tl) + JSON.stringify(textRows(T))
+    const tb = tl.find((e) => e.contact_id === 'tb')
+    check('S_TXT_TIMELINE', after1 === 2 && tl.length === 2 && posts.length === 3 && !/SECRETBODY/.test(stored) && tb && tb.metadata.line === 'WNW Office' && tb.metadata.waited_minutes === 180
+      && Object.keys(tb.metadata).sort().join(',') === 'line,situation_id,waited_minutes', { after1, total: tl.length, meta: tb?.metadata })
   }
 
   H.report(rows, active, RED_OF)
