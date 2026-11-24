@@ -5,7 +5,7 @@
 // (nr_bookings) are read only. Sends go through public.hub_sms_outbox (drained by /api/cron/sms-outbox through
 // sendNotifySms: the person's own profile phone, the consent gate, the Primary line).
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { leadChannel, SCORECARD_CHANNELS } from '@/lib/metrics/collect'
+import { isImportedLead, leadChannel, SCORECARD_CHANNELS } from '@/lib/metrics/collect'
 import { resolvedLeads } from '@/lib/touch/first-touch'
 import { briefDue, composeBrief, maySend, nyParts, type BriefInput, type NotificationType, type Settings } from './rules'
 import { HUB_URL, loadSettings } from './settings'
@@ -39,9 +39,10 @@ export async function gatherBrief(db: SupabaseClient, orgId: string, userId: str
   const input: BriefInput = { hubUrl: HUB_URL, newLeads: 0, tasksDueToday: 0, tasksOverdue: 0, stuckOnboarding: 0, discoveryCallsToday: 0, coachingToday: 0, flagged: 0, privateMail: [], welcomeEmailProblems: 0 }
 
   if (mine(s, userId, 'new_lead')) {
-    const { data, error } = await db.from('contacts').select('id, source').eq('org_id', orgId).is('merged_into_id', null).is('archived_at', null).gte('created_at', since).limit(1000)
+    const { data, error } = await db.from('contacts').select('id, source, import_batch_id').eq('org_id', orgId).is('merged_into_id', null).is('archived_at', null).gte('created_at', since).limit(1000)
     if (error) throw fail('contacts', error)
-    const leads = (data ?? []).filter((c: any) => SCORECARD_CHANNELS(leadChannel(c.source)))
+    // an imported contact is never a new lead (isImportedLead)
+    const leads = (data ?? []).filter((c: any) => SCORECARD_CHANNELS(leadChannel(c.source)) && !isImportedLead(c))
     // a lead marked No reply needed is not counted (resolvedLeads, the one speed to lead check)
     const resolved = await resolvedLeads(db, leads.map((c: any) => c.id), now.getTime())
     input.newLeads = leads.filter((c: any) => !resolved.has(c.id)).length

@@ -28,7 +28,7 @@ const post = async (url: string, body: unknown) => {
 }
 const fieldOf = (key: string) => FIELDS.find((f) => f.key === key) as FieldDef
 const GROUPS = Array.from(new Set(FIELDS.map((f) => f.group)))
-const OP_LABEL: Record<string, string> = { any: 'includes any of', none: 'includes none of', in: 'is one of', is: 'is', lte: 'at most', gte: 'at least', contains: 'contains' }
+const OP_LABEL: Record<string, string> = { any: 'includes any of', all: 'includes all of', none: 'includes none of', in: 'is one of', is: 'is', lte: 'at most', gte: 'at least', contains: 'contains' }
 const optValue = (o: Option) => (typeof o === 'string' ? o : o.value)
 const optLabel = (o: Option) => (typeof o === 'string' ? o : o.label)
 const inputCls = 'px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white min-w-0'

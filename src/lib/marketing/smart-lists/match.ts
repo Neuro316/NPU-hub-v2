@@ -40,7 +40,7 @@ export interface ContactFacts {
 }
 
 export type FieldType = 'bool' | 'days' | 'choices' | 'text' | 'purchase'
-export type Op = 'is' | 'lte' | 'gte' | 'in' | 'any' | 'none' | 'contains'
+export type Op = 'is' | 'lte' | 'gte' | 'in' | 'any' | 'all' | 'none' | 'contains'
 
 export interface FieldDef {
   key: string
@@ -57,12 +57,16 @@ export const FIELDS: FieldDef[] = [
   { key: 'partnership', label: 'Has a partnership type', group: 'Relationship', type: 'bool', ops: ['is'] },
   { key: 'current_client', label: 'Current client', group: 'Relationship', type: 'bool', ops: ['is'] },
   { key: 'brand', label: 'Brand', group: 'Brand', type: 'choices', ops: ['in'] },
-  { key: 'tags', label: 'Tags (interest and others)', group: 'Tags', type: 'choices', ops: ['any', 'none'] },
+  { key: 'tags', label: 'Tags (interest and others)', group: 'Tags', type: 'choices', ops: ['any', 'all', 'none'] },
   { key: 'quiz_archetype', label: 'Quiz archetype', group: 'Tags', type: 'choices', ops: ['in'] },
   { key: 'source', label: 'Source', group: 'Source', type: 'choices', ops: ['in'] },
   { key: 'lead_device', label: 'Lead device', group: 'Source', type: 'choices', ops: ['in'] },
   { key: 'pipeline', label: 'Pipeline', group: 'Pipeline', type: 'choices', ops: ['in'] },
   { key: 'stage', label: 'Stage', group: 'Pipeline', type: 'choices', ops: ['in'] },
+  // a stage IN its pipeline (a contact in two pipelines matches only the pair chosen); values are '<pipeline key>|<stage>'
+  { key: 'pipeline_stage', label: 'Pipeline and stage', group: 'Pipeline', type: 'choices', ops: ['in'] },
+  { key: 'has_phone', label: 'Has a phone number', group: 'Contact info', type: 'bool', ops: ['is'] },
+  { key: 'has_email', label: 'Has an email address', group: 'Contact info', type: 'bool', ops: ['is'] },
   { key: 'created_days', label: 'Created within (days)', group: 'Engagement', type: 'days', ops: ['lte'] },
   { key: 'opened_days', label: 'Opened an email within (days)', group: 'Engagement', type: 'days', ops: ['lte'] },
   { key: 'clicked_days', label: 'Clicked an email within (days)', group: 'Engagement', type: 'days', ops: ['lte'] },
@@ -80,6 +84,13 @@ export const FIELDS: FieldDef[] = [
 ]
 
 const BY_KEY = new Map(FIELDS.map((f) => [f.key, f]))
+
+/** The value of one "Pipeline and stage" choice. */
+export const pipelineStageValue = (pipelineKey: string, stage: string) => `${pipelineKey}|${stage}`
+/** A phone a caller can dial: at least 10 digits. */
+export const hasPhone = (p: string | null | undefined) => String(p ?? '').replace(/\D/g, '').length >= 10
+/** An address that can be mailed: something@something. */
+export const hasEmail = (e: string | null | undefined) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e ?? '').trim())
 
 export interface Rule {
   field: string
@@ -117,7 +128,10 @@ function matchRule(r: Rule, f: ContactFacts, now: number): boolean {
     case 'current_client': return ((f.client_reasons ?? []).length > 0) === yes
     case 'brand': return asList(r.value).includes(f.brand ?? '')
     case 'tags': {
-      const hit = asList(r.value).some((t) => (f.tags ?? []).includes(t))
+      const want = asList(r.value), have = f.tags ?? []
+      // all: every chosen tag (AND); an empty choice matches nobody, as every other rule does
+      if (r.op === 'all') return want.length > 0 && want.every((t) => have.includes(t))
+      const hit = want.some((t) => have.includes(t))
       return r.op === 'any' ? hit : !hit
     }
     case 'source': return asList(r.value).includes(f.source ?? '')
@@ -126,6 +140,9 @@ function matchRule(r: Rule, f: ContactFacts, now: number): boolean {
     // saved lists store pipeline legacy keys; a contact matches when any of their pipelines is chosen
     case 'pipeline': { const want = asList(r.value); return (f.pipelines ?? []).some((p) => want.includes(p.pipeline_key)) }
     case 'stage': { const want = asList(r.value); return (f.pipelines ?? []).some((p) => want.includes(p.stage)) }
+    case 'pipeline_stage': { const want = asList(r.value); return (f.pipelines ?? []).some((p) => want.includes(pipelineStageValue(p.pipeline_key, p.stage))) }
+    case 'has_phone': return hasPhone(f.phone) === yes
+    case 'has_email': return hasEmail(f.email) === yes
     case 'created_days': return daysSince(f.created_at, now) <= Number(r.value)
     case 'opened_days': return daysSince(f.last_open_at, now) <= Number(r.value)
     case 'clicked_days': return daysSince(f.last_click_at, now) <= Number(r.value)
@@ -190,9 +207,13 @@ export function checkDefinition(raw: any): { ok: true; definition: Definition } 
 export function filterOptions(facts: ContactFacts[]) {
   const uniq = (xs: (string | null | undefined)[]) => Array.from(new Set(xs.filter((x): x is string => !!x))).sort()
   const pipelines = new Map<string, string>()
+  const pairs = new Map<string, string>()
   const products = new Map<string, string>()
   for (const f of facts) {
-    for (const p of f.pipelines ?? []) if (p.pipeline_key) pipelines.set(p.pipeline_key, p.pipeline_name ?? p.pipeline_key)
+    for (const p of f.pipelines ?? []) if (p.pipeline_key) {
+      pipelines.set(p.pipeline_key, p.pipeline_name ?? p.pipeline_key)
+      if (p.stage) pairs.set(pipelineStageValue(p.pipeline_key, p.stage), `${p.pipeline_name ?? p.pipeline_key}: ${p.stage}`)
+    }
     for (const p of f.purchases ?? []) products.set(p.key, p.name)
   }
   return {
@@ -204,6 +225,7 @@ export function filterOptions(facts: ContactFacts[]) {
     quiz_archetype: uniq(facts.flatMap((f) => f.quiz_archetypes ?? [])),
     stage: uniq(facts.flatMap((f) => (f.pipelines ?? []).map((p) => p.stage))),
     pipeline: Array.from(pipelines, ([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label)),
+    pipeline_stage: Array.from(pairs, ([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label)),
     purchase: Array.from(products, ([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label)),
   }
 }

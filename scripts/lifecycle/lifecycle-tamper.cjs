@@ -15,6 +15,8 @@
 //   L_INACTIVE  3 days quiet is risk, 7 days is the task (2 days is not risk)
 //   L_DRYRUN    in dry_run the only write is the ledger row; applying pending rows makes no call at all; off writes nothing
 //
+//   I_IMPORT_NO_TASK an imported contact 25 hours old with no touch gets no lead_no_touch_24h; a fresh lead beside it does
+//
 //   liveany     any truthy mode other than dry_run is live              {L_MODE}
 //   leadnostage a lead route without a stage is kept                    {L_ROUTE}
 //   tagover     the brand tag is added over an existing one             {L_TAG}
@@ -25,12 +27,14 @@
 //   early       the lead task is owed after 2 hours                     {L_LEADTASK}
 //   idle4       risk after 2 quiet days                                 {L_INACTIVE}
 //   dryapply    pending rows are applied in dry_run                     {L_DRYRUN}
-// TAMPER=1 reddens the union (10).
+//   scanimport  the lead scan lets imported contacts in                 {I_IMPORT_NO_TASK}
+// TAMPER=1 reddens the union (11).
 const fs = require('fs')
 const H = require('../agent/lib/harness.cjs')
 
-const R = 'lib/lifecycle/rules.ts', L = 'lib/lifecycle/ledger.ts'
+const R = 'lib/lifecycle/rules.ts', L = 'lib/lifecycle/ledger.ts', SC = 'lib/lifecycle/scan.ts'
 const TAMPERS = {
+  scanimport: [[SC, '    if (!SCORECARD_CHANNELS(leadChannel(c.source)) || isImportedLead(c)) continue', '    if (!SCORECARD_CHANNELS(leadChannel(c.source))) continue']],
   liveany: [[R, "r.mode === 'live' ? 'live' : r.mode === 'dry_run' ? 'dry_run' : 'off'", "r.mode === 'dry_run' ? 'dry_run' : r.mode ? 'live' : 'off'"]],
   leadnostage: [[R, '    if (!pipeline || !stage) continue\n', '']],
   tagover: [[R, '  if (Object.values(BRAND_TAG).some((t) => have.has(t.toLowerCase()))) return null\n', '']],
@@ -44,7 +48,7 @@ const TAMPERS = {
 }
 const RED_OF = {
   liveany: ['L_MODE'], leadnostage: ['L_ROUTE'], tagover: ['L_TAG'], phasemix: ['L_PRODUCT'], backward: ['L_FORWARD'],
-  coachbuys: ['L_ACTIONS'], closeall: ['L_CLOSE'], early: ['L_LEADTASK'], idle4: ['L_INACTIVE'], dryapply: ['L_DRYRUN'],
+  coachbuys: ['L_ACTIONS'], closeall: ['L_CLOSE'], early: ['L_LEADTASK'], idle4: ['L_INACTIVE'], dryapply: ['L_DRYRUN'], scanimport: ['I_IMPORT_NO_TASK'],
 }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-lifecycle')
@@ -157,6 +161,17 @@ check('L_INACTIVE', ina.every(([, want], i) => JSON.stringify(gotIna[i]) === JSO
   check('L_DRYRUN', r1 === 'new' && JSON.stringify(written) === JSON.stringify(['hub_lifecycle_events']) && upsert.mode === 'dry_run'
     && upsert.planned.open_task === 'discovery_no_show' && applyCalls === 0 && !applyThrew && applied && applied.applied === 0 && offDb.calls.length === 0,
   { written, applyCalls, applyThrew, mode: upsert.mode, off: offDb.calls.length })
+
+  // I_IMPORT_NO_TASK: the real scan, one imported contact (an import batch) and one fresh lead, both 25 hours old
+  {
+    const scan = load(SC)
+    const now = T0 + 25 * 3_600_000
+    const c = (n, extra) => ({ id: U(n), org_id: ORG, email: `c${n}@example.com`, source: 'form', created_at: new Date(T0).toISOString(), merged_into_id: null, archived_at: null, import_batch_id: null, ...extra })
+    const sdb = H.stubDb({ contacts: [c(20, { import_batch_id: U(99) }), c(21, {}), c(22, { source: 'sensorium_import' })] })
+    await scan.scanLeads({ db: sdb, orgId: ORG, cfg: rules.parseConfig(ORG, { mode: 'dry_run', assignee: U(6) }), routes: new Map(), now, deadline: Date.now() + 30_000, counts: {} })
+    const raised = sdb.calls.filter((k) => k.table === 'hub_lifecycle_events').map((k) => k.ops.find((o) => o[0] === 'upsert')?.[1][0]).filter((r) => r && r.event_type === 'lead_no_touch_24h').map((r) => r.contact_id)
+    check('I_IMPORT_NO_TASK', raised.includes(U(21)) && !raised.includes(U(20)) && !raised.includes(U(22)), { raised })
+  }
 
   H.report(rows, active, RED_OF, () => fs.rmSync(out, { recursive: true, force: true }))
 })()

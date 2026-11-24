@@ -11,6 +11,7 @@ related: [campaigns-hub, consent-unsubscribe, dry-run-vs-live, send-log]
 ## Steps
 1. Open Smart Lists under GROW, then choose a list or press New list.
 2. Add filters and choose whether a person must match all of them or any of them.
+   For a calling or email list: Tags with includes all of (every chosen tag), Has a phone number, Has an email address, and Pipeline and stage (a stage within that pipeline).
 3. Watch the live count and the members update, then press Save.
 4. To point a campaign at the list, choose the campaign and press Target this list.
 5. To start a one-message send, press New broadcast. It creates a draft campaign on this list.
@@ -18,6 +19,7 @@ related: [campaigns-hub, consent-unsubscribe, dry-run-vs-live, send-log]
 
 ## Common mistakes
 - A list with no filters has no members. It never means everyone.
+- On the pipeline board, the Tags chips above the columns show only the cards that carry every chosen tag. The choice stays in the page address, so a shared link opens the same view.
 - A list marked no data source yet has a filter nothing records so far, and that filter matches nobody.
 - Enrolling does not send by itself. Each message still has to pass the send decisions, including consent and the send window.
 - Texting allowed means a current client or an SMS opt-in, without a STOP or do not contact, and with a phone number in international format.
