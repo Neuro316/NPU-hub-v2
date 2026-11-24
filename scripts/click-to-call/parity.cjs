@@ -180,8 +180,9 @@ const MAIL_SEARCH_FILES = new Set(['src/lib/supabase-middleware.ts'])
 const LEAD_CAPTURE_BASE = process.env.LEAD_CAPTURE_BASE || '60a5f93'
 const LEAD_CAPTURE_FILES = new Set(['src/lib/supabase-middleware.ts'])
 // No reply needed (hub_250, 2026-11-23) put the Resolve button in the Conversations thread header (scope text_waiting,
-// opened by ?resolve=1 from #np-follow-ups) on purpose, so the page is compared with that commit instead of its earlier pin.
-const RESOLVE_BASE = process.env.RESOLVE_BASE || '0ac8a1e'
+// opened by ?resolve=1 from #np-follow-ups) and then a header that wraps at phone width, on purpose, so the page is compared
+// with the commit of that layout fix instead of its earlier pin.
+const RESOLVE_BASE = process.env.RESOLVE_BASE || '1771964'
 const RESOLVE_FILES = new Set(['src/app/(dashboard)/crm/conversations/page.tsx'])
 const base = (f, ref = BASE) => {
   if (MULTI_PIPELINE_FILES.has(f)) ref = MULTI_PIPELINE_BASE
