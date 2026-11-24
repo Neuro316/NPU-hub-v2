@@ -80,6 +80,18 @@ export function leadChannel(source: string | null | undefined): string {
 }
 export const SCORECARD_CHANNELS = (ch: string) => ch !== 'prospecting' && ch !== 'import'
 
+/**
+ * THE import rule (2026-11-23): an imported contact is never a fresh lead. True when the contact came in through an
+ * import batch (import_batch_id), or its source is 'sensorium_import' or starts with 'import'. It keeps an imported
+ * contact out of speed to lead (here), the brief's new leads line (notify/brief.ts) and lead_no_touch_24h
+ * (lifecycle/scan.ts). leadChannel is unchanged: the leads-by-channel tile still reports it by its created_at and source.
+ */
+export function isImportedLead(c: { import_batch_id?: string | null; source?: string | null }): boolean {
+  if (c.import_batch_id) return true
+  const s = lower(c.source)
+  return s === 'sensorium_import' || s.startsWith('import')
+}
+
 function sourceLabel(source: string | null | undefined): string {
   const s = String(source ?? '').trim()
   if (!s) return '(none)'
@@ -137,12 +149,13 @@ export function allocate(netCents: number, lines: { slug: string; kind: ProductK
 const contactsLoader: Loader = async ctx => {
   const { db, filter } = ctx
   const rows = await all(
-    (a, b) => db.from('contacts').select('id, first_name, last_name, email, phone, tags, source, created_at')
+    (a, b) => db.from('contacts').select('id, first_name, last_name, email, phone, tags, source, created_at, import_batch_id')
       .is('merged_into_id', null).gte('created_at', queryFrom(ctx.from)).lt('created_at', queryTo(ctx.to)).order('created_at').range(a, b),
     'contacts')
   const items: Item[] = []
   const leads = rows.filter(c => inRange(ctx, nyDay(c.created_at)) && !filter.isTestContact(c))
-  const inbound = leads.filter(c => SCORECARD_CHANNELS(leadChannel(c.source)))
+  // speed to lead and its siblings: inbound leads only, and never an imported contact (isImportedLead)
+  const inbound = leads.filter(c => SCORECARD_CHANNELS(leadChannel(c.source)) && !isImportedLead(c))
   for (const c of leads) {
     const day = nyDay(c.created_at), channel = leadChannel(c.source)
     const rec = { id: c.id, label: fullName(c.first_name, c.last_name) || c.email || 'Unnamed contact', sub: `${channel} · ${sourceLabel(c.source)}`, href: contactHref(c.id) }

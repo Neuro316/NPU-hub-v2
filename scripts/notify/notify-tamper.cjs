@@ -24,7 +24,10 @@
 //   sendpreview preview sends like live                                   {N_MODE}
 //   allmail    the brief counts every unread message, however old          {N_RECENT}
 //   closedbadge cards in Done and Trash keep their Overdue and Stuck badges  {N_CLOSED}
-// TAMPER=1 reddens the sum (9).
+//   I_IMPORT_NOT_IN_BRIEF  the brief's new leads line counts a fresh lead and never an imported contact (an import
+//              batch, source sensorium_import, or a source starting 'import')
+//   briefimport  the brief counts imported contacts as new leads             {I_IMPORT_NOT_IN_BRIEF}
+// TAMPER=1 reddens the sum (10).
 const fs = require('fs')
 const H = require('../agent/lib/harness.cjs')
 
@@ -38,12 +41,15 @@ const TAMPERS = {
   subject: [[R, "since the last brief in your mailbox: ${u}/mail`)", "since the last brief in your mailbox (${i.privateMail[0].subject}): ${u}/mail`)"]],
   sendpreview: [[R, "export const maySend = (mode: Mode) => mode === 'live'", "export const maySend = (mode: Mode) => mode !== 'off'"]],
   allmail: [[B, ".eq('status', 'new').gt('received_at', since).limit(1000)", ".eq('status', 'new').limit(1000)"]],
+  briefimport: [[B, "SCORECARD_CHANNELS(leadChannel(c.source)) && !isImportedLead(c))", "SCORECARD_CHANNELS(leadChannel(c.source)))"]],
   closedbadge: [[BOARD, '  const open = !task.completed_at && !closed\n', '  const open = !task.completed_at\n']],
 }
-const RED_OF = { early: ['N_EARLY'], normaltext: ['N_NORMAL'], holdurgent: ['N_URGENT'], twice: ['N_ONCE'], noowner: ['N_OWNER'], subject: ['N_PRIVATE'], sendpreview: ['N_MODE'], allmail: ['N_RECENT'], closedbadge: ['N_CLOSED'] }
+const RED_OF = { early: ['N_EARLY'], normaltext: ['N_NORMAL'], holdurgent: ['N_URGENT'], twice: ['N_ONCE'], noowner: ['N_OWNER'], subject: ['N_PRIVATE'], sendpreview: ['N_MODE'], allmail: ['N_RECENT'], closedbadge: ['N_CLOSED'], briefimport: ['I_IMPORT_NOT_IN_BRIEF'] }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-notify')
-const load = H.install(out, { '@/lib/metrics/collect': { leadChannel: () => 'inbound_web', SCORECARD_CHANNELS: () => true } })
+// the import rule is the real one (isImportedLead, compiled with the tree), so the brief is checked against it
+const realCollect = () => require(require('path').join(out, 'lib/metrics/collect.js'))
+const load = H.install(out, { '@/lib/metrics/collect': { leadChannel: () => 'inbound_web', SCORECARD_CHANNELS: () => true, isImportedLead: (c) => realCollect().isImportedLead(c) } })
 const rules = load(R), brief = load(B), urgent = load(U), board = load(BOARD)
 
 const ORG = '00000000-0000-0000-0000-0000000000a1'
@@ -182,6 +188,17 @@ const check = (id, ok, got) => rows.push({ id, ok: !!ok, got })
     check('N_CLOSED', closedTitles.every(Boolean) && !openTitles.some(Boolean)
       && !inDone.overdue && !inDone.stuck && !inTrash.overdue && !inTrash.stuck
       && inOpen.overdue && inOpen.stuck && !finished.overdue && !finished.stuck, { inDone, inTrash, inOpen, finished })
+  }
+
+  // I_IMPORT_NOT_IN_BRIEF: one fresh lead and three imported contacts since the last brief
+  {
+    const db = memDb('preview')
+    db.T.contacts.push({ id: 'i1', org_id: ORG, source: 'podcast_tracker', import_batch_id: 'batch-1', created_at: '2026-11-17T02:00:00Z', merged_into_id: null, archived_at: null },
+      { id: 'i2', org_id: ORG, source: 'sensorium_import', import_batch_id: null, created_at: '2026-11-17T02:00:00Z', merged_into_id: null, archived_at: null },
+      { id: 'i3', org_id: ORG, source: 'import_chat', import_batch_id: null, created_at: '2026-11-17T02:00:00Z', merged_into_id: null, archived_at: null })
+    const s = await brief.loadSettings(db, ORG)
+    const input = await brief.gatherBrief(db, ORG, OWNER, s, TUE_0810, '2026-11-16T13:00:00Z')
+    check('I_IMPORT_NOT_IN_BRIEF', input.newLeads === 1, { newLeads: input.newLeads })
   }
 
   // N_MODE

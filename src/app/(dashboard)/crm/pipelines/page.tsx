@@ -11,6 +11,7 @@ import {
 import { fetchContacts, createContact, removeFromPipeline as removeFromPipelineApi } from '@/lib/crm-client'
 import { findPipeline, firstStage, loadPipelines, loadPositions, type PipelineRef, type Position, type StageRef } from '@/lib/pipelines/positions'
 import { apiSetStage, fetchContactPositions } from '@/lib/pipelines/client'
+import { TAGS_PARAM, boardTags, filterByTags, formatTags, parseTags } from '@/lib/pipelines/board-tags'
 import { useToast } from '@/components/ui/toast'
 import type { CrmContact } from '@/types/crm'
 import { PIPELINE_STAGES, STAGE_COLORS } from '@/types/crm'
@@ -1082,6 +1083,19 @@ export default function PipelinesPage() {
   const [showCustomFieldEditor, setShowCustomFieldEditor] = useState(false)
   const [showNewContact, setShowNewContact] = useState(false)
   const [showMetrics, setShowMetrics] = useState(true)
+  // the tag chip row: multi-select, every chosen tag (AND), remembered in the URL as ?tags=a,b
+  const [chosenTags, setChosenTags] = useState<string[]>(() => typeof window === 'undefined' ? [] : parseTags(new URLSearchParams(window.location.search).get(TAGS_PARAM)))
+  const toggleTag = (t: string) => setChosenTags(prev => {
+    const next = prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]
+    const u = new URL(window.location.href)
+    if (next.length) u.searchParams.set(TAGS_PARAM, formatTags(next)); else u.searchParams.delete(TAGS_PARAM)
+    window.history.replaceState(null, '', u.toString())
+    return next
+  })
+  const clearTags = () => {
+    setChosenTags([])
+    const u = new URL(window.location.href); u.searchParams.delete(TAGS_PARAM); window.history.replaceState(null, '', u.toString())
+  }
   const [removeTarget, setRemoveTarget] = useState<CrmContact | null>(null)
   const [removing, setRemoving] = useState(false)
   const toast = useToast()
@@ -1391,7 +1405,9 @@ export default function PipelinesPage() {
   }
 
   const onBoard = new Set(Object.keys(positions))
-  const pipelineContacts = contacts.filter(c => !!positions[c.id])
+  const allPipelineContacts = contacts.filter(c => !!positions[c.id])
+  const tagChoices = boardTags(allPipelineContacts)
+  const pipelineContacts = filterByTags(allPipelineContacts, chosenTags)
   const mappedStageIds = new Set(columns.map(c => c.ref?.id).filter(Boolean) as string[])
   const firstColumnKey = activePipeline.stages[0] ? colKey(activePipeline.stages[0]) : null
   const stageContacts = (cfg: PipelineStageConfig) => {
@@ -1453,6 +1469,18 @@ export default function PipelinesPage() {
       {boardError && <p className="text-xs text-red-500">{boardError}</p>}
       {refsLoaded && !activeRef && !boardError && (
         <p className="text-xs text-gray-500">This pipeline is not ready yet. Save its stages, then reload the page.</p>
+      )}
+
+      {tagChoices.length > 0 && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Tags</span>
+          {tagChoices.map(t => (
+            <button key={t} onClick={() => toggleTag(t)} aria-pressed={chosenTags.includes(t)}
+              className={`px-2 py-0.5 rounded-full border text-[10px] font-medium ${chosenTags.includes(t) ? 'border-np-blue bg-np-blue/10 text-np-blue' : 'border-gray-100 bg-white text-gray-500 hover:bg-gray-50'}`}>{t}</button>
+          ))}
+          {chosenTags.length > 0 && <button onClick={clearTags} className="text-[10px] text-np-blue hover:underline">Clear</button>}
+          {chosenTags.length > 1 && <span className="text-[10px] text-gray-400">showing cards with all chosen tags</span>}
+        </div>
       )}
 
       {showMetrics && <PipelineMetrics contacts={pipelineContacts} positions={positions} deals={deals} />}

@@ -22,7 +22,8 @@ const why = (r) => `exit code ${r.code === null ? 'none' : r.code}, signal ${r.s
 const HARNESSES = [
   { file: 'scripts/marketing/pure-tamper.cjs', selectors: ['flagson', 'placeholder', 'svixopen', 'redirect', 'nostop', 'onefail', 'unsubreq', 'noescape', 'stopmerged', 'connected', 'optout', 'nocap', '1'] },
   { file: 'scripts/marketing/entry-wiring-tamper.cjs', selectors: ['nocall', 'mergeorder', 'importoptin', 'nosummary', 'hardcoded', 'consent', 'cached', '1'] },
-  { file: 'scripts/marketing/smart-list-tamper.cjs', selectors: ['emptyall', 'missingyes', 'unknownyes', 'anyall', 'nonepass', 'activity', 'consent', 'nocheck', '1'] },
+  { file: 'scripts/marketing/smart-list-tamper.cjs', selectors: ['emptyall', 'missingyes', 'unknownyes', 'anyall', 'nonepass', 'activity', 'consent', 'nocheck', 'tagsany', 'phoneany', 'emailany', 'stageanywhere', 'boardany', '1'] },
+  { file: 'scripts/import/import-tamper.cjs', selectors: ['emailcase', 'phonefirst', 'overwrite', 'dupposition', 'nowcreated', '1'] },
   { file: 'scripts/marketing/activity-log-tamper.cjs', selectors: ['rawcols', 'refraw', 'actorraw', 'readold', 'orderold', 'keepbody', '1'] },
   { file: 'scripts/marketing/lead-device-tamper.cjs', selectors: ['testwrites', 'notest', 'noreplay', 'truthy', 'optout', 'noresult', 'secretopen', 'anypreview', 'sameorigin', 'connect', 'nonce', 'hotall', 'factsall', 'logname', 'overwrite', 'nofill', 'nocas', 'nosuppress', 'checkopen', 'nonote', 'noother', 'noidentity', 'retrytest', 'noclaim', 'purgesoon', '1'] },
   { file: 'scripts/marketing/pipeline-positions-tamper.cjs', selectors: ['loosename', 'guess', 'keeparch', 'orgopen', 'actorbody', 'removeall', 'nowarn', 'payfail', 'mirrorloop', 'mirrorall', 'nosignedup', 'viewopts', 'idcols', '1'] },
@@ -50,7 +51,7 @@ const HARNESSES = [
   { file: 'scripts/click-to-call/parity.cjs', selectors: ['outside', 'untouched', 'webhook', '1'] },
   { file: 'scripts/org-settings/credentials-tamper.cjs', selectors: ['dropfield', 'noredact', 'rawread', 'bodyurl', '1'] },
   { file: 'scripts/settings/browser-writes-tamper.cjs', selectors: ['plantorg', 'plantteam', 'clientimport', 'weak', '1'] },
-  { file: 'scripts/notify/notify-tamper.cjs', selectors: ['early', 'normaltext', 'holdurgent', 'twice', 'noowner', 'subject', 'sendpreview', 'allmail', 'closedbadge', '1'] },
+  { file: 'scripts/notify/notify-tamper.cjs', selectors: ['early', 'normaltext', 'holdurgent', 'twice', 'noowner', 'subject', 'sendpreview', 'allmail', 'closedbadge', 'briefimport', '1'] },
   { file: 'scripts/notify/q34-tamper.cjs', selectors: ['appcount', 'stuckanyorg', 'cronback', 'noemail', '1'] },
   { file: 'scripts/resources/resource-tamper.cjs', selectors: ['retiredgo', 'wrongcontact', 'sends', 'openread', 'storeip', 'rawtime', '1'] },
   { file: 'scripts/mail/mail-search-tamper.cjs', selectors: ['otherowner', 'storesbody', 'bodyinlist', 'nosecretcheck', 'logsterms', 'hidesbroken', 'norate', '1'] },
@@ -65,8 +66,8 @@ const HARNESSES = [
   { file: 'scripts/health/hub-health-tamper.cjs', selectors: ['ciok', 'deploywarn', 'prsgreen', 'oneway', 'guardsok', 'xregslow', 'crmok', 'smsmiss', 'emailmiss', 'slackmiss', 'mailwarn', 'platslow', 'realert', 'changequiet', 'noclear', 'platcompare', '1'] },
   { file: 'scripts/comms/recent-email-tamper.cjs', selectors: ['eight', 'oldest', 'permessage', 'showall', 'summary', 'noalt', '1'] },
   { file: 'scripts/comms/comms-tamper.cjs', selectors: ['privateopen', 'body', 'browserread', 'lifecycleall', 'nomerged', 'noalt', '1'] },
-  { file: 'scripts/metrics/touch-tamper.cjs', selectors: ['sharedonly', 'readbody', 'countdry', 'nodelivered', 'tilebefore', '1'] },
-  { file: 'scripts/lifecycle/lifecycle-tamper.cjs', selectors: ['liveany', 'leadnostage', 'tagover', 'phasemix', 'backward', 'coachbuys', 'closeall', 'early', 'idle4', 'dryapply', '1'] },
+  { file: 'scripts/metrics/touch-tamper.cjs', selectors: ['sharedonly', 'readbody', 'countdry', 'nodelivered', 'tilebefore', 'stlimport', '1'] },
+  { file: 'scripts/lifecycle/lifecycle-tamper.cjs', selectors: ['liveany', 'leadnostage', 'tagover', 'phasemix', 'backward', 'coachbuys', 'closeall', 'early', 'idle4', 'dryapply', 'scanimport', '1'] },
 ]
 let fail = 0
 const report = (ok, label) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${label}`); if (!ok) fail++ }

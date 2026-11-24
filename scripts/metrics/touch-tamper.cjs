@@ -12,13 +12,16 @@
 //              link (50) each count; a failed text and the staff copy of a confirmation do not
 //   T_AGREE    for every lead, the speed to lead tile and lead_no_touch_24h see the same first touch: the tile's
 //              minutes equal the lifecycle touch, and a lead is untouched on the tile exactly when it is owed a task
+//   I_IMPORT_NOT_STL an imported contact (an import batch, source sensorium_import, or a source starting 'import')
+//              with no touch is neither a speed to lead record nor counted; the leads tile still lists it by source
 //
 //   sharedonly   the reply touch reads shared mailboxes only (the old rule)         {T_PRIVATE}
 //   readbody     the touch also reads the sent message's subject and body          {T_CONTENT}
 //   countdry     engine sends count whatever their status or dry run               {T_DRYRUN}
 //   nodelivered  a delivered text is not counted                                   {T_SENT}
 //   tilebefore   the tiles take a touch from before the lead arrived (an old call)  {T_AGREE}
-// TAMPER=1 reddens the sum (5).
+//   stlimport    the speed to lead set lets imported contacts in                    {I_IMPORT_NOT_STL}
+// TAMPER=1 reddens the sum (6).
 const H = require('../agent/lib/harness.cjs')
 
 const FT = 'lib/touch/first-touch.ts', COL = 'lib/metrics/collect.ts'
@@ -27,9 +30,10 @@ const TAMPERS = {
   readbody: [[FT, '  return touches\n}', "  if (addrs.length) await db.from('hub_mail_messages').select('subject, body').in('from_address', addrs)\n  return touches\n}"]],
   countdry: [[FT, ".eq('status', 'sent').eq('dry_run', false).not('sent_at', 'is', null)", ".not('sent_at', 'is', null)"]],
   nodelivered: [[FT, "export const TEXT_SENT = ['queued', 'sending', 'sent', 'delivered']", "export const TEXT_SENT = ['queued', 'sending', 'sent']"]],
+  stlimport: [[COL, '  const inbound = leads.filter(c => SCORECARD_CHANNELS(leadChannel(c.source)) && !isImportedLead(c))', '  const inbound = leads.filter(c => SCORECARD_CHANNELS(leadChannel(c.source)))']],
   tilebefore: [[COL, 'stlLeads.map(c => ({ id: c.id, email: c.email, since: c.created_at }))', "stlLeads.map(c => ({ id: c.id, email: c.email, since: '1970-01-01T00:00:00Z' }))"]],
 }
-const RED_OF = { sharedonly: ['T_PRIVATE'], readbody: ['T_CONTENT'], countdry: ['T_DRYRUN'], nodelivered: ['T_SENT'], tilebefore: ['T_AGREE'] }
+const RED_OF = { sharedonly: ['T_PRIVATE'], readbody: ['T_CONTENT'], countdry: ['T_DRYRUN'], nodelivered: ['T_SENT'], tilebefore: ['T_AGREE'], stlimport: ['I_IMPORT_NOT_STL'] }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-touch')
 const load = H.install(out)
@@ -143,6 +147,18 @@ const mins = (t) => (t == null ? null : Math.round((t - T0) / 60_000))
     if (!same || owed !== untouchedOnTile) bad.push({ id: c.id, tile: it ? it.rec.sub : null, lifecycle: mins(t), owed })
   }
   check('T_AGREE', tile.size === DATA.contacts.length && bad.length === 0, bad)
+
+  // I_IMPORT_NOT_STL: three imported contacts, untouched, beside the six leads
+  const imported = [{ ...lead('imp-batch', 'imp1@example.com'), import_batch_id: 'batch-1' }, { ...lead('imp-sens', 'imp2@example.com'), source: 'sensorium_import' },
+    { ...lead('imp-csv', 'imp3@example.com'), source: 'import_csv' }]
+  DATA.contacts.push(...imported)
+  const items2 = await collect.LOADERS.contacts(ctx)
+  DATA.contacts.splice(-imported.length)
+  const ids = new Set(imported.map((c) => c.id))
+  const stl = items2.filter((i) => (i.metric === 'speed_to_lead' || i.metric === 'self_booked_leads') && ids.has(i.rec.id))
+  const leadsTile = items2.filter((i) => i.metric === 'leads' && i.rec?.id === 'imp-batch')
+  const stlCount = items2.filter((i) => i.metric === 'speed_to_lead').length
+  check('I_IMPORT_NOT_STL', stl.length === 0 && stlCount === tile.size && leadsTile.length === 1, { stl: stl.map((i) => i.rec.id), stlCount, leadsTile: leadsTile.length })
 
   H.report(rows, active, RED_OF)
 })().catch((e) => { console.error(e); process.exit(2) })
