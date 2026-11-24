@@ -31,6 +31,14 @@
 //                          reopened raiseCandidates raises it again, the same row reopened in place
 //   R_CARD_SHOWS_RESOLVED  the contact card's Waiting on us block is shown as resolved ("Resolved by <name>, Not a lead, ...")
 //                          when there are no open rows and a live resolution exists, and shows nothing when neither exists
+//   R_GROUP_RESOLVE        two cards for one number ('Unknown +18284215174' and 'David Rusch', production 2026-11-24): resolving
+//                          one writes a row per card (same reason, note, resolved_by, resolved_at; a timeline entry each), and
+//                          the touchpoint raise stays quiet for both; a row on one card alone (before this rule) covers the other
+//   R_GROUP_REOPEN         Reopen of one card's row reopens the person's rows on both cards ('manual', an entry each), and
+//                          neither card is resolved after
+//   R_MERGE_CARRIES        a merge carries the merged card's live resolution to the survivor (a row when it has none, same
+//                          reason and resolved_at), reopens the merged card's row ('manual', a timeline note, nothing put back),
+//                          leaves one live row per scope after the repoint, and the merge route does it before the repoint
 //
 //   notimeline   the timeline entry is written under another kind                {R_RESOLVE_WRITES}
 //   textposts    the text alert ignores the resolve                              {R_CLEARS_TEXT}
@@ -45,7 +53,10 @@
 //   cardhides    the Waiting on us block ignores the live resolution             {R_CARD_SHOWS_RESOLVED}
 //   norestore    Reopen leaves the cleared situations cleared                    {R_REOPEN_RESTORES}
 //   resolvedblocks a key cleared by a resolve is never raised again             {R_RERAISE_AFTER_RESOLVE}
-// TAMPER=1 reddens the sum (13).
+//   onecard      a resolve writes a row for the clicked card only               {R_GROUP_RESOLVE}
+//   reopenone    Reopen reopens the clicked card's row only                     {R_GROUP_REOPEN}
+//   nocarry      a merge carries nothing                                        {R_MERGE_CARRIES}
+// TAMPER=1 reddens the sum (16).
 const H = require('../agent/lib/harness.cjs')
 
 const RR = 'lib/resolve/rules.ts', CK = 'lib/resolve/check.ts', TA = 'lib/touchpoints/text-alerts.ts', RUN = 'lib/touchpoints/run.ts'
@@ -55,20 +66,24 @@ const TAMPERS = {
   textposts: [[TA, '  const waiting = found.filter((w) => !resolved.has(w.contactId))', '  const waiting = found']],
   touchraise: [[RUN, '  candidates = candidates.filter((c) => !resolved.has(c.contactId))\n', '']],
   stlscan: [[SCAN, '    if (resolved.has(c.id)) continue\n', '']],
-  noreopen: [[CK, '    if (await inboundSince(db, r.contact_id, r.resolved_at)) {', '    if (false as boolean) {']],
+  noreopen: [[CK, '    for (const card of cardsOf(groups, r.contact_id)) if (await inboundSince(db, card, r.resolved_at)) { fresh = true; break }', '']],
   manualnoop: [[RR, "await reopenRow(db, data as any, 'manual',", "await reopenRow(db, data as any, 'new_inbound',"]],
-  norestore: [[CK, '  const restored = await restoreCleared(db, row, now)', '  const restored = 0']],
+  norestore: [[CK, '  const restored = opts.restore === false ? 0 : await restoreCleared(db, row, now)', '  const restored = 0']],
+  onecard: [[RR, '  for (const card of cards.filter((id) => id !== contactId)) {', '  for (const card of [] as string[]) {']],
+  reopenone: [[CK, '  for (const r of [row, ...((data ?? []) as Row[]).filter((x) => x.id !== row.id)])', '  for (const r of [row])']],
+  nocarry: [[RR, '    if (error || !(lost ?? []).length) return []', '    return []']],
   resolvedblocks: [[RUN, '.filter((r) => r.cleared_reason === STAFF_OR_DUPLICATE || isResolvedClear(r.cleared_reason))', '.filter((r) => r.cleared_reason === STAFF_OR_DUPLICATE)']],
   noreturning: [[RET, '  for (const b of (buys ?? []) as any[]) if (b.contact_id) out.add(b.contact_id)\n', '']],
   rawassignee: [[LED, "await db.from('tasks').insert({ ...fields, assigned_to: who.memberId })", "await db.from('tasks').insert({ ...fields, assigned_to: cfg.assignee })"]],
   perlogin: [[ROUTE, 'resolutions: await resolutionsFor(ctx.db, orgId, id!, Date.now(), scope)', 'resolutions: (await resolutionsFor(ctx.db, orgId, id!, Date.now(), scope)).filter((r) => r.by_id === ctx.userId)']],
-  noreturnrow: [[RR, 'body: { resolution: viewOf(row as any, name), cleared } }', 'body: { resolution: null, cleared } }']],
+  noreturnrow: [[RR, 'body: { resolution: viewOf(row as any, name), cleared, also_resolved: also } }', 'body: { resolution: null, cleared, also_resolved: also } }']],
   cardhides: [['lib/resolve/view.ts', "  if (live) return 'resolved'\n", '']],
 }
 const RED_OF = { notimeline: ['R_RESOLVE_WRITES'], textposts: ['R_CLEARS_TEXT'], touchraise: ['R_CLEARS_TOUCHPOINT'], stlscan: ['R_CLEARS_STL'],
   noreopen: ['R_REOPENS_ON_INBOUND'], manualnoop: ['R_REOPEN_MANUAL'], noreturning: ['R_RETURNING_CHIP'], rawassignee: ['R_TASK_FK_FALLBACK'],
   perlogin: ['R_SHARED_ACROSS_USERS'], noreturnrow: ['R_RESOLVE_RETURNS_ROW'], cardhides: ['R_CARD_SHOWS_RESOLVED'],
-  norestore: ['R_REOPEN_RESTORES'], resolvedblocks: ['R_RERAISE_AFTER_RESOLVE'] }
+  norestore: ['R_REOPEN_RESTORES'], resolvedblocks: ['R_RERAISE_AFTER_RESOLVE'],
+  onecard: ['R_GROUP_RESOLVE'], reopenone: ['R_GROUP_REOPEN'], nocarry: ['R_MERGE_CARRIES'] }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-resolve')
 const load = H.install(out)
@@ -96,8 +111,9 @@ function world() {
   }
 }
 
+// ids are unique across every memDb over the same tables, as the real database's are
+let seq = 0
 function memDb(T) {
-  let seq = 0
   const cmp = (a, b) => { const x = Date.parse(a), y = Date.parse(b); return Number.isNaN(x) || Number.isNaN(y) ? String(a).localeCompare(String(b)) : x - y }
   return {
     from(table) {
@@ -342,6 +358,68 @@ const live = (T, c, scope, now = NOW + 60_000) => check.liveResolutions(memDb(T)
     const rowsK = T.hub_touchpoint_situations.filter((s) => s.situation_key === K)
     ok('R_RERAISE_AFTER_RESOLVE', heldWhileLive && raised === 1 && rowsK.length === 1 && rowsK[0].id === 's8' && rowsK[0].cleared_at === null && rowsK[0].cleared_reason === null,
       { heldWhileLive, raised, rows: rowsK.map((x) => [x.id, x.cleared_at]) })
+  }
+
+  // two cards for one number, as on production 2026-11-24
+  const twoCards = (T) => {
+    T.contacts.push({ id: C(7), org_id: ORG, first_name: 'Unknown', last_name: '+18284215174', email: null, phone: '+18284215174', source: 'sms', tags: [], do_not_contact: false, merged_into_id: null, archived_at: null, created_at: ago(5) },
+      { id: C(8), org_id: ORG, first_name: 'David', last_name: 'Rusch', email: 'david@example.com', phone: '(828) 421-5174', source: 'form', tags: [], do_not_contact: false, merged_into_id: null, archived_at: null, created_at: ago(300) })
+  }
+  const runD = (T, now) => ({ db: memDb(T), orgId: ORG, now, enrolledPipeline: 'enrolled', owner: CAMERON, hubUrl: 'https://hub.example', isTest: () => false, slack: async () => ({ ok: true, code: null }) })
+
+  // R_GROUP_RESOLVE
+  {
+    const T = world(); twoCards(T)
+    const r = await res(T, { contactId: C(7), scope: 'touchpoint', reason: 'conversation_ended', note: 'Talked it through' })
+    const rowsBy = (c) => T.hub_contact_resolutions.filter((x) => x.contact_id === c && !x.reopened_at)
+    const [a, b] = [rowsBy(C(7))[0], rowsBy(C(8))[0]]
+    const same = !!a && !!b && ['scope', 'reason', 'note', 'resolved_by', 'resolved_at'].every((k) => a[k] === b[k])
+    // an entry per card, found by the resolution it records (the entry's kind is R_RESOLVE_WRITES's)
+    const tl = T.contact_timeline.filter((e) => e.metadata && e.metadata.resolved_on === C(7)).map((e) => e.contact_id).sort()
+    // the monitors' one check is quiet for both cards (the raise step's use of it is R_CLEARS_TOUCHPOINT's)
+    const quiet = await check.liveResolutions(memDb(T), [C(7), C(8)], 'touchpoint', NOW + 60_000)
+    // a row on one card alone (written before this rule) still covers the other card
+    const T2 = world(); twoCards(T2)
+    T2.hub_contact_resolutions.push({ id: 'old-1', org_id: ORG, contact_id: C(7), scope: 'touchpoint', reason: 'spam', note: null, resolved_by: SHANE, resolved_at: ago(1), reopened_at: null, reopened_reason: null })
+    const legacy = (await live(T2, C(8), 'touchpoint')).has(C(8))
+    ok('R_GROUP_RESOLVE', r.status === 200 && same && tl.join() === [C(7), C(8)].join() && quiet.has(C(7)) && quiet.has(C(8)) && legacy && !(await live(T2, C(1), 'touchpoint')).has(C(1)),
+      { status: r.status, same, tl, quiet: Array.from(quiet), legacy })
+  }
+
+  // R_GROUP_REOPEN
+  {
+    // a live row on each card, as a resolve leaves them (how they are written is R_GROUP_RESOLVE's)
+    const T = world(); twoCards(T)
+    const row = (id, c) => ({ id, org_id: ORG, contact_id: c, scope: 'touchpoint', reason: 'conversation_ended', note: null, resolved_by: CAMERON, resolved_at: ago(1), reopened_at: null, reopened_reason: null })
+    T.hub_contact_resolutions.push(row('00000000-0000-4000-9100-000000000007', C(7)), row('00000000-0000-4000-9100-000000000008', C(8)))
+    const back = await resolve.reopenResolution(memDb(T), ORG, '00000000-0000-4000-9100-000000000007', SHANE, NOW + 60_000)
+    // both reopened, for the same reason (which reason is R_REOPEN_MANUAL's)
+    const reasons = T.hub_contact_resolutions.map((x) => x.reopened_at ? x.reopened_reason : null)
+    const tl = T.contact_timeline.filter((e) => e.event_type === 'contact_reopened').map((e) => e.contact_id).sort()
+    const either = (await live(T, C(7), 'touchpoint', NOW + 120_000)).has(C(7)) || (await live(T, C(8), 'touchpoint', NOW + 120_000)).has(C(8))
+    ok('R_GROUP_REOPEN', back.status === 200 && T.hub_contact_resolutions.length === 2 && !!reasons[0] && reasons.every((x) => x === reasons[0]) && tl.join() === [C(7), C(8)].join() && !either,
+      { back: back.status, reasons, tl, either })
+  }
+
+  // R_MERGE_CARRIES
+  {
+    const T = world()
+    await res(T, { contactId: C(1), scope: 'touchpoint', reason: 'former_client', note: 'Done in May' })
+    const lost = T.hub_contact_resolutions[0]
+    const carried = await resolve.carryOnMerge(memDb(T), { orgId: ORG, loserId: C(1), winnerId: C(2), byUserId: CAMERON, now: NOW + 60_000 })
+    const won = T.hub_contact_resolutions.find((x) => x.contact_id === C(2) && !x.reopened_at)
+    const note = T.contact_timeline.find((e) => e.event_type === 'contact_reopened' && e.contact_id === C(1))
+    // both cards already resolved for one scope: the survivor keeps its own row, the merged card's is reopened
+    const T2 = world()
+    await res(T2, { contactId: C(3), scope: 'all', reason: 'spam' }); await res(T2, { contactId: C(4), scope: 'all', reason: 'not_a_lead' })
+    await resolve.carryOnMerge(memDb(T2), { orgId: ORG, loserId: C(3), winnerId: C(4), byUserId: CAMERON, now: NOW + 60_000 })
+    for (const x of T2.hub_contact_resolutions) if (x.contact_id === C(3)) x.contact_id = C(4) // the repoint
+    const liveAfter = T2.hub_contact_resolutions.filter((x) => x.contact_id === C(4) && !x.reopened_at)
+    const routeSrc = require('fs').readFileSync(require('path').join(H.SRC, 'app/api/contacts/merge/route.ts'), 'utf8')
+    const before = routeSrc.indexOf('await carryOnMerge(admin,') > 0 && routeSrc.indexOf('await carryOnMerge(admin,') < routeSrc.indexOf("admin.rpc('merge_contact_repoint'")
+    ok('R_MERGE_CARRIES', carried.join() === 'touchpoint' && !!won && won.reason === 'former_client' && won.note === 'Done in May' && won.resolved_at === lost.resolved_at
+      && lost.reopened_reason === 'manual' && !!note && /merged this card/.test(note.description) && note.metadata.restored === 0
+      && liveAfter.length === 1 && liveAfter[0].reason === 'not_a_lead' && before, { carried, won: won && won.reason, lost: lost.reopened_reason, liveAfter: liveAfter.length, before })
   }
 
   H.report(rows, active, RED_OF)

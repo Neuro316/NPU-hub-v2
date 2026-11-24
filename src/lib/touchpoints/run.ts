@@ -18,6 +18,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { detect, courseworkCleared, type Contact, type Found } from './detect'
 import { textAlerts, type Line, type TextAlertOut } from './text-alerts'
 import { isResolvedClear, liveResolutions, resolvedClearText } from '@/lib/resolve/check'
+import { altEmails, groupPeople, last10 } from '@/lib/contacts/same-person'
 import {
   CLEARED, LOOKBACK_DAYS, NO_LONGER, PLAIN, SITUATIONS, digestDue, digestText, nyDayHour, severity, toRaise, whyLine, type SituationKind,
 } from './rules'
@@ -66,11 +67,6 @@ export interface Eligible {
   duplicatesOf: Map<string, string[]>
 }
 
-const last10 = (p: unknown) => { const d = String(p ?? '').replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : '' }
-const altEmails = (cf: unknown) => {
-  const v = cf && typeof cf === 'object' ? (cf as Record<string, unknown>).alt_emails : null
-  return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').map(lower).filter((x) => x.includes('@')) : []
-}
 const activity = (c: any) => Math.max(...['last_contacted_at', 'last_call_at', 'last_text_at', 'last_email_at', 'updated_at', 'created_at'].map((k) => Date.parse(c[k] ?? '') || 0))
 
 /**
@@ -139,19 +135,8 @@ export async function eligibleContacts(d: RunDeps): Promise<Eligible> {
     }
     if ((data ?? []).length < 1000) break
   }
-  // duplicates: contacts sharing a normalised email or the last 10 digits of a phone are one person (union-find)
-  const parent = new Map<string, string>(kept.map((c) => [c.id, c.id]))
-  const root = (x: string): string => { while (parent.get(x) !== x) x = parent.get(x)!; return x }
-  const owner = new Map<string, string>()
-  for (const c of kept) {
-    for (const k of [...c.mails.map((e: string) => `e:${e}`), ...(last10(c.phone) ? [`p:${last10(c.phone)}`] : [])]) {
-      const o = owner.get(k)
-      if (o) parent.set(root(c.id), root(o)); else owner.set(k, c.id)
-    }
-  }
-  const groups = new Map<string, any[]>()
-  for (const c of kept) groups.set(root(c.id), [...(groups.get(root(c.id)) ?? []), c])
-  for (const list of Array.from(groups.values())) {
+  // duplicates: one person per group, by THE duplicate rule (src/lib/contacts/same-person.ts, shared with No reply needed)
+  for (const list of groupPeople(kept)) {
     // the primary is the contact with the most recent activity (ties: the lowest id, so it is stable)
     const sorted = list.slice().sort((a, b) => activity(b) - activity(a) || String(a.id).localeCompare(String(b.id)))
     const primary = sorted[0]

@@ -3,6 +3,7 @@ import { createServerSupabase, createAdminSupabase } from '@/lib/supabase';
 import { ADMIN_ROLES } from '@/lib/org-settings-keys';
 import { resolveConsent, CONSENT_FIELDS } from '@/lib/consent-merge';
 import { guardContacts, releaseGuard } from '@/lib/marketing/entry-events';
+import { carryOnMerge } from '@/lib/resolve/rules';
 
 // ─── POST /api/contacts/merge ───
 // Soft-merge one contact into another. The loser keeps its row and becomes
@@ -165,6 +166,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // ── No reply needed moves to the survivor, BEFORE the repoint ──────────
+    // The repoint moves hub_contact_resolutions.contact_id too, and two live rows of one scope meeting on the survivor
+    // would fail the unique index and the merge. carryOnMerge gives the survivor the row (when it has none of that
+    // scope) and reopens the merged card's row ('manual', with a timeline note). It never throws.
+    const carried = await carryOnMerge(admin, { orgId: winner.org_id, loserId, winnerId, byUserId: user.id });
+
     // ── 2. Repoint EVERY contact-referencing column (migration 073) ─────────
     const { data: repoint, error: repointError } = await admin.rpc('merge_contact_repoint', {
       p_loser: loserId,
@@ -265,6 +272,7 @@ export async function POST(request: NextRequest) {
       loser_id: loserId,
       repointed: (repoint as any)?.repointed ?? {},
       rows_repointed: (repoint as any)?.total ?? 0,
+      resolutions_carried: carried,
     });
   } catch (e: any) {
     console.error('[contacts/merge] error:', e);

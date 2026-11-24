@@ -244,6 +244,7 @@ function CallRow({ entry, lineLabel, now, otherCallConnected }: {
  * Top-right cluster on every Hub page: the Call button (or the live outbound
  * call's indicator) and the receiver status pill. Sits below the banner while
  * one is up. On a phone it lands inside the mobile top bar, on the right.
+ * The contact panel (contact-detail.tsx) starts its content below it under lg (pt-12) rather than padding each block.
  */
 function TopCallCluster({ offset, showPill }: { offset: boolean; showPill: boolean }) {
   const top = offset ? CALL_BANNER_HEIGHT_PX + 8 : 8

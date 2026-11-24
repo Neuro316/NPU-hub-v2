@@ -920,7 +920,9 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="absolute inset-0 bg-black/20 backdrop-blur-[2px]" onClick={onClose} />
 
-      <div className="relative w-full max-w-lg bg-white shadow-2xl border-l border-gray-100 flex flex-col overflow-hidden animate-in slide-in-from-right duration-200">
+      {/* Below lg the floating call cluster (top-3 right, "Browser calling off / Call", incoming-call-banner.tsx) sits over
+          the top of this panel, so the panel's content starts below it (pt-12, the cluster's top offset and height). */}
+      <div className="relative w-full max-w-lg bg-white shadow-2xl border-l border-gray-100 flex flex-col overflow-hidden animate-in slide-in-from-right duration-200 pt-12 lg:pt-0" data-call-clearance="panel">
         {loading ? (
           <div className="flex-1 flex items-center justify-center">
             <div className="animate-pulse text-gray-400">Loading contact...</div>
@@ -939,8 +941,8 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
             )}
             {/* q35: open touchpoint situations, above everything else on the card */}
             <WaitingOnUs contactId={contactId} />
-            {/* Header: right padding below desktop width keeps Edit and Delete clear of the floating call bar */}
-            <div className="px-5 pr-40 lg:pr-5 py-4 border-b border-gray-100 flex-shrink-0">
+            {/* Header: the panel's top padding (below lg) keeps it clear of the floating call bar */}
+            <div className="px-5 py-4 border-b border-gray-100 flex-shrink-0">
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-full bg-np-blue flex items-center justify-center text-white font-bold text-sm">
