@@ -27,7 +27,10 @@
 //   I_IMPORT_NOT_IN_BRIEF  the brief's new leads line counts a fresh lead and never an imported contact (an import
 //              batch, source sensorium_import, or a source starting 'import')
 //   briefimport  the brief counts imported contacts as new leads             {I_IMPORT_NOT_IN_BRIEF}
-// TAMPER=1 reddens the sum (10).
+//   N_TASKS_BY_MEMBER the tasks line counts the person's tasks by their team_members row (tasks.assigned_to), mapped by
+//              the ledger's taskAssignee; a task keyed on the raw user id is not theirs
+//   taskbyuser the tasks line filters assigned_to by the user id           {N_TASKS_BY_MEMBER}
+// TAMPER=1 reddens the sum (11).
 const fs = require('fs')
 const H = require('../agent/lib/harness.cjs')
 
@@ -41,10 +44,11 @@ const TAMPERS = {
   subject: [[R, "since the last brief in your mailbox: ${u}/mail`)", "since the last brief in your mailbox (${i.privateMail[0].subject}): ${u}/mail`)"]],
   sendpreview: [[R, "export const maySend = (mode: Mode) => mode === 'live'", "export const maySend = (mode: Mode) => mode !== 'off'"]],
   allmail: [[B, ".eq('status', 'new').gt('received_at', since).limit(1000)", ".eq('status', 'new').limit(1000)"]],
+  taskbyuser: [[B, ".eq('assigned_to', who.memberId)", ".eq('assigned_to', userId)"]],
   briefimport: [[B, "SCORECARD_CHANNELS(leadChannel(c.source)) && !isImportedLead(c))", "SCORECARD_CHANNELS(leadChannel(c.source)))"]],
   closedbadge: [[BOARD, '  const open = !task.completed_at && !closed\n', '  const open = !task.completed_at\n']],
 }
-const RED_OF = { early: ['N_EARLY'], normaltext: ['N_NORMAL'], holdurgent: ['N_URGENT'], twice: ['N_ONCE'], noowner: ['N_OWNER'], subject: ['N_PRIVATE'], sendpreview: ['N_MODE'], allmail: ['N_RECENT'], closedbadge: ['N_CLOSED'], briefimport: ['I_IMPORT_NOT_IN_BRIEF'] }
+const RED_OF = { early: ['N_EARLY'], normaltext: ['N_NORMAL'], holdurgent: ['N_URGENT'], twice: ['N_ONCE'], noowner: ['N_OWNER'], subject: ['N_PRIVATE'], sendpreview: ['N_MODE'], allmail: ['N_RECENT'], closedbadge: ['N_CLOSED'], briefimport: ['I_IMPORT_NOT_IN_BRIEF'], taskbyuser: ['N_TASKS_BY_MEMBER'] }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-notify')
 // the import rule is the real one (isImportedLead, compiled with the tree), so the brief is checked against it
@@ -199,6 +203,21 @@ const check = (id, ok, got) => rows.push({ id, ok: !!ok, got })
     const s = await brief.loadSettings(db, ORG)
     const input = await brief.gatherBrief(db, ORG, OWNER, s, TUE_0810, '2026-11-16T13:00:00Z')
     check('I_IMPORT_NOT_IN_BRIEF', input.newLeads === 1, { newLeads: input.newLeads })
+  }
+
+  // N_TASKS_BY_MEMBER: the owner's team_members row holds one task due today and one overdue; a task written with the
+  // raw user id (which the foreign key would refuse) and another member's task are not theirs
+  {
+    const db = memDb('preview')
+    db.T.team_members = [{ id: 'tm-owner', org_id: ORG, user_id: OWNER, is_active: true }, { id: 'tm-other', org_id: ORG, user_id: OTHER, is_active: true }]
+    db.T.tasks.push(
+      { id: 't1', org_id: ORG, assigned_to: 'tm-owner', status: 'todo', due_date: '2026-11-17T20:00:00Z' },
+      { id: 't2', org_id: ORG, assigned_to: 'tm-owner', status: 'in_progress', due_date: '2026-11-15T12:00:00Z' },
+      { id: 't3', org_id: ORG, assigned_to: OWNER, status: 'todo', due_date: '2026-11-17T20:00:00Z' },
+      { id: 't4', org_id: ORG, assigned_to: 'tm-other', status: 'todo', due_date: '2026-11-17T20:00:00Z' })
+    const s = await brief.loadSettings(db, ORG)
+    const input = await brief.gatherBrief(db, ORG, OWNER, s, TUE_0810, '2026-11-16T13:00:00Z')
+    check('N_TASKS_BY_MEMBER', input.tasksDueToday === 1 && input.tasksOverdue === 1, { due: input.tasksDueToday, overdue: input.tasksOverdue })
   }
 
   // N_MODE

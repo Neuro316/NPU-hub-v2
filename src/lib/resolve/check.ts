@@ -3,8 +3,11 @@
 // the text alert (src/lib/touchpoints/text-alerts.ts), the touchpoint raise and digest (src/lib/touchpoints/run.ts) and
 // speed to lead (resolvedLeads in src/lib/touch/first-touch.ts: the tiles, the brief and lead_no_touch_24h). Keyed on
 // the contact, never the login. Its only monitor import (the board column helper, for a reopen) is read at call time.
+// A resolve is for the PERSON: every card of the person (THE duplicate rule, src/lib/contacts/same-person.ts, the same
+// grouping the monitors use) has its own row, the check asks the whole group, and a reopen reopens the whole group.
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { REVIEW_COLUMN, TABLE as SITUATIONS, columnId } from '@/lib/touchpoints/run'
+import { cardsOf, loadSamePerson, samePersonMap, type SamePerson } from '@/lib/contacts/same-person'
 
 export const RESOLUTIONS = 'hub_contact_resolutions'
 export const SCOPES = ['text_waiting', 'touchpoint', 'speed_to_lead', 'all'] as const
@@ -48,42 +51,96 @@ async function inboundSince(db: SupabaseClient, contactId: string, since: string
 }
 
 /**
- * THE check: of these contacts, the ones resolved for `scope` right now (a live row of that scope or 'all'). A row whose
- * contact has sent something new since resolved_at is reopened here ('new_inbound') and does not count. Before hub_250
- * nothing is resolved.
+ * The people of these orgs (THE duplicate rule). A failed read groups nobody, so each card stands alone, as before the
+ * rule reached resolve; it is logged.
  */
-export async function liveResolutions(db: SupabaseClient, contactIds: string[], scope: Scope, now = Date.now()): Promise<Set<string>> {
+export async function peopleOf(db: SupabaseClient, orgIds: string[]): Promise<SamePerson> {
+  try { return await loadSamePerson(db, orgIds) } catch (e) {
+    console.error(`[resolve] same-person read failed: ${(e as Error).message}`)
+    return samePersonMap([])
+  }
+}
+
+/** The orgs of these contacts. */
+async function orgsOf(db: SupabaseClient, ids: string[]): Promise<string[]> {
+  const orgs = new Set<string>()
+  for (let i = 0; i < ids.length; i += 150) {
+    const { data } = await db.from('contacts').select('org_id').in('id', ids.slice(i, i + 150))
+    for (const c of (data ?? []) as any[]) if (c.org_id) orgs.add(c.org_id)
+  }
+  return Array.from(orgs)
+}
+
+/**
+ * THE check: of these contacts, the ones resolved for `scope` right now: any card of the same person (THE duplicate
+ * rule) has a live row of that scope or 'all'. Something new from the person (on any of their cards) since resolved_at
+ * reopens the person's rows here ('new_inbound') and they do not count. Before hub_250 nothing is resolved.
+ */
+export async function liveResolutions(db: SupabaseClient, contactIds: string[], scope: Scope, now = Date.now(), people?: SamePerson): Promise<Set<string>> {
   const ids = Array.from(new Set(contactIds.filter((id) => typeof id === 'string' && id)))
   const out = new Set<string>()
   if (!ids.length) return out
-  const { data, error } = await db.from(RESOLUTIONS).select('id, org_id, contact_id, scope, resolved_at').in('contact_id', ids).is('reopened_at', null)
+  const { data, error } = await db.from(RESOLUTIONS).select('id, org_id, contact_id, scope, resolved_at').is('reopened_at', null)
   if (error) return out
-  for (const r of ((data ?? []) as any[]).filter((x) => covers(x.scope, scope))) {
-    if (await inboundSince(db, r.contact_id, r.resolved_at)) {
-      await reopenRow(db, r, 'new_inbound', { id: null, name: 'A new message from the contact' }, now)
+  const rows = ((data ?? []) as any[]).filter((x) => covers(x.scope, scope))
+  if (!rows.length) return out
+  const groups = people ?? await peopleOf(db, await orgsOf(db, ids))
+  const asked = new Set(ids.flatMap((id) => cardsOf(groups, id)))
+  const live = new Set<string>(), lifted = new Set<string>()
+  for (const r of rows.filter((x) => asked.has(x.contact_id))) {
+    if (lifted.has(r.id)) continue
+    let fresh = false
+    for (const card of cardsOf(groups, r.contact_id)) if (await inboundSince(db, card, r.resolved_at)) { fresh = true; break }
+    if (fresh) {
+      for (const id of await reopenGroup(db, r, 'new_inbound', { id: null, name: 'A new message from the contact' }, now, groups)) lifted.add(id)
       continue
     }
-    out.add(r.contact_id)
+    live.add(r.contact_id)
   }
+  for (const id of ids) if (cardsOf(groups, id).some((c) => live.has(c))) out.add(id)
   return out
 }
 
 
+type Row = { id: string; org_id: string; contact_id: string; scope: string }
+type By = { id: string | null; name: string }
+
 /**
- * Reopens one live resolution, by hand ('manual') or on a new inbound ('new_inbound'), and undoes what its resolve
- * cleared: every situation row whose cleared_reason carries this resolution's id (the touchpoint cards and the
- * text_waiting_1h row alike) is open again, and its board card moves from Done back to Follow-ups to review. One
- * contact_reopened timeline entry says who, when and why. Speed to lead has nothing to put back: lead_no_touch_24h
- * opens again only when the lifecycle scan raises it. False when the row was not live.
+ * Reopens a live resolution for the whole person: this row and every other live row of the same scope on the person's
+ * other cards (THE duplicate rule), by hand ('manual') or on a new inbound ('new_inbound'). Each one undoes what its
+ * resolve cleared and writes its own contact_reopened entry. False when this row was not live.
  */
-export async function reopenRow(db: SupabaseClient, row: { id: string; org_id: string; contact_id: string; scope: string }, why: 'manual' | 'new_inbound',
-  by: { id: string | null; name: string }, now = Date.now()): Promise<boolean> {
+export async function reopenRow(db: SupabaseClient, row: Row, why: 'manual' | 'new_inbound', by: By, now = Date.now(), people?: SamePerson): Promise<boolean> {
+  return (await reopenGroup(db, row, why, by, now, people)).includes(row.id)
+}
+
+/** The rows reopened (ids): `row` first, then the rest of its person's live rows of that scope. */
+async function reopenGroup(db: SupabaseClient, row: Row, why: 'manual' | 'new_inbound', by: By, now: number, people?: SamePerson): Promise<string[]> {
+  const groups = people ?? await peopleOf(db, [row.org_id])
+  const cards = cardsOf(groups, row.contact_id)
+  const { data } = cards.length > 1
+    ? await db.from(RESOLUTIONS).select('id, org_id, contact_id, scope').in('contact_id', cards).eq('scope', row.scope).is('reopened_at', null)
+    : { data: [] as Row[] }
+  const done: string[] = []
+  for (const r of [row, ...((data ?? []) as Row[]).filter((x) => x.id !== row.id)]) if (await reopenOne(db, r, why, by, now)) done.push(r.id)
+  return done
+}
+
+/**
+ * Reopens one live row and undoes what its resolve cleared: every situation row whose cleared_reason carries this
+ * resolution's id (the touchpoint cards and the text_waiting_1h row alike) is open again, and its board card moves from
+ * Done back to Follow-ups to review. One contact_reopened timeline entry says who, when and why. Speed to lead has
+ * nothing to put back: lead_no_touch_24h opens again only when the lifecycle scan raises it. A merge (restore false)
+ * puts nothing back: the person is still resolved, on the surviving card.
+ */
+export async function reopenOne(db: SupabaseClient, row: Row, why: 'manual' | 'new_inbound', by: By, now = Date.now(),
+  opts: { restore?: boolean; description?: string } = {}): Promise<boolean> {
   const { data: flipped } = await db.from(RESOLUTIONS).update({ reopened_at: iso(now), reopened_reason: why }).eq('id', row.id).is('reopened_at', null).select('id')
   if (!(flipped ?? []).length) return false
-  const restored = await restoreCleared(db, row, now)
+  const restored = opts.restore === false ? 0 : await restoreCleared(db, row, now)
   const { error } = await db.from('contact_timeline').insert({
-    org_id: row.org_id, contact_id: row.contact_id, event_type: 'contact_reopened', title: 'Waiting on us again',
-    description: why === 'manual' ? `${by.name} reopened No reply needed.` : 'The contact sent something new, so No reply needed was lifted.',
+    org_id: row.org_id, contact_id: row.contact_id, event_type: 'contact_reopened', title: opts.restore === false ? 'No reply needed moved' : 'Waiting on us again',
+    description: opts.description ?? (why === 'manual' ? `${by.name} reopened No reply needed.` : 'The contact sent something new, so No reply needed was lifted.'),
     metadata: { resolution_id: row.id, scope: row.scope, reason: why, by: by.id, by_name: by.name, restored },
     source_table: RESOLUTIONS, source_id: row.id, actor_type: by.id ? 'user' : 'system', actor_id: by.id, occurred_at: iso(now),
   })

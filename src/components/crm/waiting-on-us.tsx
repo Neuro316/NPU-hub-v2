@@ -49,8 +49,8 @@ export function WaitingOnUs({ contactId }: { contactId: string | null | undefine
   const mode = waitingMode(rows, live)
   if (!mode || !contactId) return null
   return (
-    // right padding below desktop width keeps the button clear of the floating "Browser calling off / Call" bar
-    <div className="px-5 pr-40 lg:pr-5 py-2 border-b border-amber-100 bg-amber-50/70 space-y-0.5" data-help-section="contact-waiting-on-us">
+    // the contact panel's top padding (below lg) keeps this clear of the floating "Browser calling off / Call" bar
+    <div className="px-5 py-2 border-b border-amber-100 bg-amber-50/70 space-y-0.5" data-help-section="contact-waiting-on-us">
       <div className="flex flex-wrap items-center gap-2 min-w-0">
         <ResolveButton contactId={contactId} scope="all" initial={live} onChange={changed} />
       </div>

@@ -7,6 +7,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { isImportedLead, leadChannel, SCORECARD_CHANNELS } from '@/lib/metrics/collect'
 import { resolvedLeads } from '@/lib/touch/first-touch'
+import { taskAssignee } from '@/lib/lifecycle/ledger'
 import { briefDue, composeBrief, maySend, nyParts, type BriefInput, type NotificationType, type Settings } from './rules'
 import { HUB_URL, loadSettings } from './settings'
 import { isClosedColumn } from './board'
@@ -48,10 +49,16 @@ export async function gatherBrief(db: SupabaseClient, orgId: string, userId: str
     input.newLeads = leads.filter((c: any) => !resolved.has(c.id)).length
   }
   if (mine(s, userId, 'follow_up_task')) {
-    const { data, error } = await db.from('tasks').select('due_date').eq('org_id', orgId).eq('assigned_to', userId).in('status', ['todo', 'in_progress'])
-      .not('due_date', 'is', null).lt('due_date', day.end).limit(1000)
-    if (error) throw fail('tasks', error)
-    for (const t of (data ?? []) as any[]) { if (t.due_date < day.start) input.tasksOverdue++; else input.tasksDueToday++ }
+    // tasks.assigned_to is a team_members id, not a user id: the person's own row, through the ledger's one mapper
+    // (taskAssignee). Its fallbacks (the default owner, unassigned) are for opening a task, not for counting this
+    // person's: without a row of their own the line counts nothing.
+    const who = await taskAssignee(db, orgId, userId)
+    if (who.memberId && !who.fallback) {
+      const { data, error } = await db.from('tasks').select('due_date').eq('org_id', orgId).eq('assigned_to', who.memberId).in('status', ['todo', 'in_progress'])
+        .not('due_date', 'is', null).lt('due_date', day.end).limit(1000)
+      if (error) throw fail('tasks', error)
+      for (const t of (data ?? []) as any[]) { if (t.due_date < day.start) input.tasksOverdue++; else input.tasksDueToday++ }
+    }
   }
   // hub_metrics_daily has no org column (its numbers are Neuro Progeny's), so the stuck line is only built for
   // Neuro Progeny until metrics are per org (Running List q34). Any other org's brief leaves it out.
