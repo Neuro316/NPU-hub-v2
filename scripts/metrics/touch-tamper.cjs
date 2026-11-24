@@ -23,12 +23,13 @@
 //   stlimport    the speed to lead set lets imported contacts in                    {I_IMPORT_NOT_STL}
 //   tilelength   a contact count tile counts fetched rows (capped at 1,000)          {I_TILE_COUNT}
 //   tileimport   the activity tiles let an untouched imported contact in            {I_IMPORT_NOT_IN_TILES}
-// TAMPER=1 reddens the sum (8).
+//   alertimport  the 'no new leads in 48 hours' alert counts an import as an arrival {A_IMPORT_NOT_ARRIVAL}
+// TAMPER=1 reddens the sum (9).
 const fs = require('fs')
 const path = require('path')
 const H = require('../agent/lib/harness.cjs')
 
-const FT = 'lib/touch/first-touch.ts', COL = 'lib/metrics/collect.ts', TILES = 'lib/metrics/contact-tiles.ts'
+const FT = 'lib/touch/first-touch.ts', COL = 'lib/metrics/collect.ts', TILES = 'lib/metrics/contact-tiles.ts', ALERTS = 'lib/metrics/alerts.ts'
 const TAMPERS = {
   sharedonly: [[FT, "db.from('hub_mail_sent').select(MAIL_SENT_COLUMNS).in('to_address', ch)", "db.from('hub_mail_sent').select(MAIL_SENT_COLUMNS).eq('visibility', 'shared').in('to_address', ch)"]],
   readbody: [[FT, '  return touches\n}', "  if (addrs.length) await db.from('hub_mail_messages').select('subject, body').in('from_address', addrs)\n  return touches\n}"]],
@@ -38,9 +39,10 @@ const TAMPERS = {
   tilelength: [[TILES, "  let q: any = db.from('contacts').select('id', { count: 'exact', head: true })", "  let q: any = db.from('contacts').select('id')"],
     [TILES, '  const { count, error } = await q\n', '  const { data, error } = await q\n  const count = (data ?? []).length\n']],
   tileimport: [[TILES, 'export const inActivityTiles = (c: TileContact): boolean => !isImportedLead(c) || !!c.last_contacted_at', 'export const inActivityTiles = (c: TileContact): boolean => true']],
+  alertimport: [[ALERTS, 'SCORECARD_CHANNELS(leadChannel(c.source)) && !isImportedLead(c)).length', 'SCORECARD_CHANNELS(leadChannel(c.source))).length']],
   tilebefore: [[COL, 'stlLeads.map(c => ({ id: c.id, email: c.email, since: c.created_at }))', "stlLeads.map(c => ({ id: c.id, email: c.email, since: '1970-01-01T00:00:00Z' }))"]],
 }
-const RED_OF = { sharedonly: ['T_PRIVATE'], readbody: ['T_CONTENT'], countdry: ['T_DRYRUN'], nodelivered: ['T_SENT'], tilebefore: ['T_AGREE'], stlimport: ['I_IMPORT_NOT_STL'], tilelength: ['I_TILE_COUNT'], tileimport: ['I_IMPORT_NOT_IN_TILES'] }
+const RED_OF = { sharedonly: ['T_PRIVATE'], readbody: ['T_CONTENT'], countdry: ['T_DRYRUN'], nodelivered: ['T_SENT'], tilebefore: ['T_AGREE'], stlimport: ['I_IMPORT_NOT_STL'], tilelength: ['I_TILE_COUNT'], tileimport: ['I_IMPORT_NOT_IN_TILES'], alertimport: ['A_IMPORT_NOT_ARRIVAL'] }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-touch')
 const load = H.install(out)
@@ -196,6 +198,18 @@ const mins = (t) => (t == null ? null : Math.round((t - T0) / 60_000))
   const at2 = tiles.activityTiles(tc, NOWT, () => true)
   check('I_IMPORT_NOT_IN_TILES', at2.newThisWeek === 2 && at2.thisMonth === 2 && at2.neverContacted === 1 && at2.stale14d === 0
     && !tiles.inActivityTiles(tc[1]) && tiles.inActivityTiles(tc[4]) && /activityTiles\(contacts, now,/.test(ana), at2)
+
+  // A_IMPORT_NOT_ARRIVAL: the alert run (a Tuesday, so no Monday scorecard) sees only imported contacts in the last 48 hours,
+  // by batch, by source 'sensorium_import' and by a source starting 'import': it is a day with no new leads and the text goes.
+  // With one real website lead beside them, it does not.
+  const alerts = load(ALERTS)
+  const AT = new Date('2026-11-24T20:05:00Z'), recent = new Date(AT.getTime() - 3_600_000).toISOString()
+  const ic = (id, extra) => ({ id, email: `${id}@example.com`, phone: null, tags: [], source: 'website', import_batch_id: null, created_at: recent, merged_into_id: null, ...extra })
+  const imports = [ic('ia', { import_batch_id: 'batch-1' }), ic('ib', { source: 'sensorium_import' }), ic('ic', { source: 'import_csv' })]
+  const onlyImports = await alerts.runAlerts(H.stubDb({ contacts: imports }), AT)
+  const withLead = await alerts.runAlerts(H.stubDb({ contacts: [...imports, ic('real', {})] }), AT)
+  check('A_IMPORT_NOT_ARRIVAL', onlyImports.leads48 === 0 && onlyImports.sent.includes('no_leads_48h') && withLead.leads48 === 1 && !withLead.sent.includes('no_leads_48h'),
+    { onlyImports: [onlyImports.leads48, onlyImports.sent], withLead: [withLead.leads48, withLead.sent] })
 
   H.report(rows, active, RED_OF)
 })().catch((e) => { console.error(e); process.exit(2) })

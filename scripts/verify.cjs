@@ -66,7 +66,7 @@ const HARNESSES = [
   { file: 'scripts/health/hub-health-tamper.cjs', selectors: ['ciok', 'deploywarn', 'prsgreen', 'oneway', 'guardsok', 'xregslow', 'crmok', 'smsmiss', 'emailmiss', 'slackmiss', 'mailwarn', 'platslow', 'realert', 'changequiet', 'noclear', 'platcompare', '1'] },
   { file: 'scripts/comms/recent-email-tamper.cjs', selectors: ['eight', 'oldest', 'permessage', 'showall', 'summary', 'noalt', '1'] },
   { file: 'scripts/comms/comms-tamper.cjs', selectors: ['privateopen', 'body', 'browserread', 'lifecycleall', 'nomerged', 'noalt', '1'] },
-  { file: 'scripts/metrics/touch-tamper.cjs', selectors: ['sharedonly', 'readbody', 'countdry', 'nodelivered', 'tilebefore', 'stlimport', 'tilelength', 'tileimport', '1'] },
+  { file: 'scripts/metrics/touch-tamper.cjs', selectors: ['sharedonly', 'readbody', 'countdry', 'nodelivered', 'tilebefore', 'stlimport', 'tilelength', 'tileimport', 'alertimport', '1'] },
   { file: 'scripts/lifecycle/lifecycle-tamper.cjs', selectors: ['liveany', 'leadnostage', 'tagover', 'phasemix', 'backward', 'coachbuys', 'closeall', 'early', 'idle4', 'dryapply', 'scanimport', '1'] },
 ]
 let fail = 0
