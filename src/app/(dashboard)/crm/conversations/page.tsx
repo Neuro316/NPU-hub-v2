@@ -19,6 +19,7 @@ import { createConversation, fetchContacts } from '@/lib/crm-client'
 import { useWorkspace } from '@/lib/workspace-context'
 import { useOrgLines } from '@/lib/hooks/use-org-lines'
 import { formatUsPhone } from '@/lib/phone'
+import { ResolveButton } from '@/components/resolve/resolve-button'
 import { fmtListStamp, fmtFull } from '@/lib/date-format'
 import type { CrmContact } from '@/types/crm'
 import { buildTimeline, TimelineStream, LineBadge, type TimelineEntry } from '@/components/crm/comms-timeline'
@@ -131,6 +132,7 @@ function ConversationsPageInner() {
   // openThread a click uses (so it is marked read exactly as a click would mark it); anything else shows a note.
   const searchParams = useSearchParams()
   const linkedId = searchParams.get(CONVERSATION_PARAM)
+  const resolveParam = searchParams.get('resolve') === '1'
   const [linkMissing, setLinkMissing] = useState(false)
   const handledLink = useRef<string | null>(null)
   useEffect(() => {
@@ -517,9 +519,9 @@ function ConversationsPageInner() {
           </div>
         ) : (
           <>
-            {/* Thread header */}
-            <div className="flex items-center justify-between p-4 border-b border-gray-100">
-              <div className="flex items-center gap-2.5">
+            {/* Thread header: wraps on a phone, so the No reply needed state and Reopen are never cut off */}
+            <div className="flex flex-wrap items-center justify-between gap-2 p-4 border-b border-gray-100">
+              <div className="flex items-center gap-2.5 min-w-0">
                 <div className="w-9 h-9 rounded-full bg-np-blue/10 flex items-center justify-center">
                   <span className="text-[9px] font-bold text-np-blue">{selectedThread.contact_initials}</span>
                 </div>
@@ -542,7 +544,10 @@ function ConversationsPageInner() {
                   </p>
                 </div>
               </div>
-              <div className="flex gap-1">
+              <div className="flex gap-1 items-center flex-wrap justify-end min-w-0 max-w-full">
+                {/* No reply needed (scope text_waiting); the #np-follow-ups link adds resolve=1 to open the popover */}
+                <ResolveButton key={selectedThread.contact_id} contactId={selectedThread.contact_id} scope="text_waiting"
+                  autoOpen={resolveParam && linkedId === selectedThread.id} />
                 <Link href={`/crm/contacts?open=${selectedThread.contact_id}`}
                   className="p-1.5 hover:bg-gray-50 rounded-lg text-gray-400" title="View contact"><User size={14} /></Link>
                 <button onClick={archiveThread}

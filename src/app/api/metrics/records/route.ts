@@ -33,6 +33,8 @@ export const GET = withStaff(async (req: NextRequest, ctx) => {
       href: i.rec!.href,
       value: def.namesOnly ? undefined : i.value,
       dims: def.namesOnly ? undefined : i.dims,
+      // speed to lead rows carry the contact id (the No reply needed button) and the 'returning' chip
+      ...(metric === 'speed_to_lead' ? { contact_id: i.rec!.id, chips: i.rec!.chips } : {}),
     }))
     return NextResponse.json({ metric, label: def.label, unit: def.unit, names_only: !!def.namesOnly, total: items.length, records })
   } catch {

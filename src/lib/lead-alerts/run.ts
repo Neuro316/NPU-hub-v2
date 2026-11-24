@@ -13,6 +13,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { alertDueAt, composeAlert, composeSlack, type LeadSource } from './compose'
 import { collect, contactByEmail, loadFacts, universitySignups } from './sources'
+import { returningContacts } from '@/lib/touch/returning'
 
 export const LOOKBACK_HOURS = 6
 export const MAX_ATTEMPTS = 3
@@ -90,6 +91,9 @@ async function deliver(deps: RunDeps, cfg: AlertConfig, a: any): Promise<string>
   const finish = (patch: Record<string, unknown>) => db.from('hub_lead_alerts').update(patch).eq('id', a.id).eq('status', 'sending')
   if (!loaded) { await finish({ status: 'skipped', error_code: 'source_gone' }); return 'skipped_source_gone' }
   if (loaded.test) { await finish({ status: 'skipped', error_code: 'test_record', contact_id: loaded.facts.contactId }); return 'skipped_test_record' }
+  // q44: a returning client is flagged in the alert, never skipped
+  const cid = loaded.facts.contactId
+  if (cid) loaded.facts.returning = (await returningContacts(db, [cid])).has(cid)
 
   const uid = cfg.recipientUserId!
   let push = a.push_status as string | null, sms = a.sms_status as string | null

@@ -15,10 +15,13 @@ for (const f of ['registry.ts', 'dates.ts', 'targets.ts', 'test-filter.ts', 'col
     .replace(/require\("@\/lib\/pipelines\/positions"\)/g, 'require("./positions-stub.js")')
     // the touch rule reads the database too; it has its own harness (scripts/metrics/touch-tamper.cjs)
     .replace(/require\("@\/lib\/touch\/first-touch"\)/g, 'require("./touch-stub.js")')
+    // the returning flag (q44) reads the database too; scripts/resolve/resolve-tamper.cjs proves it
+    .replace(/require\("@\/lib\/touch\/returning"\)/g, 'require("./returning-stub.js")')
   fs.writeFileSync(path.join(out, f.replace(/\.ts$/, '.js')), js)
 }
 fs.writeFileSync(path.join(out, 'positions-stub.js'), 'exports.loadPositions = async () => []\n')
-fs.writeFileSync(path.join(out, 'touch-stub.js'), 'exports.firstTouches = async () => new Map()\n')
+fs.writeFileSync(path.join(out, 'touch-stub.js'), 'exports.firstTouches = async () => new Map()\nexports.resolvedLeads = async () => new Set()\n')
+fs.writeFileSync(path.join(out, 'returning-stub.js'), "exports.RETURNING_CHIP = 'returning'\nexports.returningContacts = async () => new Set()\n")
 const load = (m) => require(path.join(out, m))
 const { likeToRegExp } = load('test-filter.js')
 const { leadChannel, SCORECARD_CHANNELS } = load('collect.js')

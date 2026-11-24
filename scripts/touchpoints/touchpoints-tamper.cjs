@@ -94,7 +94,7 @@ const TAMPERS = {
   duplicate_pair: [[RUN, "    return dups?.length ? { ...f, detail: { ...f.detail, duplicate_of: dups.join(',') } } : f", '    return f']],
   clear_on_staff: [[RUN, 'const reason = elig.excluded.has(r.contact_id) ? STAFF_OR_DUPLICATE : clearReason(', 'const reason = clearReason(']],
   other_org_admin: [[RUN, ".from('org_members').select('user_id').eq('organization_id', orgId).eq('status', 'active')", ".from('org_members').select('user_id').eq('status', 'active')"]],
-  reopen_after_clear: [[RUN, '.filter((r) => r.cleared_reason === STAFF_OR_DUPLICATE)', '.filter(() => false)']],
+  reopen_after_clear: [[RUN, '.filter((r) => r.cleared_reason === STAFF_OR_DUPLICATE || isResolvedClear(r.cleared_reason))', '.filter((r) => isResolvedClear(r.cleared_reason))']],
   readsubject: [[D, "export const INBOUND_COLUMNS = 'id, connection_id, gmail_thread_id, from_address, received_at'", "export const INBOUND_COLUMNS = 'id, connection_id, gmail_thread_id, from_address, received_at, subject'"]],
   dailyagain: [[RU, '  return claimedDays.includes(day) ? null : day', '  return day']],
 }
@@ -375,7 +375,7 @@ const check = (id, ok, got) => rows.push({ id, ok: !!ok, got })
       && count(second, /\*Still waiting\*/g) === 3 && count(second, /\*New\*/g) === 0
       && order.every((i) => i > 0) && order[0] < order[1] && order[1] < order[2]
       && /tb · WNW Office · waiting 180 min|tb · WNW Office · waiting 3 hours/.test(first) && /ta · Primary · waiting 120 min|ta · Primary · waiting 2 hours/.test(first)
-      && count(first, /crm\/conversations\?id=/g) === 3 && !/TAILEND/.test(first) && /x{100}/.test(first), { first, second })
+      && count(first, /\|Open the thread>/g) === 3 && count(first, /&resolve=1\|No reply needed>/g) === 3 && !/TAILEND/.test(first) && /x{100}/.test(first), { first, second })
   }
   {
     const T = textWorld(), posts = []

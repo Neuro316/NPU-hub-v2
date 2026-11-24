@@ -68,6 +68,7 @@ export const REPO_FACTS: RepoFacts = {
     'hub_247_priority_feedback',
     'hub_248_text_waiting_kind',
     'hub_249_mailbox_also_visible_to',
+    'hub_250_contact_resolutions',
     'shipit_projects'
   ],
   guards: [

@@ -14,6 +14,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { loadPipelines, placeContact, setStage, loadPositions, findPipeline } from '@/lib/pipelines/positions'
 import { endAsExited } from '@/lib/marketing/exits'
 import { notifyUrgent } from '@/lib/notify/urgent'
+import { DEFAULT_OWNER } from '@/lib/notify/settings'
+import { RETURNING_CHIP, returningContacts } from '@/lib/touch/returning'
 import {
   EVENT_TITLE, TASK_TITLE, actionsFor, brandTagToAdd, campaignSourceKey, enrolledTarget, tasksClosedBy,
   type Brand, type CampaignKey, type EventType, type LifecycleConfig, type TaskReason,
@@ -144,29 +146,67 @@ export async function closeTasks(db: SupabaseClient, orgId: string, contactId: s
   return open.length
 }
 
+export const TASK_FALLBACK_JOB = 'lifecycle-task-fallback'
+
+/**
+ * Who a follow-up task is assigned to. tasks.assigned_to is FOREIGN KEY (assigned_to) REFERENCES team_members(id),
+ * but the lifecycle setting names a USER id (the same id the board card's owner_id and team_profiles use). Writing the
+ * user id straight in failed with 23503 on 2026-11-21. The user's active team_members row in the org is used; without
+ * one, the org's default owner's; without that, the task is left unassigned. Any fallback is logged in job_runs.
+ */
+export async function taskAssignee(db: SupabaseClient, orgId: string, wantUserId: string): Promise<{ memberId: string | null; userId: string; fallback: string | null }> {
+  const member = async (userId: string) => {
+    const { data } = await db.from('team_members').select('id').eq('org_id', orgId).eq('user_id', userId).eq('is_active', true).maybeSingle()
+    return ((data as any)?.id as string | undefined) ?? null
+  }
+  const want = await member(wantUserId)
+  if (want) return { memberId: want, userId: wantUserId, fallback: null }
+  const def = wantUserId === DEFAULT_OWNER ? null : await member(DEFAULT_OWNER)
+  if (def) return { memberId: def, userId: DEFAULT_OWNER, fallback: 'default_owner' }
+  return { memberId: null, userId: wantUserId, fallback: 'unassigned' }
+}
+
+async function logFallback(db: SupabaseClient, row: any, reason: TaskReason, wanted: string, used: string | null, why: string) {
+  const at = new Date().toISOString()
+  const { error } = await db.from('job_runs').insert({ job: TASK_FALLBACK_JOB, started_at: at, finished_at: at, ok: true, rows_touched: 1,
+    detail: { org_id: row.org_id, contact_id: row.contact_id, task: reason, wanted, used, why } })
+  if (error) console.error(`[lifecycle] fallback log failed: ${error.code ?? 'unknown'}`)
+}
+
 /** Opens one follow-up task (CRM task linked to the contact, and a card in Action Steps). A second open one is refused by the unique index. */
-async function openTask(db: SupabaseClient, cfg: LifecycleConfig, row: any, reason: TaskReason): Promise<string> {
+export async function openTask(db: SupabaseClient, cfg: LifecycleConfig, row: any, reason: TaskReason): Promise<string> {
   if (!cfg.assignee) return 'no_assignee'
-  const { data: t, error } = await db.from('tasks').insert({
-    org_id: row.org_id, contact_id: row.contact_id, assigned_to: cfg.assignee, title: TASK_TITLE[reason],
-    description: `Opened by the Hub when this happened: ${EVENT_TITLE[row.event_type as EventType] ?? row.event_type}. It closes itself when the contact is reached, books, buys or becomes active again, whichever applies.`,
+  const who = await taskAssignee(db, row.org_id, cfg.assignee)
+  if (who.fallback) await logFallback(db, row, reason, cfg.assignee, who.memberId, who.fallback)
+  // q44: a lead who bought before or finished a program is flagged, never hidden
+  const returning = reason === 'lead_no_touch_24h' && (await returningContacts(db, [row.contact_id])).has(row.contact_id)
+  const title = returning ? `${TASK_TITLE[reason]} (${RETURNING_CHIP})` : TASK_TITLE[reason]
+  const fields = {
+    org_id: row.org_id, contact_id: row.contact_id, title,
+    description: `Opened by the Hub when this happened: ${EVENT_TITLE[row.event_type as EventType] ?? row.event_type}. It closes itself when the contact is reached, books, buys or becomes active again, whichever applies.${returning ? ' Returning: they have bought before or finished a program.' : ''}`,
     priority: 'high', status: 'todo', source: `hub_followup:${reason}`, source_id: row.id, due_date: minutes(24 * 60),
-  }).select('id').single()
+  }
+  let { data: t, error } = await db.from('tasks').insert({ ...fields, assigned_to: who.memberId }).select('id').single()
+  if (error?.code === '23503') {
+    // a key that still does not resolve: the task is written unassigned and the fallback logged, never a failed run
+    await logFallback(db, row, reason, cfg.assignee, null, 'fk_23503_unassigned')
+    ;({ data: t, error } = await db.from('tasks').insert({ ...fields, assigned_to: null }).select('id').single())
+  }
   if (error?.code === '23505') return 'already_open'
   if (error || !t) throw new Error(`task write: ${error?.code ?? 'unknown'}`)
-  const [{ data: col }, { data: who }] = await Promise.all([
+  const [{ data: col }, { data: name }] = await Promise.all([
     db.from('kanban_columns').select('id').eq('org_id', row.org_id).eq('title', 'Action Steps').limit(1),
-    db.from('team_profiles').select('display_name').eq('org_id', row.org_id).eq('user_id', cfg.assignee).maybeSingle(),
+    db.from('team_profiles').select('display_name').eq('org_id', row.org_id).eq('user_id', who.userId).maybeSingle(),
   ])
   if (!col?.[0]) return 'opened_no_board_column'
   const { data: card, error: kErr } = await db.from('kanban_tasks').insert({
-    org_id: row.org_id, column_id: (col[0] as any).id, title: TASK_TITLE[reason], priority: 'high', due_date: minutes(24 * 60),
-    assignee: (who as any)?.display_name ?? null, owner_id: cfg.assignee, source: 'hub_followup', visibility: 'everyone', sort_order: 0,
+    org_id: row.org_id, column_id: (col[0] as any).id, title, priority: 'high', due_date: minutes(24 * 60),
+    assignee: (name as any)?.display_name ?? null, owner_id: who.userId, source: 'hub_followup', visibility: 'everyone', sort_order: 0,
     custom_fields: { crm_task_id: (t as any).id, contact_id: row.contact_id, reason }, ai_generated: false,
   }).select('id').single()
   if (kErr || !card) { console.error(`[lifecycle] board card failed: ${kErr?.code ?? 'unknown'}`); return 'opened_no_card' }
   await db.from('tasks').update({ hub_task_id: (card as any).id, last_synced_at: new Date().toISOString() }).eq('id', (t as any).id)
-  return 'opened'
+  return who.fallback ? `opened_${who.fallback}` : 'opened'
 }
 
 /** Applies pending live rows, oldest first. Never runs in dry_run (those rows are never pending). */

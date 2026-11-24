@@ -27,7 +27,7 @@ const TAMPERS = {
   readbody: [[FT, '  return touches\n}', "  if (addrs.length) await db.from('hub_mail_messages').select('subject, body').in('from_address', addrs)\n  return touches\n}"]],
   countdry: [[FT, ".eq('status', 'sent').eq('dry_run', false).not('sent_at', 'is', null)", ".not('sent_at', 'is', null)"]],
   nodelivered: [[FT, "export const TEXT_SENT = ['queued', 'sending', 'sent', 'delivered']", "export const TEXT_SENT = ['queued', 'sending', 'sent']"]],
-  tilebefore: [[COL, 'inbound.map(c => ({ id: c.id, email: c.email, since: c.created_at }))', "inbound.map(c => ({ id: c.id, email: c.email, since: '1970-01-01T00:00:00Z' }))"]],
+  tilebefore: [[COL, 'stlLeads.map(c => ({ id: c.id, email: c.email, since: c.created_at }))', "stlLeads.map(c => ({ id: c.id, email: c.email, since: '1970-01-01T00:00:00Z' }))"]],
 }
 const RED_OF = { sharedonly: ['T_PRIVATE'], readbody: ['T_CONTENT'], countdry: ['T_DRYRUN'], nodelivered: ['T_SENT'], tilebefore: ['T_AGREE'] }
 const active = H.selectors(TAMPERS)

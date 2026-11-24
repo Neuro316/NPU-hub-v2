@@ -939,8 +939,8 @@ export default function ContactDetail({ contactId, onClose, onUpdate, cardConfig
             )}
             {/* q35: open touchpoint situations, above everything else on the card */}
             <WaitingOnUs contactId={contactId} />
-            {/* Header */}
-            <div className="px-5 py-4 border-b border-gray-100 flex-shrink-0">
+            {/* Header: right padding below desktop width keeps Edit and Delete clear of the floating call bar */}
+            <div className="px-5 pr-40 lg:pr-5 py-4 border-b border-gray-100 flex-shrink-0">
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-full bg-np-blue flex items-center justify-center text-white font-bold text-sm">

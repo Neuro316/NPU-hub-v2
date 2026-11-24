@@ -13,9 +13,10 @@ import { nyDay, addDays, daysBetween, daysInMonth, eachDay, queryFrom, queryTo }
 import { loadPositions, type Position } from '@/lib/pipelines/positions'
 import { COACHING_HOURS_PER_MONTH, COMMITTED_WEEKS, STEP_TARGET_DEFAULTS } from './registry'
 import { targetFor, type Target } from './targets'
-import { firstTouches } from '@/lib/touch/first-touch'
+import { firstTouches, resolvedLeads } from '@/lib/touch/first-touch'
+import { RETURNING_CHIP, returningContacts } from '@/lib/touch/returning'
 
-export interface Rec { id: string; label: string; sub?: string; href?: string; amount?: number }
+export interface Rec { id: string; label: string; sub?: string; href?: string; amount?: number; chips?: string[] }
 export interface Item { metric: string; day: string; value: number; dims?: Record<string, string>; rec?: Rec }
 
 export interface Ctx {
@@ -151,13 +152,17 @@ const contactsLoader: Loader = async ctx => {
     if (channel === 'podcast_pr') items.push({ metric: 'podcast_leads', day, value: 1, rec })
   }
 
-  // speed to lead: the first outbound touch after the contact was created (inbound leads only)
-  const ids = inbound.map(c => c.id)
-  if (ids.length) {
+  // speed to lead: the first outbound touch after the contact was created (inbound leads only). A lead marked No reply
+  // needed is left out (resolvedLeads, the one check); a lead who bought before or finished a program is chipped 'returning'.
+  const resolved = await resolvedLeads(db, inbound.map(c => c.id), ctx.now.getTime())
+  const stlLeads = inbound.filter(c => !resolved.has(c.id))
+  const returning = await returningContacts(db, stlLeads.map(c => c.id))
+  // (the booked-within-30-days block below still covers every inbound lead)
+  if (inbound.length) {
     // the one touch rule (src/lib/touch/first-touch.ts), the same function lead_no_touch_24h uses: texts, calls,
     // sends that went out, client confirmations, booking links, and replies from any connected mailbox (metadata only)
-    const firstTouch = await firstTouches(db, inbound.map(c => ({ id: c.id, email: c.email, since: c.created_at })))
-    const leadEmails = Array.from(new Set(inbound.map(c => lower(c.email)).filter(Boolean)))
+    const firstTouch = await firstTouches(db, stlLeads.map(c => ({ id: c.id, email: c.email, since: c.created_at })))
+    const leadEmails = Array.from(new Set(stlLeads.map(c => lower(c.email)).filter(Boolean)))
 
     // the lead's own booking (nr_bookings matched by email to the guest or participant), any time
     const bookedAll = new Map<string, number[]>()
@@ -175,7 +180,7 @@ const contactsLoader: Loader = async ctx => {
       }
     }
 
-    for (const c of inbound) {
+    for (const c of stlLeads) {
       const created = new Date(c.created_at).getTime()
       const t = firstTouch.get(c.id)
       const touched = t !== undefined
@@ -196,6 +201,7 @@ const contactsLoader: Loader = async ctx => {
       items.push({ metric: 'speed_to_lead', day: nyDay(c.created_at), value: minutes, rec: {
         id: c.id, label,
         sub: touched ? `${minutes} min to first touch` : `no outbound touch yet (${minutes} min)`, href: contactHref(c.id),
+        ...(returning.has(c.id) ? { chips: [RETURNING_CHIP] } : {}),
       } })
     }
 

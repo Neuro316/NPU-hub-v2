@@ -17,6 +17,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { detect, courseworkCleared, type Contact, type Found } from './detect'
 import { textAlerts, type Line, type TextAlertOut } from './text-alerts'
+import { isResolvedClear, liveResolutions, resolvedClearText } from '@/lib/resolve/check'
 import {
   CLEARED, LOOKBACK_DAYS, NO_LONGER, PLAIN, SITUATIONS, digestDue, digestText, nyDayHour, severity, toRaise, whyLine, type SituationKind,
 } from './rules'
@@ -207,7 +208,7 @@ export async function ensureReviewColumn(db: SupabaseClient, orgId: string): Pro
   return (made as any).id
 }
 
-async function columnId(db: SupabaseClient, orgId: string, title: string): Promise<string | null> {
+export async function columnId(db: SupabaseClient, orgId: string, title: string): Promise<string | null> {
   const { data } = await db.from('kanban_columns').select('id').eq('org_id', orgId).eq('title', title).limit(1)
   return (data as any[] | null)?.[0]?.id ?? null
 }
@@ -222,7 +223,7 @@ async function raise(d: RunDeps, s: Found, name: string, colId: string, ownerNam
   const fields = { contact_id: s.contactId, kind: s.kind, waiting_since: s.since, opened_at: iso(now), severity: sev, detail: s.detail }
   const { data: row, error } = reopenId
     ? await db.from(TABLE).update({ ...fields, cleared_at: null, cleared_reason: null, task_id: null, updated_at: iso(now) })
-      .eq('id', reopenId).eq('cleared_reason', STAFF_OR_DUPLICATE).select('id').single()
+      .eq('id', reopenId).not('cleared_at', 'is', null).select('id').single()
     : await db.from(TABLE).insert({ org_id: orgId, situation_key: s.key, ...fields }).select('id').single()
   if (error?.code === '23505' || (reopenId && error?.code === 'PGRST116')) return false // one is already open, or nothing to reopen
   if (error || !row) throw fail('situation write', error)
@@ -239,14 +240,20 @@ async function raise(d: RunDeps, s: Found, name: string, colId: string, ownerNam
 }
 
 async function clear(d: RunDeps, row: any, reason: string, doneCol: string | null, trashCol: string | null) {
-  const { db, now } = d
+  return clearSituation(d.db, d.now, row, reason, doneCol, trashCol)
+}
+
+/** Clears one open situation: cleared_at and the reason, and its card to Done with "Cleared on its own: <reason>". Also
+ *  used by No reply needed (src/lib/resolve/rules.ts). */
+export async function clearSituation(db: SupabaseClient, now: number, row: any, reason: string, doneCol: string | null, trashCol: string | null) {
   const { error } = await db.from(TABLE).update({ cleared_at: iso(now), cleared_reason: reason.slice(0, 200), updated_at: iso(now) }).eq('id', row.id).is('cleared_at', null)
   if (error) throw fail('situation clear', error)
   if (!row.task_id) return
   const { data: card } = await db.from('kanban_tasks').select('id, column_id, description').eq('id', row.task_id).maybeSingle()
   if (!card || (trashCol && (card as any).column_id === trashCol)) return
-  const note = reason === STAFF_OR_DUPLICATE ? 'this contact is staff, or a duplicate of another contact' : reason
-  const patch: Record<string, unknown> = { description: `${(card as any).description ?? ''}\n\nCleared on its own: ${note}.`.trim(), completed_at: iso(now), updated_at: iso(now) }
+  const note = reason === STAFF_OR_DUPLICATE ? 'this contact is staff, or a duplicate of another contact'
+    : isResolvedClear(reason) ? `no reply needed (${resolvedClearText(reason)})` : reason
+  const patch: Record<string, unknown> = { description: `${(card as any).description ?? ''}\n\n${isResolvedClear(reason) ? 'Cleared' : 'Cleared on its own'}: ${note}.`.trim(), completed_at: iso(now), updated_at: iso(now) }
   if (doneCol) patch.column_id = doneCol
   const { error: kErr } = await db.from('kanban_tasks').update(patch).eq('id', row.task_id)
   if (kErr) console.error(`[touchpoints] card move failed: ${kErr.code ?? 'unknown'}`)
@@ -315,19 +322,27 @@ export async function runTextAlerts(d: RunDeps & { slackChannel: NonNullable<Run
   return textAlerts({ db: d.db, orgId: d.orgId, now: d.now, hubUrl: d.hubUrl, slackChannel: d.slackChannel, lines: d.lines, dry }, elig)
 }
 
+/** The contacts marked No reply needed for the touchpoint monitor (the one check, src/lib/resolve/check.ts). */
+async function resolvedForTouchpoints(d: RunDeps, contactIds: string[]): Promise<Set<string>> {
+  return liveResolutions(d.db, contactIds, 'touchpoint', d.now)
+}
+
 /**
  * Raises the candidates: never a key raised before (open or cleared), except one cleared only as staff_or_duplicate,
- * which reopens; one open per contact and situation.
+ * which reopens; one open per contact and situation; never for a contact marked No reply needed.
  */
 export async function raiseCandidates(d: RunDeps, candidates: Found[], stillOpen: Set<string>, names: Map<string, string>): Promise<number> {
   const { db, orgId } = d
+  const resolved = await resolvedForTouchpoints(d, candidates.map((c) => c.contactId))
+  candidates = candidates.filter((c) => !resolved.has(c.contactId))
   if (!candidates.length) return 0
   let raised = 0
   const { data: seen, error: sErr } = await db.from(TABLE).select('id, situation_key, cleared_reason').eq('org_id', orgId).in('situation_key', candidates.map((c) => c.key))
   if (sErr) throw fail('situations keys', sErr)
   // a key cleared only as staff_or_duplicate is not "raised before": its contact was wrongly taken for staff or a
   // duplicate, so it may reopen (the same row) once the contact is eligible again
-  const reopenable = new Map(((seen ?? []) as any[]).filter((r) => r.cleared_reason === STAFF_OR_DUPLICATE).map((r) => [r.situation_key as string, r.id as string]))
+  // so may a key cleared by No reply needed: its contact is no longer resolved (resolved candidates were filtered above)
+  const reopenable = new Map(((seen ?? []) as any[]).filter((r) => r.cleared_reason === STAFF_OR_DUPLICATE || isResolvedClear(r.cleared_reason)).map((r) => [r.situation_key as string, r.id as string]))
   const known = new Set(((seen ?? []) as any[]).map((r) => r.situation_key as string).filter((k) => !reopenable.has(k)))
   const list = toRaise(candidates, known, stillOpen)
   if (list.length) {
@@ -345,10 +360,12 @@ export async function dailyDigest(d: RunDeps, out: RunOut): Promise<string | nul
   if (error) throw fail('digest claims', error)
   const day = digestDue(now, ((claims ?? []) as any[]).filter((c) => c.detail?.org_id === orgId).map((c) => String(c.detail?.day ?? '')))
   if (!day) return null
-  const { data: rows, error: rErr } = await db.from(TABLE).select('kind').eq('org_id', orgId).in('kind', SITUATIONS as unknown as string[]).gte('opened_at', iso(now - 7 * DAY))
+  const { data: rows, error: rErr } = await db.from(TABLE).select('kind, contact_id').eq('org_id', orgId).in('kind', SITUATIONS as unknown as string[]).gte('opened_at', iso(now - 7 * DAY))
   if (rErr) throw fail('digest counts', rErr)
+  // a contact marked No reply needed is left out of the counts
+  const resolved = await resolvedForTouchpoints(d, ((rows ?? []) as any[]).map((r) => r.contact_id))
   for (const k of SITUATIONS) out.counts[k] = 0
-  for (const r of (rows ?? []) as any[]) out.counts[r.kind] = (out.counts[r.kind] ?? 0) + 1
+  for (const r of ((rows ?? []) as any[]).filter((x) => !resolved.has(x.contact_id))) out.counts[r.kind] = (out.counts[r.kind] ?? 0) + 1
   const text = digestText(out.counts as Record<SituationKind, number>)
   // the claim comes BEFORE the send, so a second run the same day never sends again
   const { data: claim, error: cErr } = await db.from('job_runs').insert({ job: 'touchpoints-digest', started_at: iso(now), detail: { org_id: orgId, day, sent: !!text } }).select('id').single()
