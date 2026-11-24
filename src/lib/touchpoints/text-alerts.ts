@@ -21,6 +21,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { loadTouches } from '@/lib/touch/first-touch'
 import { conversationHref } from '@/lib/comms/conversation-link'
 import { DIGEST_HOUR_ET, LOOKBACK_DAYS, nyDayHour, waited } from './rules'
+import { liveResolutions } from '@/lib/resolve/check'
 
 export const TEXT_WAIT_KIND = 'text_waiting_1h'
 export const TEXT_WAIT_MS = 60 * 60_000
@@ -94,7 +95,8 @@ export function alertText(list: Array<Waiting & { isNew: boolean }>, now: number
   const n = sorted.length
   const lines = sorted.map((w) => {
     const label = w.isNew ? 'New' : 'Still waiting'
-    return `*${label}* · ${w.who} · ${w.line} · waiting ${waitedFor(now - Date.parse(w.since))}\n> ${w.preview || '(no text)'}\n<${hubUrl}${conversationHref(w.conversationId)}|Open the thread>`
+    const href = `${hubUrl}${conversationHref(w.conversationId)}`
+    return `*${label}* · ${w.who} · ${w.line} · waiting ${waitedFor(now - Date.parse(w.since))}\n> ${w.preview || '(no text)'}\n<${href}|Open the thread> · <${href}&resolve=1|No reply needed>`
   })
   return [`${n} text${n === 1 ? '' : 's'} waiting on a reply for an hour or more`, ...lines].join('\n\n')
 }
@@ -161,7 +163,10 @@ export async function textAlerts(d: TextAlertDeps, people: TextPeople): Promise<
   const out: TextAlertOut = { waiting: 0, new: 0, cleared: 0, posted: false, code: null, message: null }
   if (await readPause(db, orgId)) return { ...out, skipped: 'paused' }
   if (nyDayHour(now).hour < DIGEST_HOUR_ET) return { ...out, skipped: 'before_8am_et' }
-  const waiting = await findWaiting(d, people)
+  // a contact marked No reply needed (text_waiting or all) is not listed, and its open row clears below
+  const found = await findWaiting(d, people)
+  const resolved = await liveResolutions(db, found.map((w) => w.contactId), 'text_waiting', now)
+  const waiting = found.filter((w) => !resolved.has(w.contactId))
   out.waiting = waiting.length
   const { data: open, error } = await db.from(TABLE).select('id, contact_id, situation_key, detail').eq('org_id', orgId).eq('kind', TEXT_WAIT_KIND).is('cleared_at', null)
   if (error) throw fail('text situations read', error)

@@ -19,6 +19,7 @@
 //             mailbox's details stay owner-only.
 // Reads only; nothing is written.
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { liveResolutions } from '@/lib/resolve/check'
 
 export interface TouchLead { id: string; email: string | null; since: string }
 export type TouchKind = 'text' | 'call' | 'engine' | 'campaign' | 'confirm' | 'booking' | 'reply'
@@ -116,4 +117,13 @@ export async function loadTouches(db: SupabaseClient, leads: TouchLead[]): Promi
 /** The first touch per lead at or after its own `since`. A lead with no touch is absent from the map. */
 export async function firstTouches(db: SupabaseClient, leads: TouchLead[]): Promise<Map<string, number>> {
   return earliestTouches(leads, await loadTouches(db, leads))
+}
+
+/**
+ * Speed to lead's "No reply needed" check (src/lib/resolve/check.ts, scope speed_to_lead or all): the leads a teammate
+ * marked as needing no reply, until they send something new. The tiles (metrics/collect.ts), the brief's new leads line
+ * (notify/brief.ts) and lead_no_touch_24h (lifecycle/scan.ts) leave these out; nothing here counts as a touch.
+ */
+export async function resolvedLeads(db: SupabaseClient, contactIds: string[], now = Date.now()): Promise<Set<string>> {
+  return liveResolutions(db, contactIds, 'speed_to_lead', now)
 }

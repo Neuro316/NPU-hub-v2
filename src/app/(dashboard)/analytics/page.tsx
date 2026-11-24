@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { METRICS, METRIC, TABS, type MetricDef, type Tab } from '@/lib/metrics/registry'
 import { DEFAULT_THRESHOLDS, targetFor, workBack, type Direction, type Target as TargetT } from '@/lib/metrics/targets'
+import { ResolveButton } from '@/components/resolve/resolve-button'
 
 interface TileValue {
   value: number | null; prev: number | null; n?: number | null; hidden?: boolean
@@ -19,7 +20,7 @@ interface TileValue {
   direction?: Direction; through?: string
 }
 interface Summary { from: string; to: string; prev: { from: string; to: string }; metrics: Record<string, TileValue>; series?: Record<string, { day: string; v: number }[]>; computed_at: string | null }
-interface RecordRow { day: string; label: string; sub?: string; href?: string; value?: number; dims?: Record<string, string> }
+interface RecordRow { day: string; label: string; sub?: string; href?: string; value?: number; dims?: Record<string, string>; contact_id?: string; chips?: string[] }
 
 const DEF_URL = 'https://github.com/Neuro316/NPU-hub-v2/blob/main/docs/metrics/definitions.md'
 const STATUS_COLOR = { green: '#16a34a', amber: '#f59e0b', red: '#dc2626' } as const
@@ -144,6 +145,8 @@ function Records({ def, from, to, onClose }: { def: MetricDef; from: string; to:
               <div className="flex-1 min-w-0">
                 {r.href ? <Link href={r.href} className="text-xs font-medium text-np-dark hover:text-np-blue">{r.label}</Link> : <p className="text-xs font-medium text-np-dark">{r.label}</p>}
                 {r.sub && <p className="text-[10px] text-gray-500 truncate">{r.sub}</p>}
+                {r.chips?.map(c => <span key={c} className="inline-block mt-0.5 mr-1 px-1.5 py-0.5 rounded border border-amber-100 bg-amber-50 text-[9px] text-amber-700">{c}</span>)}
+                {def.key === 'speed_to_lead' && r.contact_id && <div className="mt-1"><ResolveButton contactId={r.contact_id} scope="speed_to_lead" /></div>}
               </div>
               {r.value != null && def.unit !== 'count' && <span className="text-[11px] text-np-dark">{fmt(def, r.value)}</span>}
             </div>

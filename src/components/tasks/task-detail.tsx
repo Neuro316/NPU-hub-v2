@@ -6,6 +6,7 @@ import { PRIORITY_CONFIG } from '@/lib/types/tasks'
 import { X, Trash2, MessageSquare, Plus, Link2, Calendar, User, Flag, Eye, FileText, ExternalLink, Clock, Zap, AlertTriangle, ListChecks, CheckSquare, Square, Activity, ChevronDown, ChevronUp, Lock, FolderOpen, Loader2 } from 'lucide-react'
 import { LinkTaskModal } from './link-task-modal'
 import { TaskAttachments } from './task-attachments'
+import { ResolveButton } from '@/components/resolve/resolve-button'
 import { notifyTaskAssigned, notifyTaskMoved, notifyRACIAssigned } from '@/lib/slack-notifications'
 
 interface TaskDetailProps {
@@ -362,6 +363,19 @@ export function TaskDetail({
                 </div>
               </div>
             </div>
+
+            {/* No reply needed: a Follow-ups to review card (scope touchpoint) or a lead_no_touch_24h card (scope speed_to_lead) */}
+            {(() => {
+              const cf = ((task as any).custom_fields || {}) as Record<string, any>
+              const src = (task as any).source as string | null
+              const scope = src === 'touchpoint' ? 'touchpoint' : src === 'hub_followup' && cf.reason === 'lead_no_touch_24h' ? 'speed_to_lead' : null
+              return typeof cf.contact_id === 'string' && scope ? (
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Waiting on us:</span>
+                  <ResolveButton contactId={cf.contact_id} scope={scope} />
+                </div>
+              ) : null
+            })()}
 
             {/* Linked Contact */}
             <div className="flex items-center gap-2 mb-1">

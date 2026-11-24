@@ -375,7 +375,7 @@ const check = (id, ok, got) => rows.push({ id, ok: !!ok, got })
       && count(second, /\*Still waiting\*/g) === 3 && count(second, /\*New\*/g) === 0
       && order.every((i) => i > 0) && order[0] < order[1] && order[1] < order[2]
       && /tb · WNW Office · waiting 180 min|tb · WNW Office · waiting 3 hours/.test(first) && /ta · Primary · waiting 120 min|ta · Primary · waiting 2 hours/.test(first)
-      && count(first, /crm\/conversations\?id=/g) === 3 && !/TAILEND/.test(first) && /x{100}/.test(first), { first, second })
+      && count(first, /\|Open the thread>/g) === 3 && count(first, /&resolve=1\|No reply needed>/g) === 3 && !/TAILEND/.test(first) && /x{100}/.test(first), { first, second })
   }
   {
     const T = textWorld(), posts = []

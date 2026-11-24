@@ -8,7 +8,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { contactByEmail } from '@/lib/lead-alerts/sources'
 import { leadChannel, SCORECARD_CHANNELS } from '@/lib/metrics/collect'
 import { bookingComplete } from '@/lib/bookings/placement'
-import { firstTouches } from '@/lib/touch/first-touch'
+import { firstTouches, resolvedLeads } from '@/lib/touch/first-touch'
 import { recordEvent, closeTasks, type LifecycleEvent } from './ledger'
 import {
   classifyProduct, inactivityDue, inactivityKey, INACTIVE_DAYS, leadOwedTask, CHECKOUT_UNPAID_HOURS, HELD_NO_PURCHASE_DAYS,
@@ -270,9 +270,12 @@ export async function scanLeads(ctx: ScanCtx) {
     .eq('org_id', ctx.orgId).is('merged_into_id', null).is('archived_at', null)
     .gte('created_at', iso(ctx.now - 7 * DAY)).lte('created_at', iso(ctx.now - 24 * 3_600_000)).limit(MAX_ROWS)
   if (error) throw fail('contacts', error)
+  // a lead marked No reply needed gets no lead_no_touch_24h event (resolvedLeads, the one speed to lead check)
+  const resolved = await resolvedLeads(ctx.db, ((data ?? []) as any[]).map((c) => c.id), ctx.now)
   for (const c of (data ?? []) as any[]) {
     if (Date.now() > ctx.deadline) return
     if (!SCORECARD_CHANNELS(leadChannel(c.source))) continue
+    if (resolved.has(c.id)) continue
     const created = Date.parse(c.created_at)
     const { data: bk, error: bErr } = await ctx.db.from('hub_booking_syncs').select('booking_id').eq('contact_id', c.id).limit(1)
     if (bErr) throw fail('hub_booking_syncs', bErr)

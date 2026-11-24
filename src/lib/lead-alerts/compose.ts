@@ -29,6 +29,8 @@ export interface LeadFacts {
   contactId: string | null
   /** a booking's intake answers, in the type's order */
   answers?: Array<{ label: string; answer: string }>
+  /** q44: they have bought before or finished a program (src/lib/touch/returning.ts). Flagged, never hidden. */
+  returning?: boolean
 }
 
 /** At most this many answers ride in an alert; the card has the rest. */
@@ -114,7 +116,7 @@ export function contactLink(appUrl: string, contactId: string | null): string | 
 /** The SMS text. Plain, one fact per line. */
 export function composeAlert(f: LeadFacts, appUrl: string): string {
   const lines = [
-    `New lead: ${clean(f.name, 80) ?? 'Name not given'}`,
+    `New lead: ${clean(f.name, 80) ?? 'Name not given'}${f.returning ? ' [returning]' : ''}`,
     `Source: ${SOURCE_NAME[f.source]}`,
     whatTheyDid(f),
   ]
