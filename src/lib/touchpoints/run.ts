@@ -17,7 +17,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { detect, courseworkCleared, type Contact, type Found } from './detect'
 import { textAlerts, type Line, type TextAlertOut } from './text-alerts'
-import { liveResolutions } from '@/lib/resolve/check'
+import { isResolvedClear, liveResolutions, resolvedClearText } from '@/lib/resolve/check'
 import {
   CLEARED, LOOKBACK_DAYS, NO_LONGER, PLAIN, SITUATIONS, digestDue, digestText, nyDayHour, severity, toRaise, whyLine, type SituationKind,
 } from './rules'
@@ -223,7 +223,7 @@ async function raise(d: RunDeps, s: Found, name: string, colId: string, ownerNam
   const fields = { contact_id: s.contactId, kind: s.kind, waiting_since: s.since, opened_at: iso(now), severity: sev, detail: s.detail }
   const { data: row, error } = reopenId
     ? await db.from(TABLE).update({ ...fields, cleared_at: null, cleared_reason: null, task_id: null, updated_at: iso(now) })
-      .eq('id', reopenId).eq('cleared_reason', STAFF_OR_DUPLICATE).select('id').single()
+      .eq('id', reopenId).not('cleared_at', 'is', null).select('id').single()
     : await db.from(TABLE).insert({ org_id: orgId, situation_key: s.key, ...fields }).select('id').single()
   if (error?.code === '23505' || (reopenId && error?.code === 'PGRST116')) return false // one is already open, or nothing to reopen
   if (error || !row) throw fail('situation write', error)
@@ -251,8 +251,9 @@ export async function clearSituation(db: SupabaseClient, now: number, row: any, 
   if (!row.task_id) return
   const { data: card } = await db.from('kanban_tasks').select('id, column_id, description').eq('id', row.task_id).maybeSingle()
   if (!card || (trashCol && (card as any).column_id === trashCol)) return
-  const note = reason === STAFF_OR_DUPLICATE ? 'this contact is staff, or a duplicate of another contact' : reason
-  const patch: Record<string, unknown> = { description: `${(card as any).description ?? ''}\n\n${note.startsWith('no reply needed') ? 'Cleared' : 'Cleared on its own'}: ${note}.`.trim(), completed_at: iso(now), updated_at: iso(now) }
+  const note = reason === STAFF_OR_DUPLICATE ? 'this contact is staff, or a duplicate of another contact'
+    : isResolvedClear(reason) ? `no reply needed (${resolvedClearText(reason)})` : reason
+  const patch: Record<string, unknown> = { description: `${(card as any).description ?? ''}\n\n${isResolvedClear(reason) ? 'Cleared' : 'Cleared on its own'}: ${note}.`.trim(), completed_at: iso(now), updated_at: iso(now) }
   if (doneCol) patch.column_id = doneCol
   const { error: kErr } = await db.from('kanban_tasks').update(patch).eq('id', row.task_id)
   if (kErr) console.error(`[touchpoints] card move failed: ${kErr.code ?? 'unknown'}`)
@@ -340,7 +341,8 @@ export async function raiseCandidates(d: RunDeps, candidates: Found[], stillOpen
   if (sErr) throw fail('situations keys', sErr)
   // a key cleared only as staff_or_duplicate is not "raised before": its contact was wrongly taken for staff or a
   // duplicate, so it may reopen (the same row) once the contact is eligible again
-  const reopenable = new Map(((seen ?? []) as any[]).filter((r) => r.cleared_reason === STAFF_OR_DUPLICATE).map((r) => [r.situation_key as string, r.id as string]))
+  // so may a key cleared by No reply needed: its contact is no longer resolved (resolved candidates were filtered above)
+  const reopenable = new Map(((seen ?? []) as any[]).filter((r) => r.cleared_reason === STAFF_OR_DUPLICATE || isResolvedClear(r.cleared_reason)).map((r) => [r.situation_key as string, r.id as string]))
   const known = new Set(((seen ?? []) as any[]).map((r) => r.situation_key as string).filter((k) => !reopenable.has(k)))
   const list = toRaise(candidates, known, stillOpen)
   if (list.length) {

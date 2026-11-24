@@ -22,7 +22,7 @@ import { SITUATIONS } from '@/lib/touchpoints/rules'
 import { clearSituation, columnId, TABLE as SITUATIONS_TABLE } from '@/lib/touchpoints/run'
 import { TEXT_WAIT_KIND } from '@/lib/touchpoints/text-alerts'
 
-import { REASONS, REASON_TEXT, RESOLUTIONS, SCOPES, covers, liveResolutions, type Reason, type Scope } from './check'
+import { REASONS, REASON_TEXT, RESOLUTIONS, SCOPES, covers, liveResolutions, reopenRow, resolvedClearReason, type Reason, type Scope } from './check'
 import { viewOf, type LiveResolution } from './view'
 export { REASONS, REASON_TEXT, RESOLUTIONS, SCOPES, covers, liveResolutions, type Reason, type Scope }
 export const SCOPE_TEXT: Record<Scope, string> = {
@@ -95,7 +95,8 @@ export async function resolveContact(db: SupabaseClient, input: ResolveInput): P
   if (error || !row) throw new Error(`resolution write: ${error?.code ?? 'unknown'}`)
 
   const name = await staffName(db, orgId, byUserId)
-  const why = `no reply needed: ${REASON_TEXT[reason].toLowerCase()}, by ${name}`
+  // what it clears is marked with this resolution's id, so Reopen can put it back
+  const why = resolvedClearReason((row as any).id, REASON_TEXT[reason], name)
   const cleared: Record<string, number> = {}
   if (scope === 'text_waiting' || scope === 'all') cleared.text_waiting = await clearText(db, orgId, contactId, why, now)
   if (scope === 'touchpoint' || scope === 'all') cleared.touchpoint = await clearTouchpoints(db, orgId, contactId, why, now)
@@ -115,17 +116,12 @@ export async function resolveContact(db: SupabaseClient, input: ResolveInput): P
 /** Reopen by hand: the live row gets reopened_at and reopened_reason 'manual'; the monitors raise again as normal. */
 export async function reopenResolution(db: SupabaseClient, orgId: string, id: string, byUserId: string, now = Date.now()): Promise<Result> {
   if (!UUID.test(id)) return { status: 404, body: { error: 'Not found.' } }
-  const { data, error } = await db.from(RESOLUTIONS).update({ reopened_at: iso(now), reopened_reason: 'manual' })
-    .eq('id', id).eq('org_id', orgId).is('reopened_at', null).select('id, contact_id, scope').single()
+  const { data, error } = await db.from(RESOLUTIONS).select('id, org_id, contact_id, scope').eq('id', id).eq('org_id', orgId).is('reopened_at', null).maybeSingle()
   if (error && MISSING.includes(error.code ?? '')) return { status: 503, body: { error: 'This switches on once the hub_250 migration is applied.' } }
   if (error || !data) return { status: 404, body: { error: 'Nothing to reopen.' } }
-  const name = await staffName(db, orgId, byUserId)
-  await db.from('contact_timeline').insert({
-    org_id: orgId, contact_id: (data as any).contact_id, event_type: 'contact_resolution_reopened', title: 'Waiting on us again',
-    description: `${name} reopened No reply needed for ${SCOPE_TEXT[(data as any).scope as Scope] ?? 'this contact'}.`,
-    metadata: { resolution_id: id, scope: (data as any).scope, reason: 'manual', by: byUserId, by_name: name },
-    source_table: RESOLUTIONS, source_id: id, actor_type: 'user', actor_id: byUserId, occurred_at: iso(now),
-  })
+  // the shared reopen: flips the row, puts back what the resolve cleared, and writes contact_reopened
+  const done = await reopenRow(db, data as any, 'manual', { id: byUserId, name: await staffName(db, orgId, byUserId) }, now)
+  if (!done) return { status: 404, body: { error: 'Nothing to reopen.' } }
   return { status: 200, body: { id, reopened: true } }
 }
 

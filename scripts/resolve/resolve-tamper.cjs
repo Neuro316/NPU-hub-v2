@@ -24,6 +24,11 @@
 //                          second resolve by Shane for the same scope is refused as already resolved
 //   R_RESOLVE_RETURNS_ROW  POST /api/resolve returns the new row (by, reason_text as the chip reads, resolved_at) in exactly
 //                          the shape GET then lists, so the button shows it at once
+//   R_REOPEN_RESTORES      Reopen (manual) puts back what the resolve cleared: the touchpoint situation and the
+//                          text_waiting_1h row open again, the card back in Follow-ups to review, and ONE contact_reopened
+//                          timeline entry with who (why it reopened is R_REOPEN_MANUAL's)
+//   R_RERAISE_AFTER_RESOLVE a key cleared by a resolve is held while the resolution is live (the one check), and once it is
+//                          reopened raiseCandidates raises it again, the same row reopened in place
 //   R_CARD_SHOWS_RESOLVED  the contact card's Waiting on us block is shown as resolved ("Resolved by <name>, Not a lead, ...")
 //                          when there are no open rows and a live resolution exists, and shows nothing when neither exists
 //
@@ -38,7 +43,9 @@
 //   perlogin     GET /api/resolve shows only the viewer's own resolves           {R_SHARED_ACROSS_USERS}
 //   noreturnrow  POST /api/resolve returns no row                                {R_RESOLVE_RETURNS_ROW}
 //   cardhides    the Waiting on us block ignores the live resolution             {R_CARD_SHOWS_RESOLVED}
-// TAMPER=1 reddens the sum (11).
+//   norestore    Reopen leaves the cleared situations cleared                    {R_REOPEN_RESTORES}
+//   resolvedblocks a key cleared by a resolve is never raised again             {R_RERAISE_AFTER_RESOLVE}
+// TAMPER=1 reddens the sum (13).
 const H = require('../agent/lib/harness.cjs')
 
 const RR = 'lib/resolve/rules.ts', CK = 'lib/resolve/check.ts', TA = 'lib/touchpoints/text-alerts.ts', RUN = 'lib/touchpoints/run.ts'
@@ -49,7 +56,9 @@ const TAMPERS = {
   touchraise: [[RUN, '  candidates = candidates.filter((c) => !resolved.has(c.contactId))\n', '']],
   stlscan: [[SCAN, '    if (resolved.has(c.id)) continue\n', '']],
   noreopen: [[CK, '    if (await inboundSince(db, r.contact_id, r.resolved_at)) {', '    if (false as boolean) {']],
-  manualnoop: [[RR, "update({ reopened_at: iso(now), reopened_reason: 'manual' })", "update({ reopened_at: iso(now), reopened_reason: 'new_inbound' })"]],
+  manualnoop: [[RR, "await reopenRow(db, data as any, 'manual',", "await reopenRow(db, data as any, 'new_inbound',"]],
+  norestore: [[CK, '  const restored = await restoreCleared(db, row, now)', '  const restored = 0']],
+  resolvedblocks: [[RUN, '.filter((r) => r.cleared_reason === STAFF_OR_DUPLICATE || isResolvedClear(r.cleared_reason))', '.filter((r) => r.cleared_reason === STAFF_OR_DUPLICATE)']],
   noreturning: [[RET, '  for (const b of (buys ?? []) as any[]) if (b.contact_id) out.add(b.contact_id)\n', '']],
   rawassignee: [[LED, "await db.from('tasks').insert({ ...fields, assigned_to: who.memberId })", "await db.from('tasks').insert({ ...fields, assigned_to: cfg.assignee })"]],
   perlogin: [[ROUTE, 'resolutions: await resolutionsFor(ctx.db, orgId, id!, Date.now(), scope)', 'resolutions: (await resolutionsFor(ctx.db, orgId, id!, Date.now(), scope)).filter((r) => r.by_id === ctx.userId)']],
@@ -58,7 +67,8 @@ const TAMPERS = {
 }
 const RED_OF = { notimeline: ['R_RESOLVE_WRITES'], textposts: ['R_CLEARS_TEXT'], touchraise: ['R_CLEARS_TOUCHPOINT'], stlscan: ['R_CLEARS_STL'],
   noreopen: ['R_REOPENS_ON_INBOUND'], manualnoop: ['R_REOPEN_MANUAL'], noreturning: ['R_RETURNING_CHIP'], rawassignee: ['R_TASK_FK_FALLBACK'],
-  perlogin: ['R_SHARED_ACROSS_USERS'], noreturnrow: ['R_RESOLVE_RETURNS_ROW'], cardhides: ['R_CARD_SHOWS_RESOLVED'] }
+  perlogin: ['R_SHARED_ACROSS_USERS'], noreturnrow: ['R_RESOLVE_RETURNS_ROW'], cardhides: ['R_CARD_SHOWS_RESOLVED'],
+  norestore: ['R_REOPEN_RESTORES'], resolvedblocks: ['R_RERAISE_AFTER_RESOLVE'] }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-resolve')
 const load = H.install(out)
@@ -80,7 +90,8 @@ function world() {
       { org_id: ORG, user_id: SHANE, display_name: 'Shane Granau', role: 'super_admin', status: 'active' }],
     team_members: [{ id: 'tm-cameron', org_id: ORG, user_id: CAMERON, is_active: true }],
     hub_contact_resolutions: [], contact_timeline: [], hub_touchpoint_situations: [], kanban_tasks: [], tasks: [], job_runs: [], hub_lifecycle_events: [],
-    kanban_columns: [{ id: 'col-act', org_id: ORG, title: 'Action Steps', sort_order: 1 }, { id: 'col-done', org_id: ORG, title: 'Done', sort_order: 4 }],
+    kanban_columns: [{ id: 'col-rev', org_id: ORG, title: 'Follow-ups to review', sort_order: 1 }, { id: 'col-act', org_id: ORG, title: 'Action Steps', sort_order: 2 },
+      { id: 'col-done', org_id: ORG, title: 'Done', sort_order: 4 }],
     conversations: [], crm_messages: [], call_logs: [], hub_mail_messages: [], hub_booking_syncs: [], hub_resources: [],
   }
 }
@@ -190,8 +201,8 @@ const live = (T, c, scope, now = NOW + 60_000) => check.liveResolutions(memDb(T)
     const d = { db: memDb(T), orgId: ORG, now: NOW + 60_000, enrolledPipeline: 'enrolled', owner: CAMERON, hubUrl: 'https://hub.example', isTest: () => false, slack: async () => ({ ok: true, code: null }) }
     const f = { contactId: C(3), kind: 'inbound_no_reply', key: `${C(3)}:inbound_no_reply:mm9`, triggerId: 'mm9', since: ago(30), detail: { message_id: 'mm9' } }
     const raised = await run.raiseCandidates(d, [f], new Set(), new Map([[C(3), 'P3']]))
-    ok('R_CLEARS_TOUCHPOINT', s.cleared_at && /no reply needed: handled elsewhere, by Cameron Allen/.test(s.cleared_reason) && card.column_id === 'col-done'
-      && /Cleared: no reply needed/.test(card.description) && raised === 0, { reason: s.cleared_reason, col: card.column_id, raised })
+    ok('R_CLEARS_TOUCHPOINT', s.cleared_at && /^no reply needed:[0-9a-f-]{36}:Handled elsewhere, by Cameron Allen$/.test(s.cleared_reason) && card.column_id === 'col-done'
+      && /Cleared: no reply needed \(Handled elsewhere, by Cameron Allen\)\./.test(card.description) && raised === 0, { reason: s.cleared_reason, col: card.column_id, raised })
   }
 
   // R_CLEARS_STL: an open lead_no_touch_24h task; resolved; then the scan
@@ -294,6 +305,43 @@ const live = (T, c, scope, now = NOW + 60_000) => check.liveResolutions(memDb(T)
     const line = liveRow ? view.resolvedLine(liveRow) : ''
     ok('R_CARD_SHOWS_RESOLVED', view.waitingMode([], liveRow) === 'resolved' && /^Resolved by Cameron Allen, Not a lead, /.test(line)
       && view.waitingMode([], null) === null && view.waitingMode([{ id: 'x' }], null) === 'waiting', { mode: view.waitingMode([], liveRow), line })
+  }
+
+  // R_REOPEN_RESTORES: resolve 'all' clears a card situation and a text row; Shane reopens; both come back
+  {
+    const T = world()
+    T.kanban_tasks.push({ id: 'card7', org_id: ORG, column_id: 'col-rev', title: 'P1: emailed us', description: 'x' })
+    T.hub_touchpoint_situations.push(
+      { id: 's7', org_id: ORG, contact_id: C(1), kind: 'inbound_no_reply', situation_key: `${C(1)}:inbound_no_reply:mm7`, waiting_since: ago(30), opened_at: ago(5), cleared_at: null, cleared_reason: null, severity: 'low', detail: {}, task_id: 'card7' },
+      { id: 't7', org_id: ORG, contact_id: C(1), kind: 'text_waiting_1h', situation_key: `${C(1)}:text_waiting_1h:m7`, waiting_since: ago(2), opened_at: ago(1), cleared_at: null, cleared_reason: null, severity: 'low', detail: {}, task_id: null })
+    await res(T, { contactId: C(1), scope: 'all', reason: 'not_a_lead' })
+    const clearedFirst = T.hub_touchpoint_situations.every((s) => s.cleared_at) && T.kanban_tasks[0].column_id === 'col-done'
+    const back = await resolve.reopenResolution(memDb(T), ORG, T.hub_contact_resolutions[0].id, SHANE, NOW + 60_000)
+    const s7 = T.hub_touchpoint_situations.find((s) => s.id === 's7'), t7 = T.hub_touchpoint_situations.find((s) => s.id === 't7'), card = T.kanban_tasks[0]
+    const tl = T.contact_timeline.filter((e) => e.event_type === 'contact_reopened')
+    ok('R_REOPEN_RESTORES', clearedFirst && back.status === 200 && s7.cleared_at === null && s7.cleared_reason === null && t7.cleared_at === null
+      && card.column_id === 'col-rev' && card.completed_at === null && /Reopened: waiting on us again\./.test(card.description)
+      && tl.length === 1 && tl[0].metadata.by_name === 'Shane Granau' && tl[0].metadata.restored === 2,
+    { clearedFirst, back: back.status, s7: [s7.cleared_at, s7.cleared_reason], col: card.column_id, tl: tl.map((e) => e.metadata) })
+  }
+
+  // R_RERAISE_AFTER_RESOLVE: held while live (the one check); raised again, in place, once the resolution is reopened
+  {
+    const T = world()
+    await res(T, { contactId: C(2), scope: 'touchpoint', reason: 'spam' })
+    const rid = T.hub_contact_resolutions[0].id
+    const K = `${C(2)}:text_no_reply:tx8`
+    T.hub_touchpoint_situations.push({ id: 's8', org_id: ORG, contact_id: C(2), kind: 'text_no_reply', situation_key: K, waiting_since: ago(30), opened_at: ago(5),
+      cleared_at: ago(1), cleared_reason: `no reply needed:${rid}:Spam, by Cameron Allen`, severity: 'low', detail: {}, task_id: null })
+    const heldWhileLive = (await live(T, C(2), 'touchpoint')).has(C(2))
+    // reopened elsewhere without the restore step, so only the raise step can bring the key back
+    Object.assign(T.hub_contact_resolutions[0], { reopened_at: at(NOW + 60_000), reopened_reason: 'manual' })
+    const d = { db: memDb(T), orgId: ORG, now: NOW + 120_000, enrolledPipeline: 'enrolled', owner: CAMERON, hubUrl: 'https://hub.example', isTest: () => false, slack: async () => ({ ok: true, code: null }) }
+    const f = { contactId: C(2), kind: 'text_no_reply', key: K, triggerId: 'tx8', since: ago(30), detail: { message_id: 'tx8' } }
+    const raised = await run.raiseCandidates(d, [f], new Set(), new Map([[C(2), 'P2']]))
+    const rowsK = T.hub_touchpoint_situations.filter((s) => s.situation_key === K)
+    ok('R_RERAISE_AFTER_RESOLVE', heldWhileLive && raised === 1 && rowsK.length === 1 && rowsK[0].id === 's8' && rowsK[0].cleared_at === null && rowsK[0].cleared_reason === null,
+      { heldWhileLive, raised, rows: rowsK.map((x) => [x.id, x.cleared_at]) })
   }
 
   H.report(rows, active, RED_OF)

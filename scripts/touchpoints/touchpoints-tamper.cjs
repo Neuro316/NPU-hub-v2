@@ -94,7 +94,7 @@ const TAMPERS = {
   duplicate_pair: [[RUN, "    return dups?.length ? { ...f, detail: { ...f.detail, duplicate_of: dups.join(',') } } : f", '    return f']],
   clear_on_staff: [[RUN, 'const reason = elig.excluded.has(r.contact_id) ? STAFF_OR_DUPLICATE : clearReason(', 'const reason = clearReason(']],
   other_org_admin: [[RUN, ".from('org_members').select('user_id').eq('organization_id', orgId).eq('status', 'active')", ".from('org_members').select('user_id').eq('status', 'active')"]],
-  reopen_after_clear: [[RUN, '.filter((r) => r.cleared_reason === STAFF_OR_DUPLICATE)', '.filter(() => false)']],
+  reopen_after_clear: [[RUN, '.filter((r) => r.cleared_reason === STAFF_OR_DUPLICATE || isResolvedClear(r.cleared_reason))', '.filter((r) => isResolvedClear(r.cleared_reason))']],
   readsubject: [[D, "export const INBOUND_COLUMNS = 'id, connection_id, gmail_thread_id, from_address, received_at'", "export const INBOUND_COLUMNS = 'id, connection_id, gmail_thread_id, from_address, received_at, subject'"]],
   dailyagain: [[RU, '  return claimedDays.includes(day) ? null : day', '  return day']],
 }

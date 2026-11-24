@@ -32,6 +32,15 @@ export function ResolveButton({ contactId, scope, autoOpen = false, onChange, in
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const auto = useRef(false)
+  // the popover opens leftward from the button's right edge, or rightward from its left edge when there is no room
+  const wrap = useRef<HTMLSpanElement | null>(null)
+  const [alignLeft, setAlignLeft] = useState(false)
+  useEffect(() => {
+    if (!open || !wrap.current || typeof window === 'undefined') return
+    const r = wrap.current.getBoundingClientRect()
+    const width = Math.min(256, window.innerWidth - 32)
+    setAlignLeft(r.right - width < 16)
+  }, [open])
   // the callback is read through a ref, so a parent's inline function does not reload the state on every render
   const changeRef = useRef(onChange)
   changeRef.current = onChange
@@ -100,12 +109,12 @@ export function ResolveButton({ contactId, scope, autoOpen = false, onChange, in
     )
   }
   return (
-    <span className={`relative inline-block ${className}`} data-help-section="resolve">
+    <span ref={wrap} className={`relative inline-block ${className}`} data-help-section="resolve">
       <button onClick={() => setOpen(o => !o)} className="px-2 py-1 text-[10px] font-medium border border-gray-200 rounded-lg bg-white text-gray-600 hover:bg-gray-50">
         No reply needed
       </button>
       {open && (
-        <div className="absolute right-0 z-50 mt-1 w-64 rounded-xl border border-gray-100 bg-white p-3 shadow-lg space-y-2" role="dialog" aria-label="No reply needed">
+        <div className={`absolute ${alignLeft ? 'left-0' : 'right-0'} z-50 mt-1 w-64 max-w-[calc(100vw-2rem)] rounded-xl border border-gray-100 bg-white p-3 shadow-lg space-y-2`} role="dialog" aria-label="No reply needed">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Why no reply is needed</p>
           <div className="flex flex-wrap gap-1">
             {REASONS.map(r => (
