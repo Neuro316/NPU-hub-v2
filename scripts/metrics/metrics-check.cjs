@@ -8,7 +8,7 @@ const ts = require('typescript')
 
 const SRC = path.resolve(__dirname, '..', '..', 'src', 'lib', 'metrics')
 const out = fs.mkdtempSync(path.join(os.tmpdir(), 'hub-metrics-'))
-for (const f of ['registry.ts', 'dates.ts', 'targets.ts', 'test-filter.ts', 'collect.ts', 'rollup.ts', 'summary.ts']) {
+for (const f of ['registry.ts', 'dates.ts', 'targets.ts', 'test-filter.ts', 'imported.ts', 'collect.ts', 'rollup.ts', 'summary.ts']) {
   const src = fs.readFileSync(path.join(SRC, f), 'utf8')
   const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true } }).outputText
     // the pipeline positions reader needs a database; the pure rules under test never call it

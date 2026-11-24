@@ -17,6 +17,10 @@
 //              without WITH would clear it and the view would bypass RLS)
 //   P_COLS     the board tells columns apart by colKey (id, else 'name:<stage>'): Mastermind and Subscribed stages have
 //              no id, and matching on the id alone put every card in the first column (seen live 2026-11-07)
+//   P_BOARD_ALL the board's selector lists every live pipeline of the org in position order: a pipeline in the tables
+//              but not in the crm_pipelines setting (the import's Cold Outreach) is listed with its stages by legacy
+//              key, so the next save writes it into the setting rather than letting the sync archive it
+//   P_COLUMN_PAGE a column renders COLUMN_PAGE (200) cards and says how many more; Show more adds 200 (3,910 in one column)
 //
 //   loosename  stage names match case-insensitively       {P_EXACT}
 //   guess      an unknown stage falls back to the first   {P_PLACE}
@@ -31,6 +35,8 @@
 //   nosignedup the sync places at the name 'Signed up'     {P_SIGNED}
 //   viewopts   a replaced view drops security_invoker      {P_VIEWS}
 //   idcols     columns are matched on the config id alone   {P_COLS}
+//   configonly the selector lists the setting's pipelines only  {P_BOARD_ALL}
+//   columnall  a column renders every card                  {P_COLUMN_PAGE}
 // TAMPER=1 reddens the union.
 const fs = require('fs')
 const H = require('../agent/lib/harness.cjs')
@@ -43,6 +49,8 @@ const TAMPERS = {
   orgopen: [[R, '  return requireOrg(ctx, (data as any).org_id)', '  return (data as any).org_id']],
   actorbody: [[R, 'await setStage(ctx.db, contactId, stageId, ctx.userId,', 'await setStage(ctx.db, contactId, stageId, body?.actor ?? null,']],
   removeall: [[P, '{ p_contact: contactId, p_pipeline: pipelineId, p_actor: actor, p_source: source }', '{ p_contact: contactId, p_pipeline: null, p_actor: actor, p_source: source }']],
+  configonly: [['lib/pipelines/board-list.ts', '.filter((r) => !named.has(r.key) && !named.has(r.id))', '.filter(() => false)']],
+  columnall: [['lib/pipelines/board-list.ts', '  const visible = cards.length > n ? cards.slice(0, n) : cards\n', '  const visible = cards\n']],
 }
 // Source-level checks on files the harness does not compile (an API route outside its folders, and the SQL).
 const PAY = 'src/app/api/accounting/payments/route.ts', SQL = 'supabase/migrations/hub_229_pipeline_positions.sql'
@@ -58,7 +66,8 @@ const STATIC = {
   nosignedup: [[SYNC, "?.stages.find(s => s.key === NEW_CONTACT_STAGE_KEY)", "?.stages.find(s => s.name === 'Signed up')"]],
 }
 const RED_OF = { loosename: ['P_EXACT'], guess: ['P_PLACE'], keeparch: ['P_ENRICH'], orgopen: ['P_API'], actorbody: ['P_API'], removeall: ['P_ONE'],
-  nowarn: ['P_PAY'], payfail: ['P_PAY'], mirrorloop: ['P_MIRROR'], mirrorall: ['P_MIRROR'], nosignedup: ['P_SIGNED'], viewopts: ['P_VIEWS'], idcols: ['P_COLS'] }
+  nowarn: ['P_PAY'], payfail: ['P_PAY'], mirrorloop: ['P_MIRROR'], mirrorall: ['P_MIRROR'], nosignedup: ['P_SIGNED'], viewopts: ['P_VIEWS'], idcols: ['P_COLS'],
+  configonly: ['P_BOARD_ALL'], columnall: ['P_COLUMN_PAGE'] }
 const active = H.selectors({ ...TAMPERS, ...STATIC })
 const read = (rel) => {
   let src = fs.readFileSync(require('path').join(H.ROOT, rel), 'utf8').replace(/\r\n/g, '\n')
@@ -170,6 +179,24 @@ const check = (id, ok, got) => rows.push({ id, ok: !!ok, got })
   check('P_COLS', !!colKey && colKey(noIds[0]) !== colKey(noIds[1]) && colKey({ id: 's1', name: 'X' }) === 's1' && colKey(noIds[1]) === 'name:Active (in cohort)'
     && board.includes('const sr = columns.find(c => colKey(c.cfg) === colKey(cfg))?.ref') && board.includes('const isFirst = colKey(cfg) === firstColumnKey')
     && !/c\.cfg\.id === cfg\.id/.test(board), colSrc)
+
+  // P_BOARD_ALL: the nonprod shape after the import, the setting naming two pipelines and the tables holding three
+  const bl = load('lib/pipelines/board-list.ts')
+  const ref = (id, key, name, position, stages) => ({ id, key, name, position, stages: stages.map((n, i) => ({ id: `${id}-s${i}`, key: `${key}-k${i}`, name: n, position: i, color: null, is_closed_won: false, is_closed_lost: false })) })
+  const refs = [ref('u3', 'pipeline-cold-outreach-sensorium', 'Cold Outreach: Sensorium Reactivation', 19, ['Not contacted', 'Emailed']),
+    ref('u1', 'default', 'Sales Pipeline', 0, ['New Lead']), ref('u2', 'pipeline-1771530511407', 'Enrolled', 1, ['Signed up'])]
+  const cfg = [{ id: 'default', name: 'Sales Pipeline', stages: [] }, { id: 'pipeline-1771530511407', name: 'Enrolled', stages: [] }, { id: 'pipeline-new', name: 'Not synced yet', stages: [] }]
+  const listed = bl.boardPipelines(cfg, refs, bl.pipelineFromRef)
+  const cold = listed.find((p) => p.id === 'pipeline-cold-outreach-sensorium')
+  check('P_BOARD_ALL', listed.map((p) => p.id).join() === 'default,pipeline-1771530511407,pipeline-new,pipeline-cold-outreach-sensorium'
+    && !!cold && cold.stages.map((s) => s.id).join() === 'pipeline-cold-outreach-sensorium-k0,pipeline-cold-outreach-sensorium-k1'
+    && /const pipelines = boardPipelines\(configPipelines, refs,/.test(board) && board.includes('const [configPipelines, setPipelines]'), listed.map((p) => p.id))
+
+  // P_COLUMN_PAGE: 3,910 cards in one column
+  const many = Array.from({ length: 3910 }, (_, i) => i)
+  const first = bl.columnPage(many, undefined), more = bl.columnPage(many, first.visible.length + bl.COLUMN_PAGE), few = bl.columnPage(many.slice(0, 12), undefined)
+  check('P_COLUMN_PAGE', bl.COLUMN_PAGE === 200 && first.visible.length === 200 && first.hidden === 3710 && more.visible.length === 400 && few.visible.length === 12 && few.hidden === 0
+    && board.includes('{visible.map(c => <ContactCard key={c.id}') && !board.includes('{sc.map(c => <ContactCard'), { first: first.visible.length, hidden: first.hidden, more: more.visible.length })
 
   H.report(rows, active, RED_OF, () => fs.rmSync(out, { recursive: true, force: true }))
 })().catch((e) => { console.error(e); process.exit(2) })

@@ -14,6 +14,7 @@ import { loadPositions, type Position } from '@/lib/pipelines/positions'
 import { COACHING_HOURS_PER_MONTH, COMMITTED_WEEKS, STEP_TARGET_DEFAULTS } from './registry'
 import { targetFor, type Target } from './targets'
 import { firstTouches, resolvedLeads } from '@/lib/touch/first-touch'
+import { isImportedLead } from './imported'
 import { RETURNING_CHIP, returningContacts } from '@/lib/touch/returning'
 
 export interface Rec { id: string; label: string; sub?: string; href?: string; amount?: number; chips?: string[] }
@@ -80,17 +81,9 @@ export function leadChannel(source: string | null | undefined): string {
 }
 export const SCORECARD_CHANNELS = (ch: string) => ch !== 'prospecting' && ch !== 'import'
 
-/**
- * THE import rule (2026-11-23): an imported contact is never a fresh lead. True when the contact came in through an
- * import batch (import_batch_id), or its source is 'sensorium_import' or starts with 'import'. It keeps an imported
- * contact out of speed to lead (here), the brief's new leads line (notify/brief.ts) and lead_no_touch_24h
- * (lifecycle/scan.ts). leadChannel is unchanged: the leads-by-channel tile still reports it by its created_at and source.
- */
-export function isImportedLead(c: { import_batch_id?: string | null; source?: string | null }): boolean {
-  if (c.import_batch_id) return true
-  const s = lower(c.source)
-  return s === 'sensorium_import' || s.startsWith('import')
-}
+// THE import rule lives in ./imported (no imports, so client pages can use it); it is re-exported here for the
+// readers that already import it from collect.
+export { isImportedLead }
 
 function sourceLabel(source: string | null | undefined): string {
   const s = String(source ?? '').trim()

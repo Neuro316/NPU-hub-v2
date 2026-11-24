@@ -7,11 +7,15 @@ import {
   Percent, ArrowUpRight, ArrowDownRight, UserPlus, Repeat,
   Calendar, ShieldCheck, AlertTriangle, Gauge
 } from 'lucide-react'
-import { fetchContacts, fetchCallLogs, fetchCampaigns, fetchTasks } from '@/lib/crm-client'
+import { fetchCallLogs, fetchCampaigns, fetchTasks } from '@/lib/crm-client'
 import type { CrmContact, EmailCampaign, CrmTask } from '@/types/crm'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
 import { loadPipelines, loadPositions, positionsByContact, type PipelineRef, type Position } from '@/lib/pipelines/positions'
+import { activityTiles, countContacts, loadContactRows } from '@/lib/metrics/contact-tiles'
+
+// every page of contacts (no 1,000-row cap), only the columns this page reads
+const CONTACT_COLUMNS = 'id, created_at, updated_at, last_contacted_at, source, import_batch_id, tags, custom_fields'
 
 function MetricCard({ label, value, sub, icon: Icon, color, trend }: {
   label: string; value: string | number; sub?: string; icon: any; color: string; trend?: number | null
@@ -71,6 +75,8 @@ function FunnelStage({ name, count, prevCount, value, color, maxCount }: {
 export default function AnalyticsPage() {
   const { currentOrg } = useWorkspace()
   const [contacts, setContacts] = useState<CrmContact[]>([])
+  // Total Contacts is a count query, never contacts.length
+  const [totalContacts, setTotalContacts] = useState(0)
   const [calls, setCalls] = useState<any[]>([])
   const [campaigns, setCampaigns] = useState<EmailCampaign[]>([])
   const [tasks, setTasks] = useState<CrmTask[]>([])
@@ -85,13 +91,16 @@ export default function AnalyticsPage() {
         const orgId = currentOrg?.id
         const pipelinesP = orgId ? loadPipelines(createClient(), orgId) : Promise.resolve([] as PipelineRef[])
         const positionsP = orgId ? pipelinesP.then(ps => loadPositions(createClient(), orgId, { pipelines: ps })) : Promise.resolve([] as Position[])
-        const [cRes, clRes, cpRes, tRes, plRes, poRes] = await Promise.allSettled([
-          fetchContacts({ org_id: currentOrg?.id, limit: 2000 }), fetchCallLogs(undefined, 200), fetchCampaigns(), fetchTasks(),
+        const [cRes, clRes, cpRes, tRes, plRes, poRes, nRes] = await Promise.allSettled([
+          orgId ? loadContactRows<CrmContact>(createClient(), orgId, CONTACT_COLUMNS) : Promise.resolve([] as CrmContact[]),
+          fetchCallLogs(undefined, 200), fetchCampaigns(), fetchTasks(),
           pipelinesP, positionsP,
+          orgId ? countContacts(createClient(), orgId) : Promise.resolve(0),
         ])
+        if (nRes.status === 'fulfilled') setTotalContacts(nRes.value)
         if (plRes.status === 'fulfilled') setPipelines(plRes.value)
         if (poRes.status === 'fulfilled') setPositions(poRes.value)
-        if (cRes.status === 'fulfilled') setContacts(cRes.value.contacts)
+        if (cRes.status === 'fulfilled') setContacts(cRes.value)
         if (clRes.status === 'fulfilled') setCalls(clRes.value)
         if (cpRes.status === 'fulfilled') setCampaigns(cpRes.value)
         if (tRes.status === 'fulfilled') setTasks(tRes.value)
@@ -106,9 +115,6 @@ export default function AnalyticsPage() {
   // ── Time periods ──
   const now = Date.now()
   const week = 7*86400000; const month = 30*86400000; const quarter = 90*86400000
-  const thisWeek = contacts.filter(c => now - new Date(c.created_at).getTime() < week)
-  const thisMonth = contacts.filter(c => now - new Date(c.created_at).getTime() < month)
-  const lastMonth = contacts.filter(c => { const d = now - new Date(c.created_at).getTime(); return d >= month && d < 2*month })
 
   // ── Pipeline metrics ──
   // Won and lost are the stage's closed-won / closed-lost flags, per pipeline position. Win rate counts positions,
@@ -168,8 +174,9 @@ export default function AnalyticsPage() {
 
   // ── Stale / Health ──
   // open = at least one pipeline position that is not closed
-  const stale14d = contacts.filter(c => isOpen(c) && c.last_contacted_at && now - new Date(c.last_contacted_at).getTime() > 14*86400000).length
-  const neverContacted = contacts.filter(c => !c.last_contacted_at && isOpen(c)).length
+  // an imported contact is left out of these until its first touch (src/lib/metrics/contact-tiles.ts)
+  const tiles = activityTiles(contacts, now, c => isOpen(c as CrmContact))
+  const { stale14d, neverContacted } = tiles
 
   // ── Pipeline distribution: per pipeline, per stage (a contact in two pipelines counts in each) ──
   const contactValue = new Map(contacts.map(c => [c.id, (c.custom_fields?.value as number) || 0]))
@@ -191,7 +198,7 @@ export default function AnalyticsPage() {
   const maxTag = topTags.length > 0 ? topTags[0][1] : 1
 
   // ── Growth trend ──
-  const monthGrowth = lastMonth.length > 0 ? Math.round(((thisMonth.length - lastMonth.length)/lastMonth.length)*100) : null
+  const monthGrowth = tiles.lastMonth > 0 ? Math.round(((tiles.thisMonth - tiles.lastMonth)/tiles.lastMonth)*100) : null
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
@@ -200,7 +207,7 @@ export default function AnalyticsPage() {
         <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Revenue & Business Metrics</h3>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           <MetricCard label="Total Revenue" value={`$${(totalRevenue/1000).toFixed(0)}k`} icon={DollarSign} color="#34D399" sub={`${wonContacts.length} closed deals`} />
-          <MetricCard label="Pipeline Value" value={`$${(pipelineValue/1000).toFixed(0)}k`} icon={Target} color="#228DC4" sub={`${contacts.length} total contacts`} />
+          <MetricCard label="Pipeline Value" value={`$${(pipelineValue/1000).toFixed(0)}k`} icon={Target} color="#228DC4" sub={`${totalContacts.toLocaleString()} total contacts`} />
           <MetricCard label="Avg Deal Size" value={avgDealSize > 0 ? `$${(avgDealSize/1000).toFixed(1)}k` : '--'} icon={BarChart3} color="#8B5CF6" />
           <MetricCard label="Est. LTV" value={estimatedLTV > 0 ? `$${(estimatedLTV/1000).toFixed(1)}k` : '--'} icon={Repeat} color="#2A9D8F" sub="lifetime value" />
           <MetricCard label="Est. CAC" value={estimatedCAC > 0 ? `$${estimatedCAC.toFixed(0)}` : '--'} icon={UserPlus} color="#E76F51" sub="cost per acquisition" />
@@ -215,7 +222,7 @@ export default function AnalyticsPage() {
           <MetricCard label="Win Rate" value={`${winRate}%`} icon={Percent} color="#34D399" sub={`${wonPositions.length}W / ${lostPositions.length}L`} />
           <MetricCard label="Avg Close Time" value={avgCloseTime ? `${avgCloseTime}d` : '--'} icon={Clock} color="#228DC4" sub={medianCloseTime ? `Median: ${Math.round(medianCloseTime)}d` : ''} />
           <MetricCard label="Lead Response" value={avgResponseTime ? `${avgResponseTime}h` : '--'} icon={Zap} color="#FBBF24" sub="avg first contact" />
-          <MetricCard label="New This Week" value={thisWeek.length} icon={UserPlus} color="#3DB5A6" trend={monthGrowth} />
+          <MetricCard label="New This Week" value={tiles.newThisWeek} icon={UserPlus} color="#3DB5A6" trend={monthGrowth} />
           <MetricCard label="Stale 14d+" value={stale14d} icon={AlertTriangle} color="#F87171" sub={`${neverContacted} never contacted`} />
           <MetricCard label="Task Completion" value={`${completedTasks + openTasks > 0 ? Math.round((completedTasks/(completedTasks+openTasks))*100) : 0}%`} icon={ShieldCheck} color="#8B5CF6" sub={`${overdueTasks} overdue`} />
         </div>
@@ -228,7 +235,7 @@ export default function AnalyticsPage() {
           <MetricCard label="Calls Made" value={calls.length} icon={Phone} color="#228DC4" sub={`Avg ${Math.floor(avgCallDuration/60)}m ${avgCallDuration%60}s`} />
           <MetricCard label="Emails Sent" value={totalSent} icon={Mail} color="#E76F51" sub={`${campaigns.length} campaigns`} />
           <MetricCard label="Open Tasks" value={openTasks} icon={Activity} color="#A78BFA" sub={`${completedTasks} completed`} />
-          <MetricCard label="Contacts" value={contacts.length} icon={Users} color="#2A9D8F" sub={`+${thisMonth.length} this month`} />
+          <MetricCard label="Contacts" value={totalContacts.toLocaleString()} icon={Users} color="#2A9D8F" sub={`+${tiles.thisMonth} this month`} />
         </div>
       </div>
 
@@ -295,7 +302,7 @@ export default function AnalyticsPage() {
                 <div key={i} className="flex items-center gap-3">
                   <span className="text-[11px] text-gray-500 w-16">{label}</span>
                   <div className="flex-1 h-3 bg-gray-50 rounded-full overflow-hidden">
-                    <div className="h-full rounded-full bg-purple-400 transition-all duration-500" style={{ width: `${Math.min((cohort.length/Math.max(thisMonth.length,1))*100, 100)}%` }} />
+                    <div className="h-full rounded-full bg-purple-400 transition-all duration-500" style={{ width: `${Math.min((cohort.length/Math.max(tiles.thisMonth,1))*100, 100)}%` }} />
                   </div>
                   <span className="text-[10px] font-medium text-np-dark w-10 text-right">{cohort.length}</span>
                   <span className="text-[9px] text-gray-400 w-12 text-right">{cohortConv}% won</span>
