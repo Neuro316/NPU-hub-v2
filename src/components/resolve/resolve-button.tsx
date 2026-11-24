@@ -9,25 +9,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CheckCircle2, Loader2 } from 'lucide-react'
 import { REASONS, REASON_TEXT, type Reason, type Scope } from '@/lib/resolve/check'
+import { pickLive, resolvedLine, type LiveResolution as Live } from '@/lib/resolve/view'
 
-interface Live { id: string; scope: Scope; reason: Reason; reason_text: string; note: string | null; by: string; resolved_at: string }
 const NOTE_MAX = 200
-const when = (iso: string) => {
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-}
 
-export function ResolveButton({ contactId, scope, autoOpen = false, onChange, className = '' }: {
+export function ResolveButton({ contactId, scope, autoOpen = false, onChange, initial, className = '' }: {
   contactId: string | null | undefined
   scope: Scope
+  /** the live resolution when the parent already read it (the contact card reads it with its open rows): no read here */
+  initial?: Live | null
   /** open the popover on arrival (the #np-follow-ups link carries resolve=1) */
   autoOpen?: boolean
   /** after a resolve or a reopen, so the parent can hide or refresh its waiting line */
-  onChange?: (resolved: boolean) => void
+  onChange?: (resolved: boolean, live: Live | null) => void
   className?: string
 }) {
-  const [live, setLive] = useState<Live | null>(null)
-  const [loaded, setLoaded] = useState(false)
+  const [live, setLive] = useState<Live | null>(initial ?? null)
+  const [loaded, setLoaded] = useState(initial !== undefined)
   const [open, setOpen] = useState(false)
   const [reason, setReason] = useState<Reason | null>(null)
   const [note, setNote] = useState('')
@@ -44,12 +42,16 @@ export function ResolveButton({ contactId, scope, autoOpen = false, onChange, cl
     const d = res?.ok ? await res.json().catch(() => ({})) : {}
     const rows: Live[] = Array.isArray(d.resolutions) ? d.resolutions : []
     // a row of this scope, or one for everything, keeps this place quiet
-    const hit = rows.find(r => r.scope === scope) ?? rows.find(r => r.scope === 'all') ?? null
+    const hit = pickLive(rows, scope)
     setLive(hit)
     setLoaded(true)
-    changeRef.current?.(!!hit)
+    changeRef.current?.(!!hit, hit)
   }, [contactId, scope])
-  useEffect(() => { setLive(null); setLoaded(false); load() }, [load])
+  const given = initial !== undefined
+  useEffect(() => {
+    if (given) { setLive(initial ?? null); setLoaded(true); return }
+    setLive(null); setLoaded(false); load()
+  }, [load, given, initial])
   useEffect(() => { if (autoOpen && loaded && !live && !auto.current) { auto.current = true; setOpen(true) } }, [autoOpen, loaded, live])
 
   if (!contactId) return null
@@ -63,8 +65,11 @@ export function ResolveButton({ contactId, scope, autoOpen = false, onChange, cl
         body: JSON.stringify({ contact_id: contactId, scope, reason, note: note.trim() || null }) })
       const d = await res.json().catch(() => ({}))
       if (!res.ok) { setError(d.error || 'It could not be saved.'); return }
+      // the route returns the new row in GET's shape: show it now, as Reopen does, with no second read
+      const made: Live | null = d.resolution ?? null
+      setLive(made)
+      changeRef.current?.(!!made, made)
       setOpen(false); setReason(null); setNote('')
-      await load()
     } finally {
       setBusy(false)
     }
@@ -76,7 +81,8 @@ export function ResolveButton({ contactId, scope, autoOpen = false, onChange, cl
       const res = await fetch('/api/resolve', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: live.id, action: 'reopen' }) })
       const d = await res.json().catch(() => ({}))
       if (!res.ok) { setError(d.error || 'It could not be reopened.'); return }
-      await load()
+      setLive(null)
+      changeRef.current?.(false, null)
     } finally {
       setBusy(false)
     }
@@ -85,10 +91,10 @@ export function ResolveButton({ contactId, scope, autoOpen = false, onChange, cl
   if (!loaded) return null
   if (live) {
     return (
-      <span className={`inline-flex items-center gap-1.5 text-[10px] text-green-700 ${className}`} data-help-section="resolve">
+      <span className={`flex flex-wrap items-center gap-x-1.5 gap-y-0.5 min-w-0 max-w-full text-[10px] text-green-700 ${className}`} data-help-section="resolve">
         <CheckCircle2 className="w-3 h-3 flex-shrink-0" />
-        <span>Resolved by {live.by}, {live.reason_text.toLowerCase()}, {when(live.resolved_at)}{live.note ? ` (${live.note})` : ''}</span>
-        <button onClick={reopen} disabled={busy} className="text-np-blue hover:underline disabled:opacity-40">Reopen</button>
+        <span className="min-w-0 break-words">{resolvedLine(live)}</span>
+        <button onClick={reopen} disabled={busy} className="whitespace-nowrap text-np-blue hover:underline disabled:opacity-40">Reopen</button>
         {error && <span className="text-red-600">{error}</span>}
       </span>
     )

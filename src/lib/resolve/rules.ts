@@ -23,6 +23,7 @@ import { clearSituation, columnId, TABLE as SITUATIONS_TABLE } from '@/lib/touch
 import { TEXT_WAIT_KIND } from '@/lib/touchpoints/text-alerts'
 
 import { REASONS, REASON_TEXT, RESOLUTIONS, SCOPES, covers, liveResolutions, type Reason, type Scope } from './check'
+import { viewOf, type LiveResolution } from './view'
 export { REASONS, REASON_TEXT, RESOLUTIONS, SCOPES, covers, liveResolutions, type Reason, type Scope }
 export const SCOPE_TEXT: Record<Scope, string> = {
   text_waiting: 'the unanswered text alert', touchpoint: 'the follow-up cards', speed_to_lead: 'speed to lead', all: 'everything that says they are waiting',
@@ -88,7 +89,7 @@ export async function resolveContact(db: SupabaseClient, input: ResolveInput): P
   if (!c || (c as any).org_id !== orgId) return { status: 404, body: { error: 'Contact not found.' } }
 
   const { data: row, error } = await db.from(RESOLUTIONS).insert({ org_id: orgId, contact_id: contactId, scope, reason, note, resolved_by: byUserId, resolved_at: iso(now) })
-    .select('id, resolved_at').single()
+    .select('id, scope, reason, note, resolved_by, resolved_at').single()
   if (error && MISSING.includes(error.code ?? '')) return { status: 503, body: { error: 'No reply needed switches on once the hub_250 migration is applied.' } }
   if (error?.code === '23505') return { status: 409, body: { error: 'This is already marked No reply needed.' } }
   if (error || !row) throw new Error(`resolution write: ${error?.code ?? 'unknown'}`)
@@ -107,7 +108,8 @@ export async function resolveContact(db: SupabaseClient, input: ResolveInput): P
     source_table: RESOLUTIONS, source_id: (row as any).id, actor_type: 'user', actor_id: byUserId, occurred_at: iso(now),
   })
   if (tErr) console.error(`[resolve] timeline failed: ${tErr.code ?? 'unknown'}`)
-  return { status: 200, body: { id: (row as any).id, scope, reason, by: name, resolved_at: (row as any).resolved_at, cleared } }
+  // the new row in the same shape GET returns, so the button shows it at once without reading again
+  return { status: 200, body: { resolution: viewOf(row as any, name), cleared } }
 }
 
 /** Reopen by hand: the live row gets reopened_at and reopened_reason 'manual'; the monitors raise again as normal. */
@@ -128,13 +130,13 @@ export async function reopenResolution(db: SupabaseClient, orgId: string, id: st
 }
 
 /** The contact's live resolutions, for the button and the Waiting on us line: who, the reason, when (both accounts alike). */
-export async function resolutionsFor(db: SupabaseClient, orgId: string, contactId: string, now = Date.now()): Promise<Array<{ id: string; scope: Scope; reason: Reason; reason_text: string; note: string | null; by: string; by_id: string; resolved_at: string }>> {
+export async function resolutionsFor(db: SupabaseClient, orgId: string, contactId: string, now = Date.now(), scope: Scope | null = null): Promise<LiveResolution[]> {
   if (!UUID.test(contactId)) return []
   // the reopen-on-inbound check first, through the one check, for every scope
   for (const s of SCOPES) await liveResolutions(db, [contactId], s, now)
   const { data, error } = await db.from(RESOLUTIONS).select('id, scope, reason, note, resolved_by, resolved_at').eq('org_id', orgId).eq('contact_id', contactId).is('reopened_at', null)
   if (error) return []
-  const out = []
-  for (const r of (data ?? []) as any[]) out.push({ id: r.id, scope: r.scope, reason: r.reason, reason_text: REASON_TEXT[r.reason as Reason] ?? r.reason, note: r.note ?? null, by: await staffName(db, orgId, r.resolved_by), by_id: r.resolved_by, resolved_at: r.resolved_at })
+  const out: LiveResolution[] = []
+  for (const r of ((data ?? []) as any[]).filter((x) => !scope || x.scope === scope)) out.push(viewOf(r, await staffName(db, orgId, r.resolved_by)))
   return out
 }

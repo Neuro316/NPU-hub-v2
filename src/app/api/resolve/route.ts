@@ -1,7 +1,8 @@
 // POST  /api/resolve { contact_id, scope, reason, note? }   "No reply needed": staff of the contact's org; the session
 //                                                          user is resolved_by. Clears for the scope in the same call.
-// GET   /api/resolve?contact_id=                           the contact's live resolutions (who, reason, when), for the
+// GET   /api/resolve?contact_id=[&scope=]                  the contact's live resolutions (who, reason, when), for the
 //                                                          button and the Waiting on us line; same for every staff login
+// POST returns { resolution } in exactly the shape GET lists, so the button shows it without reading again.
 // PATCH /api/resolve { id, action: 'reopen' }              Reopen: reopened_at with reason 'manual'
 // Keyed on the contact, never the login (src/lib/resolve/rules.ts). Before hub_250 is applied, POST and PATCH answer 503
 // and GET returns nothing.
@@ -25,7 +26,8 @@ export const GET = withStaff(async (req: NextRequest, ctx) => {
   if (!orgId) return NextResponse.json({ error: 'Not found.' }, { status: 404 })
   const ok = requireOrg(ctx, orgId)
   if (ok instanceof Response) return ok
-  return NextResponse.json({ resolutions: await resolutionsFor(ctx.db, orgId, id!) })
+  const scope = (SCOPES.find((s) => s === req.nextUrl.searchParams.get('scope')) as Scope | undefined) ?? null
+  return NextResponse.json({ resolutions: await resolutionsFor(ctx.db, orgId, id!, Date.now(), scope) })
 })
 
 export const POST = withStaff(async (req: NextRequest, ctx) => {

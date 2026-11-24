@@ -22,6 +22,10 @@
 //                          owner's team member, the fallback is logged in job_runs, and the run does not fail
 //   R_SHARED_ACROSS_USERS  resolved as Cameron, read as Shane through GET /api/resolve: the same row, by Cameron; and a
 //                          second resolve by Shane for the same scope is refused as already resolved
+//   R_RESOLVE_RETURNS_ROW  POST /api/resolve returns the new row (by, reason_text as the chip reads, resolved_at) in exactly
+//                          the shape GET then lists, so the button shows it at once
+//   R_CARD_SHOWS_RESOLVED  the contact card's Waiting on us block is shown as resolved ("Resolved by <name>, Not a lead, ...")
+//                          when there are no open rows and a live resolution exists, and shows nothing when neither exists
 //
 //   notimeline   the timeline entry is written under another kind                {R_RESOLVE_WRITES}
 //   textposts    the text alert ignores the resolve                              {R_CLEARS_TEXT}
@@ -32,7 +36,9 @@
 //   noreturning  past purchases are not read                                     {R_RETURNING_CHIP}
 //   rawassignee  the task is written with the user id                            {R_TASK_FK_FALLBACK}
 //   perlogin     GET /api/resolve shows only the viewer's own resolves           {R_SHARED_ACROSS_USERS}
-// TAMPER=1 reddens the sum (9).
+//   noreturnrow  POST /api/resolve returns no row                                {R_RESOLVE_RETURNS_ROW}
+//   cardhides    the Waiting on us block ignores the live resolution             {R_CARD_SHOWS_RESOLVED}
+// TAMPER=1 reddens the sum (11).
 const H = require('../agent/lib/harness.cjs')
 
 const RR = 'lib/resolve/rules.ts', CK = 'lib/resolve/check.ts', TA = 'lib/touchpoints/text-alerts.ts', RUN = 'lib/touchpoints/run.ts'
@@ -46,16 +52,18 @@ const TAMPERS = {
   manualnoop: [[RR, "update({ reopened_at: iso(now), reopened_reason: 'manual' })", "update({ reopened_at: iso(now), reopened_reason: 'new_inbound' })"]],
   noreturning: [[RET, '  for (const b of (buys ?? []) as any[]) if (b.contact_id) out.add(b.contact_id)\n', '']],
   rawassignee: [[LED, "await db.from('tasks').insert({ ...fields, assigned_to: who.memberId })", "await db.from('tasks').insert({ ...fields, assigned_to: cfg.assignee })"]],
-  perlogin: [[ROUTE, 'resolutions: await resolutionsFor(ctx.db, orgId, id!)', 'resolutions: (await resolutionsFor(ctx.db, orgId, id!)).filter((r) => r.by_id === ctx.userId)']],
+  perlogin: [[ROUTE, 'resolutions: await resolutionsFor(ctx.db, orgId, id!, Date.now(), scope)', 'resolutions: (await resolutionsFor(ctx.db, orgId, id!, Date.now(), scope)).filter((r) => r.by_id === ctx.userId)']],
+  noreturnrow: [[RR, 'body: { resolution: viewOf(row as any, name), cleared } }', 'body: { resolution: null, cleared } }']],
+  cardhides: [['lib/resolve/view.ts', "  if (live) return 'resolved'\n", '']],
 }
 const RED_OF = { notimeline: ['R_RESOLVE_WRITES'], textposts: ['R_CLEARS_TEXT'], touchraise: ['R_CLEARS_TOUCHPOINT'], stlscan: ['R_CLEARS_STL'],
   noreopen: ['R_REOPENS_ON_INBOUND'], manualnoop: ['R_REOPEN_MANUAL'], noreturning: ['R_RETURNING_CHIP'], rawassignee: ['R_TASK_FK_FALLBACK'],
-  perlogin: ['R_SHARED_ACROSS_USERS'] }
+  perlogin: ['R_SHARED_ACROSS_USERS'], noreturnrow: ['R_RESOLVE_RETURNS_ROW'], cardhides: ['R_CARD_SHOWS_RESOLVED'] }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-resolve')
 const load = H.install(out)
 const resolve = load(RR), check = load(CK), ta = load(TA), run = load(RUN), scan = load(SCAN), ledger = load(LED), ret = load(RET)
-const compose = load('lib/lead-alerts/compose.ts'), lrules = load('lib/lifecycle/rules.ts'), route = load(ROUTE)
+const compose = load('lib/lead-alerts/compose.ts'), lrules = load('lib/lifecycle/rules.ts'), route = load(ROUTE), view = load('lib/resolve/view.ts')
 
 const ORG = '00000000-0000-0000-0000-000000000001'
 const CAMERON = '22456608-5f7d-495e-af02-7037fea125cc', SHANE = 'ec05f3ea-99b3-455a-aefc-378f2e07d82a'
@@ -218,7 +226,7 @@ const live = (T, c, scope, now = NOW + 60_000) => check.liveResolutions(memDb(T)
   {
     const T = world()
     const r = await res(T, { contactId: C(1), scope: 'touchpoint', reason: 'spam' })
-    const back = await resolve.reopenResolution(memDb(T), ORG, r.body.id, SHANE, NOW + 60_000)
+    const back = await resolve.reopenResolution(memDb(T), ORG, T.hub_contact_resolutions[0].id, SHANE, NOW + 60_000)
     const row = T.hub_contact_resolutions[0]
     const still = (await live(T, C(1), 'touchpoint')).has(C(1))
     const again = await res(T, { contactId: C(1), scope: 'touchpoint', reason: 'spam', now: NOW + 120_000 })
@@ -262,6 +270,30 @@ const live = (T, c, scope, now = NOW + 60_000) => check.liveResolutions(memDb(T)
     const sameForBoth = (await live(T, C(3), 'text_waiting')).has(C(3))
     ok('R_SHARED_ACROSS_USERS', got.status === 200 && list.length === 1 && list[0].by === 'Cameron Allen' && list[0].reason_text === 'Conversation ended'
       && shaneTries.status === 409 && sameForBoth && T.hub_contact_resolutions.length === 1, { status: got.status, list, shane: shaneTries.status })
+  }
+
+  // R_RESOLVE_RETURNS_ROW: POST through the route, then GET; the POST's row is GET's row
+  {
+    const T = world()
+    global.__ctx = { db: memDb(T), userId: CAMERON, isSuperadmin: true, orgIds: [ORG], orgRoles: {} }
+    const posted = await route.POST({ json: async () => ({ contact_id: C(4), scope: 'all', reason: 'not_a_lead', note: null }) }, {})
+    const got = await route.GET({ nextUrl: { searchParams: new URLSearchParams({ contact_id: C(4), scope: 'all' }) } }, {})
+    const made = posted.body?.resolution
+    ok('R_RESOLVE_RETURNS_ROW', posted.status === 200 && made && made.by === 'Cameron Allen' && made.reason_text === 'Not a lead' && typeof made.resolved_at === 'string'
+      && made.scope === 'all' && JSON.stringify(made) === JSON.stringify(got.body?.resolutions?.[0]), { posted: posted.body, got: got.body })
+  }
+
+  // R_CARD_SHOWS_RESOLVED: no open rows and a live resolution: the block shows the resolved line; neither: nothing
+  {
+    const T = world()
+    await res(T, { contactId: C(5), scope: 'all', reason: 'not_a_lead' })
+    // read as the resolver: who may see it is R_SHARED_ACROSS_USERS's; this check is how the block renders it
+    global.__ctx = { db: memDb(T), userId: CAMERON, isSuperadmin: true, orgIds: [ORG], orgRoles: {} }
+    const got = await route.GET({ nextUrl: { searchParams: new URLSearchParams({ contact_id: C(5), scope: 'all' }) } }, {})
+    const liveRow = view.pickLive(got.body?.resolutions ?? [], 'all')
+    const line = liveRow ? view.resolvedLine(liveRow) : ''
+    ok('R_CARD_SHOWS_RESOLVED', view.waitingMode([], liveRow) === 'resolved' && /^Resolved by Cameron Allen, Not a lead, /.test(line)
+      && view.waitingMode([], null) === null && view.waitingMode([{ id: 'x' }], null) === 'waiting', { mode: view.waitingMode([], liveRow), line })
   }
 
   H.report(rows, active, RED_OF)

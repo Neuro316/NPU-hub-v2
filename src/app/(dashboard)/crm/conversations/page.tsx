@@ -519,9 +519,9 @@ function ConversationsPageInner() {
           </div>
         ) : (
           <>
-            {/* Thread header */}
-            <div className="flex items-center justify-between p-4 border-b border-gray-100">
-              <div className="flex items-center gap-2.5">
+            {/* Thread header: wraps on a phone, so the No reply needed state and Reopen are never cut off */}
+            <div className="flex flex-wrap items-center justify-between gap-2 p-4 border-b border-gray-100">
+              <div className="flex items-center gap-2.5 min-w-0">
                 <div className="w-9 h-9 rounded-full bg-np-blue/10 flex items-center justify-center">
                   <span className="text-[9px] font-bold text-np-blue">{selectedThread.contact_initials}</span>
                 </div>
@@ -544,7 +544,7 @@ function ConversationsPageInner() {
                   </p>
                 </div>
               </div>
-              <div className="flex gap-1 items-center flex-wrap justify-end">
+              <div className="flex gap-1 items-center flex-wrap justify-end min-w-0 max-w-full">
                 {/* No reply needed (scope text_waiting); the #np-follow-ups link adds resolve=1 to open the popover */}
                 <ResolveButton key={selectedThread.contact_id} contactId={selectedThread.contact_id} scope="text_waiting"
                   autoOpen={resolveParam && linkedId === selectedThread.id} />
