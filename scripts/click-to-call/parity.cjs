@@ -179,6 +179,10 @@ const MAIL_SEARCH_FILES = new Set(['src/lib/supabase-middleware.ts'])
 // src/lib/marketing/lead-capture.ts, proved by scripts/marketing/lead-capture-tamper.cjs)
 const LEAD_CAPTURE_BASE = process.env.LEAD_CAPTURE_BASE || '60a5f93'
 const LEAD_CAPTURE_FILES = new Set(['src/lib/supabase-middleware.ts'])
+// No reply needed (hub_250, 2026-11-23) put the Resolve button in the Conversations thread header (scope text_waiting,
+// opened by ?resolve=1 from #np-follow-ups) on purpose, so the page is compared with that commit instead of its earlier pin.
+const RESOLVE_BASE = process.env.RESOLVE_BASE || '0ac8a1e'
+const RESOLVE_FILES = new Set(['src/app/(dashboard)/crm/conversations/page.tsx'])
 const base = (f, ref = BASE) => {
   if (MULTI_PIPELINE_FILES.has(f)) ref = MULTI_PIPELINE_BASE
   if (ORG_VAULT_FILES.has(f)) ref = ORG_VAULT_BASE
@@ -188,6 +192,7 @@ const base = (f, ref = BASE) => {
   if (RESOURCE_LINKS_FILES.has(f)) ref = RESOURCE_LINKS_BASE
   if (MAIL_SEARCH_FILES.has(f)) ref = MAIL_SEARCH_BASE
   if (LEAD_CAPTURE_FILES.has(f)) ref = LEAD_CAPTURE_BASE
+  if (RESOLVE_FILES.has(f)) ref = RESOLVE_BASE
   try { return norm(execFileSync('git', ['show', `${ref}:${f}`], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })) }
   catch (e) { console.error(`git show ${ref}:${f} failed (is the history fetched?)`); process.exit(2) }
 }
