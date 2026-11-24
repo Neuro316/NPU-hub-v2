@@ -26,7 +26,7 @@ const HARNESSES = [
   { file: 'scripts/import/import-tamper.cjs', selectors: ['emailcase', 'phonefirst', 'overwrite', 'dupposition', 'nowcreated', '1'] },
   { file: 'scripts/marketing/activity-log-tamper.cjs', selectors: ['rawcols', 'refraw', 'actorraw', 'readold', 'orderold', 'keepbody', '1'] },
   { file: 'scripts/marketing/lead-device-tamper.cjs', selectors: ['testwrites', 'notest', 'noreplay', 'truthy', 'optout', 'noresult', 'secretopen', 'anypreview', 'sameorigin', 'connect', 'nonce', 'hotall', 'factsall', 'logname', 'overwrite', 'nofill', 'nocas', 'nosuppress', 'checkopen', 'nonote', 'noother', 'noidentity', 'retrytest', 'noclaim', 'purgesoon', '1'] },
-  { file: 'scripts/marketing/pipeline-positions-tamper.cjs', selectors: ['loosename', 'guess', 'keeparch', 'orgopen', 'actorbody', 'removeall', 'nowarn', 'payfail', 'mirrorloop', 'mirrorall', 'nosignedup', 'viewopts', 'idcols', '1'] },
+  { file: 'scripts/marketing/pipeline-positions-tamper.cjs', selectors: ['loosename', 'guess', 'keeparch', 'orgopen', 'actorbody', 'removeall', 'nowarn', 'payfail', 'mirrorloop', 'mirrorall', 'nosignedup', 'viewopts', 'idcols', 'configonly', 'columnall', '1'] },
   { file: 'scripts/marketing/lead-origin-tamper.cjs', selectors: ['anyhost', 'hubhost', 'anypath', 'looseorg', 'keepcook', 'noapi', '1'] },
   { file: 'scripts/marketing/form-placement-tamper.cjs', selectors: ['noplace', 'existing', 'anyoutcome', 'fallback', '1'] },
   { file: 'scripts/marketing/lead-capture-tamper.cjs', selectors: ['anyorigin', 'nohoneypot', 'anysource', 'looseemail', 'loosephone', 'blankwins', 'rawlike', '1'] },
@@ -66,7 +66,7 @@ const HARNESSES = [
   { file: 'scripts/health/hub-health-tamper.cjs', selectors: ['ciok', 'deploywarn', 'prsgreen', 'oneway', 'guardsok', 'xregslow', 'crmok', 'smsmiss', 'emailmiss', 'slackmiss', 'mailwarn', 'platslow', 'realert', 'changequiet', 'noclear', 'platcompare', '1'] },
   { file: 'scripts/comms/recent-email-tamper.cjs', selectors: ['eight', 'oldest', 'permessage', 'showall', 'summary', 'noalt', '1'] },
   { file: 'scripts/comms/comms-tamper.cjs', selectors: ['privateopen', 'body', 'browserread', 'lifecycleall', 'nomerged', 'noalt', '1'] },
-  { file: 'scripts/metrics/touch-tamper.cjs', selectors: ['sharedonly', 'readbody', 'countdry', 'nodelivered', 'tilebefore', 'stlimport', '1'] },
+  { file: 'scripts/metrics/touch-tamper.cjs', selectors: ['sharedonly', 'readbody', 'countdry', 'nodelivered', 'tilebefore', 'stlimport', 'tilelength', 'tileimport', 'alertimport', '1'] },
   { file: 'scripts/lifecycle/lifecycle-tamper.cjs', selectors: ['liveany', 'leadnostage', 'tagover', 'phasemix', 'backward', 'coachbuys', 'closeall', 'early', 'idle4', 'dryapply', 'scanimport', '1'] },
 ]
 let fail = 0

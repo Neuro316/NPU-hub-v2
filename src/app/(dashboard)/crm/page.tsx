@@ -12,11 +12,28 @@ import {
   ArrowRight, Clock, UserPlus, CheckCircle2, AlertTriangle,
   Route, GraduationCap, Brain, GitBranch, Sparkles, Loader2
 } from 'lucide-react'
-import { fetchContacts, fetchCallLogs, fetchCampaigns, fetchTasks, fetchNetworkGraph, seedNetworkIntelligence } from '@/lib/crm-client'
+import { fetchCallLogs, fetchCampaigns, fetchTasks, fetchNetworkGraph, seedNetworkIntelligence } from '@/lib/crm-client'
 import type { CrmContact, CallLog, EmailCampaign, CrmTask, NetworkGraphData } from '@/types/crm'
 import { useWorkspace } from '@/lib/workspace-context'
 import { createClient } from '@/lib/supabase-browser'
 import { loadPositions, type Position } from '@/lib/pipelines/positions'
+import { countContacts, loadContactRows } from '@/lib/metrics/contact-tiles'
+
+const MASTERMIND_STATUSES = ['prospect', 'enrolled', 'active', 'completed', 'graduated', 'alumni'] as const
+
+// Every count on this page is a count query, never rows.length (PostgREST stops at 1,000 rows).
+interface Counts { total: number; mastermind: Record<string, number>; connected: number }
+async function loadCounts(orgId: string): Promise<Counts> {
+  const db = createClient()
+  const [total, statuses, connected] = await Promise.all([
+    countContacts(db, orgId),
+    Promise.all(MASTERMIND_STATUSES.map(s => countContacts(db, orgId, q =>
+      s === 'prospect' ? q.or('mastermind_status.is.null,mastermind_status.eq.prospect') : q.eq('mastermind_status', s)))),
+    db.from('contact_interaction_score').select('id', { count: 'exact', head: true }).eq('org_id', orgId).gt('relationship_count', 0)
+      .then(({ count, error }) => { if (error) throw new Error(`interaction count: ${error.code ?? 'unknown'}`); return count ?? 0 }),
+  ])
+  return { total, mastermind: Object.fromEntries(MASTERMIND_STATUSES.map((s, i) => [s, statuses[i]])), connected }
+}
 
 function StatCard({ label, value, icon: Icon, trend, color, href }: {
   label: string; value: string | number; icon: any; trend?: number; color: string; href?: string
@@ -71,7 +88,9 @@ function CallRow({ call }: { call: any }) {
 
 export default function CrmDashboard() {
   const { currentOrg } = useWorkspace()
-  const [contacts, setContacts] = useState<CrmContact[]>([])
+  // every contact's custom_fields, every page, for Pipeline Value only
+  const [contacts, setContacts] = useState<Pick<CrmContact, 'id' | 'custom_fields'>[]>([])
+  const [counts, setCounts] = useState<Counts | null>(null)
   const [calls, setCalls] = useState<any[]>([])
   const [campaigns, setCampaigns] = useState<EmailCampaign[]>([])
   const [tasks, setTasks] = useState<CrmTask[]>([])
@@ -83,14 +102,17 @@ export default function CrmDashboard() {
   useEffect(() => {
     async function load() {
       try {
-        const [cRes, clRes, cpRes, tRes, pRes] = await Promise.allSettled([
-          fetchContacts({ org_id: currentOrg?.id, limit: 1000 }),
+        const [cRes, clRes, cpRes, tRes, pRes, nRes] = await Promise.allSettled([
+          currentOrg ? loadContactRows<Pick<CrmContact, 'id' | 'custom_fields'>>(createClient(), currentOrg.id, 'id, custom_fields') : Promise.resolve([]),
           fetchCallLogs(undefined, 50),
           fetchCampaigns(),
           fetchTasks(),
           currentOrg ? loadPositions(createClient(), currentOrg.id) : Promise.resolve([] as Position[]),
+          currentOrg ? loadCounts(currentOrg.id) : Promise.resolve(null),
         ])
-        if (cRes.status === 'fulfilled') setContacts(cRes.value.contacts)
+        if (cRes.status === 'fulfilled') setContacts(cRes.value)
+        if (nRes.status === 'fulfilled') setCounts(nRes.value)
+        else console.error('CRM Dashboard counts failed:', nRes.reason)
         if (pRes.status === 'fulfilled') setPositions(pRes.value)
         if (clRes.status === 'fulfilled') setCalls(clRes.value)
         if (cpRes.status === 'fulfilled') setCampaigns(cpRes.value)
@@ -122,7 +144,6 @@ export default function CrmDashboard() {
   }
 
   const totalValue = contacts.reduce((s, c) => s + (c.custom_fields?.value as number || 0), 0)
-  const assessed = contacts.filter(c => c.custom_fields?.assessment_completed)
   const openTasks = tasks.filter(t => t.status === 'todo' || t.status === 'in_progress')
   const activeCampaigns = campaigns.filter(c => c.status === 'sending' || c.status === 'scheduled')
 
@@ -130,15 +151,16 @@ export default function CrmDashboard() {
   // pipelines counts once in each. Unassigned is a loaded contact in no pipeline.
   const stageGroups: Record<string, number> = {}
   positions.forEach(p => { stageGroups[p.stage_name] = (stageGroups[p.stage_name] || 0) + 1 })
-  const placed = new Set(positions.map(p => p.contact_id))
-  const unassigned = contacts.filter(c => !placed.has(c.id)).length
+  const live = new Set(contacts.map(c => c.id))
+  const placed = new Set(positions.filter(p => live.has(p.contact_id)).map(p => p.contact_id))
+  const unassigned = counts ? Math.max(0, counts.total - placed.size) : 0
   if (unassigned) stageGroups['Unassigned'] = unassigned
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       {/* KPI Row */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-        <StatCard label="Total Contacts" value={contacts.length} icon={Users} color="#2A9D8F" href="/crm/contacts" trend={12} />
+        <StatCard label="Total Contacts" value={counts ? counts.total.toLocaleString() : '--'} icon={Users} color="#2A9D8F" href="/crm/contacts" trend={12} />
         <StatCard label="Pipeline Value" value={`$${(totalValue / 1000).toFixed(0)}k`} icon={TrendingUp} color="#34D399" href="/crm/pipelines" />
         <StatCard label="Calls Today" value={calls.filter(c => new Date(c.started_at).toDateString() === new Date().toDateString()).length} icon={Phone} color="#228DC4" href="/crm/dialer" />
         <StatCard label="Open Tasks" value={openTasks.length} icon={CheckCircle2} color="#A78BFA" href="/crm/tasks" />
@@ -311,11 +333,7 @@ export default function CrmDashboard() {
               { key: 'graduated', label: 'Graduated', color: '#059669', icon: GraduationCap },
               { key: 'alumni', label: 'Alumni', color: '#64748b', icon: Users },
             ]
-            const statusCounts: Record<string, number> = {}
-            contacts.forEach(c => {
-              const s = (c as any).mastermind_status || 'prospect'
-              statusCounts[s] = (statusCounts[s] || 0) + 1
-            })
+            const statusCounts: Record<string, number> = counts?.mastermind ?? {}
             return (
               <div className="grid grid-cols-2 gap-2">
                 {statuses.map(s => {
@@ -362,13 +380,13 @@ export default function CrmDashboard() {
               </div>
               <div className="text-center">
                 <p className="text-2xl font-bold text-np-dark">
-                  {networkData.nodes.filter(n => n.relationship_count > 0).length}
+                  {counts ? counts.connected.toLocaleString() : '--'}
                 </p>
                 <p className="text-[9px] text-gray-400">Connected</p>
               </div>
               <div className="text-center">
                 <p className="text-2xl font-bold text-gray-300">
-                  {networkData.nodes.filter(n => n.relationship_count === 0).length}
+                  {counts ? Math.max(0, counts.total - counts.connected).toLocaleString() : '--'}
                 </p>
                 <p className="text-[9px] text-gray-400">Orphans</p>
               </div>

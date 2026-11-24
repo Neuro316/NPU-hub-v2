@@ -21,19 +21,28 @@
 //   nodelivered  a delivered text is not counted                                   {T_SENT}
 //   tilebefore   the tiles take a touch from before the lead arrived (an old call)  {T_AGREE}
 //   stlimport    the speed to lead set lets imported contacts in                    {I_IMPORT_NOT_STL}
-// TAMPER=1 reddens the sum (6).
+//   tilelength   a contact count tile counts fetched rows (capped at 1,000)          {I_TILE_COUNT}
+//   tileimport   the activity tiles let an untouched imported contact in            {I_IMPORT_NOT_IN_TILES}
+//   alertimport  the 'no new leads in 48 hours' alert counts an import as an arrival {A_IMPORT_NOT_ARRIVAL}
+// TAMPER=1 reddens the sum (9).
+const fs = require('fs')
+const path = require('path')
 const H = require('../agent/lib/harness.cjs')
 
-const FT = 'lib/touch/first-touch.ts', COL = 'lib/metrics/collect.ts'
+const FT = 'lib/touch/first-touch.ts', COL = 'lib/metrics/collect.ts', TILES = 'lib/metrics/contact-tiles.ts', ALERTS = 'lib/metrics/alerts.ts'
 const TAMPERS = {
   sharedonly: [[FT, "db.from('hub_mail_sent').select(MAIL_SENT_COLUMNS).in('to_address', ch)", "db.from('hub_mail_sent').select(MAIL_SENT_COLUMNS).eq('visibility', 'shared').in('to_address', ch)"]],
   readbody: [[FT, '  return touches\n}', "  if (addrs.length) await db.from('hub_mail_messages').select('subject, body').in('from_address', addrs)\n  return touches\n}"]],
   countdry: [[FT, ".eq('status', 'sent').eq('dry_run', false).not('sent_at', 'is', null)", ".not('sent_at', 'is', null)"]],
   nodelivered: [[FT, "export const TEXT_SENT = ['queued', 'sending', 'sent', 'delivered']", "export const TEXT_SENT = ['queued', 'sending', 'sent']"]],
   stlimport: [[COL, '  const inbound = leads.filter(c => SCORECARD_CHANNELS(leadChannel(c.source)) && !isImportedLead(c))', '  const inbound = leads.filter(c => SCORECARD_CHANNELS(leadChannel(c.source)))']],
+  tilelength: [[TILES, "  let q: any = db.from('contacts').select('id', { count: 'exact', head: true })", "  let q: any = db.from('contacts').select('id')"],
+    [TILES, '  const { count, error } = await q\n', '  const { data, error } = await q\n  const count = (data ?? []).length\n']],
+  tileimport: [[TILES, 'export const inActivityTiles = (c: TileContact): boolean => !isImportedLead(c) || !!c.last_contacted_at', 'export const inActivityTiles = (c: TileContact): boolean => true']],
+  alertimport: [[ALERTS, 'SCORECARD_CHANNELS(leadChannel(c.source)) && !isImportedLead(c)).length', 'SCORECARD_CHANNELS(leadChannel(c.source))).length']],
   tilebefore: [[COL, 'stlLeads.map(c => ({ id: c.id, email: c.email, since: c.created_at }))', "stlLeads.map(c => ({ id: c.id, email: c.email, since: '1970-01-01T00:00:00Z' }))"]],
 }
-const RED_OF = { sharedonly: ['T_PRIVATE'], readbody: ['T_CONTENT'], countdry: ['T_DRYRUN'], nodelivered: ['T_SENT'], tilebefore: ['T_AGREE'], stlimport: ['I_IMPORT_NOT_STL'] }
+const RED_OF = { sharedonly: ['T_PRIVATE'], readbody: ['T_CONTENT'], countdry: ['T_DRYRUN'], nodelivered: ['T_SENT'], tilebefore: ['T_AGREE'], stlimport: ['I_IMPORT_NOT_STL'], tilelength: ['I_TILE_COUNT'], tileimport: ['I_IMPORT_NOT_IN_TILES'], alertimport: ['A_IMPORT_NOT_ARRIVAL'] }
 const active = H.selectors(TAMPERS)
 const out = H.compile(TAMPERS, active, 'hub-touch')
 const load = H.install(out)
@@ -159,6 +168,48 @@ const mins = (t) => (t == null ? null : Math.round((t - T0) / 60_000))
   const leadsTile = items2.filter((i) => i.metric === 'leads' && i.rec?.id === 'imp-batch')
   const stlCount = items2.filter((i) => i.metric === 'speed_to_lead').length
   check('I_IMPORT_NOT_STL', stl.length === 0 && stlCount === tile.size && leadsTile.length === 1, { stl: stl.map((i) => i.rec.id), stlCount, leadsTile: leadsTile.length })
+
+  // I_TILE_COUNT: 1,500 contacts behind a PostgREST-like 1,000-row cap; the count tile and the paged read both see 1,500,
+  // and the CRM Dashboard and Analytics count tiles read the count, never a row list's length
+  const tiles = load(TILES)
+  const big = Array.from({ length: 1500 }, (_, i) => ({ id: `c${String(i).padStart(4, '0')}`, org_id: 'org', merged_into_id: null, archived_at: null }))
+  const capped = H.stubDb({ contacts: big }, { table: (t, ops) => {
+    const sel = ops.find((o) => o[0] === 'select'); if (sel && sel[1][1] && sel[1][1].head) return undefined
+    const r = ops.find((o) => o[0] === 'range'); const [a, b] = r ? r[1] : [0, 999]
+    return { data: big.slice(a, Math.min(b + 1, a + 1000)), error: null }
+  } })
+  const counted = await tiles.countContacts(capped, 'org'), paged = await tiles.loadContactRows(capped, 'org', 'id')
+  const read = (rel) => fs.readFileSync(path.join(H.ROOT, rel), 'utf8')
+  const dash = read('src/app/(dashboard)/crm/page.tsx'), ana = read('src/app/(dashboard)/crm/analytics/page.tsx')
+  const pagesUseCounts = /label="Total Contacts" value=\{counts \? counts\.total/.test(dash) && /label="Contacts" value=\{totalContacts/.test(ana)
+    && !/value=\{contacts\.length\}/.test(dash + ana) && !/contacts\.forEach\(c => \{\s*const s = \(c as any\)\.mastermind_status/.test(dash) && !/fetchContacts\(/.test(dash + ana)
+  check('I_TILE_COUNT', counted === 1500 && paged.length === 1500 && pagesUseCounts, { counted, paged: paged.length, pagesUseCounts })
+
+  // I_IMPORT_NOT_IN_TILES: imported today and untouched stays out of new / this month / never contacted; touched, it counts
+  const DAY = 86_400_000, NOWT = T0
+  const iso = (d) => new Date(NOWT - d * DAY).toISOString()
+  const tc = [
+    { id: 'n1', created_at: iso(1), last_contacted_at: null, source: 'website', import_batch_id: null },
+    { id: 'i1', created_at: iso(1), last_contacted_at: null, source: 'cold', import_batch_id: 'batch-1' },
+    { id: 'i2', created_at: iso(2), last_contacted_at: null, source: 'sensorium_import', import_batch_id: null },
+    { id: 'i3', created_at: iso(20), last_contacted_at: null, source: 'import_csv', import_batch_id: null },
+    { id: 'i4', created_at: iso(3), last_contacted_at: iso(1), source: 'podcast', import_batch_id: 'batch-1' },
+  ]
+  const at2 = tiles.activityTiles(tc, NOWT, () => true)
+  check('I_IMPORT_NOT_IN_TILES', at2.newThisWeek === 2 && at2.thisMonth === 2 && at2.neverContacted === 1 && at2.stale14d === 0
+    && !tiles.inActivityTiles(tc[1]) && tiles.inActivityTiles(tc[4]) && /activityTiles\(contacts, now,/.test(ana), at2)
+
+  // A_IMPORT_NOT_ARRIVAL: the alert run (a Tuesday, so no Monday scorecard) sees only imported contacts in the last 48 hours,
+  // by batch, by source 'sensorium_import' and by a source starting 'import': it is a day with no new leads and the text goes.
+  // With one real website lead beside them, it does not.
+  const alerts = load(ALERTS)
+  const AT = new Date('2026-11-24T20:05:00Z'), recent = new Date(AT.getTime() - 3_600_000).toISOString()
+  const ic = (id, extra) => ({ id, email: `${id}@example.com`, phone: null, tags: [], source: 'website', import_batch_id: null, created_at: recent, merged_into_id: null, ...extra })
+  const imports = [ic('ia', { import_batch_id: 'batch-1' }), ic('ib', { source: 'sensorium_import' }), ic('ic', { source: 'import_csv' })]
+  const onlyImports = await alerts.runAlerts(H.stubDb({ contacts: imports }), AT)
+  const withLead = await alerts.runAlerts(H.stubDb({ contacts: [...imports, ic('real', {})] }), AT)
+  check('A_IMPORT_NOT_ARRIVAL', onlyImports.leads48 === 0 && onlyImports.sent.includes('no_leads_48h') && withLead.leads48 === 1 && !withLead.sent.includes('no_leads_48h'),
+    { onlyImports: [onlyImports.leads48, onlyImports.sent], withLead: [withLead.leads48, withLead.sent] })
 
   H.report(rows, active, RED_OF)
 })().catch((e) => { console.error(e); process.exit(2) })

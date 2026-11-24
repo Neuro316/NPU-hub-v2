@@ -17,6 +17,7 @@ import { summarize, biggestDropOff, FUNNEL } from './summary'
 import { addDays, monthStart, nyClock, nyDay } from './dates'
 import { COACHING_HOURS_PER_MONTH, COMMITTED_WEEKS } from './registry'
 import { leadChannel, SCORECARD_CHANNELS } from './collect'
+import { isImportedLead } from './imported'
 import { loadTestFilter } from './test-filter'
 
 export const RECIPIENT = '22456608-5f7d-495e-af02-7037fea125cc' // Cameron's Hub profile (the watchdog's default recipient)
@@ -89,12 +90,12 @@ export async function runAlerts(db: SupabaseClient, now: Date): Promise<Record<s
     if (await sendOnce(db, 'monday_scorecard', today, body, { week_ending: addDays(today, -1) })) sent.push('monday_scorecard')
   }
 
-  // no new scorecard lead in 48 hours
+  // no new scorecard lead in 48 hours; an imported contact is never an arrival (isImportedLead, the one rule)
   const filter = await loadTestFilter(db)
   const since = new Date(now.getTime() - 48 * 3_600_000).toISOString()
-  const { data: recent, error } = await db.from('contacts').select('id, email, phone, tags, source').is('merged_into_id', null).gte('created_at', since).limit(1000)
+  const { data: recent, error } = await db.from('contacts').select('id, email, phone, tags, source, import_batch_id').is('merged_into_id', null).gte('created_at', since).limit(1000)
   if (error) throw new Error(`contacts read failed: ${error.code}`)
-  const leads48 = (recent ?? []).filter(c => !filter.isTestContact(c) && SCORECARD_CHANNELS(leadChannel(c.source))).length
+  const leads48 = (recent ?? []).filter(c => !filter.isTestContact(c) && SCORECARD_CHANNELS(leadChannel(c.source)) && !isImportedLead(c)).length
   if (leads48 === 0 && await sendOnce(db, 'no_leads_48h', today, 'NP alert: no new leads in the last 48 hours. Hub › Analytics › Acquisition.', { leads48 })) sent.push('no_leads_48h')
 
   // today's median speed to lead

@@ -12,6 +12,7 @@ import { fetchContacts, createContact, removeFromPipeline as removeFromPipelineA
 import { findPipeline, firstStage, loadPipelines, loadPositions, type PipelineRef, type Position, type StageRef } from '@/lib/pipelines/positions'
 import { apiSetStage, fetchContactPositions } from '@/lib/pipelines/client'
 import { TAGS_PARAM, boardTags, filterByTags, formatTags, parseTags } from '@/lib/pipelines/board-tags'
+import { boardPipelines, columnPage, COLUMN_PAGE, pipelineFromRef } from '@/lib/pipelines/board-list'
 import { useToast } from '@/components/ui/toast'
 import type { CrmContact } from '@/types/crm'
 import { PIPELINE_STAGES, STAGE_COLORS } from '@/types/crm'
@@ -1068,7 +1069,9 @@ export default function PipelinesPage() {
   const [team, setTeam] = useState<{id:string;display_name:string;email:string|null}[]>([])
   const [loading, setLoading] = useState(true)
   const [boardError, setBoardError] = useState('')
-  const [pipelines, setPipelines] = useState<PipelineConfig[]>([DEFAULT_PIPELINE])
+  // The setting's definitions (org_settings crm_pipelines). The selector and every save use `pipelines` below,
+  // which adds each live table pipeline the setting does not name (src/lib/pipelines/board-list.ts).
+  const [configPipelines, setPipelines] = useState<PipelineConfig[]>([DEFAULT_PIPELINE])
   const [activePipelineId, setActivePipelineId] = useState('default')
   // The pipelines / pipeline_stages tables (uuids), reloaded after the config is saved.
   const [refs, setRefs] = useState<PipelineRef[]>([])
@@ -1107,7 +1110,11 @@ export default function PipelinesPage() {
   // told apart per pipeline.
   const detailBefore = useRef<Position[] | null>(null)
   const shownBoard = useRef<string | null>(null)
+  const pipelines = boardPipelines(configPipelines, refs, r => pipelineFromRef(r) as PipelineConfig)
   const activePipeline = pipelines.find(p => p.id === activePipelineId) || pipelines[0]
+  // cards shown per column (by column key), COLUMN_PAGE at first; reset when the board changes
+  const [shownPerColumn, setShownPerColumn] = useState<Record<string, number>>({})
+  useEffect(() => { setShownPerColumn({}) }, [activePipelineId])
   const activeRef = findPipeline(refs, activePipeline?.id)
 
   // A config column's stage in the tables: by its legacy key, else by its exact name.
@@ -1488,6 +1495,7 @@ export default function PipelinesPage() {
       <div data-help-id="pipelines.board" className="flex gap-3 overflow-x-auto overflow-y-hidden pb-2" style={{ height: 'calc(100vh - 300px)' }}>
         {activePipeline.stages.map(stage => {
           const sc = stageContacts(stage); const sv = stageValue(stage)
+          const { visible, hidden } = columnPage(sc, shownPerColumn[colKey(stage)])
           return (
             <div key={colKey(stage)} className="flex-shrink-0 w-64 flex flex-col h-full">
               <div className="flex items-center gap-2 mb-3 px-1">
@@ -1502,7 +1510,13 @@ export default function PipelinesPage() {
                 onDragLeave={e => { e.currentTarget.classList.remove('bg-np-blue/10', 'border-np-blue/40', 'scale-[1.01]'); e.currentTarget.classList.add('bg-gray-50/50', 'border-gray-100/50') }}
                 onDrop={e => { e.preventDefault(); e.currentTarget.classList.remove('bg-np-blue/10', 'border-np-blue/40', 'scale-[1.01]'); e.currentTarget.classList.add('bg-gray-50/50', 'border-gray-100/50'); const cid = e.dataTransfer.getData('contactId'); if (cid && positions[cid]) moveContact(cid, stage) }}
               >
-                {sc.map(c => <ContactCard key={c.id} contact={c} position={positions[c.id]} currentStageId={columnOf(c.id)} stages={activePipeline.stages} pipelines={pipelines} activePipelineId={activePipelineId} customFields={activePipeline.custom_fields || []} dealValue={deals[c.id]?.value ?? null} onSaveValue={v => saveDealValue(c.id, v)} onMove={s => moveContact(c.id, s)} onAddToPipeline={key => addToPipeline(c.id, key)} loadMemberships={() => loadMemberships(c.id)} onRemovePipeline={() => setRemoveTarget(c)} onOpenContact={setSelectedContactId} activity={activity[c.id]} showNotes={boardSectionOn(activePipeline.card_config, 'recent_notes')} showTasks={boardSectionOn(activePipeline.card_config, 'open_tasks')} />)}
+                {visible.map(c => <ContactCard key={c.id} contact={c} position={positions[c.id]} currentStageId={columnOf(c.id)} stages={activePipeline.stages} pipelines={pipelines} activePipelineId={activePipelineId} customFields={activePipeline.custom_fields || []} dealValue={deals[c.id]?.value ?? null} onSaveValue={v => saveDealValue(c.id, v)} onMove={s => moveContact(c.id, s)} onAddToPipeline={key => addToPipeline(c.id, key)} loadMemberships={() => loadMemberships(c.id)} onRemovePipeline={() => setRemoveTarget(c)} onOpenContact={setSelectedContactId} activity={activity[c.id]} showNotes={boardSectionOn(activePipeline.card_config, 'recent_notes')} showTasks={boardSectionOn(activePipeline.card_config, 'open_tasks')} />)}
+                {hidden > 0 && (
+                  <button onClick={() => setShownPerColumn(m => ({ ...m, [colKey(stage)]: visible.length + COLUMN_PAGE }))}
+                    className="w-full py-2 text-[10px] font-medium text-np-blue bg-white rounded-lg border border-gray-100 hover:bg-np-blue/5">
+                    Show more ({Math.min(hidden, COLUMN_PAGE)} of {hidden.toLocaleString()} not shown yet)
+                  </button>
+                )}
                 {sc.length === 0 && <div className="text-center py-8 text-[10px] text-gray-400">No contacts</div>}
               </div>
             </div>
